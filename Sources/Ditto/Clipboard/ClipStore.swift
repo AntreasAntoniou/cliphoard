@@ -5,6 +5,9 @@ import Combine
 @MainActor
 final class ClipStore: ObservableObject {
     @Published private(set) var items: [ClipItem] = []
+    /// The id of the clip most recently added or bumped — lets the bar scroll to
+    /// reveal it wherever it lands in the (pinned-first) order.
+    @Published private(set) var lastAddedID: UUID?
 
     /// Maximum number of unpinned items kept (0 = unlimited). Pinned items are
     /// always kept regardless.
@@ -16,9 +19,13 @@ final class ClipStore: ObservableObject {
     private let dir: URL
     private let indexURL: URL
 
-    init() {
-        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        dir = support.appendingPathComponent("Ditto", isDirectory: true)
+    /// - Parameter directory: storage location. Defaults to
+    ///   `~/Library/Application Support/Ditto`; tests inject a temp directory.
+    init(directory: URL? = nil) {
+        let base = directory ?? FileManager.default
+            .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Ditto", isDirectory: true)
+        dir = base
         indexURL = dir.appendingPathComponent("history.json")
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         load()
@@ -34,11 +41,17 @@ final class ClipStore: ObservableObject {
         if let existing = items.first(where: { $0.signature == item.signature }) {
             existing.lastUsedAt = Date()
             move(existing, toFront: true)
+            lastAddedID = existing.id
             save()
             return
         }
         items.insert(item, at: 0)
         trim()
+        // Keep the pinned-first / recency order consistent with every other path
+        // (togglePin, load, move) so a fresh copy doesn't briefly jump ahead of
+        // pinned items only to be reordered on the next mutation.
+        sortStable()
+        lastAddedID = item.id
         save()
         Feedback.playCapture()
     }

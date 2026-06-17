@@ -148,11 +148,12 @@ struct ContentView: View {
                     proxy.scrollTo(target, anchor: .center)
                 }
             }
-            // When a brand-new clip arrives (it lands at index 0) snap the strip
-            // back to the front so the latest copy is always in view.
-            .onChange(of: model.results.first?.id) { _ in
-                model.selection = 0
-                withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(0, anchor: .leading) }
+            // When a clip is added/bumped, reveal it wherever it lands in the
+            // pinned-first order (it may sit below pinned cards, not at index 0).
+            .onChange(of: store.lastAddedID) { id in
+                guard let id, let idx = model.results.firstIndex(where: { $0.id == id }) else { return }
+                model.selection = idx
+                withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(idx, anchor: .center) }
             }
             // Every time the bar is summoned, snap back to the newest clip.
             .onChange(of: model.presentToken) { _ in

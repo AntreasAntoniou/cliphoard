@@ -4,7 +4,7 @@ import Carbon.HIToolbox
 import ServiceManagement
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let store = ClipStore()
     private lazy var monitor = ClipboardMonitor(store: store)
     private lazy var model = PanelViewModel(store: store)
@@ -12,6 +12,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let hotKey = HotKey()
 
     private var statusItem: NSStatusItem!
+    private let statusMenu = NSMenu()
     private var keyMonitor: Any?
 
     private var previousApp: NSRunningApplication?
@@ -51,11 +52,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             button.image = NSImage(systemSymbolName: "doc.on.clipboard", accessibilityDescription: "Ditto")
             button.image?.isTemplate = true
         }
+        statusMenu.delegate = self
+        statusItem.menu = statusMenu
+        rebuildMenu()
+    }
+
+    /// Rebuilt every time the menu opens (via `menuNeedsUpdate`) so live state —
+    /// the Accessibility grant, toggles, history count — is always current.
+    func menuNeedsUpdate(_ menu: NSMenu) {
         rebuildMenu()
     }
 
     private func rebuildMenu() {
-        let menu = NSMenu()
+        let menu = statusMenu
+        menu.removeAllItems()
         menu.addItem(withTitle: "Open Ditto  (⌃⌥⌘V)", action: #selector(toggle), keyEquivalent: "")
         menu.addItem(.separator())
 
@@ -103,7 +113,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(withTitle: "About Ditto", action: #selector(about), keyEquivalent: "")
         menu.addItem(.separator())
         menu.addItem(withTitle: "Quit Ditto", action: #selector(quit), keyEquivalent: "q")
-        statusItem.menu = menu
     }
 
     // MARK: Panel

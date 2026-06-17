@@ -16,6 +16,11 @@ let package = Package(
                 .linkedFramework("Carbon"),
                 .linkedFramework("UniformTypeIdentifiers")
             ]
+        ),
+        .testTarget(
+            name: "DittoTests",
+            dependencies: ["Ditto"],
+            path: "Tests/DittoTests"
         )
     ]
 )
