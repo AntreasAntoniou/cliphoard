@@ -41,16 +41,30 @@ final class ClipboardMonitor {
         guard count != lastChangeCount else { return }
         lastChangeCount = count
 
-        if count == ignoreChangeCount { return }
+        let typeList = (pb.types ?? []).map { $0.rawValue }.joined(separator: ",")
+        DebugLog.write("change #\(count) types=[\(typeList)]")
+
+        if count == ignoreChangeCount {
+            DebugLog.write("  → skipped (our own paste)")
+            return
+        }
 
         // Respect apps that mark content as transient/concealed (e.g. password managers).
         if let types = pb.types {
-            if types.contains(NSPasteboard.PasteboardType("org.nspasteboard.TransientType")) { return }
-            if types.contains(NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType")) { return }
+            if types.contains(NSPasteboard.PasteboardType("org.nspasteboard.TransientType")) {
+                DebugLog.write("  → skipped (transient)"); return
+            }
+            if types.contains(NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType")) {
+                DebugLog.write("  → skipped (concealed)"); return
+            }
         }
 
-        guard let item = capture(from: pb) else { return }
+        guard let item = capture(from: pb) else {
+            DebugLog.write("  → skipped (no readable content)")
+            return
+        }
         item.sourceApp = NSWorkspace.shared.frontmostApplication?.localizedName
+        DebugLog.write("  → captured \(item.kind.rawValue): \(item.preview.prefix(40))")
         store.add(item)
     }
 

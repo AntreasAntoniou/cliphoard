@@ -38,6 +38,7 @@ final class ClipStore: ObservableObject {
         items.insert(item, at: 0)
         trim()
         save()
+        Feedback.playCapture()
     }
 
     func togglePin(_ item: ClipItem) {

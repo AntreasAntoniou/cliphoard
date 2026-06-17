@@ -71,6 +71,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         launchItem.state = launchAtLoginEnabled ? .on : .off
         menu.addItem(launchItem)
 
+        let soundItem = NSMenuItem(title: "Play Sound on Copy", action: #selector(toggleSound), keyEquivalent: "")
+        soundItem.state = Feedback.soundEnabled ? .on : .off
+        menu.addItem(soundItem)
+
+        let debugItem = NSMenuItem(title: "Debug Logging", action: #selector(toggleDebug), keyEquivalent: "")
+        debugItem.state = DebugLog.enabled ? .on : .off
+        menu.addItem(debugItem)
+
         menu.addItem(.separator())
         menu.addItem(withTitle: "Clear Unpinned History", action: #selector(clearHistory), keyEquivalent: "")
         menu.addItem(withTitle: "About Ditto", action: #selector(about), keyEquivalent: "")
@@ -189,6 +197,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func clearHistory() {
         store.clearUnpinned()
+    }
+
+    @objc private func toggleSound() {
+        Feedback.soundEnabled.toggle()
+        if Feedback.soundEnabled { Feedback.playCapture() }
+        rebuildMenu()
+    }
+
+    @objc private func toggleDebug() {
+        UserDefaults.standard.set(!DebugLog.enabled, forKey: "debugLog")
+        rebuildMenu()
     }
 
     @objc private func toggleLaunchAtLogin() {
