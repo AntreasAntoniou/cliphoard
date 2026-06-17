@@ -13,6 +13,8 @@ A floating clipboard manager for macOS — a native, open-source take on [Paste]
 - **Pinboards via pinning** — pin clips you reuse so they survive history trimming and float to the front.
 - **Keyboard-first** — navigate with arrows, paste with ↩, quick-paste the first nine with **⌘1–9**, pin with **⌘P**, delete with **⌘⌫**, dismiss with **esc**.
 - **Auto-paste** — selecting a clip copies it and issues ⌘V into the previously-focused app.
+- **Capture sound** — a subtle tick when a clip lands (like Paste), with a choice of system sounds and an on/off toggle.
+- **Always-on capture** — opts out of macOS App Nap so background copies are recorded continuously, not just after a restart.
 - **Persistent history** — stored locally in `~/Library/Application Support/Ditto`, with a configurable limit (50–1000 items).
 - **Privacy-aware** — honors the `org.nspasteboard` transient/concealed markers, so password managers aren't recorded.
 - **Menu-bar app** — runs as a background accessory (no Dock icon); launch-at-login toggle included.

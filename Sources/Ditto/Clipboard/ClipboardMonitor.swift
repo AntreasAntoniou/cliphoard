@@ -6,6 +6,7 @@ import UniformTypeIdentifiers
 final class ClipboardMonitor {
     private let store: ClipStore
     private var timer: Timer?
+    private var activity: NSObjectProtocol?
     private var lastChangeCount: Int
     /// When we write to the pasteboard ourselves (on paste) we bump this so the
     /// next poll doesn't re-capture our own write.
@@ -17,6 +18,14 @@ final class ClipboardMonitor {
     }
 
     func start() {
+        // Opt out of App Nap. Without this, macOS suspends a backgrounded
+        // accessory app that looks idle and the poll timer stops firing —
+        // so new copies are only picked up after a restart. `…AllowingIdleSystemSleep`
+        // keeps us awake to poll while still letting the Mac sleep normally.
+        activity = ProcessInfo.processInfo.beginActivity(
+            options: [.userInitiatedAllowingIdleSystemSleep, .suddenTerminationDisabled],
+            reason: "Monitoring the clipboard for new copies")
+
         let t = Timer(timeInterval: 0.4, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in self?.poll() }
         }
@@ -28,7 +37,10 @@ final class ClipboardMonitor {
         timer = t
     }
 
-    func stop() { timer?.invalidate(); timer = nil }
+    func stop() {
+        timer?.invalidate(); timer = nil
+        if let activity { ProcessInfo.processInfo.endActivity(activity); self.activity = nil }
+    }
 
     /// Tell the monitor to skip the change we are about to cause ourselves.
     func suppressNextChange() {

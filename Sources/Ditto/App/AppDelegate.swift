@@ -75,6 +75,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         soundItem.state = Feedback.soundEnabled ? .on : .off
         menu.addItem(soundItem)
 
+        let soundChoice = NSMenuItem(title: "Copy Sound", action: nil, keyEquivalent: "")
+        let soundMenu = NSMenu()
+        for name in Feedback.availableSounds {
+            let it = NSMenuItem(title: name, action: #selector(chooseSound(_:)), keyEquivalent: "")
+            it.representedObject = name
+            it.state = (Feedback.soundName == name) ? .on : .off
+            soundMenu.addItem(it)
+        }
+        soundChoice.submenu = soundMenu
+        menu.addItem(soundChoice)
+
         let debugItem = NSMenuItem(title: "Debug Logging", action: #selector(toggleDebug), keyEquivalent: "")
         debugItem.state = DebugLog.enabled ? .on : .off
         menu.addItem(debugItem)
@@ -202,6 +213,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func toggleSound() {
         Feedback.soundEnabled.toggle()
         if Feedback.soundEnabled { Feedback.playCapture() }
+        rebuildMenu()
+    }
+
+    @objc private func chooseSound(_ sender: NSMenuItem) {
+        guard let name = sender.representedObject as? String else { return }
+        Feedback.soundName = name
+        Feedback.soundEnabled = true
+        Feedback.play(named: name) // preview the choice
         rebuildMenu()
     }
 

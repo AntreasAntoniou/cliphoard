@@ -8,16 +8,33 @@ enum Feedback {
         set { UserDefaults.standard.set(newValue, forKey: "soundEnabled") }
     }
 
-    /// Play the capture tick. A fresh `NSSound` each time so rapid copies
-    /// don't cut one another off.
-    static func playCapture() {
-        guard soundEnabled else { return }
-        if let sound = NSSound(named: NSSound.Name("Tink")) {
+    /// Name of the chosen capture sound (a built-in macOS system sound).
+    static var soundName: String {
+        get { UserDefaults.standard.string(forKey: "soundName") ?? "Tink" }
+        set { UserDefaults.standard.set(newValue, forKey: "soundName") }
+    }
+
+    /// The built-in system sounds available to pick from.
+    static let availableSounds = [
+        "Tink", "Pop", "Glass", "Morse", "Ping", "Bottle", "Frog",
+        "Funk", "Hero", "Purr", "Submarine", "Sosumi", "Blow", "Basso"
+    ]
+
+    /// Play a specific sound once (used for previews and capture).
+    static func play(named name: String) {
+        if let sound = NSSound(named: NSSound.Name(name)) {
             sound.volume = 0.4
             sound.play()
         } else {
             NSSound.beep()
         }
+    }
+
+    /// Play the capture tick. A fresh `NSSound` each time so rapid copies
+    /// don't cut one another off.
+    static func playCapture() {
+        guard soundEnabled else { return }
+        play(named: soundName)
     }
 }
 
