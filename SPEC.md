@@ -1,5 +1,11 @@
 # Ditto — Authoritative Engineering Specification
 
+> ⚠️ **This SPEC predates the SQLite store, on-device deep search, in-bar
+> settings, and tag baskets. For the current state see [Agents.md](Agents.md)
+> (codebase map), [STATUS.md](STATUS.md) (readiness + prioritized backlog), and
+> [AUDIT.md](AUDIT.md) (confirmed findings). Where SPEC and code disagree, code wins.**
+
+
 > Byzantine 3-2-1 synthesis. Three independent spec drafts reconciled against two
 > adversarial verification reports and re-checked against live source + on-disk
 > state at `/Users/antreas/Projects/ditto` on **2026-06-17**. Every contested fact
