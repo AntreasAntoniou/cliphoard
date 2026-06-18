@@ -50,7 +50,8 @@ struct ClipCardView: View {
                               lineWidth: selected ? 2.5 : 1)
         )
         .shadow(color: .black.opacity(selected ? 0.25 : 0.12), radius: selected ? 10 : 5, y: 3)
-        .scaleEffect(selected ? 1.0 : 0.97)
+        // No scaleEffect: shrinking unselected cards shifted their header baselines
+        // out of row alignment. Selection reads via the ring + shadow instead.
         .animation(.spring(response: 0.25, dampingFraction: 0.8), value: selected)
         .onHover { hovering = $0 }
         .contextMenu {
@@ -161,16 +162,14 @@ struct ClipCardView: View {
     }
 
     @ViewBuilder private var tagRow: some View {
-        if !tags.isEmpty {
+        // Tags are only meaningful for textual kinds — an image/color caption
+        // produces noise, so suppress the row there. Show whole tags (no mid-word
+        // truncation) and collapse the rest to a "+N" chip. Neutral styling keeps
+        // the saturated accent reserved for the selection ring / focused field.
+        if !tags.isEmpty, item.kind != .image, item.kind != .color {
             HStack(spacing: 4) {
-                ForEach(tags.prefix(3), id: \.self) { tag in
-                    Text(tag)
-                        .font(.system(size: 9, weight: .medium))
-                        .lineLimit(1)
-                        .padding(.horizontal, 5).padding(.vertical, 2)
-                        .background(Theme.accent.opacity(0.15), in: Capsule())
-                        .foregroundStyle(Theme.accent)
-                }
+                ForEach(tags.prefix(2), id: \.self) { tag in tagChip(tag) }
+                if tags.count > 2 { tagChip("+\(tags.count - 2)") }
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 10)
@@ -178,15 +177,25 @@ struct ClipCardView: View {
         }
     }
 
+    private func tagChip(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 9, weight: .medium))
+            .lineLimit(1)
+            .fixedSize()
+            .padding(.horizontal, 6).padding(.vertical, 2)
+            .background(Color.primary.opacity(0.08), in: Capsule())
+            .foregroundStyle(.secondary)
+    }
+
     private var footer: some View {
         HStack {
             Text(item.characterCountLabel)
                 .font(.system(size: 10))
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(.secondary)   // was .tertiary — failed AA on the card material
             Spacer()
             Text(item.createdAt, style: .relative)
                 .font(.system(size: 10))
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(.secondary)
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 6)

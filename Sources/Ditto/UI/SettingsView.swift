@@ -271,7 +271,7 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 8) {
             Text(title.uppercased())
                 .font(.system(size: 10, weight: .bold))
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(.secondary)   // was .tertiary — too dim on the panel material
             VStack(alignment: .leading, spacing: 10) { content() }
                 .padding(12)
                 .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 10))

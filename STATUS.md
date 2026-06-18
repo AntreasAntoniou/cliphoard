@@ -47,6 +47,9 @@ These confirmed findings were fixed immediately (low-risk, unit-tested):
 
 - **BL-11 (focus) implemented** (ContentView @FocusState + .focused on the search field, focused on summon/settings-toggle). Standard, safe (no-op at worst). ⚠ NEEDS your interactive confirmation that summon-then-type lands — can't be verified from a static screenshot on a non-activating panel.
 
+
+- **Visual-QA pass (5-expert orthogonal committee + refute + re-verify):** confirmed BL-11 focus works functionally but had NO visible affordance — added an accent focus ring + cursor on the search field (re-shoot confirms). Also fixed card footer + Settings caption contrast (.tertiary→.secondary, failed AA), neutral tag chips (was blue-on-blue ~2.8:1) reserving accent for selection/focus, tags show whole words + "+N" (no more "currency a…" stubs), suppressed text-derived tags on image/color cards, and removed the selected-card scaleEffect that broke row alignment. Deferred to you (taste): fixed card height vs content-sized, and the Settings narrow centered column width.
+
 Everything below remains open.
 
 # Prioritized Backlog

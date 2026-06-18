@@ -78,7 +78,12 @@ struct ContentView: View {
                 }
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)
-                .background(Color.primary.opacity(0.07), in: Capsule())
+                // Visible focus affordance (BL-11): the field is first-responder on
+                // summon, but the blinking caret alone isn't legible at a glance.
+                .background(Color.primary.opacity(searchFocused ? 0.12 : 0.07), in: Capsule())
+                .overlay(
+                    Capsule().strokeBorder(Theme.accent.opacity(searchFocused ? 0.65 : 0), lineWidth: 1.5)
+                )
             }
 
             Button {
@@ -197,7 +202,8 @@ struct ContentView: View {
         // freshly captured clip and an old one are always consistent.
         guard DeepSearch.level != .off,
               let ids = item.embeddings[EmbedderProvider.active.signature]?.tags else { return [] }
-        return ids.prefix(3).compactMap { TagSpace.names.indices.contains($0) ? TagSpace.names[$0] : nil }
+        // Return all assigned tags; the card shows a couple whole tags + "+N".
+        return ids.compactMap { TagSpace.names.indices.contains($0) ? TagSpace.names[$0] : nil }
     }
 
     private func indexingBar(_ p: ClipStore.IndexingProgress) -> some View {
