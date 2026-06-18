@@ -46,6 +46,19 @@ final class DatabaseTests: XCTestCase {
         XCTAssertEqual(db.clipCount(), 0)
     }
 
+    func testWriteMethodsReportSuccess() {
+        let db = tempDB()
+        let item = text("write result")
+        XCTAssertTrue(db.insert(item), "insert should report success")
+        item.pinned = true
+        XCTAssertTrue(db.updateMeta(item), "updateMeta should report success")
+        XCTAssertTrue(
+            db.upsertEmbedding(clipID: item.id, model: "m1",
+                               embedding: ModelEmbedding(vector: [0.5], tags: [1])),
+            "upsertEmbedding should report success")
+        XCTAssertTrue(db.delete(id: item.id), "delete should report success")
+    }
+
     func testDeleteUnpinnedKeepsPinned() {
         let db = tempDB()
         let keep = text("keep"); keep.pinned = true

@@ -88,13 +88,15 @@ final class Database {
 
     // MARK: Writes
 
-    func insert(_ item: ClipItem) {
+    @discardableResult
+    func insert(_ item: ClipItem) -> Bool {
         let sql = """
             INSERT OR REPLACE INTO clips
             (id, kind, text, rtf, payload_file, file_path, color_hex,
              created_at, last_used_at, pinned, source_app, use_count)
             VALUES (?,?,?,?,?,?,?,?,?,?,?,?);
             """
+        var ok = false
         prepare(sql) { stmt in
             bindText(stmt, 1, item.id.uuidString)
             bindText(stmt, 2, item.kind.rawValue)
@@ -108,37 +110,47 @@ final class Database {
             sqlite3_bind_int(stmt, 10, item.pinned ? 1 : 0)
             bindText(stmt, 11, item.sourceApp)
             sqlite3_bind_int(stmt, 12, Int32(item.useCount))
-            sqlite3_step(stmt)
+            ok = step(stmt)
         }
         for (model, emb) in item.embeddings { upsertEmbedding(clipID: item.id, model: model, embedding: emb) }
+        return ok
     }
 
     /// Update the mutable metadata of an existing clip (pin, recency, kind, …).
-    func updateMeta(_ item: ClipItem) {
+    @discardableResult
+    func updateMeta(_ item: ClipItem) -> Bool {
+        var ok = false
         prepare("UPDATE clips SET kind=?, last_used_at=?, pinned=?, use_count=? WHERE id=?;") { stmt in
             bindText(stmt, 1, item.kind.rawValue)
             sqlite3_bind_double(stmt, 2, item.lastUsedAt.timeIntervalSinceReferenceDate)
             sqlite3_bind_int(stmt, 3, item.pinned ? 1 : 0)
             sqlite3_bind_int(stmt, 4, Int32(item.useCount))
             bindText(stmt, 5, item.id.uuidString)
-            sqlite3_step(stmt)
+            ok = step(stmt)
         }
+        return ok
     }
 
-    func upsertEmbedding(clipID: UUID, model: String, embedding: ModelEmbedding) {
+    @discardableResult
+    func upsertEmbedding(clipID: UUID, model: String, embedding: ModelEmbedding) -> Bool {
+        var ok = false
         prepare("INSERT OR REPLACE INTO embeddings (clip_id, model, vector, tags) VALUES (?,?,?,?);") { stmt in
             bindText(stmt, 1, clipID.uuidString)
             bindText(stmt, 2, model)
             bindBlob(stmt, 3, Self.blob(fromVector: embedding.vector))
             bindText(stmt, 4, embedding.tags.map(String.init).joined(separator: ","))
-            sqlite3_step(stmt)
+            ok = step(stmt)
         }
+        return ok
     }
 
-    func delete(id: UUID) {
+    @discardableResult
+    func delete(id: UUID) -> Bool {
+        var ok = false
         prepare("DELETE FROM clips WHERE id=?;") { stmt in
-            bindText(stmt, 1, id.uuidString); sqlite3_step(stmt)
+            bindText(stmt, 1, id.uuidString); ok = step(stmt)
         }
+        return ok
     }
 
     func deleteUnpinned() { exec("DELETE FROM clips WHERE pinned=0;") }
@@ -165,6 +177,14 @@ final class Database {
         defer { sqlite3_finalize(stmt) }
         if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK { body(stmt) }
         else { NSLog("Ditto db prepare error: \(String(cString: sqlite3_errmsg(db)))") }
+    }
+
+    /// Run a write statement to completion, logging the SQLite error on failure.
+    /// Returns true only when the step reaches SQLITE_DONE.
+    private func step(_ stmt: OpaquePointer?) -> Bool {
+        if sqlite3_step(stmt) == SQLITE_DONE { return true }
+        NSLog("Ditto db step error: \(String(cString: sqlite3_errmsg(db)))")
+        return false
     }
 
     private func prepareEach(_ sql: String, _ row: (OpaquePointer?) -> Void) {

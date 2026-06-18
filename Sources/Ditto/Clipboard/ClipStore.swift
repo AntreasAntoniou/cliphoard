@@ -36,6 +36,11 @@ final class ClipStore: ObservableObject {
     private let dir: URL
     private let db: Database?
 
+    /// The in-flight background indexing pass, if any. A new pass cancels the
+    /// previous one so overlapping model/basket changes don't run two passes
+    /// that fight over the published `indexing` state.
+    private var indexingTask: Task<Void, Never>?
+
     /// - Parameter directory: storage location. Defaults to
     ///   `~/Library/Application Support/Ditto`; tests inject a temp directory.
     init(directory: URL? = nil) {
@@ -49,6 +54,22 @@ final class ClipStore: ObservableObject {
         items = db?.loadAll() ?? []
         sortStable()
         rebuildTagIndex()
+        sweepOrphanPayloads()
+    }
+
+    /// Best-effort: delete any "*.png" payload files in the store directory that
+    /// are no longer referenced by a live item's `payloadFile`. Guards against
+    /// images leaking on disk after a crash, an interrupted delete, or a stale
+    /// database. Errors are ignored — this is purely housekeeping.
+    private func sweepOrphanPayloads() {
+        let referenced = Set(items.compactMap { $0.payloadFile })
+        guard let entries = try? FileManager.default.contentsOfDirectory(
+            at: dir, includingPropertiesForKeys: nil) else { return }
+        for url in entries where url.pathExtension.lowercased() == "png" {
+            if !referenced.contains(url.lastPathComponent) {
+                try? FileManager.default.removeItem(at: url)
+            }
+        }
     }
 
     /// Directory where binary payloads (images) live.
@@ -111,9 +132,11 @@ final class ClipStore: ObservableObject {
         let total = stale.count
         let started = Date()
         indexing = IndexingProgress(done: 0, total: total, etaSeconds: nil)
-        Task { @MainActor in
+        indexingTask?.cancel()
+        indexingTask = Task { @MainActor in
             var done = 0
             for item in stale {
+                if Task.isCancelled { break }
                 ClipIndexer.index(item)
                 if let emb = item.embeddings[sig] {
                     db?.upsertEmbedding(clipID: item.id, model: sig, embedding: emb)
@@ -129,6 +152,7 @@ final class ClipStore: ObservableObject {
             }
             rebuildTagIndex()
             indexing = nil
+            indexingTask = nil
             DebugLog.write("reindexed \(done) stale items → \(sig)")
         }
     }
@@ -144,9 +168,11 @@ final class ClipStore: ObservableObject {
         let total = targets.count
         let started = Date()
         indexing = IndexingProgress(done: 0, total: total, etaSeconds: nil)
-        Task { @MainActor in
+        indexingTask?.cancel()
+        indexingTask = Task { @MainActor in
             var done = 0
             for item in targets {
+                if Task.isCancelled { break }
                 if var emb = item.embeddings[sig] {
                     emb.tags = TagSpace.classify(emb.vector, embedder: EmbedderProvider.active, topK: 5)
                     item.embeddings[sig] = emb
@@ -163,6 +189,7 @@ final class ClipStore: ObservableObject {
             }
             rebuildTagIndex()
             indexing = nil
+            indexingTask = nil
         }
     }
 

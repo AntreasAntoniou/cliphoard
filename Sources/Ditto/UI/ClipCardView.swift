@@ -42,6 +42,18 @@ struct ClipCardView: View {
             Button("Delete", role: .destructive) { onDelete() }
         }
         .help(item.preview)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(accessibilityLabelText)
+        .accessibilityValue(item.characterCountLabel)
+        .accessibilityHint(item.characterCountLabel)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+
+    /// A spoken label combining the clip kind, its source app, and a short preview.
+    private var accessibilityLabelText: String {
+        let source = item.sourceApp ?? item.kind.title
+        let preview = String(item.preview.prefix(80))
+        return "\(item.kind.title), \(source), \(preview)"
     }
 
     private var header: some View {

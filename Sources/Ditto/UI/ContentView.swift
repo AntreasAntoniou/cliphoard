@@ -58,6 +58,7 @@ struct ContentView: View {
                         .textFieldStyle(.plain)
                         .font(.system(size: 13))
                         .frame(width: 180)
+                        .accessibilityLabel("Search clipboard")
                         .onChange(of: model.query) { _ in model.resetSelection() }
                 }
                 .padding(.horizontal, 10)
@@ -74,6 +75,7 @@ struct ContentView: View {
             }
             .buttonStyle(.plain)
             .help(model.showSettings ? "Close settings" : "Settings")
+            .accessibilityLabel(model.showSettings ? "Close settings" : "Settings")
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
