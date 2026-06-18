@@ -59,14 +59,23 @@ final class AppSettings: ObservableObject {
     }
 
     func previewSound() { Feedback.play(named: soundName) }
+
+    /// Live Accessibility-trust state. Polled while Settings is open so the
+    /// "Grant…" row disappears as soon as the grant takes effect.
+    @Published var axTrusted: Bool = AXIsProcessTrusted()
+    func refreshAXTrust() {
+        let t = AXIsProcessTrusted()
+        if t != axTrusted { axTrusted = t }
+    }
 }
 
 /// The settings surface shown *inside* the bar (toggled from the toolbar gear).
 struct SettingsView: View {
     @ObservedObject var settings: AppSettings
     @ObservedObject var store: ClipStore
-    /// Re-read on each render so the Accessibility row reflects live state.
-    private var axTrusted: Bool { AXIsProcessTrusted() }
+    /// Live, observable Accessibility-trust state (polled).
+    private var axTrusted: Bool { settings.axTrusted }
+    private let axTimer = Timer.publish(every: 1.2, on: .main, in: .common).autoconnect()
 
     private let limits: [(Int, String)] = [
         (0, "Unlimited"), (100, "100"), (200, "200"), (500, "500"), (1000, "1000"), (5000, "5000")
@@ -202,6 +211,14 @@ struct SettingsView: View {
                                 .controlSize(.small)
                         }
                     }
+                    if !axTrusted {
+                        HStack {
+                            Text("Already granted but still showing? macOS applies it on relaunch.")
+                                .font(.system(size: 11)).foregroundStyle(.tertiary)
+                            Spacer()
+                            Button("Relaunch") { relaunch() }.controlSize(.small)
+                        }
+                    }
                     Toggle("Debug logging", isOn: $settings.debugLogging)
                 }
             }
@@ -211,6 +228,20 @@ struct SettingsView: View {
             .frame(maxWidth: .infinity)
         }
         .frame(maxHeight: .infinity)
+        .onReceive(axTimer) { _ in settings.refreshAXTrust() }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            settings.refreshAXTrust()
+        }
+    }
+
+    /// Quit and relaunch so a just-granted Accessibility permission is picked up.
+    private func relaunch() {
+        let url = Bundle.main.bundleURL
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+        task.arguments = ["-n", url.path]
+        try? task.run()
+        NSApp.terminate(nil)
     }
 
     // MARK: Building blocks
