@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+    background: #d9d2c5;
+    -webkit-font-smoothing: antialiased;
+  }
+  .serif {
+    font-family: "Iowan Old Style", "Palatino", "Palatino Linotype", "Hoefler Text", Georgia, serif;
+  }
+
+  .stage {
+    width: 1240px;
+    height: 360px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background:
+      radial-gradient(120% 140% at 50% 120%, rgba(110,142,251,0.06), transparent 60%),
+      #cfc7b8;
+  }
+
+  /* The floating bar */
+  .bar {
+    width: 1192px;
+    height: 312px;
+    border-radius: 20px;
+    background:
+      linear-gradient(180deg, #fcfaf4 0%, #f6f2e8 100%);
+    border: 1px solid rgba(60,48,32,0.10);
+    box-shadow:
+      0 1px 0 rgba(255,255,255,0.9) inset,
+      0 24px 60px -18px rgba(48,38,24,0.40),
+      0 4px 14px rgba(48,38,24,0.14);
+    padding: 20px 24px 14px 24px;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    overflow: hidden;
+  }
+  /* faint paper texture / hairline */
+  .bar::after {
+    content: "";
+    position: absolute;
+    left: 24px; right: 24px;
+    top: 64px;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(60,48,32,0.10) 12%, rgba(60,48,32,0.10) 88%, transparent);
+  }
+
+  /* ---------- top row ---------- */
+  .topbar {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    margin-bottom: 16px;
+  }
+  .brand {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+  }
+  .title {
+    font-size: 25px;
+    letter-spacing: 0.2px;
+    color: #2b2218;
+    font-weight: 600;
+  }
+  .title .ink {
+    color: #9a3b2e;
+  }
+  .subtitle {
+    font-size: 11.5px;
+    color: #8a7d68;
+    letter-spacing: 0.6px;
+    text-transform: uppercase;
+  }
+
+  /* chips */
+  .chips {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    flex: 1;
+    margin-left: 6px;
+  }
+  .chip {
+    font-size: 12.5px;
+    color: #6c6049;
+    padding: 5px 13px;
+    border-radius: 999px;
+    border: 1px solid transparent;
+    white-space: nowrap;
+    letter-spacing: 0.2px;
+  }
+  .chip:hover { color: #463a28; }
+  .chip.active {
+    background: #2b2218;
+    color: #f6f2e8;
+    box-shadow: 0 1px 2px rgba(43,34,24,0.35);
+  }
+  .chip .dot {
+    color: #c0b6a0;
+    margin: 0 1px;
+  }
+
+  /* search */
+  .search {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 244px;
+    padding: 8px 12px;
+    border-radius: 11px;
+    background: #fffdf8;
+    border: 1.5px solid #9a3b2e;
+    box-shadow:
+      0 0 0 4px rgba(154,59,46,0.14),
+      0 1px 2px rgba(48,38,24,0.06) inset;
+  }
+  .search svg { flex: none; }
+  .search .ph {
+    font-size: 13px;
+    color: #6c6049;
+  }
+  .caret {
+    width: 1.5px;
+    height: 15px;
+    background: #9a3b2e;
+    margin-left: -2px;
+    border-radius: 1px;
+  }
+
+  /* ---------- card strip ---------- */
+  .strip {
+    display: flex;
+    gap: 14px;
+    align-items: stretch;
+    flex: 1;
+    margin-top: 6px;
+    overflow: hidden;
+  }
+  .card {
+    width: 196px;
+    flex: none;
+    background: #fffdf8;
+    border: 1px solid rgba(60,48,32,0.12);
+    border-radius: 13px;
+    padding: 13px 14px 11px 14px;
+    display: flex;
+    flex-direction: column;
+    box-shadow:
+      0 1px 0 rgba(255,255,255,0.8) inset,
+      0 6px 16px -8px rgba(48,38,24,0.22);
+    position: relative;
+  }
+  .card.selected {
+    border-color: #9a3b2e;
+    box-shadow:
+      0 0 0 3px rgba(154,59,46,0.18),
+      0 8px 20px -8px rgba(48,38,24,0.30);
+  }
+
+  .card-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 9px;
+  }
+  .src {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    color: #8a7d68;
+    font-weight: 600;
+  }
+  .src .glyph {
+    width: 15px; height: 15px;
+    border-radius: 4px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 9px; color: #fff; font-weight: 700;
+  }
+  .pin {
+    font-size: 11px;
+    color: #9a3b2e;
+    display: flex; align-items: center; gap: 3px;
+  }
+
+  .content {
+    flex: 1;
+    font-size: 13px;
+    line-height: 1.42;
+    color: #2b2218;
+    overflow: hidden;
+  }
+  .content.mono {
+    font-family: "SF Mono", "JetBrains Mono", ui-monospace, Menlo, monospace;
+    font-size: 12px;
+    color: #3a3122;
+  }
+  .content .q {
+    font-style: italic;
+    color: #41372a;
+  }
+  .lnk { color: #4a5fb0; word-break: break-all; }
+
+  /* color swatch card */
+  .swatch {
+    height: 64px;
+    border-radius: 9px;
+    background: #6E8EFB;
+    box-shadow: inset 0 0 0 1px rgba(0,0,0,0.06);
+    margin-bottom: 9px;
+    display: flex; align-items: flex-end; justify-content: flex-end;
+    padding: 7px;
+  }
+  .swatch .hex {
+    font-family: "SF Mono", ui-monospace, Menlo, monospace;
+    font-size: 11px;
+    color: #fff;
+    background: rgba(20,20,40,0.32);
+    padding: 2px 6px;
+    border-radius: 5px;
+    letter-spacing: 0.5px;
+  }
+  .photo {
+    height: 78px;
+    border-radius: 9px;
+    margin-bottom: 9px;
+    background:
+      linear-gradient(135deg, #f6c177 0%, #e96b8b 40%, #8e6ad6 72%, #5a8fd6 100%);
+    box-shadow: inset 0 0 0 1px rgba(0,0,0,0.08);
+  }
+
+  .tags {
+    display: flex;
+    gap: 5px;
+    margin: 9px 0 8px 0;
+  }
+  .tag {
+    font-size: 10.5px;
+    color: #6c6049;
+    background: #efe9db;
+    border: 1px solid rgba(60,48,32,0.08);
+    padding: 2px 8px;
+    border-radius: 6px;
+    letter-spacing: 0.2px;
+  }
+
+  .card-foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 11px;
+    color: #9a8d76;
+    border-top: 1px solid rgba(60,48,32,0.08);
+    padding-top: 8px;
+    margin-top: auto;
+  }
+  .card-foot .num {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ---------- footer ---------- */
+  .footer {
+    display: flex;
+    align-items: center;
+    gap: 22px;
+    margin-top: 13px;
+    padding-top: 11px;
+    border-top: 1px solid rgba(60,48,32,0.10);
+  }
+  .hint {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 12px;
+    color: #6c6049;
+  }
+  .key {
+    font-family: "SF Mono", ui-monospace, Menlo, monospace;
+    font-size: 10.5px;
+    color: #463a28;
+    background: #f0ebde;
+    border: 1px solid rgba(60,48,32,0.16);
+    border-bottom-width: 2px;
+    border-radius: 6px;
+    padding: 2px 7px;
+    min-width: 22px;
+    text-align: center;
+  }
+  .foot-spacer { flex: 1; }
+  .count {
+    font-size: 11.5px;
+    color: #9a8d76;
+    letter-spacing: 0.4px;
+  }
+</style>
+</head>
+<body>
+  <div class="stage">
+    <div class="bar">
+
+      <!-- TOP BAR -->
+      <div class="topbar">
+        <div class="brand">
+          <span class="title serif">Ditto<span class="ink">.</span></span>
+          <span class="subtitle serif">Clipboard</span>
+        </div>
+
+        <div class="chips">
+          <span class="chip active">All</span>
+          <span class="chip">Pinned</span>
+          <span class="chip">Text</span>
+          <span class="chip">Links</span>
+          <span class="chip">Colors</span>
+          <span class="chip">Images</span>
+          <span class="chip">Files</span>
+        </div>
+
+        <div class="search">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+            <circle cx="6" cy="6" r="4.5" stroke="#9a3b2e" stroke-width="1.5"/>
+            <line x1="9.4" y1="9.4" x2="12.5" y2="12.5" stroke="#9a3b2e" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+          <span class="ph">Search clipboard</span>
+          <span class="caret"></span>
+        </div>
+      </div>
+
+      <!-- CARD STRIP -->
+      <div class="strip">
+
+        <!-- 1. Terminal / git -->
+        <div class="card">
+          <div class="card-head">
+            <span class="src"><span class="glyph" style="background:#2b2218;">&rsaquo;_</span>Terminal</span>
+          </div>
+          <div class="content mono">git&nbsp;commit&nbsp;-m&nbsp;"fix:&nbsp;debounce&nbsp;search"</div>
+          <div class="tags">
+            <span class="tag">shell</span>
+            <span class="tag">git</span>
+          </div>
+          <div class="card-foot"><span class="num">38 chars</span><span>2m</span></div>
+        </div>
+
+        <!-- 2. Safari / link -->
+        <div class="card">
+          <div class="card-head">
+            <span class="src"><span class="glyph" style="background:#3b86d6;">S</span>Safari</span>
+          </div>
+          <div class="content"><span class="lnk">github.com/AntreasAntoniou/ditto</span></div>
+          <div class="tags">
+            <span class="tag">url</span>
+            <span class="tag">repository</span>
+          </div>
+          <div class="card-foot"><span class="num">41 chars</span><span>11m</span></div>
+        </div>
+
+        <!-- 3. Mail / pinned -->
+        <div class="card">
+          <div class="card-head">
+            <span class="src"><span class="glyph" style="background:#2f9bd6;">@</span>Mail</span>
+            <span class="pin">
+              <svg width="11" height="11" viewBox="0 0 11 11" fill="#9a3b2e"><path d="M5.5 0.8l1.3 2.7 3 .4-2.2 2.1.5 3-2.6-1.4-2.6 1.4.5-3L1.2 3.9l3-.4z"/></svg>
+              Pinned
+            </span>
+          </div>
+          <div class="content"><span class="q">"Hi Cara — thank you, this is exactly the kind of thoughtful reply that makes a project fun to build."</span></div>
+          <div class="tags">
+            <span class="tag">email</span>
+            <span class="tag">message</span>
+          </div>
+          <div class="card-foot"><span class="num">98 chars</span><span>1h</span></div>
+        </div>
+
+        <!-- 4. Figma / color -->
+        <div class="card">
+          <div class="card-head">
+            <span class="src"><span class="glyph" style="background:#a259ff;">F</span>Figma</span>
+          </div>
+          <div class="swatch"><span class="hex">#6E8EFB</span></div>
+          <div class="content" style="flex:none; font-size:12px; color:#6c6049;">Periwinkle · solid fill</div>
+          <div class="card-foot" style="margin-top:auto;"><span class="num">7 chars</span><span>23m</span></div>
+        </div>
+
+        <!-- 5. Preview / image -->
+        <div class="card">
+          <div class="card-head">
+            <span class="src"><span class="glyph" style="background:#5a8fd6;">▦</span>Preview</span>
+          </div>
+          <div class="photo"></div>
+          <div class="content" style="flex:none; font-size:12px; color:#6c6049;">Screenshot · 2400×1600</div>
+          <div class="card-foot" style="margin-top:auto;"><span class="num">PNG · 1.8 MB</span><span>3h</span></div>
+        </div>
+
+        <!-- 6. TablePlus / SQL selected -->
+        <div class="card selected">
+          <div class="card-head">
+            <span class="src"><span class="glyph" style="background:#1f8a70;">⛁</span>TablePlus</span>
+          </div>
+          <div class="content mono">SELECT&nbsp;*&nbsp;FROM&nbsp;users&nbsp;WHERE&nbsp;active&nbsp;=&nbsp;1</div>
+          <div class="tags">
+            <span class="tag">sql</span>
+            <span class="tag">database</span>
+          </div>
+          <div class="card-foot"><span class="num">35 chars</span><span>5m</span></div>
+        </div>
+
+      </div>
+
+      <!-- FOOTER -->
+      <div class="footer">
+        <div class="hint"><span class="key">return</span> Paste</div>
+        <div class="hint"><span class="key">⌘C</span> Copy</div>
+        <div class="hint"><span class="key">delete</span> Delete</div>
+        <div class="hint"><span class="key">esc</span> Close</div>
+        <div class="foot-spacer"></div>
+        <div class="count serif">142 items · pinned first</div>
+      </div>
+
+    </div>
+  </div>
+</body>
+</html>

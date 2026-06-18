@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html,body { background:#0a0c10; }
+  body {
+    font-family:-apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  .bar {
+    position:relative;
+    width:1180px; height:620px;
+    background:
+      radial-gradient(1200px 500px at 20% -10%, rgba(110,142,251,.10), transparent 60%),
+      linear-gradient(180deg, #1d222b 0%, #161a21 100%);
+    border-radius:22px;
+    border:1px solid rgba(255,255,255,.07);
+    box-shadow:0 40px 90px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.06);
+    overflow:hidden;
+    display:flex; flex-direction:column;
+  }
+
+  /* ---------- HEADER ---------- */
+  .head {
+    display:flex; align-items:center; gap:22px;
+    padding:20px 26px 14px 26px;
+  }
+  .brand { display:flex; align-items:baseline; gap:10px; }
+  .brand .logo {
+    width:11px; height:11px; border-radius:3px;
+    background:linear-gradient(135deg,#6E8EFB,#5b7bf0);
+    box-shadow:0 0 0 3px rgba(110,142,251,.16);
+    transform:translateY(1px);
+  }
+  .brand h1 { color:#f3f5f9; font-size:19px; font-weight:700; letter-spacing:.2px; }
+  .brand .sub { color:#5b6personally; }
+  .brand .sub { color:#6a7384; font-size:12px; font-weight:500; }
+
+  .chips { display:flex; align-items:center; gap:7px; flex:1; }
+  .chip {
+    font-size:12.5px; font-weight:550; color:#9aa3b2;
+    padding:6px 12px; border-radius:999px;
+    background:rgba(255,255,255,.04);
+    border:1px solid rgba(255,255,255,.05);
+    white-space:nowrap;
+  }
+  .chip.active {
+    color:#fff;
+    background:linear-gradient(180deg,#6E8EFB,#5b7bf0);
+    border-color:transparent;
+    box-shadow:0 4px 14px rgba(110,142,251,.35);
+  }
+
+  .search {
+    display:flex; align-items:center; gap:9px;
+    width:248px; padding:9px 13px;
+    border-radius:11px;
+    background:rgba(10,12,17,.6);
+    border:1.5px solid #6E8EFB;
+    box-shadow:0 0 0 4px rgba(110,142,251,.18);
+  }
+  .search svg { flex:none; }
+  .search .ph { color:#aeb6c4; font-size:13.5px; }
+  .search .caret {
+    width:1.5px; height:15px; background:#6E8EFB; margin-left:-3px;
+    animation:none;
+  }
+
+  /* ---------- GRID ---------- */
+  .grid {
+    flex:1;
+    display:grid;
+    grid-template-columns:repeat(4, 1fr);
+    grid-template-rows:repeat(2, 1fr);
+    gap:18px 20px;
+    padding:6px 26px 8px 26px;
+  }
+
+  .card {
+    position:relative;
+    background:#f4f1ea;
+    border-radius:9px;
+    padding:8px 8px 0 8px;
+    display:flex; flex-direction:column;
+    box-shadow:0 14px 26px rgba(0,0,0,.40), 0 2px 4px rgba(0,0,0,.3);
+  }
+  .card.r1 { transform:rotate(-1.4deg); }
+  .card.r2 { transform:rotate(1.1deg); }
+  .card.r3 { transform:rotate(-.6deg); }
+  .card.r4 { transform:rotate(1.6deg); }
+
+  /* the "photo" area */
+  .photo {
+    position:relative;
+    flex:1;
+    border-radius:5px;
+    overflow:hidden;
+    min-height:0;
+    display:flex; flex-direction:column;
+    justify-content:flex-end;
+    padding:10px;
+  }
+  .srcpill {
+    position:absolute; top:8px; left:8px;
+    display:flex; align-items:center; gap:5px;
+    font-size:10px; font-weight:650; letter-spacing:.3px;
+    color:#fff;
+    padding:3px 8px; border-radius:999px;
+    background:rgba(0,0,0,.34);
+    backdrop-filter:blur(6px);
+    text-transform:uppercase;
+  }
+  .srcpill .dot { width:6px;height:6px;border-radius:50%; }
+
+  .photo .body {
+    color:#fff; font-size:12.5px; line-height:1.4; font-weight:540;
+    text-shadow:0 1px 3px rgba(0,0,0,.45);
+    display:-webkit-box; -webkit-line-clamp:4; -webkit-box-orient:vertical; overflow:hidden;
+  }
+  .photo .mono {
+    font-family:"SF Mono", ui-monospace, Menlo, monospace;
+    font-size:11.5px; letter-spacing:-.2px;
+  }
+
+  /* fills per type */
+  .fill-code { background:linear-gradient(160deg,#232a3a,#10141d); }
+  .fill-link { background:linear-gradient(160deg,#1f3a52,#15212f); }
+  .fill-mail { background:linear-gradient(160deg,#3a2f4f,#241b34); }
+  .fill-sql  { background:linear-gradient(160deg,#243b34,#13201c); }
+  .fill-color{ background:#6E8EFB; }
+  .fill-img  {
+    background:
+      radial-gradient(120% 100% at 0% 0%, #ffd16e 0%, transparent 45%),
+      radial-gradient(120% 120% at 100% 20%, #ff7eb3 0%, transparent 50%),
+      linear-gradient(135deg,#6E8EFB 0%, #9b6efb 55%, #4ec9d6 100%);
+  }
+
+  .color-hex {
+    color:#fff; font-family:"SF Mono", ui-monospace, monospace;
+    font-size:18px; font-weight:700; letter-spacing:.4px;
+    text-shadow:0 1px 4px rgba(0,0,0,.3);
+  }
+  .color-sub { color:rgba(255,255,255,.8); font-size:10px; font-weight:600; margin-top:2px; }
+
+  /* caption strip */
+  .caption {
+    padding:7px 4px 9px 4px;
+    display:flex; flex-direction:column; gap:6px;
+  }
+  .cap-tags { display:flex; gap:5px; }
+  .tag {
+    font-size:9.5px; font-weight:650; color:#5f6b86;
+    background:#e6e1d6; border-radius:5px; padding:2px 7px;
+    text-transform:lowercase; letter-spacing:.2px;
+  }
+  .cap-meta {
+    display:flex; align-items:center; justify-content:space-between;
+    font-size:10px; color:#9a9489; font-weight:550;
+  }
+  .cap-meta .src { font-weight:700; color:#3c4252; font-family:"SF Mono",ui-monospace,monospace; font-size:9.5px; letter-spacing:.2px; }
+
+  /* pinned */
+  .pin {
+    position:absolute; top:-7px; left:50%; transform:translateX(-50%);
+    width:15px; height:15px; border-radius:50%;
+    background:radial-gradient(circle at 35% 30%, #ffd98a, #c9962f 70%);
+    box-shadow:0 2px 5px rgba(0,0,0,.45), inset 0 1px 1px rgba(255,255,255,.6);
+    z-index:3;
+  }
+  .pin::after{
+    content:""; position:absolute; top:11px; left:50%; transform:translateX(-50%);
+    width:2px; height:6px; background:rgba(120,90,30,.5); border-radius:1px;
+  }
+
+  /* selected */
+  .card.selected {
+    transform:rotate(0deg) translateY(-6px) scale(1.02);
+    box-shadow:0 0 0 3px #6E8EFB, 0 24px 40px rgba(110,142,251,.35), 0 14px 26px rgba(0,0,0,.45);
+    z-index:4;
+  }
+  .card.selected .sel-badge {
+    position:absolute; top:-9px; right:-7px;
+    background:#6E8EFB; color:#fff; font-size:9px; font-weight:750;
+    padding:3px 8px; border-radius:999px; letter-spacing:.4px;
+    box-shadow:0 4px 10px rgba(110,142,251,.5);
+  }
+
+  /* ---------- FOOTER ---------- */
+  .foot {
+    display:flex; align-items:center; gap:22px;
+    padding:11px 28px 14px 28px;
+    border-top:1px solid rgba(255,255,255,.05);
+    background:linear-gradient(180deg, rgba(255,255,255,.012), rgba(0,0,0,.12));
+  }
+  .hint { display:flex; align-items:center; gap:8px; font-size:12px; color:#8a93a4; font-weight:520; }
+  .key {
+    font-family:"SF Mono", ui-monospace, monospace;
+    font-size:11px; color:#cfd6e3;
+    background:rgba(255,255,255,.06);
+    border:1px solid rgba(255,255,255,.09);
+    border-bottom-color:rgba(0,0,0,.35);
+    border-radius:6px; padding:3px 8px; min-width:22px; text-align:center;
+    box-shadow:0 1px 0 rgba(0,0,0,.25);
+  }
+  .foot .spacer { flex:1; }
+  .foot .count { font-size:11.5px; color:#5e6678; font-weight:550; }
+</style>
+</head>
+<body>
+  <div class="bar">
+
+    <!-- HEADER -->
+    <div class="head">
+      <div class="brand">
+        <span class="logo"></span>
+        <h1>Ditto</h1>
+        <span class="sub">pinboard</span>
+      </div>
+      <div class="chips">
+        <span class="chip active">All</span>
+        <span class="chip">Pinned</span>
+        <span class="chip">Text</span>
+        <span class="chip">Links</span>
+        <span class="chip">Colors</span>
+        <span class="chip">Images</span>
+        <span class="chip">Files</span>
+      </div>
+      <div class="search">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+          <circle cx="10.5" cy="10.5" r="6.5" stroke="#aeb6c4" stroke-width="2"/>
+          <line x1="15.5" y1="15.5" x2="21" y2="21" stroke="#aeb6c4" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+        <span class="ph">Search clipboard</span>
+        <span class="caret"></span>
+      </div>
+    </div>
+
+    <!-- GRID -->
+    <div class="grid">
+
+      <!-- 1. CODE / Terminal -->
+      <div class="card r1">
+        <div class="photo fill-code">
+          <div class="srcpill"><span class="dot" style="background:#3ddc84"></span>Terminal</div>
+          <div class="body mono">git commit -m "fix: debounce search"</div>
+        </div>
+        <div class="caption">
+          <div class="cap-tags"><span class="tag">shell</span><span class="tag">git</span></div>
+          <div class="cap-meta"><span class="src">zsh</span><span>38 chars · 2m</span></div>
+        </div>
+      </div>
+
+      <!-- 2. LINK / Safari -->
+      <div class="card r2">
+        <div class="photo fill-link">
+          <div class="srcpill"><span class="dot" style="background:#1fa2ff"></span>Safari</div>
+          <div class="body">github.com/AntreasAntoniou/ditto</div>
+        </div>
+        <div class="caption">
+          <div class="cap-tags"><span class="tag">url</span><span class="tag">repository</span></div>
+          <div class="cap-meta"><span class="src">https</span><span>43 chars · 6m</span></div>
+        </div>
+      </div>
+
+      <!-- 3. MAIL / pinned -->
+      <div class="card r3">
+        <div class="pin"></div>
+        <div class="photo fill-mail">
+          <div class="srcpill"><span class="dot" style="background:#a78bfa"></span>Mail</div>
+          <div class="body">Hi Cara — thank you, this is exactly the kind of thoughtful reply that makes a project fun to build.</div>
+        </div>
+        <div class="caption">
+          <div class="cap-tags"><span class="tag">email</span><span class="tag">message</span></div>
+          <div class="cap-meta"><span class="src">inbox</span><span>99 chars · 14m</span></div>
+        </div>
+      </div>
+
+      <!-- 4. COLOR / Figma -->
+      <div class="card r4">
+        <div class="photo fill-color">
+          <div class="srcpill"><span class="dot" style="background:#fff"></span>Figma</div>
+          <div class="color-hex">#6E8EFB</div>
+          <div class="color-sub">RGB 110 · 142 · 251</div>
+        </div>
+        <div class="caption">
+          <div class="cap-tags"><span class="tag" style="visibility:hidden">·</span></div>
+          <div class="cap-meta"><span class="src">swatch</span><span>7 chars · 22m</span></div>
+        </div>
+      </div>
+
+      <!-- 5. IMAGE / Preview -->
+      <div class="card r2">
+        <div class="photo fill-img">
+          <div class="srcpill"><span class="dot" style="background:#fff"></span>Preview</div>
+        </div>
+        <div class="caption">
+          <div class="cap-tags"><span class="tag">image</span></div>
+          <div class="cap-meta"><span class="src">photo.png</span><span>1.2 MP · 31m</span></div>
+        </div>
+      </div>
+
+      <!-- 6. SQL / TablePlus / selected -->
+      <div class="card r1 selected">
+        <span class="sel-badge">SELECTED</span>
+        <div class="photo fill-sql">
+          <div class="srcpill"><span class="dot" style="background:#34d399"></span>TablePlus</div>
+          <div class="body mono">SELECT * FROM users WHERE active = 1</div>
+        </div>
+        <div class="caption">
+          <div class="cap-tags"><span class="tag">sql</span><span class="tag">database</span></div>
+          <div class="cap-meta"><span class="src">query</span><span>36 chars · 44m</span></div>
+        </div>
+      </div>
+
+      <!-- 7. filler text card -->
+      <div class="card r3">
+        <div class="photo fill-code" style="background:linear-gradient(160deg,#2a2433,#16121d)">
+          <div class="srcpill"><span class="dot" style="background:#f59e0b"></span>Notes</div>
+          <div class="body">Pick up the lavender paint chips before the studio closes at 6.</div>
+        </div>
+        <div class="caption">
+          <div class="cap-tags"><span class="tag">note</span></div>
+          <div class="cap-meta"><span class="src">draft</span><span>61 chars · 1h</span></div>
+        </div>
+      </div>
+
+      <!-- 8. filler link card -->
+      <div class="card r4">
+        <div class="photo fill-link" style="background:linear-gradient(160deg,#1f4a44,#152b27)">
+          <div class="srcpill"><span class="dot" style="background:#10b981"></span>Chrome</div>
+          <div class="body">developer.apple.com/design/human-interface-guidelines</div>
+        </div>
+        <div class="caption">
+          <div class="cap-tags"><span class="tag">url</span><span class="tag">docs</span></div>
+          <div class="cap-meta"><span class="src">https</span><span>52 chars · 2h</span></div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- FOOTER -->
+    <div class="foot">
+      <div class="hint"><span class="key">return</span> Paste</div>
+      <div class="hint"><span class="key">&#8984;C</span> Copy</div>
+      <div class="hint"><span class="key">delete</span> Delete</div>
+      <div class="hint"><span class="key">esc</span> Close</div>
+      <div class="spacer" style="flex:1"></div>
+      <div class="count">8 of 240 clips · pinboard view</div>
+    </div>
+
+  </div>
+</body>
+</html>

@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html,body { margin:0; }
+  body {
+    font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",sans-serif;
+    -webkit-font-smoothing:antialiased;
+    background:#05070a;
+  }
+  .stage {
+    width:1180px; height:620px;
+    display:flex; align-items:center; justify-content:center;
+    background:
+      radial-gradient(120% 80% at 50% 120%, rgba(79,124,255,0.14), transparent 60%),
+      linear-gradient(180deg,#070a0f 0%, #04060a 100%);
+  }
+  .bar {
+    width:1132px; height:560px;
+    border-radius:22px;
+    background:linear-gradient(180deg, rgba(26,33,43,0.92) 0%, rgba(15,20,25,0.96) 100%);
+    backdrop-filter:blur(34px) saturate(160%);
+    border:1px solid rgba(255,255,255,0.07);
+    box-shadow:
+      0 40px 80px -20px rgba(0,0,0,0.7),
+      0 0 0 1px rgba(0,0,0,0.4),
+      inset 0 1px 0 rgba(255,255,255,0.06);
+    display:flex; flex-direction:column;
+    overflow:hidden;
+  }
+
+  /* ── Top row: title + search ── */
+  .top {
+    display:flex; align-items:center; justify-content:space-between;
+    padding:18px 22px 14px 24px;
+  }
+  .title-wrap { display:flex; align-items:center; gap:11px; }
+  .dot { width:11px; height:11px; border-radius:50%;
+    background:linear-gradient(135deg,#4f7cff,#7aa0ff);
+    box-shadow:0 0 12px rgba(79,124,255,0.6); }
+  .title { font-size:18px; font-weight:700; letter-spacing:-0.3px; color:#f2f5f9; }
+  .title .sub { font-size:11px; font-weight:500; color:#5d6b7d; margin-left:9px; letter-spacing:0.2px; }
+
+  .search {
+    display:flex; align-items:center; gap:9px;
+    width:288px; height:38px; padding:0 13px;
+    border-radius:11px;
+    background:rgba(8,11,16,0.7);
+    border:1.5px solid #4f7cff;
+    box-shadow:0 0 0 4px rgba(79,124,255,0.18), inset 0 1px 2px rgba(0,0,0,0.4);
+  }
+  .search svg { flex:0 0 auto; opacity:0.85; }
+  .search .ph { color:#7a8595; font-size:13.5px; }
+  .caret { width:1.5px; height:16px; background:#4f7cff; margin-left:1px;
+    box-shadow:0 0 6px rgba(79,124,255,0.8); }
+
+  /* ── KIND TABS (the spine) ── */
+  .tabs {
+    display:flex; align-items:stretch; gap:6px;
+    padding:0 20px 0 20px;
+    margin:2px 0 0 0;
+  }
+  .tab {
+    display:flex; align-items:center; gap:9px;
+    padding:11px 15px 12px 14px;
+    border-radius:12px 12px 0 0;
+    cursor:default;
+    position:relative;
+    border:1px solid transparent;
+    border-bottom:none;
+  }
+  .tab .ico { width:22px; height:22px; border-radius:7px;
+    display:flex; align-items:center; justify-content:center;
+    background:rgba(255,255,255,0.05); }
+  .tab .lbl { font-size:13.5px; font-weight:600; color:#8a96a6; letter-spacing:-0.1px; }
+  .tab .cnt { font-size:11px; font-weight:600; color:#5d6b7d;
+    background:rgba(255,255,255,0.05); padding:2px 7px; border-radius:20px; }
+
+  .tab.active {
+    background:linear-gradient(180deg, rgba(79,124,255,0.16), rgba(79,124,255,0.04));
+    border-color:rgba(79,124,255,0.32);
+    border-bottom:none;
+  }
+  .tab.active .lbl { color:#f2f5f9; }
+  .tab.active .ico { background:rgba(79,124,255,0.28); }
+  .tab.active .cnt { color:#bcd0ff; background:rgba(79,124,255,0.22); }
+  .tab.active::after {
+    content:""; position:absolute; left:0; right:0; bottom:-1px; height:2px;
+    background:#4f7cff; box-shadow:0 0 10px rgba(79,124,255,0.7);
+  }
+
+  /* divider line under the tab spine */
+  .spine-line { height:1px; background:linear-gradient(90deg,
+      transparent, rgba(255,255,255,0.09) 8%, rgba(255,255,255,0.09) 92%, transparent);
+    margin-top:0; }
+
+  /* ── Context header for active kind ── */
+  .ctx {
+    display:flex; align-items:center; justify-content:space-between;
+    padding:14px 24px 6px 24px;
+  }
+  .ctx .h { font-size:12.5px; font-weight:600; color:#c4cdd9; letter-spacing:0.1px; }
+  .ctx .h b { color:#f2f5f9; }
+  .ctx .meta { font-size:11.5px; color:#5d6b7d; font-weight:500; }
+
+  /* ── Card strip ── */
+  .strip {
+    display:flex; gap:13px;
+    padding:8px 24px 18px 24px;
+    overflow:hidden;
+    flex:1;
+  }
+  .card {
+    width:262px; flex:0 0 262px;
+    background:linear-gradient(180deg, rgba(255,255,255,0.045), rgba(255,255,255,0.018));
+    border:1px solid rgba(255,255,255,0.07);
+    border-radius:14px;
+    padding:13px 14px 11px 14px;
+    display:flex; flex-direction:column;
+    box-shadow:0 8px 20px -10px rgba(0,0,0,0.5);
+    position:relative;
+  }
+  .card.sel {
+    border-color:#4f7cff;
+    background:linear-gradient(180deg, rgba(79,124,255,0.14), rgba(79,124,255,0.04));
+    box-shadow:0 0 0 3px rgba(79,124,255,0.22), 0 10px 26px -8px rgba(0,0,0,0.6);
+  }
+  .c-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:9px; }
+  .app { display:flex; align-items:center; gap:7px; }
+  .app .badge { width:18px; height:18px; border-radius:5px; flex:0 0 auto;
+    display:flex; align-items:center; justify-content:center;
+    font-size:9px; font-weight:700; color:#fff; }
+  .app .name { font-size:11px; font-weight:600; color:#9aa6b6; letter-spacing:0.1px; }
+  .pin { display:flex; align-items:center; gap:4px;
+    font-size:9.5px; font-weight:700; color:#ffcd6b; letter-spacing:0.3px;
+    background:rgba(255,205,107,0.12); padding:2px 7px 2px 5px; border-radius:20px; }
+
+  .body { flex:1; min-height:84px; }
+  .code {
+    font-family:"SF Mono",ui-monospace,Menlo,monospace;
+    font-size:12px; line-height:1.5; color:#dbe2ec;
+    background:rgba(0,0,0,0.28); border-radius:8px; padding:9px 10px;
+    border:1px solid rgba(255,255,255,0.05);
+    white-space:pre-wrap; word-break:break-word;
+  }
+  .code .gr { color:#7aa0ff; }
+  .code .kw { color:#c792ea; }
+  .code .st { color:#9ad08a; }
+  .txt { font-size:12.5px; line-height:1.55; color:#cdd6e2;
+    display:-webkit-box; -webkit-line-clamp:4; -webkit-box-orient:vertical; overflow:hidden; }
+  .linkrow { display:flex; align-items:center; gap:8px;
+    background:rgba(0,0,0,0.24); border-radius:8px; padding:9px 10px;
+    border:1px solid rgba(255,255,255,0.05); }
+  .linkrow .fav { width:20px; height:20px; border-radius:6px; flex:0 0 auto;
+    background:linear-gradient(135deg,#2a2f3a,#1a1f28); display:flex; align-items:center; justify-content:center; }
+  .linkrow .url { font-size:11.5px; color:#7aa0ff; font-weight:500;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .swatch { height:84px; border-radius:9px; display:flex; align-items:flex-end;
+    padding:9px; border:1px solid rgba(255,255,255,0.08); }
+  .swatch .hex { font-family:"SF Mono",ui-monospace,Menlo,monospace;
+    font-size:13px; font-weight:600; color:#fff;
+    background:rgba(0,0,0,0.32); padding:3px 8px; border-radius:6px;
+    backdrop-filter:blur(4px); }
+  .photo { height:84px; border-radius:9px; border:1px solid rgba(255,255,255,0.08);
+    position:relative; overflow:hidden; }
+  .photo .lens { position:absolute; left:8px; bottom:8px;
+    font-size:9.5px; font-weight:600; color:#fff;
+    background:rgba(0,0,0,0.42); padding:2px 7px; border-radius:5px; backdrop-filter:blur(4px); }
+
+  .tags { display:flex; gap:6px; margin:10px 0 9px; }
+  .tag { font-size:10px; font-weight:600; color:#9aa6b6;
+    background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.05);
+    padding:2.5px 8px; border-radius:6px; letter-spacing:0.2px; }
+  .nogap { margin-top:auto; }
+
+  .c-foot { display:flex; align-items:center; justify-content:space-between;
+    border-top:1px solid rgba(255,255,255,0.05); padding-top:8px; margin-top:9px; }
+  .c-foot .cc { font-size:10.5px; color:#5d6b7d; font-weight:500; }
+  .c-foot .tm { font-size:10.5px; color:#5d6b7d; font-weight:600; }
+
+  /* ── Footer keyboard hints ── */
+  .foot {
+    display:flex; align-items:center; gap:20px;
+    padding:11px 24px;
+    border-top:1px solid rgba(255,255,255,0.06);
+    background:rgba(8,11,16,0.45);
+  }
+  .hint { display:flex; align-items:center; gap:7px; }
+  .key { font-size:10.5px; font-weight:700; color:#aeb9c8;
+    background:rgba(255,255,255,0.07); border:1px solid rgba(255,255,255,0.08);
+    border-bottom:1.5px solid rgba(0,0,0,0.4);
+    padding:3px 7px; border-radius:6px; min-width:20px; text-align:center;
+    font-family:"SF Mono",ui-monospace,Menlo,monospace; }
+  .hint .lbl { font-size:11.5px; color:#7a8595; font-weight:500; }
+  .foot .spacer { flex:1; }
+  .foot .count { font-size:11px; color:#5d6b7d; font-weight:500; }
+</style>
+</head>
+<body>
+<div class="stage">
+  <div class="bar">
+
+    <!-- TOP -->
+    <div class="top">
+      <div class="title-wrap">
+        <div class="dot"></div>
+        <div class="title">Ditto<span class="sub">clipboard history</span></div>
+      </div>
+      <div class="search">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+          <circle cx="7" cy="7" r="5" stroke="#7aa0ff" stroke-width="1.6"/>
+          <line x1="10.8" y1="10.8" x2="14" y2="14" stroke="#7aa0ff" stroke-width="1.6" stroke-linecap="round"/>
+        </svg>
+        <span class="ph">Search clipboard</span>
+        <div class="caret"></div>
+      </div>
+    </div>
+
+    <!-- KIND TABS SPINE -->
+    <div class="tabs">
+      <div class="tab active">
+        <div class="ico">
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><rect x="2" y="3" width="5" height="5" rx="1.4" fill="#bcd0ff"/><rect x="9" y="3" width="5" height="5" rx="1.4" fill="#bcd0ff"/><rect x="2" y="10" width="5" height="3.5" rx="1.4" fill="#bcd0ff"/><rect x="9" y="10" width="5" height="3.5" rx="1.4" fill="#bcd0ff"/></svg>
+        </div>
+        <span class="lbl">All</span><span class="cnt">6</span>
+      </div>
+      <div class="tab">
+        <div class="ico"><svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M8 2l1.6 3.4L13 6l-2.6 2.4.7 3.6L8 10.3 4.9 12l.7-3.6L3 6l3.4-.6L8 2z" fill="#8a96a6"/></svg></div>
+        <span class="lbl">Pinned</span><span class="cnt">1</span>
+      </div>
+      <div class="tab">
+        <div class="ico"><svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M3 4h10M3 8h10M3 12h6" stroke="#8a96a6" stroke-width="1.6" stroke-linecap="round"/></svg></div>
+        <span class="lbl">Text</span><span class="cnt">3</span>
+      </div>
+      <div class="tab">
+        <div class="ico"><svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M6.5 9.5a2.5 2.5 0 003.5 0l2-2a2.5 2.5 0 00-3.5-3.5l-1 1M9.5 6.5a2.5 2.5 0 00-3.5 0l-2 2a2.5 2.5 0 003.5 3.5l1-1" stroke="#8a96a6" stroke-width="1.4" stroke-linecap="round"/></svg></div>
+        <span class="lbl">Links</span><span class="cnt">1</span>
+      </div>
+      <div class="tab">
+        <div class="ico"><svg width="13" height="13" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="5.5" fill="none" stroke="#8a96a6" stroke-width="1.4"/><circle cx="8" cy="8" r="2" fill="#8a96a6"/></svg></div>
+        <span class="lbl">Colors</span><span class="cnt">1</span>
+      </div>
+      <div class="tab">
+        <div class="ico"><svg width="13" height="13" viewBox="0 0 16 16" fill="none"><rect x="2.5" y="3.5" width="11" height="9" rx="1.6" stroke="#8a96a6" stroke-width="1.4"/><circle cx="6" cy="6.5" r="1.1" fill="#8a96a6"/><path d="M3.5 11l3-3 2.5 2L11 8l1.5 1.5" stroke="#8a96a6" stroke-width="1.3" fill="none"/></svg></div>
+        <span class="lbl">Images</span><span class="cnt">1</span>
+      </div>
+      <div class="tab">
+        <div class="ico"><svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M4 2.5h5l3 3v8a.5.5 0 01-.5.5h-7a.5.5 0 01-.5-.5V3a.5.5 0 01.5-.5z" stroke="#8a96a6" stroke-width="1.3" fill="none"/><path d="M9 2.5V6h3" stroke="#8a96a6" stroke-width="1.3" fill="none"/></svg></div>
+        <span class="lbl">Files</span><span class="cnt">0</span>
+      </div>
+    </div>
+    <div class="spine-line"></div>
+
+    <!-- CONTEXT HEADER -->
+    <div class="ctx">
+      <div class="h">Showing <b>All clips</b> &nbsp;·&nbsp; newest first</div>
+      <div class="meta">6 items · updated just now</div>
+    </div>
+
+    <!-- CARD STRIP -->
+    <div class="strip">
+
+      <!-- 1: CODE -->
+      <div class="card">
+        <div class="c-head">
+          <div class="app"><div class="badge" style="background:linear-gradient(135deg,#3a3f4a,#23272f)">›_</div><span class="name">Terminal</span></div>
+        </div>
+        <div class="body">
+          <div class="code"><span class="gr">git</span> commit <span class="kw">-m</span> <span class="st">"fix: debounce search"</span></div>
+        </div>
+        <div class="tags"><span class="tag">shell</span><span class="tag">git</span></div>
+        <div class="c-foot"><span class="cc">38 chars</span><span class="tm">2m</span></div>
+      </div>
+
+      <!-- 2: LINK -->
+      <div class="card">
+        <div class="c-head">
+          <div class="app"><div class="badge" style="background:linear-gradient(135deg,#3478f6,#1f5fd6)">◎</div><span class="name">Safari</span></div>
+        </div>
+        <div class="body">
+          <div class="linkrow">
+            <div class="fav"><svg width="11" height="11" viewBox="0 0 16 16" fill="none"><path d="M6 11l4-6M5 9a2.5 2.5 0 010-3l1-1M11 7a2.5 2.5 0 010 3l-1 1" stroke="#7aa0ff" stroke-width="1.3" stroke-linecap="round"/></svg></div>
+            <span class="url">github.com/AntreasAntoniou/ditto</span>
+          </div>
+        </div>
+        <div class="tags"><span class="tag">url</span><span class="tag">repository</span></div>
+        <div class="c-foot"><span class="cc">42 chars</span><span class="tm">7m</span></div>
+      </div>
+
+      <!-- 3: PINNED TEXT -->
+      <div class="card">
+        <div class="c-head">
+          <div class="app"><div class="badge" style="background:linear-gradient(135deg,#4f9cf6,#2e7bd6)">✉</div><span class="name">Mail</span></div>
+          <span class="pin">★ PINNED</span>
+        </div>
+        <div class="body">
+          <div class="txt">"Hi Cara — thank you, this is exactly the kind of thoughtful reply that makes a project fun to build."</div>
+        </div>
+        <div class="tags"><span class="tag">email</span><span class="tag">message</span></div>
+        <div class="c-foot"><span class="cc">98 chars</span><span class="tm">1h</span></div>
+      </div>
+
+      <!-- 4: COLOR -->
+      <div class="card">
+        <div class="c-head">
+          <div class="app"><div class="badge" style="background:linear-gradient(135deg,#a259ff,#e0457b)">◆</div><span class="name">Figma</span></div>
+        </div>
+        <div class="body">
+          <div class="swatch" style="background:linear-gradient(135deg,#6E8EFB,#516bd8)">
+            <span class="hex">#6E8EFB</span>
+          </div>
+        </div>
+        <div class="nogap"></div>
+        <div class="c-foot"><span class="cc">7 chars</span><span class="tm">12m</span></div>
+      </div>
+
+      <!-- 5: IMAGE -->
+      <div class="card">
+        <div class="c-head">
+          <div class="app"><div class="badge" style="background:linear-gradient(135deg,#5a6170,#363b45)">▦</div><span class="name">Preview</span></div>
+        </div>
+        <div class="body">
+          <div class="photo" style="background:
+            radial-gradient(120% 120% at 20% 10%, #ff9a6b, transparent 55%),
+            radial-gradient(120% 120% at 90% 20%, #7a5cff, transparent 50%),
+            linear-gradient(135deg,#2f6df0,#13c2c2 60%,#7ce0a8)">
+            <span class="lens">photo · 2400×1600</span>
+          </div>
+        </div>
+        <div class="nogap"></div>
+        <div class="c-foot"><span class="cc">image · 1.4 MB</span><span class="tm">28m</span></div>
+      </div>
+
+      <!-- 6: SQL SELECTED -->
+      <div class="card sel">
+        <div class="c-head">
+          <div class="app"><div class="badge" style="background:linear-gradient(135deg,#2db4a0,#1c8f7e)">⛁</div><span class="name">TablePlus</span></div>
+        </div>
+        <div class="body">
+          <div class="code"><span class="kw">SELECT</span> * <span class="kw">FROM</span> users <span class="kw">WHERE</span> active = <span class="gr">1</span></div>
+        </div>
+        <div class="tags"><span class="tag">sql</span><span class="tag">database</span></div>
+        <div class="c-foot"><span class="cc">35 chars</span><span class="tm">just now</span></div>
+      </div>
+
+    </div>
+
+    <!-- FOOTER -->
+    <div class="foot">
+      <div class="hint"><span class="key">return</span><span class="lbl">Paste</span></div>
+      <div class="hint"><span class="key">⌘C</span><span class="lbl">Copy</span></div>
+      <div class="hint"><span class="key">delete</span><span class="lbl">Delete</span></div>
+      <div class="hint"><span class="key">esc</span><span class="lbl">Close</span></div>
+      <div class="spacer"></div>
+      <div class="count">TablePlus clip selected</div>
+    </div>
+
+  </div>
+</div>
+</body>
+</html>

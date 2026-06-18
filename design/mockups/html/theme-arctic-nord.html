@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<style>
+  :root{
+    --pn0:#2E3440; --pn1:#3B4252; --pn2:#434C5E; --pn3:#4C566A;
+    --ss0:#D8DEE9; --ss1:#E5E9F0; --ss2:#ECEFF4;
+    --fr0:#8FBCBB; --fr1:#88C0D0; --fr2:#81A1C1; --fr3:#5E81AC;
+    --mono:"SF Mono",ui-monospace,"JetBrains Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif;}
+  .stage{
+    width:1240px;height:360px;
+    background:
+      radial-gradient(120% 140% at 12% 0%, rgba(94,129,172,.16) 0%, rgba(46,52,64,0) 42%),
+      radial-gradient(140% 160% at 92% 100%, rgba(143,188,187,.12) 0%, rgba(46,52,64,0) 46%),
+      linear-gradient(180deg,#262b35 0%, #1f242d 100%);
+    display:flex;align-items:center;justify-content:center;
+  }
+  .bar{
+    width:1192px;height:312px;
+    border-radius:20px;
+    padding:18px 22px 14px;
+    display:flex;flex-direction:column;
+    background:
+      linear-gradient(180deg, rgba(59,66,82,.92) 0%, rgba(46,52,64,.96) 100%);
+    backdrop-filter:blur(28px) saturate(130%);
+    -webkit-backdrop-filter:blur(28px) saturate(130%);
+    border:1px solid rgba(143,188,187,.18);
+    box-shadow:
+      0 28px 60px -20px rgba(10,13,18,.7),
+      0 2px 0 0 rgba(216,222,233,.04) inset,
+      0 0 0 1px rgba(20,24,30,.6);
+  }
+  /* ---- header row ---- */
+  .head{display:flex;align-items:center;gap:16px;}
+  .brand{display:flex;align-items:center;gap:10px;}
+  .logo{
+    width:26px;height:26px;border-radius:8px;
+    background:linear-gradient(150deg,#88C0D0 0%,#5E81AC 100%);
+    box-shadow:0 2px 8px -2px rgba(94,129,172,.7), 0 0 0 1px rgba(143,188,187,.4) inset;
+    display:flex;align-items:center;justify-content:center;
+  }
+  .logo span{width:11px;height:11px;border-radius:3px;border:2px solid #ECEFF4;}
+  .brand h1{color:#ECEFF4;font-size:17px;font-weight:650;letter-spacing:.2px;}
+  .chips{display:flex;align-items:center;gap:7px;flex:1;}
+  .chip{
+    font-size:12px;font-weight:550;letter-spacing:.1px;
+    color:#9aa6bb;padding:5px 12px;border-radius:9px;
+    background:rgba(76,86,106,.28);
+    border:1px solid rgba(76,86,106,.0);
+    white-space:nowrap;
+  }
+  .chip.active{
+    color:#0f1622;
+    background:linear-gradient(180deg,#9fd0db 0%,#88C0D0 100%);
+    border:1px solid rgba(143,188,187,.7);
+    box-shadow:0 2px 10px -3px rgba(136,192,208,.7);
+  }
+  /* ---- search ---- */
+  .search{
+    display:flex;align-items:center;gap:9px;
+    width:264px;padding:8px 12px;border-radius:11px;
+    background:rgba(46,52,64,.85);
+    border:1.5px solid #88C0D0;
+    box-shadow:0 0 0 4px rgba(136,192,208,.22), 0 2px 8px -3px rgba(0,0,0,.5);
+  }
+  .search svg{flex:none;}
+  .search .ph{color:#7d8aa0;font-size:13px;}
+  .caret{width:1.5px;height:15px;background:#88C0D0;margin-left:1px;border-radius:1px;
+    box-shadow:0 0 6px rgba(136,192,208,.8);}
+  /* ---- card strip ---- */
+  .strip{
+    display:flex;gap:13px;flex:1;margin-top:16px;
+    overflow:hidden;align-items:stretch;
+  }
+  .card{
+    width:198px;flex:none;
+    background:linear-gradient(180deg,rgba(67,76,94,.55) 0%,rgba(59,66,82,.5) 100%);
+    border:1px solid rgba(76,86,106,.45);
+    border-radius:14px;
+    padding:12px 13px 10px;
+    display:flex;flex-direction:column;
+    box-shadow:0 6px 18px -10px rgba(10,13,18,.6);
+    position:relative;
+  }
+  .card.sel{
+    border:1.5px solid #88C0D0;
+    background:linear-gradient(180deg,rgba(94,129,172,.32) 0%,rgba(67,76,94,.5) 100%);
+    box-shadow:0 0 0 3px rgba(136,192,208,.25), 0 8px 22px -10px rgba(94,129,172,.6);
+  }
+  .csrc{display:flex;align-items:center;gap:6px;margin-bottom:9px;}
+  .dot{width:6px;height:6px;border-radius:50%;background:#81A1C1;box-shadow:0 0 0 2px rgba(129,161,193,.18);}
+  .csrc .name{color:#9aa6bb;font-size:10.5px;font-weight:600;letter-spacing:.5px;text-transform:uppercase;}
+  .pin{margin-left:auto;color:#88C0D0;font-size:11px;}
+  .body{flex:1;min-height:0;}
+  .mono{
+    font-family:var(--mono);font-size:12px;line-height:1.5;
+    color:#D8DEE9;
+    display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;
+  }
+  .mono .k{color:#81A1C1;}
+  .mono .s{color:#8FBCBB;}
+  .link{
+    font-family:var(--mono);font-size:12px;line-height:1.5;color:#8FBCBB;word-break:break-all;
+    display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;
+  }
+  .prose{
+    font-size:12.5px;line-height:1.5;color:#D8DEE9;
+    display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden;
+  }
+  .swatchwrap{display:flex;align-items:center;gap:11px;padding:4px 0 8px;}
+  .swatch{width:46px;height:46px;border-radius:11px;background:#6E8EFB;
+    box-shadow:0 0 0 1px rgba(236,239,244,.18) inset, 0 4px 12px -4px rgba(110,142,251,.7);}
+  .swatch-hex{font-family:var(--mono);font-size:15px;color:#ECEFF4;font-weight:600;letter-spacing:.4px;}
+  .swatch-sub{font-size:10.5px;color:#7d8aa0;margin-top:3px;letter-spacing:.4px;}
+  .photo{
+    flex:1;min-height:0;border-radius:10px;margin-bottom:8px;
+    background:
+      linear-gradient(135deg,#5E81AC 0%,#88C0D0 45%,#8FBCBB 72%,#81A1C1 100%);
+    box-shadow:0 0 0 1px rgba(236,239,244,.12) inset;
+  }
+  .tags{display:flex;gap:6px;margin-top:9px;}
+  .tag{
+    font-size:10px;font-weight:600;letter-spacing:.3px;
+    color:#aeb9cd;background:rgba(76,86,106,.4);
+    padding:3px 8px;border-radius:7px;border:1px solid rgba(94,129,172,.25);
+  }
+  .cfoot{
+    margin-top:9px;padding-top:8px;border-top:1px solid rgba(76,86,106,.4);
+    display:flex;justify-content:space-between;
+    font-size:10.5px;color:#727f95;letter-spacing:.2px;font-variant-numeric:tabular-nums;
+  }
+  /* ---- footer hints ---- */
+  .foot{
+    display:flex;align-items:center;gap:18px;margin-top:12px;padding-top:11px;
+    border-top:1px solid rgba(76,86,106,.4);
+  }
+  .hint{display:flex;align-items:center;gap:7px;color:#8a96ab;font-size:11.5px;letter-spacing:.2px;}
+  .key{
+    font-family:var(--mono);font-size:10.5px;color:#D8DEE9;
+    background:rgba(46,52,64,.9);border:1px solid rgba(76,86,106,.6);
+    border-bottom-width:2px;border-radius:6px;padding:2px 7px;min-width:20px;text-align:center;
+    box-shadow:0 1px 0 rgba(20,24,30,.5);
+  }
+  .spacer{flex:1;}
+  .count{font-size:11px;color:#727f95;letter-spacing:.3px;font-variant-numeric:tabular-nums;}
+</style>
+</head>
+<body>
+  <div class="stage">
+    <div class="bar">
+      <div class="head">
+        <div class="brand">
+          <div class="logo"><span></span></div>
+          <h1>Ditto</h1>
+        </div>
+        <div class="chips">
+          <div class="chip active">All</div>
+          <div class="chip">Pinned</div>
+          <div class="chip">Text</div>
+          <div class="chip">Links</div>
+          <div class="chip">Colors</div>
+          <div class="chip">Images</div>
+          <div class="chip">Files</div>
+        </div>
+        <div class="search">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#88C0D0" stroke-width="2.4" stroke-linecap="round">
+            <circle cx="10.5" cy="10.5" r="7"/><line x1="20" y1="20" x2="15.6" y2="15.6"/>
+          </svg>
+          <span class="ph">Search clipboard</span>
+          <span class="caret"></span>
+        </div>
+      </div>
+
+      <div class="strip">
+        <!-- 1 code -->
+        <div class="card">
+          <div class="csrc"><span class="dot"></span><span class="name">Terminal</span></div>
+          <div class="body">
+            <div class="mono"><span class="k">git</span> commit <span class="k">-m</span> <span class="s">"fix: debounce search"</span></div>
+          </div>
+          <div class="tags"><span class="tag">shell</span><span class="tag">git</span></div>
+          <div class="cfoot"><span>38 chars</span><span>2m</span></div>
+        </div>
+
+        <!-- 2 link -->
+        <div class="card">
+          <div class="csrc"><span class="dot" style="background:#88C0D0"></span><span class="name">Safari</span></div>
+          <div class="body">
+            <div class="link">https://github.com/AntreasAntoniou/ditto</div>
+          </div>
+          <div class="tags"><span class="tag">url</span><span class="tag">repository</span></div>
+          <div class="cfoot"><span>40 chars</span><span>8m</span></div>
+        </div>
+
+        <!-- 3 pinned text -->
+        <div class="card">
+          <div class="csrc"><span class="dot" style="background:#8FBCBB"></span><span class="name">Mail</span>
+            <span class="pin">&#9679; pinned</span></div>
+          <div class="body">
+            <div class="prose">Hi Cara — thank you, this is exactly the kind of thoughtful reply that makes a project fun to build.</div>
+          </div>
+          <div class="tags"><span class="tag">email</span><span class="tag">message</span></div>
+          <div class="cfoot"><span>97 chars</span><span>14m</span></div>
+        </div>
+
+        <!-- 4 color -->
+        <div class="card">
+          <div class="csrc"><span class="dot" style="background:#6E8EFB"></span><span class="name">Figma</span></div>
+          <div class="body">
+            <div class="swatchwrap">
+              <div class="swatch"></div>
+              <div><div class="swatch-hex">#6E8EFB</div><div class="swatch-sub">RGB 110 142 251</div></div>
+            </div>
+          </div>
+          <div class="cfoot"><span>7 chars</span><span>21m</span></div>
+        </div>
+
+        <!-- 5 image -->
+        <div class="card">
+          <div class="csrc"><span class="dot" style="background:#81A1C1"></span><span class="name">Preview</span></div>
+          <div class="photo"></div>
+          <div class="cfoot"><span>PNG · 1.4 MB</span><span>33m</span></div>
+        </div>
+
+        <!-- 6 sql selected -->
+        <div class="card sel">
+          <div class="csrc"><span class="dot" style="background:#88C0D0"></span><span class="name">TablePlus</span></div>
+          <div class="body">
+            <div class="mono"><span class="k">SELECT</span> * <span class="k">FROM</span> users <span class="k">WHERE</span> active <span class="s">= 1</span></div>
+          </div>
+          <div class="tags"><span class="tag">sql</span><span class="tag">database</span></div>
+          <div class="cfoot"><span>34 chars</span><span>41m</span></div>
+        </div>
+      </div>
+
+      <div class="foot">
+        <div class="hint"><span class="key">&#8629;</span> Paste</div>
+        <div class="hint"><span class="key">&#8984;C</span> Copy</div>
+        <div class="hint"><span class="key">&#9003;</span> Delete</div>
+        <div class="hint"><span class="key">esc</span> Close</div>
+        <div class="spacer"></div>
+        <div class="count">6 of 218 items</div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

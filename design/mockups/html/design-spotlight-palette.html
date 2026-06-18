@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Ditto — Command Palette</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html,body { margin:0; }
+  body {
+    font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif;
+    background:#05070c;
+    -webkit-font-smoothing:antialiased;
+  }
+  .bar {
+    width:1180px; height:680px; position:relative; overflow:hidden;
+    border-radius:18px;
+    background:linear-gradient(180deg,#161c2b 0%,#10131f 100%);
+    box-shadow:0 40px 90px rgba(0,0,0,.65),0 0 0 1px rgba(255,255,255,.05) inset;
+    display:flex; flex-direction:column;
+    color:#f2f4f8;
+  }
+
+  /* ---------- HEADER BAND ---------- */
+  .header {
+    padding:18px 22px 16px;
+    border-bottom:1px solid rgba(255,255,255,.05);
+    display:flex; flex-direction:column; gap:14px;
+    background:linear-gradient(180deg,rgba(255,255,255,.025),rgba(255,255,255,0));
+  }
+  .topline { display:flex; align-items:center; gap:16px; }
+  .wordmark { display:flex; align-items:center; gap:10px; }
+  .logo {
+    width:26px; height:26px; border-radius:8px;
+    background:linear-gradient(135deg,#4f7cff,#7d9bff);
+    box-shadow:0 2px 8px rgba(79,124,255,.5);
+    display:flex; align-items:center; justify-content:center;
+    font-size:14px; font-weight:700; color:#fff;
+  }
+  .wordmark .name { font-size:16px; font-weight:600; letter-spacing:.2px; }
+  .wordmark .sub { font-size:11px; color:#6f7890; font-weight:500; margin-top:1px; }
+
+  .chips { display:flex; gap:7px; margin-left:auto; }
+  .chip {
+    font-size:12px; font-weight:500; color:#9aa3b8;
+    padding:5px 11px; border-radius:8px;
+    background:rgba(255,255,255,.04);
+    border:1px solid rgba(255,255,255,.04);
+    white-space:nowrap;
+  }
+  .chip.active {
+    color:#fff; background:rgba(79,124,255,.18);
+    border:1px solid rgba(79,124,255,.45);
+    box-shadow:0 0 0 1px rgba(79,124,255,.15);
+  }
+
+  /* ---------- SEARCH FIELD ---------- */
+  .search {
+    display:flex; align-items:center; gap:11px;
+    height:46px; padding:0 16px;
+    border-radius:12px;
+    background:#0c0f18;
+    border:1px solid rgba(79,124,255,.7);
+    box-shadow:0 0 0 4px rgba(79,124,255,.18),0 2px 10px rgba(0,0,0,.3);
+  }
+  .search .mag {
+    width:17px; height:17px; flex:none;
+    border:2px solid #6f7890; border-radius:50%;
+    position:relative;
+  }
+  .search .mag:after {
+    content:""; position:absolute; width:2px; height:6px; background:#6f7890;
+    right:-3px; bottom:-3px; transform:rotate(-45deg); border-radius:2px;
+  }
+  .search .ph { font-size:15px; color:#aab2c6; font-weight:400; }
+  .search .caret {
+    width:1.5px; height:19px; background:#4f7cff;
+    animation:blink 1s step-end infinite; margin-left:1px;
+  }
+  @keyframes blink { 50%{opacity:0;} }
+  .search .count {
+    margin-left:auto; font-size:11.5px; color:#6f7890; font-weight:500;
+    background:rgba(255,255,255,.04); padding:3px 9px; border-radius:7px;
+  }
+
+  /* ---------- BODY SPLIT ---------- */
+  .body { flex:1; display:flex; min-height:0; }
+
+  /* result list */
+  .list {
+    width:58%; padding:10px 8px 10px 12px;
+    overflow:hidden; display:flex; flex-direction:column; gap:3px;
+    border-right:1px solid rgba(255,255,255,.05);
+  }
+  .row {
+    display:flex; align-items:flex-start; gap:12px;
+    padding:11px 12px; border-radius:11px; position:relative;
+    border:1px solid transparent;
+  }
+  .row.sel {
+    background:linear-gradient(90deg,rgba(79,124,255,.20),rgba(79,124,255,.07));
+    border:1px solid rgba(79,124,255,.5);
+    box-shadow:0 2px 12px rgba(79,124,255,.12);
+  }
+  .row.sel:before {
+    content:""; position:absolute; left:0; top:9px; bottom:9px; width:3px;
+    border-radius:3px; background:#4f7cff;
+  }
+
+  /* type icon */
+  .ico {
+    width:34px; height:34px; flex:none; border-radius:9px;
+    display:flex; align-items:center; justify-content:center;
+    font-size:13px; font-weight:700; color:#fff;
+    box-shadow:inset 0 0 0 1px rgba(255,255,255,.08);
+  }
+  .ico.code { background:linear-gradient(135deg,#2b3650,#1d2438); color:#9fb4ff; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; }
+  .ico.link { background:linear-gradient(135deg,#1c3a4a,#16303d); color:#5fd0e6; }
+  .ico.text { background:linear-gradient(135deg,#3a2f4d,#2b2440); color:#c4a9ff; }
+  .ico.color { background:#6E8EFB; color:#fff; box-shadow:inset 0 0 0 1px rgba(255,255,255,.25); }
+  .ico.img { background:linear-gradient(135deg,#ff7a59,#ffb24d 50%,#4f7cff); }
+  .ico.sql { background:linear-gradient(135deg,#23443a,#193428); color:#6fe3a8; }
+
+  .rmain { flex:1; min-width:0; display:flex; flex-direction:column; gap:3px; }
+  .rtop { display:flex; align-items:center; gap:8px; }
+  .src { font-size:10.5px; font-weight:600; letter-spacing:.4px; text-transform:uppercase; color:#7c86a0; }
+  .pin { font-size:10px; color:#ffb648; display:inline-flex; align-items:center; gap:3px; font-weight:600; }
+  .pin .dot { width:6px; height:6px; border-radius:50%; background:#ffb648; box-shadow:0 0 6px rgba(255,182,72,.6); }
+  .content {
+    font-size:13.5px; color:#e6eaf2; line-height:1.35;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  .content.mono { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12.5px; color:#cfd6e6; }
+  .content.swatchline { display:flex; align-items:center; gap:8px; }
+  .swatchline .sw { width:14px; height:14px; border-radius:4px; background:#6E8EFB; box-shadow:inset 0 0 0 1px rgba(255,255,255,.3); }
+  .rfoot { display:flex; align-items:center; gap:8px; margin-top:3px; }
+  .tags { display:flex; gap:5px; }
+  .tag {
+    font-size:10px; color:#9aa3b8; padding:2px 7px; border-radius:6px;
+    background:rgba(255,255,255,.05); font-weight:500;
+  }
+  .meta { font-size:10.5px; color:#5f6880; margin-left:auto; white-space:nowrap; }
+
+  /* ---------- PREVIEW PANE ---------- */
+  .preview {
+    width:42%; padding:18px 20px; display:flex; flex-direction:column; gap:14px;
+    background:linear-gradient(180deg,rgba(79,124,255,.04),rgba(0,0,0,0));
+  }
+  .pv-head { display:flex; align-items:center; gap:11px; }
+  .pv-ico {
+    width:40px; height:40px; border-radius:11px; flex:none;
+    background:linear-gradient(135deg,#23443a,#193428); color:#6fe3a8;
+    display:flex; align-items:center; justify-content:center;
+    font-size:15px; font-weight:700; box-shadow:inset 0 0 0 1px rgba(255,255,255,.08);
+  }
+  .pv-meta { display:flex; flex-direction:column; gap:2px; }
+  .pv-src { font-size:11px; font-weight:600; letter-spacing:.4px; text-transform:uppercase; color:#7c86a0; }
+  .pv-kind { font-size:14px; font-weight:600; color:#f2f4f8; }
+  .pv-card {
+    flex:1; border-radius:13px; padding:16px;
+    background:#0b0e16; border:1px solid rgba(255,255,255,.06);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.03);
+    overflow:hidden; position:relative;
+  }
+  .pv-code {
+    font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+    font-size:13.5px; line-height:1.7; color:#dfe6f5;
+    white-space:pre-wrap; word-break:break-word;
+  }
+  .pv-code .kw { color:#6fe3a8; }
+  .pv-code .star { color:#ff9e64; }
+  .pv-code .tbl { color:#9fb4ff; }
+  .pv-code .num { color:#ffb648; }
+  .pv-tagrow { display:flex; gap:6px; flex-wrap:wrap; }
+  .pv-tag {
+    font-size:11px; color:#c2cae0; padding:4px 10px; border-radius:8px;
+    background:rgba(79,124,255,.14); border:1px solid rgba(79,124,255,.25); font-weight:500;
+  }
+  .pv-stats { display:flex; gap:18px; }
+  .pv-stat { display:flex; flex-direction:column; gap:2px; }
+  .pv-stat .v { font-size:15px; font-weight:600; color:#eef1f8; }
+  .pv-stat .l { font-size:10.5px; color:#5f6880; text-transform:uppercase; letter-spacing:.5px; }
+
+  /* ---------- FOOTER ---------- */
+  .footer {
+    height:42px; flex:none; display:flex; align-items:center; gap:20px;
+    padding:0 22px; border-top:1px solid rgba(255,255,255,.05);
+    background:rgba(0,0,0,.2);
+  }
+  .hint { display:flex; align-items:center; gap:7px; font-size:11.5px; color:#8a94a8; }
+  .key {
+    min-width:20px; height:20px; padding:0 6px; border-radius:6px;
+    background:rgba(255,255,255,.07); border:1px solid rgba(255,255,255,.08);
+    display:inline-flex; align-items:center; justify-content:center;
+    font-size:11px; color:#cfd6e6; font-weight:600;
+    box-shadow:0 1px 0 rgba(0,0,0,.3);
+  }
+  .fspacer { margin-left:auto; font-size:11px; color:#4f586e; }
+</style>
+</head>
+<body>
+  <div class="bar">
+
+    <!-- HEADER -->
+    <div class="header">
+      <div class="topline">
+        <div class="wordmark">
+          <div class="logo">D</div>
+          <div>
+            <div class="name">Ditto</div>
+            <div class="sub">Clipboard History</div>
+          </div>
+        </div>
+        <div class="chips">
+          <span class="chip active">All</span>
+          <span class="chip">Pinned</span>
+          <span class="chip">Text</span>
+          <span class="chip">Links</span>
+          <span class="chip">Colors</span>
+          <span class="chip">Images</span>
+          <span class="chip">Files</span>
+        </div>
+      </div>
+
+      <!-- SEARCH (focused) -->
+      <div class="search">
+        <span class="mag"></span>
+        <span class="ph">Search clipboard</span>
+        <span class="caret"></span>
+        <span class="count">6 results</span>
+      </div>
+    </div>
+
+    <!-- BODY -->
+    <div class="body">
+
+      <!-- RESULT LIST -->
+      <div class="list">
+
+        <!-- 1 CODE -->
+        <div class="row">
+          <div class="ico code"></></div>
+          <div class="rmain">
+            <div class="rtop"><span class="src">Terminal</span></div>
+            <div class="content mono">git commit -m "fix: debounce search"</div>
+            <div class="rfoot">
+              <div class="tags"><span class="tag">shell</span><span class="tag">git</span></div>
+              <span class="meta">38 chars · 2m</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 2 LINK -->
+        <div class="row">
+          <div class="ico link">↗</div>
+          <div class="rmain">
+            <div class="rtop"><span class="src">Safari</span></div>
+            <div class="content">github.com/AntreasAntoniou/ditto</div>
+            <div class="rfoot">
+              <div class="tags"><span class="tag">url</span><span class="tag">repository</span></div>
+              <span class="meta">42 chars · 14m</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 3 TEXT pinned -->
+        <div class="row">
+          <div class="ico text">¶</div>
+          <div class="rmain">
+            <div class="rtop"><span class="src">Mail</span><span class="pin"><span class="dot"></span>Pinned</span></div>
+            <div class="content">Hi Cara — thank you, this is exactly the kind of thoughtful reply…</div>
+            <div class="rfoot">
+              <div class="tags"><span class="tag">email</span><span class="tag">message</span></div>
+              <span class="meta">118 chars · 1h</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 4 COLOR -->
+        <div class="row">
+          <div class="ico color">◆</div>
+          <div class="rmain">
+            <div class="rtop"><span class="src">Figma</span></div>
+            <div class="content swatchline"><span class="sw"></span>#6E8EFB</div>
+            <div class="rfoot">
+              <span class="meta">7 chars · 3h</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 5 IMAGE -->
+        <div class="row">
+          <div class="ico img"></div>
+          <div class="rmain">
+            <div class="rtop"><span class="src">Preview</span></div>
+            <div class="content">Screenshot — 2048 × 1280 PNG</div>
+            <div class="rfoot">
+              <span class="meta">1.4 MB · 5h</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 6 SQL selected -->
+        <div class="row sel">
+          <div class="ico sql">▤</div>
+          <div class="rmain">
+            <div class="rtop"><span class="src">TablePlus</span></div>
+            <div class="content mono">SELECT * FROM users WHERE active = 1</div>
+            <div class="rfoot">
+              <div class="tags"><span class="tag">sql</span><span class="tag">database</span></div>
+              <span class="meta">36 chars · 6h</span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- PREVIEW PANE (highlighted = SQL clip) -->
+      <div class="preview">
+        <div class="pv-head">
+          <div class="pv-ico">▤</div>
+          <div class="pv-meta">
+            <span class="pv-src">TablePlus</span>
+            <span class="pv-kind">SQL Query</span>
+          </div>
+        </div>
+
+        <div class="pv-card">
+          <div class="pv-code"><span class="kw">SELECT</span> <span class="star">*</span>
+<span class="kw">FROM</span> <span class="tbl">users</span>
+<span class="kw">WHERE</span> active <span class="kw">=</span> <span class="num">1</span></div>
+        </div>
+
+        <div class="pv-tagrow">
+          <span class="pv-tag">sql</span>
+          <span class="pv-tag">database</span>
+        </div>
+
+        <div class="pv-stats">
+          <div class="pv-stat"><span class="v">36</span><span class="l">Characters</span></div>
+          <div class="pv-stat"><span class="v">1</span><span class="l">Line</span></div>
+          <div class="pv-stat"><span class="v">6h ago</span><span class="l">Copied</span></div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- FOOTER -->
+    <div class="footer">
+      <div class="hint"><span class="key">return</span> Paste</div>
+      <div class="hint"><span class="key">⌘C</span> Copy</div>
+      <div class="hint"><span class="key">delete</span> Delete</div>
+      <div class="hint"><span class="key">esc</span> Close</div>
+      <span class="fspacer">↑ ↓ to navigate</span>
+    </div>
+
+  </div>
+</body>
+</html>

@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    margin:0;
+    font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif;
+    -webkit-font-smoothing:antialiased;
+    background:#0a0b0e;
+  }
+  .bar {
+    position:relative;
+    width:1180px; height:520px;
+    background:linear-gradient(180deg,#1b1e25 0%,#15171c 100%);
+    border-radius:22px;
+    border:1px solid rgba(255,255,255,0.08);
+    box-shadow:0 40px 90px rgba(0,0,0,0.6), 0 0 0 1px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.06);
+    overflow:hidden;
+    display:flex; flex-direction:column;
+    color:#f4f6fb;
+  }
+
+  /* ---------- HEADER ---------- */
+  .header {
+    display:flex; align-items:center; gap:18px;
+    padding:18px 22px 16px;
+    border-bottom:1px solid rgba(255,255,255,0.06);
+  }
+  .brand { display:flex; align-items:center; gap:10px; flex-shrink:0; }
+  .brand .dot {
+    width:11px; height:11px; border-radius:50%;
+    background:linear-gradient(135deg,#5b8cff,#3a63d8);
+    box-shadow:0 0 10px rgba(91,140,255,0.6);
+  }
+  .brand .title { font-size:16px; font-weight:700; letter-spacing:0.2px; }
+
+  .chips { display:flex; align-items:center; gap:7px; flex:1; overflow:hidden; }
+  .chip {
+    font-size:12.5px; font-weight:500; color:#9aa3b2;
+    padding:6px 12px; border-radius:8px;
+    white-space:nowrap;
+    border:1px solid transparent;
+  }
+  .chip.active {
+    color:#eaf0ff; background:rgba(91,140,255,0.16);
+    border:1px solid rgba(91,140,255,0.4);
+  }
+
+  .search {
+    flex-shrink:0;
+    display:flex; align-items:center; gap:9px;
+    width:270px;
+    padding:9px 13px;
+    background:rgba(10,11,14,0.7);
+    border-radius:10px;
+    border:1.5px solid #5b8cff;
+    box-shadow:0 0 0 3px rgba(91,140,255,0.22);
+  }
+  .search svg { flex-shrink:0; }
+  .search .ph { color:#8a93a3; font-size:13px; }
+  .caret {
+    width:1.5px; height:15px; background:#5b8cff;
+    margin-left:-3px;
+  }
+
+  /* ---------- BODY ---------- */
+  .body { flex:1; display:flex; min-height:0; }
+
+  /* PREVIEW (spotlight) */
+  .preview {
+    flex:1; min-width:0;
+    padding:22px 24px;
+    display:flex; flex-direction:column;
+    border-right:1px solid rgba(255,255,255,0.06);
+  }
+  .pv-top { display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; }
+  .pv-src { display:flex; align-items:center; gap:10px; }
+  .pv-appicon {
+    width:30px; height:30px; border-radius:8px;
+    background:linear-gradient(135deg,#3a3f4b,#262a33);
+    border:1px solid rgba(255,255,255,0.08);
+    display:flex; align-items:center; justify-content:center;
+    font-size:14px;
+  }
+  .pv-srcmeta .name { font-size:13.5px; font-weight:600; color:#eef2f9; }
+  .pv-srcmeta .kind { font-size:11px; color:#7f8895; margin-top:1px; letter-spacing:0.4px; text-transform:uppercase; }
+  .pv-badge {
+    font-size:11px; font-weight:600; color:#bcd0ff;
+    background:rgba(91,140,255,0.15);
+    border:1px solid rgba(91,140,255,0.35);
+    padding:5px 11px; border-radius:20px;
+  }
+
+  .pv-content {
+    flex:1;
+    background:#0d0f13;
+    border:1px solid rgba(255,255,255,0.07);
+    border-radius:14px;
+    padding:24px 26px;
+    display:flex; flex-direction:column; justify-content:center;
+    overflow:hidden;
+    position:relative;
+  }
+  .pv-content::before {
+    content:""; position:absolute; left:0; top:0; bottom:0; width:3px;
+    background:linear-gradient(180deg,#5b8cff,#3a63d8);
+  }
+  .pv-code {
+    font-family:"SF Mono",ui-monospace,Menlo,monospace;
+    font-size:21px; line-height:1.5; color:#e8ecf4;
+    letter-spacing:0.2px;
+  }
+  .pv-code .kw { color:#5b8cff; font-weight:600; }
+  .pv-code .num { color:#e0a458; }
+
+  .pv-bottom { display:flex; align-items:center; justify-content:space-between; margin-top:16px; }
+  .pv-tags { display:flex; gap:8px; }
+  .pv-tag {
+    font-size:12px; color:#aeb6c4;
+    background:rgba(255,255,255,0.05);
+    border:1px solid rgba(255,255,255,0.08);
+    padding:5px 11px; border-radius:7px;
+  }
+  .pv-meta { font-size:12px; color:#7f8895; }
+  .pv-meta b { color:#aeb6c4; font-weight:600; }
+
+  .pv-actions { display:flex; gap:9px; margin-top:16px; }
+  .pv-action {
+    flex:1;
+    display:flex; align-items:center; justify-content:center; gap:7px;
+    font-size:12.5px; font-weight:600;
+    padding:10px; border-radius:10px;
+  }
+  .pv-action.primary { background:#5b8cff; color:#fff; box-shadow:0 4px 14px rgba(91,140,255,0.35); }
+  .pv-action.ghost { background:rgba(255,255,255,0.05); color:#c4ccd9; border:1px solid rgba(255,255,255,0.08); }
+  .pv-action .k {
+    font-size:10.5px; padding:2px 6px; border-radius:5px;
+    background:rgba(0,0,0,0.25); color:rgba(255,255,255,0.85);
+  }
+  .pv-action.ghost .k { background:rgba(255,255,255,0.07); color:#9aa3b2; }
+
+  /* RAIL */
+  .rail {
+    width:328px; flex-shrink:0;
+    display:flex; flex-direction:column;
+    background:rgba(0,0,0,0.18);
+  }
+  .rail-head {
+    display:flex; align-items:center; justify-content:space-between;
+    padding:16px 18px 10px;
+  }
+  .rail-head .lbl { font-size:11px; font-weight:600; letter-spacing:0.8px; text-transform:uppercase; color:#7f8895; }
+  .rail-head .cnt { font-size:11px; color:#6b7382; }
+  .rail-list {
+    flex:1; overflow:hidden;
+    padding:0 12px 12px;
+    display:flex; flex-direction:column; gap:8px;
+    position:relative;
+  }
+
+  .clip {
+    position:relative;
+    padding:11px 13px;
+    border-radius:11px;
+    background:rgba(255,255,255,0.035);
+    border:1px solid rgba(255,255,255,0.06);
+    cursor:default;
+  }
+  .clip.selected {
+    background:rgba(91,140,255,0.14);
+    border:1px solid rgba(91,140,255,0.55);
+    box-shadow:0 0 0 1px rgba(91,140,255,0.25), 0 6px 18px rgba(0,0,0,0.3);
+  }
+  .clip-top { display:flex; align-items:center; gap:7px; margin-bottom:6px; }
+  .clip-app { font-size:10.5px; font-weight:600; letter-spacing:0.3px; color:#8a93a3; text-transform:uppercase; }
+  .clip.selected .clip-app { color:#aac4ff; }
+  .clip-pin {
+    margin-left:auto; font-size:10px; color:#e0a458;
+    display:flex; align-items:center; gap:3px;
+  }
+  .clip-time { margin-left:auto; font-size:10.5px; color:#6b7382; }
+  .clip-body {
+    font-size:12.5px; line-height:1.35; color:#cdd4e0;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  .clip-body.mono { font-family:"SF Mono",ui-monospace,Menlo,monospace; font-size:11.5px; color:#c2cad8; }
+  .clip-body.two {
+    white-space:normal;
+    display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical;
+  }
+  .clip-foot { display:flex; align-items:center; gap:7px; margin-top:7px; }
+  .clip-tag {
+    font-size:10px; color:#9aa3b2;
+    background:rgba(255,255,255,0.05);
+    padding:2px 7px; border-radius:5px;
+  }
+  .clip.selected .clip-tag { background:rgba(91,140,255,0.18); color:#bcd0ff; }
+  .clip-meta { font-size:10px; color:#6b7382; margin-left:auto; }
+
+  .swatch-row { display:flex; align-items:center; gap:10px; }
+  .swatch { width:26px; height:26px; border-radius:7px; background:#6E8EFB; border:1px solid rgba(255,255,255,0.2); flex-shrink:0; }
+  .swatch-hex { font-family:"SF Mono",ui-monospace,Menlo,monospace; font-size:13px; color:#dfe4ee; }
+
+  .imgthumb {
+    width:100%; height:46px; border-radius:8px;
+    background:linear-gradient(120deg,#ff7a59 0%,#a85cff 45%,#5b8cff 100%);
+    margin-top:2px;
+  }
+
+  /* fade hint at bottom of rail to imply scroll */
+  .rail-list::after {
+    content:""; position:absolute; left:0; right:0; bottom:0; height:34px;
+    background:linear-gradient(180deg,rgba(20,22,27,0),rgba(18,20,25,0.95));
+    pointer-events:none;
+  }
+
+  /* ---------- FOOTER ---------- */
+  .footer {
+    display:flex; align-items:center; gap:20px;
+    padding:11px 22px;
+    border-top:1px solid rgba(255,255,255,0.06);
+    background:rgba(0,0,0,0.22);
+  }
+  .hint { display:flex; align-items:center; gap:7px; font-size:11.5px; color:#8a93a3; }
+  .key {
+    font-size:10.5px; min-width:18px; text-align:center;
+    padding:3px 7px; border-radius:6px;
+    background:rgba(255,255,255,0.07);
+    border:1px solid rgba(255,255,255,0.08);
+    color:#cdd4e0; font-weight:600;
+  }
+  .footer .spacer { flex:1; }
+  .footer .count { font-size:11.5px; color:#6b7382; }
+</style>
+</head>
+<body>
+  <div class="bar">
+
+    <!-- HEADER -->
+    <div class="header">
+      <div class="brand">
+        <div class="dot"></div>
+        <div class="title">Ditto</div>
+      </div>
+      <div class="chips">
+        <div class="chip active">All</div>
+        <div class="chip">Pinned</div>
+        <div class="chip">Text</div>
+        <div class="chip">Links</div>
+        <div class="chip">Colors</div>
+        <div class="chip">Images</div>
+        <div class="chip">Files</div>
+      </div>
+      <div class="search">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+          <circle cx="6" cy="6" r="4.3" stroke="#8a93a3" stroke-width="1.5"/>
+          <line x1="9.4" y1="9.4" x2="12.5" y2="12.5" stroke="#8a93a3" stroke-width="1.5" stroke-linecap="round"/>
+        </svg>
+        <span class="ph">Search clipboard</span>
+        <div class="caret"></div>
+      </div>
+    </div>
+
+    <!-- BODY -->
+    <div class="body">
+
+      <!-- PREVIEW / SPOTLIGHT -->
+      <div class="preview">
+        <div class="pv-top">
+          <div class="pv-src">
+            <div class="pv-appicon">&#9636;</div>
+            <div class="pv-srcmeta">
+              <div class="name">TablePlus</div>
+              <div class="kind">SQL Query</div>
+            </div>
+          </div>
+          <div class="pv-badge">Selected</div>
+        </div>
+
+        <div class="pv-content">
+          <div class="pv-code"><span class="kw">SELECT</span> * <span class="kw">FROM</span> users <span class="kw">WHERE</span> active = <span class="num">1</span></div>
+        </div>
+
+        <div class="pv-bottom">
+          <div class="pv-tags">
+            <div class="pv-tag"># sql</div>
+            <div class="pv-tag"># database</div>
+          </div>
+          <div class="pv-meta"><b>38</b> characters &nbsp;·&nbsp; copied <b>just now</b></div>
+        </div>
+
+        <div class="pv-actions">
+          <div class="pv-action primary">Paste <span class="k">&#9166;</span></div>
+          <div class="pv-action ghost">Copy <span class="k">&#8984;C</span></div>
+          <div class="pv-action ghost">Delete <span class="k">&#9003;</span></div>
+        </div>
+      </div>
+
+      <!-- RAIL -->
+      <div class="rail">
+        <div class="rail-head">
+          <div class="lbl">History</div>
+          <div class="cnt">6 items</div>
+        </div>
+        <div class="rail-list">
+
+          <!-- clip 6 selected (mirror of preview) -->
+          <div class="clip selected">
+            <div class="clip-top">
+              <div class="clip-app">TablePlus</div>
+              <div class="clip-time">just now</div>
+            </div>
+            <div class="clip-body mono">SELECT * FROM users WHERE active = 1</div>
+            <div class="clip-foot">
+              <div class="clip-tag">sql</div>
+              <div class="clip-tag">database</div>
+              <div class="clip-meta">38 chars</div>
+            </div>
+          </div>
+
+          <!-- clip 1 -->
+          <div class="clip">
+            <div class="clip-top">
+              <div class="clip-app">Terminal</div>
+              <div class="clip-time">1m</div>
+            </div>
+            <div class="clip-body mono">git commit -m "fix: debounce search"</div>
+            <div class="clip-foot">
+              <div class="clip-tag">shell</div>
+              <div class="clip-tag">git</div>
+              <div class="clip-meta">37 chars</div>
+            </div>
+          </div>
+
+          <!-- clip 2 link -->
+          <div class="clip">
+            <div class="clip-top">
+              <div class="clip-app">Safari</div>
+              <div class="clip-time">3m</div>
+            </div>
+            <div class="clip-body">github.com/AntreasAntoniou/ditto</div>
+            <div class="clip-foot">
+              <div class="clip-tag">url</div>
+              <div class="clip-tag">repository</div>
+              <div class="clip-meta">42 chars</div>
+            </div>
+          </div>
+
+          <!-- clip 3 pinned -->
+          <div class="clip">
+            <div class="clip-top">
+              <div class="clip-app">Mail</div>
+              <div class="clip-pin">&#9733; Pinned</div>
+            </div>
+            <div class="clip-body two">Hi Cara — thank you, this is exactly the kind of thoughtful reply that makes a project fun to build.</div>
+            <div class="clip-foot">
+              <div class="clip-tag">email</div>
+              <div class="clip-tag">message</div>
+              <div class="clip-meta">99 chars</div>
+            </div>
+          </div>
+
+          <!-- clip 4 color -->
+          <div class="clip">
+            <div class="clip-top">
+              <div class="clip-app">Figma</div>
+              <div class="clip-time">8m</div>
+            </div>
+            <div class="swatch-row">
+              <div class="swatch"></div>
+              <div class="swatch-hex">#6E8EFB</div>
+            </div>
+          </div>
+
+          <!-- clip 5 image -->
+          <div class="clip">
+            <div class="clip-top">
+              <div class="clip-app">Preview</div>
+              <div class="clip-time">12m</div>
+            </div>
+            <div class="imgthumb"></div>
+          </div>
+
+        </div>
+      </div>
+
+    </div>
+
+    <!-- FOOTER -->
+    <div class="footer">
+      <div class="hint"><span class="key">&#9166;</span> Paste</div>
+      <div class="hint"><span class="key">&#8984;C</span> Copy</div>
+      <div class="hint"><span class="key">&#9003;</span> Delete</div>
+      <div class="hint"><span class="key">esc</span> Close</div>
+      <div class="spacer"></div>
+      <div class="count">&#8593;&#8595; navigate the rail</div>
+    </div>
+
+  </div>
+</body>
+</html>

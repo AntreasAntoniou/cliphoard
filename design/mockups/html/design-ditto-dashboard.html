@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Ditto — Dashboard</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  :root{
+    --bg:#0d111c;
+    --surface:#151a28;
+    --surface-2:#1b2233;
+    --surface-3:#222b40;
+    --line:rgba(255,255,255,.06);
+    --line-2:rgba(255,255,255,.10);
+    --txt:#f3f5fb;
+    --txt-2:#aab2c6;
+    --txt-3:#6f7891;
+    --accent:#6E8EFB;
+    --accent-2:#5B7CFA;
+    --accent-soft:rgba(110,142,251,.14);
+    --font:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif;
+    --mono:"SF Mono",ui-monospace,"JetBrains Mono",Menlo,monospace;
+  }
+  body{ margin:0; font-family:var(--font); background:#05070d; -webkit-font-smoothing:antialiased; }
+
+  .bar{
+    width:1200px; height:680px;
+    background:
+      radial-gradient(1100px 460px at 78% -10%, rgba(110,142,251,.10), transparent 60%),
+      linear-gradient(180deg,#11162400 0%, #0b0f19 100%),
+      var(--bg);
+    border-radius:18px;
+    border:1px solid var(--line-2);
+    box-shadow:0 40px 90px rgba(0,0,0,.55), 0 2px 0 rgba(255,255,255,.04) inset;
+    overflow:hidden;
+    display:grid;
+    grid-template-columns:222px 1fr;
+    grid-template-rows:1fr 46px;
+    color:var(--txt);
+  }
+
+  /* ============ SIDEBAR ============ */
+  .side{
+    grid-row:1 / 3;
+    background:linear-gradient(180deg, rgba(255,255,255,.018), transparent 40%), var(--surface);
+    border-right:1px solid var(--line);
+    padding:20px 14px 14px;
+    display:flex; flex-direction:column; gap:18px;
+  }
+  .brand{ display:flex; align-items:center; gap:10px; padding:2px 6px 4px; }
+  .logo{
+    width:26px; height:26px; border-radius:8px;
+    background:linear-gradient(150deg,var(--accent),#8aa1ff);
+    box-shadow:0 4px 14px rgba(110,142,251,.5), 0 0 0 1px rgba(255,255,255,.15) inset;
+    display:flex; align-items:center; justify-content:center;
+    font-weight:800; font-size:14px; color:#0c1020;
+  }
+  .brand .name{ font-size:16px; font-weight:700; letter-spacing:.2px; }
+  .brand .sub{ font-size:10.5px; color:var(--txt-3); margin-top:1px; letter-spacing:.3px; }
+
+  .sec-label{
+    font-size:10.5px; font-weight:700; letter-spacing:1.1px;
+    color:var(--txt-3); text-transform:uppercase; padding:0 8px 7px;
+  }
+  .kinds{ display:flex; flex-direction:column; gap:2px; }
+  .kind{
+    display:flex; align-items:center; gap:10px;
+    padding:7px 9px; border-radius:9px; cursor:default;
+    color:var(--txt-2); font-size:13px; font-weight:500;
+  }
+  .kind .ic{ width:16px; height:16px; flex:0 0 16px; display:flex; align-items:center; justify-content:center; opacity:.85; }
+  .kind .ct{ margin-left:auto; font-size:11px; color:var(--txt-3); font-variant-numeric:tabular-nums; }
+  .kind.active{ background:var(--accent-soft); color:#eaf0ff; box-shadow:0 0 0 1px rgba(110,142,251,.22) inset; }
+  .kind.active .ct{ color:var(--accent); }
+  .kind.active .ic{ opacity:1; }
+
+  .tags-wrap{ margin-top:2px; }
+  .tagcloud{ display:flex; flex-wrap:wrap; gap:6px; padding:2px 6px; }
+  .tg{
+    font-size:11px; padding:4px 9px; border-radius:7px;
+    background:var(--surface-2); color:var(--txt-2);
+    border:1px solid var(--line); font-weight:500;
+  }
+  .tg .dot{ display:inline-block; width:5px; height:5px; border-radius:50%; background:var(--accent); margin-right:5px; vertical-align:middle; opacity:.7; }
+
+  .side-foot{ margin-top:auto; padding:10px 8px 2px; border-top:1px solid var(--line); }
+  .storage{ font-size:10.5px; color:var(--txt-3); display:flex; justify-content:space-between; margin-bottom:6px; }
+  .bar-track{ height:4px; border-radius:4px; background:var(--surface-3); overflow:hidden; }
+  .bar-fill{ height:100%; width:42%; border-radius:4px; background:linear-gradient(90deg,var(--accent),#9fb2ff); }
+
+  /* ============ MAIN ============ */
+  .main{ padding:18px 22px 8px; overflow:hidden; display:flex; flex-direction:column; }
+
+  .topbar{ display:flex; align-items:center; gap:14px; margin-bottom:16px; }
+  .chips{ display:flex; gap:7px; align-items:center; flex-wrap:wrap; }
+  .chip{
+    font-size:12.5px; font-weight:500; color:var(--txt-2);
+    padding:6px 12px; border-radius:8px; background:var(--surface-2);
+    border:1px solid var(--line); white-space:nowrap;
+  }
+  .chip.active{
+    color:#0d1020; font-weight:650;
+    background:linear-gradient(180deg,#8aa1ff,var(--accent));
+    border-color:transparent;
+    box-shadow:0 4px 12px rgba(110,142,251,.35);
+  }
+  .chip .ic{ margin-right:4px; opacity:.7; }
+
+  .search{
+    margin-left:auto; position:relative; width:286px; flex:0 0 auto;
+  }
+  .search .field{
+    height:38px; border-radius:11px;
+    background:#0c1019;
+    border:1.5px solid var(--accent);
+    box-shadow:0 0 0 4px rgba(110,142,251,.20), 0 6px 16px rgba(0,0,0,.3);
+    display:flex; align-items:center; gap:9px; padding:0 13px;
+  }
+  .search svg{ flex:0 0 16px; color:var(--accent); }
+  .search .ph{ font-size:13px; color:var(--txt-2); }
+  .search .caret{
+    width:1.5px; height:17px; background:var(--accent); margin-left:1px;
+    animation:none;
+  }
+
+  .section-head{ display:flex; align-items:center; gap:9px; margin:0 2px 11px; }
+  .section-head .t{ font-size:12px; font-weight:700; letter-spacing:.8px; text-transform:uppercase; color:var(--txt-2); }
+  .section-head .pin-ic{ color:var(--accent); display:flex; }
+  .section-head .ct{ font-size:11px; color:var(--txt-3); margin-left:auto; }
+  .rule{ flex:1; height:1px; background:var(--line); }
+
+  /* ---- generic card ---- */
+  .card{
+    background:linear-gradient(180deg, rgba(255,255,255,.022), transparent 50%), var(--surface);
+    border:1px solid var(--line);
+    border-radius:13px; padding:12px 13px 11px;
+    display:flex; flex-direction:column; gap:9px;
+    position:relative;
+  }
+  .card .head{ display:flex; align-items:center; gap:7px; }
+  .app-badge{
+    width:18px; height:18px; border-radius:5px; flex:0 0 18px;
+    display:flex; align-items:center; justify-content:center;
+    font-size:9px; font-weight:800; color:#fff;
+    box-shadow:0 1px 3px rgba(0,0,0,.4) inset, 0 0 0 1px rgba(255,255,255,.12) inset;
+  }
+  .app-name{ font-size:11px; font-weight:600; color:var(--txt-2); }
+  .kind-pill{ margin-left:auto; font-size:9.5px; font-weight:700; letter-spacing:.5px; text-transform:uppercase; color:var(--txt-3); padding:2px 6px; border-radius:5px; background:var(--surface-2); border:1px solid var(--line); }
+
+  .body{ font-size:13px; line-height:1.5; color:var(--txt); }
+  .body.mono{ font-family:var(--mono); font-size:12px; background:#0b0e17; border:1px solid var(--line); padding:9px 10px; border-radius:8px; color:#cdd6ee; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+  .body.mono .kw{ color:var(--accent); }
+  .body.mono .str{ color:#7fd6a0; }
+  .body.clamp{ display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
+  .body.link{ color:#9fb2ff; }
+
+  .tags{ display:flex; gap:6px; }
+  .tag{ font-size:10.5px; color:var(--txt-2); padding:3px 8px; border-radius:6px; background:var(--surface-2); border:1px solid var(--line); }
+
+  .foot{ display:flex; align-items:center; gap:8px; font-size:10.5px; color:var(--txt-3); margin-top:auto; padding-top:2px; }
+  .foot .sep{ opacity:.4; }
+  .foot .time{ margin-left:auto; }
+
+  /* ---- pinned wide card ---- */
+  .pinned-card{
+    border-color:rgba(110,142,251,.28);
+    background:linear-gradient(180deg, rgba(110,142,251,.07), transparent 60%), var(--surface);
+    box-shadow:0 6px 22px rgba(0,0,0,.25);
+  }
+  .pinned-card .pin-flag{
+    position:absolute; top:11px; right:12px;
+    color:var(--accent); display:flex; align-items:center; gap:4px;
+    font-size:10px; font-weight:700; letter-spacing:.4px;
+  }
+  .pinned-card .body{ font-size:13.5px; line-height:1.55; color:#eef1fa; max-width:92%; }
+
+  /* ---- grid ---- */
+  .grid{ display:grid; grid-template-columns:repeat(3,1fr); gap:13px; }
+
+  /* selected card */
+  .card.selected{
+    border:1.5px solid var(--accent);
+    background:linear-gradient(180deg, rgba(110,142,251,.12), rgba(110,142,251,.04) 60%), var(--surface-2);
+    box-shadow:0 0 0 4px rgba(110,142,251,.16), 0 10px 26px rgba(0,0,0,.32);
+  }
+  .card.selected .sel-flag{
+    position:absolute; top:-9px; left:13px;
+    background:linear-gradient(180deg,#8aa1ff,var(--accent));
+    color:#0d1020; font-size:9.5px; font-weight:800; letter-spacing:.5px;
+    padding:2px 8px; border-radius:6px; box-shadow:0 3px 8px rgba(110,142,251,.45);
+  }
+
+  /* color card swatch */
+  .swatch{ height:54px; border-radius:9px; background:#6E8EFB; box-shadow:0 4px 14px rgba(110,142,251,.4), 0 0 0 1px rgba(255,255,255,.14) inset; display:flex; align-items:flex-end; padding:7px 9px; }
+  .swatch .hex{ font-family:var(--mono); font-size:12px; font-weight:700; color:#0c1020; background:rgba(255,255,255,.55); padding:2px 7px; border-radius:5px; }
+
+  /* image card */
+  .photo{ height:54px; border-radius:9px; background:linear-gradient(120deg,#ff7eb3,#ff8a5c 35%,#ffd86e 65%,#6be3c0); box-shadow:0 4px 14px rgba(0,0,0,.3), 0 0 0 1px rgba(255,255,255,.1) inset; position:relative; overflow:hidden; }
+  .photo:after{ content:""; position:absolute; inset:0; background:radial-gradient(60px 40px at 75% 25%, rgba(255,255,255,.45), transparent 70%); }
+
+  /* ============ FOOTER ============ */
+  .foot-bar{
+    grid-column:2 / 3;
+    border-top:1px solid var(--line);
+    background:linear-gradient(180deg, transparent, rgba(0,0,0,.18));
+    display:flex; align-items:center; gap:18px; padding:0 24px;
+  }
+  .hint{ display:flex; align-items:center; gap:7px; font-size:11.5px; color:var(--txt-3); }
+  .key{
+    font-family:var(--font); font-size:10.5px; font-weight:600; color:var(--txt-2);
+    background:var(--surface-3); border:1px solid var(--line-2);
+    border-radius:6px; padding:2px 7px; min-width:20px; text-align:center;
+    box-shadow:0 1.5px 0 rgba(0,0,0,.4);
+  }
+  .foot-bar .spacer{ margin-left:auto; }
+  .foot-bar .count{ font-size:11px; color:var(--txt-3); }
+</style>
+</head>
+<body>
+<div class="bar">
+
+  <!-- ===== SIDEBAR ===== -->
+  <aside class="side">
+    <div class="brand">
+      <div class="logo">D</div>
+      <div>
+        <div class="name">Ditto</div>
+        <div class="sub">Clipboard history</div>
+      </div>
+    </div>
+
+    <div class="tags-wrap">
+      <div class="sec-label">Kinds</div>
+      <div class="kinds">
+        <div class="kind active">
+          <span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></span>
+          All <span class="ct">218</span>
+        </div>
+        <div class="kind">
+          <span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M14 2l-1 7 5 4-5 1-1 8-2-8-5-1 5-4-1-7z" opacity=".0"/><path d="M16 3v7l3 2-7 1-1 8-1-8-7-1 3-2V3z" stroke="currentColor" stroke-width="2" fill="none"/></svg></span>
+          Pinned <span class="ct">4</span>
+        </div>
+        <div class="kind">
+          <span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="7" x2="19" y2="7"/><line x1="5" y1="12" x2="15" y2="12"/><line x1="5" y1="17" x2="17" y2="17"/></svg></span>
+          Text <span class="ct">126</span>
+        </div>
+        <div class="kind">
+          <span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 14a4 4 0 0 0 6 .5l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M15 10a4 4 0 0 0-6-.5l-3 3A4 4 0 0 0 11.7 18l1-1"/></svg></span>
+          Links <span class="ct">37</span>
+        </div>
+        <div class="kind">
+          <span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 0 0 18 3 3 0 0 0 0-6 1.5 1.5 0 0 1 0-3 3 3 0 0 0 0-6z"/></svg></span>
+          Colors <span class="ct">11</span>
+        </div>
+        <div class="kind">
+          <span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9.5" r="1.5"/><path d="M21 16l-5-5L5 20"/></svg></span>
+          Images <span class="ct">29</span>
+        </div>
+        <div class="kind">
+          <span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/></svg></span>
+          Files <span class="ct">15</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="tags-wrap">
+      <div class="sec-label">Tags</div>
+      <div class="tagcloud">
+        <span class="tg"><span class="dot"></span>git</span>
+        <span class="tg"><span class="dot"></span>shell</span>
+        <span class="tg"><span class="dot"></span>url</span>
+        <span class="tg"><span class="dot"></span>sql</span>
+        <span class="tg"><span class="dot"></span>email</span>
+        <span class="tg"><span class="dot"></span>repository</span>
+        <span class="tg"><span class="dot"></span>database</span>
+        <span class="tg"><span class="dot"></span>message</span>
+      </div>
+    </div>
+
+    <div class="side-foot">
+      <div class="storage"><span>Local storage</span><span>1.2 GB</span></div>
+      <div class="bar-track"><div class="bar-fill"></div></div>
+    </div>
+  </aside>
+
+  <!-- ===== MAIN ===== -->
+  <main class="main">
+
+    <!-- top bar -->
+    <div class="topbar">
+      <div class="chips">
+        <span class="chip active">All</span>
+        <span class="chip">Pinned</span>
+        <span class="chip">Text</span>
+        <span class="chip">Links</span>
+        <span class="chip">Colors</span>
+        <span class="chip">Images</span>
+        <span class="chip">Files</span>
+      </div>
+      <div class="search">
+        <div class="field">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="21" y2="21"/></svg>
+          <span class="ph">Search clipboard</span>
+          <span class="caret"></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- PINNED -->
+    <div class="section-head">
+      <span class="pin-ic"><svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M16 3v7l3 2-7 1-1 8-1-8-7-1 3-2V3z" stroke="currentColor" stroke-width="0"/></svg></span>
+      <span class="t">Pinned</span>
+      <div class="rule"></div>
+      <span class="ct">1 of 4</span>
+    </div>
+
+    <div class="card pinned-card" style="margin-bottom:18px;">
+      <div class="pin-flag">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M16 3v7l3 2-7 1-1 8-1-8-7-1 3-2V3z"/></svg>
+        PINNED
+      </div>
+      <div class="head">
+        <span class="app-badge" style="background:linear-gradient(150deg,#3b82f6,#1d4ed8);">M</span>
+        <span class="app-name">Mail</span>
+        <span class="kind-pill">Text</span>
+      </div>
+      <div class="body">“Hi Cara — thank you, this is exactly the kind of thoughtful reply that makes a project fun to build.”</div>
+      <div class="tags">
+        <span class="tag">email</span>
+        <span class="tag">message</span>
+      </div>
+      <div class="foot">
+        <span>118 chars</span><span class="sep">·</span><span>Mail</span>
+        <span class="time">12m</span>
+      </div>
+    </div>
+
+    <!-- RECENT -->
+    <div class="section-head">
+      <span class="t" style="color:var(--txt-3);">Recent</span>
+      <div class="rule"></div>
+      <span class="ct">5 shown</span>
+    </div>
+
+    <div class="grid">
+
+      <!-- 1 code/terminal -->
+      <div class="card">
+        <div class="head">
+          <span class="app-badge" style="background:linear-gradient(150deg,#2b2f38,#11141a);">›_</span>
+          <span class="app-name">Terminal</span>
+          <span class="kind-pill">Code</span>
+        </div>
+        <div class="body mono"><span class="kw">git</span> commit -m <span class="str">"fix: debounce search"</span></div>
+        <div class="tags">
+          <span class="tag">shell</span>
+          <span class="tag">git</span>
+        </div>
+        <div class="foot"><span>41 chars</span><span class="sep">·</span><span>Terminal</span><span class="time">2m</span></div>
+      </div>
+
+      <!-- 2 link/safari -->
+      <div class="card">
+        <div class="head">
+          <span class="app-badge" style="background:linear-gradient(150deg,#5eb3ff,#0a84ff);">S</span>
+          <span class="app-name">Safari</span>
+          <span class="kind-pill">Link</span>
+        </div>
+        <div class="body link" style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">github.com/AntreasAntoniou/ditto</div>
+        <div class="tags">
+          <span class="tag">url</span>
+          <span class="tag">repository</span>
+        </div>
+        <div class="foot"><span>42 chars</span><span class="sep">·</span><span>Safari</span><span class="time">8m</span></div>
+      </div>
+
+      <!-- 6 sql/tableplus SELECTED -->
+      <div class="card selected">
+        <span class="sel-flag">SELECTED</span>
+        <div class="head">
+          <span class="app-badge" style="background:linear-gradient(150deg,#34d399,#0f9e6e);">T+</span>
+          <span class="app-name">TablePlus</span>
+          <span class="kind-pill">Code</span>
+        </div>
+        <div class="body mono" style="background:#0a0e18;"><span class="kw">SELECT</span> * <span class="kw">FROM</span> users <span class="kw">WHERE</span> active = 1</div>
+        <div class="tags">
+          <span class="tag">sql</span>
+          <span class="tag">database</span>
+        </div>
+        <div class="foot"><span>39 chars</span><span class="sep">·</span><span>TablePlus</span><span class="time">15m</span></div>
+      </div>
+
+      <!-- 4 color/figma -->
+      <div class="card">
+        <div class="head">
+          <span class="app-badge" style="background:linear-gradient(150deg,#a259ff,#f24e1e);">F</span>
+          <span class="app-name">Figma</span>
+          <span class="kind-pill">Color</span>
+        </div>
+        <div class="swatch"><span class="hex">#6E8EFB</span></div>
+        <div class="foot"><span>RGB 110·142·251</span><span class="time">22m</span></div>
+      </div>
+
+      <!-- 5 image/preview -->
+      <div class="card">
+        <div class="head">
+          <span class="app-badge" style="background:linear-gradient(150deg,#9aa0a6,#5f6368);">P</span>
+          <span class="app-name">Preview</span>
+          <span class="kind-pill">Image</span>
+        </div>
+        <div class="photo"></div>
+        <div class="foot"><span>2048 × 1365</span><span class="sep">·</span><span>PNG</span><span class="time">31m</span></div>
+      </div>
+
+      <!-- filler hint card -->
+      <div class="card" style="align-items:center; justify-content:center; border-style:dashed; color:var(--txt-3); min-height:128px;">
+        <div style="text-align:center; font-size:11.5px; line-height:1.6;">
+          <div style="font-size:18px; margin-bottom:3px;">⌘V</div>
+          213 more in history
+        </div>
+      </div>
+
+    </div>
+  </main>
+
+  <!-- ===== FOOTER ===== -->
+  <div class="foot-bar">
+    <span class="hint"><span class="key">return</span> Paste</span>
+    <span class="hint"><span class="key">⌘C</span> Copy</span>
+    <span class="hint"><span class="key">delete</span> Delete</span>
+    <span class="hint"><span class="key">esc</span> Close</span>
+    <span class="spacer"></span>
+    <span class="count">218 clips · 4 pinned</span>
+  </div>
+
+</div>
+</body>
+</html>

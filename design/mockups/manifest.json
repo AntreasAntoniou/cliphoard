@@ -1,0 +1,222 @@
+[
+ {
+  "kind": "theme",
+  "name": "Midnight Glass",
+  "slug": "midnight-glass",
+  "file": "theme-midnight-glass",
+  "width": 1240,
+  "height": 360,
+  "summary": "Nocturnal deep-blue vibrancy glass with a single restrained cyan-neon accent; premium, focused, frosted-dark.",
+  "palette": "#0A0E1A bg \u00b7 #46E6D0 neon accent \u00b7 #0F1525 glass base \u00b7 rgba(255,255,255,.06) glass fill \u00b7 #E8ECF6 text \u00b7 #7E89A6 muted \u00b7 #6E8EFB color-chip",
+  "concept": "Deep blurred midnight glass with a single electric-cyan neon accent"
+ },
+ {
+  "kind": "theme",
+  "name": "Paper &amp; Ink",
+  "slug": "paper-ink",
+  "file": "theme-paper-ink",
+  "width": 1240,
+  "height": 360,
+  "summary": "A warm editorial light theme for Ditto: cream paper surfaces, ink-dark text, a single oxblood-red accent, and a serif wordmark/numerals for a calm, literary feel.",
+  "palette": "paper #fcfaf4 / #f6f2e8 \u00b7 ink #2b2218 \u00b7 muted ink #6c6049 \u00b7 accent oxblood #9a3b2e \u00b7 chip fill #efe9db \u00b7 link #4a5fb0 \u00b7 swatch #6E8EFB \u00b7 stage #cfc7b8",
+  "concept": "Paper &amp; Ink \u2014 a floating sheet of warm cream stationery with ink text and a single oxblood accent; serif voice for identity and numerals, sans for content, mono for code."
+ },
+ {
+  "kind": "theme",
+  "name": "Brutalist Mono",
+  "slug": "brutalist-mono",
+  "file": "theme-brutalist-mono",
+  "width": 1240,
+  "height": 360,
+  "summary": "A stark high-contrast brutalist clipboard bar: monospaced type, hard 2px black borders, flat off-white fills, no shadows or rounding, with a single acid-yellow accent for the active state.",
+  "palette": "#F2F0E9 paper \u00b7 #111111 ink \u00b7 #E8FF3A acid \u00b7 #8A8780 mute \u00b7 #D9D6CC line-fill \u00b7 #FFFFFF card",
+  "concept": "Raw structural brutalism \u2014 monospaced grid, hard borders, flat fills, one acid accent doing all the signaling work."
+ },
+ {
+  "kind": "theme",
+  "name": "Sunset Warmth",
+  "slug": "sunset-warmth",
+  "file": "theme-sunset-warmth",
+  "width": 1240,
+  "height": 360,
+  "summary": "Warm, inviting, dusk \u2014 coral-amber-peach gradients glowing on a soft dark-plum base.",
+  "palette": "#1a0f18 base, #241420 bar, #FF7A59 coral, #FFB36B amber, #FFD9A8 peach-glow, #F2C9B4 warm-text, #B98A82 muted-rose, #6E8EFB clip-swatch",
+  "concept": "Coral/amber/peach gradients glowing on a soft dark-plum glass bar \u2014 a cozy dusk clipboard."
+ },
+ {
+  "kind": "theme",
+  "name": "Forest Calm",
+  "slug": "forest-calm",
+  "file": "theme-forest-calm",
+  "width": 1240,
+  "height": 360,
+  "summary": "A grounded, restful menu-bar clipboard bar in muted sage, moss, and bark earth tones \u2014 low saturation, organic, and quietly natural.",
+  "palette": "#2E342B bark \u00b7 #3B4536 deep moss \u00b7 #5B6B4F moss accent \u00b7 #7C8A6B sage \u00b7 #A7B295 lichen \u00b7 #EDEAE0 parchment \u00b7 #F4F2E9 card \u00b7 #C9CBB8 hairline \u00b7 #8A8B7A meta \u00b7 #6E8EFB (clip data only)",
+  "concept": "A bark-and-moss translucent floating bar \u2014 sage accents, parchment cards, diffuse organic shadows \u2014 that feels grounded and restful rather than digital."
+ },
+ {
+  "kind": "theme",
+  "name": "Arctic (Nord)",
+  "slug": "arctic-nord",
+  "file": "theme-arctic-nord",
+  "width": 1240,
+  "height": 360,
+  "summary": "A cool, desaturated Nord-palette clipboard bar: polar-night slate grounds with frost blue/teal accents, engineered spacing and quiet vibrancy.",
+  "palette": "#2E3440 #3B4252 #434C5E #4C566A \u00b7 #D8DEE9 #E5E9F0 #ECEFF4 \u00b7 #8FBCBB #88C0D0 #81A1C1 #5E81AC \u00b7 accent #88C0D0 \u00b7 swatch #6E8EFB",
+  "concept": "Nord polar-night floating bar with frost-cyan single-accent signaling and SF-Mono developer typography."
+ },
+ {
+  "kind": "theme",
+  "name": "Synthwave",
+  "slug": "synthwave",
+  "file": "theme-synthwave",
+  "width": 1240,
+  "height": 360,
+  "summary": "Electric retro-80s clipboard bar: deep purple/navy base with neon magenta and cyan glows, a subtle perspective grid and scanline shimmer.",
+  "palette": "#13072b base \u00b7 #1d0f3d / #2a1657 panel \u00b7 #ff3db5 magenta \u00b7 #33e1ff cyan \u00b7 #b06bff violet \u00b7 #f5ecff text",
+  "concept": "Neon CRT clipboard \u2014 a synthwave glow-bar with perspective grid and scanlines."
+ },
+ {
+  "kind": "theme",
+  "name": "High-Contrast Accessible",
+  "slug": "high-contrast-accessible",
+  "file": "theme-high-contrast-accessible",
+  "width": 1240,
+  "height": 360,
+  "summary": "A WCAG AAA accessibility-first take on Ditto: near-black canvas, pure-white text, thick 3px borders, bold 3px focus rings, and an electric-yellow accent that never carries meaning alone.",
+  "palette": "#0A0A0B bg \u00b7 #16161A card \u00b7 #FFFFFF text \u00b7 #FFE600 accent/focus \u00b7 #000000 on-accent \u00b7 #00E5FF link \u00b7 #6E8EFB swatch \u00b7 #FF4D6D pinned",
+  "concept": "Accessibility-first dark UI where contrast, thick borders, redundant state cues, and large bold type are the aesthetic."
+ },
+ {
+  "kind": "theme",
+  "name": "Solarized",
+  "slug": "solarized",
+  "file": "theme-solarized",
+  "width": 1240,
+  "height": 360,
+  "summary": "Ditto in the classic Solarized Light skin: a warm parchment base (base3 #fdf6e3) with base2 panels, low-contrast base01/base00 ink, and the canonical restrained accents \u2014 cyan #2aa198, yellow #b58900, violet #6c71c4, blue #268bd2, magenta #d33682.",
+  "palette": "base3 #fdf6e3 \u00b7 base2 #eee8d5 \u00b7 base1 #93a1a1 \u00b7 base01 #586e75 \u00b7 base00 #657b83 \u00b7 cyan #2aa198 \u00b7 yellow #b58900 \u00b7 violet #6c71c4 \u00b7 blue #268bd2 \u00b7 magenta #d33682",
+  "concept": "Solarized Light as an instrument panel: warm parchment neutrals with the canonical accent set used strictly as semantic signals."
+ },
+ {
+  "kind": "theme",
+  "name": "Swiss Grayscale",
+  "slug": "swiss-grayscale",
+  "file": "theme-swiss-grayscale",
+  "width": 1240,
+  "height": 360,
+  "summary": "An ultra-minimal Swiss/International-Style clipboard bar: near-monochrome greyscale on warm off-white paper, a strict baseline grid, Helvetica-neutral type, and a single hairline-red accent used only for the active state, the focus caret, and the pinned tick.",
+  "palette": "#FAFAF8 paper \u00b7 #FFFFFF card \u00b7 #0A0A0A ink \u00b7 #6B6B68 grey \u00b7 #9A9A96 muted \u00b7 #E2E2DD hairline \u00b7 #D8261C accent",
+  "concept": "Near-monochrome International-Style bar on a strict grid; one vermilion accent reserved for active/focus/pinned/selected states only."
+ },
+ {
+  "kind": "design",
+  "name": "Ditto Command Roster",
+  "slug": "compact-list-rows",
+  "file": "design-compact-list-rows",
+  "width": 1040,
+  "height": 640,
+  "summary": "A dense, command-palette-style vertical list: each clip is one full-width row reading kind-glyph \u00b7 content \u00b7 source \u00b7 time, optimized for fast top-to-bottom scanning instead of a horizontal card strip.",
+  "palette": "Dark slate surfaces (#15181f / #1c2029), hairline borders, one calm blue accent (#5b8cff), white/grey text (#e7eaf0 / #8b93a3)",
+  "concept": "Vertical command-roster list. A header bar holds the Ditto title + focused search field; below it a row of category chips; then a single scrollable column where every clip is one full-width row built on a fixed grid: [kind glyph] \u00b7 [content + inline tags] \u00b7 [source label] \u00b7 [char count] \u00b7 [relative time]. One pinned row (clip 3) carries a pin badge on the left rail; one selected row (clip 6) shows a blue accent rail + tinted background + focus border. A keyboard-hint footer pins to the bottom."
+ },
+ {
+  "kind": "design",
+  "name": "Polaroid Grid",
+  "slug": "polaroid-grid",
+  "file": "design-polaroid-grid",
+  "width": 1180,
+  "height": 620,
+  "summary": "A 2-row grid of square-ish polaroid cards: each clip is a framed \"photo\" tile with a thick white-ish caption strip below holding source, content and meta \u2014 playful, tactile, visual-first.",
+  "palette": "Dark slate surfaces (#161a21 / #1d222b), warm off-white polaroid frames (#f4f1ea), one calm blue accent (#6E8EFB), white/grey text",
+  "concept": "Outer dark floating bar with header (title + chips left, focused search right). Body is a CSS grid, 2 rows x 4 columns of square-ish polaroid cards. Each card = warm off-white frame with rounded corners, soft drop shadow and slight rotation jitter; top = the \"photo\" (a tinted preview area whose fill encodes the content type \u2014 gradient image, solid color swatch, mono code, link, mail, sql), bottom = a caption strip with source label, tag chips and a meta footer (char count + relative time). Pinned card (Mail) has a brass pin dot and ribbon; selected card (TablePlus SQL) sits straight, lifted, with a blue focus ring. A keyboard-hint footer pinned to the bottom."
+ },
+ {
+  "kind": "design",
+  "name": "Spotlight Palette",
+  "slug": "spotlight-palette",
+  "file": "design-spotlight-palette",
+  "width": 1180,
+  "height": 680,
+  "summary": "A search-first command palette: a full-width focused search field crowns the bar, clipboard clips become a scannable vertical result list with type-specific glyph icons on the left, and a dedicated right-hand preview pane renders the highlighted clip in full with metadata.",
+  "palette": "Dark slate surfaces (#0f1420 / #161c2b), one calm blue accent (#4f7cff), white/grey text (#f2f4f8 / #8a94a8)",
+  "concept": "Search-first vertical-list command palette with split body: top header band (Ditto wordmark + category chips) sits above a prominent focused search field; below, a two-column body \u2014 left 58% is a scrollable vertical result list (each row = type glyph icon, source label, truncated content, tag chips, char-count/time footer, with one pinned and one selected row), right 42% is a sticky preview pane showing the highlighted clip rendered large with full content and metadata; a keyboard-hint footer pins the bottom."
+ },
+ {
+  "kind": "design",
+  "name": "Spine",
+  "slug": "timeline-spine",
+  "file": "design-timeline-spine",
+  "width": 1180,
+  "height": 680,
+  "summary": "A vertical time spine runs down the left edge; clipboard cards are grouped under chronological headers (Just now / Earlier today / Yesterday), each anchored to a glowing node on the spine so the eye reads WHEN every clip was copied before WHAT it is.",
+  "palette": "Dark slate surfaces (#0f141b \u2192 #1a212c), one calm blue accent (#5b8def), white/grey text \u2014 restrained and neutral.",
+  "concept": "A vertical TIME SPINE pinned to the left. Three time buckets (Just now / Earlier today / Yesterday) each have a header row with a node dot on the spine; the six clip cards hang to the right of the spine under their bucket, so vertical position encodes recency. Header bar on top holds the Ditto title, category chips, and a focused search field; a keyboard-hint footer pins the bottom."
+ },
+ {
+  "kind": "design",
+  "name": "Masonry Wall",
+  "slug": "masonry-wall",
+  "file": "design-masonry-wall",
+  "width": 1180,
+  "height": 560,
+  "summary": "A Pinterest-style masonry of variable-height clipboard cards, each sized exactly to its content \u2014 a color chip stays tiny, the pinned email grows tall, the image takes a medium block. Density comes from content-fit packing, not uniform rows.",
+  "palette": "Dark slate surfaces (#0f141b \u2192 #1a212c), one calm blue accent (#6E8EFB), white/grey text (#e8ecf2 / #8b95a5)",
+  "concept": "A borderless rounded floating bar. Top: left wordmark \"Ditto\" + category chip row, right a focused search field. Middle: a 4-column CSS masonry (column-count) where cards flow top-to-bottom and pack by intrinsic height \u2014 color chip is ~64px, image is medium, the pinned email is the tallest card. Each card carries a source-app label, content (truncated tastefully), optional tag chips, a meta footer (char count + relative time), with one pinned ribbon (clip 3) and one selected card with an accent ring (clip 6). Bottom: keyboard-hint footer."
+ },
+ {
+  "kind": "design",
+  "name": "Spotlight + Rail",
+  "slug": "spotlight-rail",
+  "file": "design-spotlight-rail",
+  "width": 1180,
+  "height": 520,
+  "summary": "Master-detail clipboard bar: a large focused preview of the selected clip on the left, with a thin vertical scrollable rail of the remaining clips as compact chips on the right.",
+  "palette": "Dark slate surfaces (#16181d / #1c1f26 / #23272f), one calm blue accent (#5b8cff), white/grey text (#f4f6fb / #9aa3b2), subtle white borders.",
+  "concept": "Master-detail. A 1180x520 floating bar split into a header (title Ditto + category chips left, focused search field right), a body divided into a large left PREVIEW pane (the selected clip 6 shown big: source app, full content, tags, metadata, quick actions) and a thin right RAIL listing the other clips as small stacked chips (one highlighted as selected, one pinned), and a bottom keyboard-hint footer. Not all-cards-equal \u2014 one spotlight, the rest demoted to a scrollable rail."
+ },
+ {
+  "kind": "design",
+  "name": "Kind Tabs",
+  "slug": "kind-tabs",
+  "file": "design-kind-tabs",
+  "width": 1180,
+  "height": 620,
+  "summary": "Clip KIND becomes the primary navigation: a strong segmented tab bar (All/Pinned/Text/Links/Colors/Images/Files) sits as the structural spine of the bar, each tab carrying its own glyph and live count. The active tab drives a focused, kind-aware card area below \u2014 so the bar reads as \"you are browsing Text\" rather than a single mixed strip.",
+  "palette": "Dark slate surfaces (#0f1419 / #1a212b), one calm blue accent (#4f7cff), white/grey text (#f2f5f9 / #8a96a6)",
+  "concept": "Kind-first navigation. A bold horizontal segmented tab bar is the main structure (each tab = a clip kind, with glyph + count), replacing the usual flat chip strip. The active tab (\"All\") sets a focused context header and a card grid scoped to that kind. Title \"Ditto\" anchors the top-left; a focused search field sits top-right. Cards live in a scrollable strip; a keyboard-hint footer pins to the bottom."
+ },
+ {
+  "kind": "design",
+  "name": "Ditto \u2014 Plainline",
+  "slug": "ditto-plainline",
+  "file": "design-ditto-plainline",
+  "width": 1040,
+  "height": 560,
+  "summary": "An ultra-dense plain-text list: each clip is a single tall line \u2014 a faint monochrome kind glyph, the content as the headline, a quiet source/meta column, and a right-aligned time. No cards, no fills, just rhythm and a hairline accent.",
+  "palette": "Dark slate (#0f1217 / #161b22 surfaces), hairline #ffffff0d, calm blue accent #6E8EFB, white #e8ecf2 / grey #8a93a3 text.",
+  "concept": "A borderless rounded floating bar. Header row: \"Ditto\" wordmark left, focused search field right. Below it a single row of text-only category chips. The body is NOT a card strip but a plain list: a 6-column implicit grid per row \u2014 [kind glyph | headline content (with inline tags) | source app | meta/char-count | time]. Rows are separated only by 1px hairlines; the selected row gets a faint blue wash + left accent bar + caret; the pinned row gets a small pin glyph in the time column. Footer is a thin keyboard-hint strip."
+ },
+ {
+  "kind": "design",
+  "name": "Coverflow Carousel",
+  "slug": "coverflow-carousel",
+  "file": "design-coverflow-carousel",
+  "width": 1180,
+  "height": 560,
+  "summary": "A 3D coverflow strip where one hero clip stands tall and frontal at center while neighbors recede in rotated, dimmed perspective \u2014 the selected SQL card is the hero, others tease at the edges.",
+  "palette": "Dark slate surfaces (#171e28 / #1b2330 cards), single calm blue accent (#5b8cff), white/grey text (#f4f6fa / #8a94a6).",
+  "concept": "A borderless rounded bar in three stacked zones. Top chrome: left \"Ditto\" title + category chip row, right a focused search field with caret. Center: a 3D coverflow stage (perspective container) \u2014 six clip cards laid along an arc. The hero (clip 6, SELECTED SQL) is frontal/large at center with a blue selection ring; immediate neighbors are scaled ~0.9 and rotateY'd \u00b140deg, outer ones ~0.82 and rotated \u00b152deg with falling opacity, so they peek/angle in from the edges. The pinned Mail clip carries a pin badge. A dot scrubber shows position. Bottom: keyboard-hint footer. Hierarchy is depth-driven, not size-equal."
+ },
+ {
+  "kind": "design",
+  "name": "Ditto Dashboard",
+  "slug": "ditto-dashboard",
+  "file": "design-ditto-dashboard",
+  "width": 1200,
+  "height": 680,
+  "summary": "An information-rich home dashboard: a left quick-filter sidebar (kinds + tags), a pinned-clips section up top, and a recent-clips grid below \u2014 replacing the single strip with a structured, scannable command-center layout.",
+  "palette": "Dark slate surfaces (#0f1320 / #161b2b / #1c2336), one calm blue accent (#6E8EFB / #5B7CFA), white-to-grey text (#f4f6fb / #aab2c5 / #6b7governed \u2192 #6b7488)",
+  "concept": "Three-zone dashboard. Left: fixed 222px quick-filter sidebar with a KINDS list (All active, Pinned, Text, Links, Colors, Images, Files \u2014 each with a live count) and a TAGS cloud below, plus a local-storage meter. Right column: a header row pairing the \"Ditto\" wordmark area, horizontal category chips, and a focused search field (blue border + focus-ring glow + caret); then a \"Pinned\" section header and one wide pinned card (clip 3); then a \"Recent\" header and a 3-column card grid holding clips 1, 2, 6, 4, 5 plus a \"213 more\" overflow tile \u2014 clip 6 carries the selected affordance (blue ring, tint, SELECTED flag). A full-width keyboard-hint footer (return Paste \u00b7 \u2318C Copy \u00b7 delete Delete \u00b7 esc Close) plus a clip counter sits at the bottom of the right column."
+ }
+]

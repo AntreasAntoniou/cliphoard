@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html,body { margin:0; }
+  :root{
+    --paper:#F2F0E9;
+    --ink:#111111;
+    --acid:#E8FF3A;
+    --mute:#8A8780;
+    --line:#D9D6CC;
+    --card:#FFFFFF;
+    --mono:"SF Mono","SFMono-Regular",ui-monospace,Menlo,Monaco,"Cascadia Mono",Consolas,monospace;
+  }
+  body{
+    font-family:var(--mono);
+    -webkit-font-smoothing:antialiased;
+    background:#3a3a36;
+  }
+  .bar{
+    width:1240px; height:360px;
+    background:var(--paper);
+    border:2px solid var(--ink);
+    display:flex; flex-direction:column;
+    overflow:hidden;
+    position:relative;
+  }
+
+  /* ===== HEADER ===== */
+  .head{
+    height:54px; flex:0 0 54px;
+    display:flex; align-items:stretch;
+    border-bottom:2px solid var(--ink);
+  }
+  .title{
+    display:flex; align-items:center; gap:10px;
+    padding:0 18px;
+    border-right:2px solid var(--ink);
+    background:var(--ink);
+  }
+  .title .mark{
+    color:var(--acid);
+    font-size:20px; font-weight:700; letter-spacing:-1px;
+  }
+  .title .name{
+    color:var(--paper);
+    font-size:18px; font-weight:700; letter-spacing:2px;
+    text-transform:uppercase;
+  }
+  .chips{
+    flex:1 1 auto;
+    display:flex; align-items:center; gap:8px;
+    padding:0 16px;
+    overflow:hidden;
+  }
+  .chip{
+    font-size:11px; letter-spacing:0.5px; text-transform:uppercase;
+    color:var(--ink);
+    border:2px solid var(--ink);
+    background:var(--paper);
+    padding:5px 11px;
+    white-space:nowrap;
+    line-height:1;
+  }
+  .chip.active{
+    background:var(--acid);
+    color:var(--ink);
+  }
+  .chip .ct{ color:var(--mute); margin-left:6px; }
+  .chip.active .ct{ color:var(--ink); }
+
+  .search{
+    flex:0 0 280px;
+    display:flex; align-items:center;
+    border-left:2px solid var(--ink);
+    background:var(--card);
+    position:relative;
+  }
+  .search-inner{
+    margin:8px;
+    flex:1; height:38px;
+    display:flex; align-items:center; gap:9px;
+    padding:0 12px;
+    border:2px solid var(--ink);
+    outline:3px solid var(--acid);
+    outline-offset:0;
+    background:var(--card);
+  }
+  .search-inner .glyph{
+    width:13px; height:13px; flex:0 0 13px;
+    border:2px solid var(--ink);
+    border-radius:50%;
+    position:relative;
+  }
+  .search-inner .glyph::after{
+    content:""; position:absolute;
+    width:6px; height:2px; background:var(--ink);
+    bottom:-3px; right:-4px;
+    transform:rotate(45deg);
+  }
+  .search-inner .ph{
+    font-size:12px; color:var(--ink); letter-spacing:0.3px;
+  }
+  .caret{
+    width:2px; height:15px; background:var(--ink);
+    margin-left:1px;
+  }
+
+  /* ===== STRIP ===== */
+  .strip{
+    flex:1 1 auto;
+    display:flex; gap:0;
+    padding:0;
+    overflow:hidden;
+  }
+  .card{
+    flex:0 0 200px;
+    border-right:2px solid var(--ink);
+    background:var(--card);
+    display:flex; flex-direction:column;
+    padding:14px 14px 0 14px;
+    position:relative;
+  }
+  .card:first-child{ border-left:0; }
+  .card.pinned{ background:var(--paper); }
+  .card.selected{
+    background:var(--acid);
+  }
+
+  .c-top{
+    display:flex; align-items:center; justify-content:space-between;
+    margin-bottom:11px;
+  }
+  .src{
+    font-size:9px; letter-spacing:1.5px; text-transform:uppercase;
+    color:var(--mute);
+    border-left:3px solid var(--ink);
+    padding-left:6px;
+    line-height:1.1;
+  }
+  .card.selected .src{ color:var(--ink); border-color:var(--ink); }
+  .pin{
+    font-size:9px; font-weight:700; letter-spacing:1px;
+    background:var(--ink); color:var(--acid);
+    padding:2px 5px; line-height:1;
+  }
+
+  .c-body{
+    flex:1 1 auto;
+    font-size:12.5px; line-height:1.5;
+    color:var(--ink);
+    overflow:hidden;
+    word-break:break-word;
+  }
+  .c-body.code{
+    font-size:11.5px;
+    background:var(--paper);
+    border:1px solid var(--ink);
+    padding:8px;
+    line-height:1.55;
+  }
+  .card.selected .c-body.code{
+    background:var(--card);
+  }
+  .c-body .kw{ font-weight:700; }
+  .prompt{ color:var(--mute); }
+
+  /* color swatch card */
+  .swatch{
+    flex:1 1 auto;
+    display:flex; flex-direction:column;
+    border:2px solid var(--ink);
+    margin-bottom:2px;
+    overflow:hidden;
+  }
+  .swatch .fill{ flex:1; background:#6E8EFB; }
+  .swatch .hex{
+    border-top:2px solid var(--ink);
+    background:var(--card);
+    font-size:12px; font-weight:700; letter-spacing:1px;
+    padding:6px 8px; text-align:center;
+    color:var(--ink);
+  }
+
+  /* image card */
+  .img{
+    flex:1 1 auto;
+    border:2px solid var(--ink);
+    margin-bottom:2px;
+    background-image:
+      repeating-linear-gradient(45deg, transparent 0 9px, rgba(17,17,17,.10) 9px 10px),
+      linear-gradient(135deg,#6E8EFB 0%, #B06EFB 45%, #FB6E9C 100%);
+    position:relative;
+  }
+  .img .frame-tag{
+    position:absolute; left:0; bottom:0;
+    background:var(--ink); color:var(--paper);
+    font-size:9px; letter-spacing:1px;
+    padding:3px 6px;
+  }
+
+  .tags{
+    display:flex; gap:6px; margin-bottom:10px; flex-wrap:wrap;
+  }
+  .tag{
+    font-size:9px; letter-spacing:0.5px; text-transform:uppercase;
+    border:1px solid var(--ink); color:var(--ink);
+    padding:2px 6px; line-height:1.2;
+    background:transparent;
+  }
+  .card.selected .tag{ border-color:var(--ink); }
+
+  .c-foot{
+    border-top:2px solid var(--ink);
+    margin:0 -14px;
+    padding:8px 14px;
+    display:flex; justify-content:space-between; align-items:center;
+    font-size:10px; letter-spacing:0.5px;
+    color:var(--mute);
+  }
+  .card.selected .c-foot{ color:var(--ink); border-color:var(--ink); }
+  .c-foot .time{ color:var(--ink); font-weight:700; }
+  .card.selected .c-foot .time{ color:var(--ink); }
+  .selbadge{
+    position:absolute; top:0; right:0;
+    background:var(--ink); color:var(--acid);
+    font-size:9px; font-weight:700; letter-spacing:1px;
+    padding:3px 6px;
+  }
+
+  /* ===== FOOTER ===== */
+  .foot{
+    height:38px; flex:0 0 38px;
+    border-top:2px solid var(--ink);
+    background:var(--ink);
+    display:flex; align-items:center; gap:0;
+    padding:0;
+  }
+  .hint{
+    display:flex; align-items:center; gap:8px;
+    padding:0 16px; height:100%;
+    border-right:1px solid #3a3a36;
+    color:var(--paper);
+    font-size:10px; letter-spacing:0.8px; text-transform:uppercase;
+  }
+  .hint:last-of-type{ border-right:0; }
+  .key{
+    background:var(--paper); color:var(--ink);
+    font-size:10px; font-weight:700;
+    padding:3px 7px; line-height:1;
+    min-width:18px; text-align:center;
+  }
+  .key.acid{ background:var(--acid); }
+  .foot .spacer{ flex:1; }
+  .meta{
+    padding:0 16px; color:var(--mute);
+    font-size:10px; letter-spacing:1px;
+    border-left:1px solid #3a3a36; height:100%;
+    display:flex; align-items:center; gap:8px;
+  }
+  .meta .dot{ color:var(--acid); }
+</style>
+</head>
+<body>
+  <div class="bar">
+
+    <!-- HEADER -->
+    <div class="head">
+      <div class="title">
+        <span class="mark">[]</span>
+        <span class="name">Ditto</span>
+      </div>
+      <div class="chips">
+        <div class="chip active">All <span class="ct">142</span></div>
+        <div class="chip">Pinned <span class="ct">3</span></div>
+        <div class="chip">Text</div>
+        <div class="chip">Links</div>
+        <div class="chip">Colors</div>
+        <div class="chip">Images</div>
+        <div class="chip">Files</div>
+      </div>
+      <div class="search">
+        <div class="search-inner">
+          <span class="glyph"></span>
+          <span class="ph">Search clipboard</span>
+          <span class="caret"></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- CARD STRIP -->
+    <div class="strip">
+
+      <!-- 1 CODE -->
+      <div class="card">
+        <div class="c-top">
+          <span class="src">Terminal</span>
+        </div>
+        <div class="c-body code"><span class="prompt">$</span> git commit -m <span class="kw">"fix: debounce search"</span></div>
+        <div class="tags">
+          <span class="tag">shell</span><span class="tag">git</span>
+        </div>
+        <div class="c-foot"><span>38 chars</span><span class="time">2m</span></div>
+      </div>
+
+      <!-- 2 LINK -->
+      <div class="card">
+        <div class="c-top">
+          <span class="src">Safari</span>
+        </div>
+        <div class="c-body">https://github.com/<wbr>AntreasAntoniou/<wbr>ditto</div>
+        <div class="tags">
+          <span class="tag">url</span><span class="tag">repository</span>
+        </div>
+        <div class="c-foot"><span>46 chars</span><span class="time">11m</span></div>
+      </div>
+
+      <!-- 3 PINNED TEXT -->
+      <div class="card pinned">
+        <div class="c-top">
+          <span class="src">Mail</span>
+          <span class="pin">[PIN]</span>
+        </div>
+        <div class="c-body">Hi Cara — thank you, this is exactly the kind of thoughtful reply that makes a project fun to build.</div>
+        <div class="tags">
+          <span class="tag">email</span><span class="tag">message</span>
+        </div>
+        <div class="c-foot"><span>98 chars</span><span class="time">1h</span></div>
+      </div>
+
+      <!-- 4 COLOR -->
+      <div class="card">
+        <div class="c-top">
+          <span class="src">Figma</span>
+        </div>
+        <div class="swatch">
+          <div class="fill"></div>
+          <div class="hex">#6E8EFB</div>
+        </div>
+        <div class="c-foot"><span>RGB 110·142·251</span><span class="time">23m</span></div>
+      </div>
+
+      <!-- 5 IMAGE -->
+      <div class="card">
+        <div class="c-top">
+          <span class="src">Preview</span>
+        </div>
+        <div class="img">
+          <span class="frame-tag">PNG · 2.1MB</span>
+        </div>
+        <div class="c-foot"><span>1440 × 900</span><span class="time">40m</span></div>
+      </div>
+
+      <!-- 6 SELECTED SQL -->
+      <div class="card selected">
+        <span class="selbadge">SEL</span>
+        <div class="c-top">
+          <span class="src">TablePlus</span>
+        </div>
+        <div class="c-body code"><span class="kw">SELECT</span> * <span class="kw">FROM</span> users <span class="kw">WHERE</span> active = 1</div>
+        <div class="tags">
+          <span class="tag">sql</span><span class="tag">database</span>
+        </div>
+        <div class="c-foot"><span>37 chars</span><span class="time">3m</span></div>
+      </div>
+
+    </div>
+
+    <!-- FOOTER -->
+    <div class="foot">
+      <div class="hint"><span class="key acid">return</span> Paste</div>
+      <div class="hint"><span class="key">cmdC</span> Copy</div>
+      <div class="hint"><span class="key">delete</span> Delete</div>
+      <div class="hint"><span class="key">esc</span> Close</div>
+      <div class="spacer"></div>
+      <div class="meta"><span class="dot">//</span> 142 ITEMS <span class="dot">//</span> CLIPBOARD HISTORY</div>
+    </div>
+
+  </div>
+</body>
+</html>

@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html,body { background:#3a3a38; }
+  body {
+    font-family:-apple-system,BlinkMacSystemFont,"Helvetica Neue",Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased;
+    width:1240px; height:360px; overflow:hidden;
+  }
+  .stage {
+    width:1240px; height:360px;
+    display:flex; align-items:center; justify-content:center;
+    background:#34342f;
+  }
+  .bar {
+    width:1192px; height:312px;
+    background:#FAFAF8;
+    border-radius:14px;
+    border:1px solid #00000014;
+    box-shadow:0 22px 50px -12px rgba(0,0,0,.55);
+    display:flex; flex-direction:column;
+    overflow:hidden;
+    position:relative;
+  }
+  /* ---------- HEADER ---------- */
+  .head {
+    display:flex; align-items:center;
+    padding:20px 28px 16px 28px;
+    gap:24px;
+  }
+  .brand {
+    font-size:20px; font-weight:700; color:#0A0A0A;
+    letter-spacing:-.02em; line-height:1;
+    white-space:nowrap;
+  }
+  .brand .dot { color:#D8261C; }
+  .chips { display:flex; align-items:center; gap:4px; flex:1; }
+  .chip {
+    font-size:12px; font-weight:500; color:#6B6B68;
+    letter-spacing:.01em;
+    padding:6px 11px;
+    border-radius:6px;
+    white-space:nowrap;
+    position:relative;
+  }
+  .chip.active {
+    color:#0A0A0A; font-weight:600;
+    background:#0A0A0A0A;
+  }
+  .chip.active::after {
+    content:""; position:absolute; left:11px; right:11px; bottom:1px;
+    height:2px; background:#D8261C;
+  }
+  .sep { width:1px; height:13px; background:#E2E2DD; margin:0 6px; }
+  /* search */
+  .search {
+    display:flex; align-items:center; gap:8px;
+    width:268px; height:36px;
+    background:#FFFFFF;
+    border:1.5px solid #D8261C;
+    border-radius:8px;
+    padding:0 12px;
+    box-shadow:0 0 0 3px rgba(216,38,28,.14);
+    flex-shrink:0;
+  }
+  .search svg { flex-shrink:0; }
+  .search .ph { font-size:13px; color:#9A9A96; letter-spacing:-.005em; }
+  .search .caret {
+    width:1.5px; height:16px; background:#D8261C; margin-left:1px;
+  }
+  /* ---------- CARD STRIP ---------- */
+  .strip {
+    flex:1;
+    display:flex; gap:14px;
+    padding:4px 28px 8px 28px;
+    align-items:stretch;
+    overflow:hidden;
+  }
+  .card {
+    width:188px; flex-shrink:0;
+    background:#FFFFFF;
+    border:1px solid #E2E2DD;
+    border-radius:10px;
+    padding:13px 14px 11px 14px;
+    display:flex; flex-direction:column;
+    position:relative;
+  }
+  .card.selected {
+    border-color:#0A0A0A;
+    box-shadow:inset 3px 0 0 #D8261C;
+  }
+  .c-top {
+    display:flex; align-items:center; justify-content:space-between;
+    margin-bottom:9px;
+  }
+  .app {
+    font-size:9.5px; font-weight:700; color:#9A9A96;
+    letter-spacing:.13em; text-transform:uppercase;
+  }
+  .pin {
+    display:flex; align-items:center; gap:3px;
+    font-size:9px; font-weight:700; letter-spacing:.1em;
+    color:#D8261C; text-transform:uppercase;
+  }
+  .body {
+    flex:1;
+    font-size:12.5px; line-height:1.42; color:#0A0A0A;
+    letter-spacing:-.006em;
+    overflow:hidden;
+  }
+  .body.mono {
+    font-family:"SF Mono",ui-monospace,Menlo,monospace;
+    font-size:11px; line-height:1.45;
+  }
+  .clip-1 { color:#0A0A0A; }
+  .clip-1 .kw { color:#6B6B68; }
+  .link {
+    font-size:11px; line-height:1.45; color:#0A0A0A;
+    font-family:"SF Mono",ui-monospace,Menlo,monospace;
+    word-break:break-all;
+  }
+  .link .host { color:#0A0A0A; font-weight:600; }
+  .link .path { color:#9A9A96; }
+  /* color swatch */
+  .swatch-wrap { flex:1; display:flex; flex-direction:column; gap:10px; justify-content:center; }
+  .swatch {
+    height:58px; border-radius:7px; background:#6E8EFB;
+    border:1px solid #00000010;
+  }
+  .hex {
+    font-family:"SF Mono",ui-monospace,Menlo,monospace;
+    font-size:13px; font-weight:600; color:#0A0A0A; letter-spacing:.02em;
+  }
+  /* image */
+  .img {
+    flex:1; border-radius:7px; min-height:0;
+    background:
+      linear-gradient(135deg,#8A8A86 0%,#5C5C58 38%,#B7A98E 70%,#6E6E68 100%);
+    border:1px solid #00000012;
+  }
+  /* tags + footer */
+  .tags { display:flex; gap:5px; margin:10px 0 0 0; }
+  .tag {
+    font-size:9.5px; font-weight:500; color:#6B6B68;
+    letter-spacing:.02em;
+    border:1px solid #E2E2DD;
+    border-radius:4px;
+    padding:2px 6px;
+    white-space:nowrap;
+  }
+  .meta {
+    display:flex; align-items:center; justify-content:space-between;
+    margin-top:10px;
+    padding-top:9px;
+    border-top:1px solid #EFEFEA;
+    font-size:9.5px; color:#9A9A96; letter-spacing:.02em;
+    font-variant-numeric:tabular-nums;
+  }
+  .meta .t { font-weight:600; color:#6B6B68; }
+  /* ---------- FOOTER ---------- */
+  .foot {
+    display:flex; align-items:center; gap:22px;
+    padding:12px 28px;
+    border-top:1px solid #ECECE6;
+  }
+  .hint { display:flex; align-items:center; gap:7px; }
+  .key {
+    font-size:10px; font-weight:600; color:#6B6B68;
+    letter-spacing:.02em;
+    border:1px solid #DADAD4;
+    border-radius:5px;
+    min-width:20px; height:19px;
+    padding:0 6px;
+    display:inline-flex; align-items:center; justify-content:center;
+    font-variant-numeric:tabular-nums;
+    background:#FFFFFF;
+  }
+  .hint .lbl { font-size:11px; color:#6B6B68; letter-spacing:.005em; }
+  .foot .count {
+    margin-left:auto;
+    font-size:10px; color:#9A9A96; letter-spacing:.06em;
+    text-transform:uppercase; font-weight:600;
+  }
+</style>
+</head>
+<body>
+  <div class="stage">
+    <div class="bar">
+
+      <!-- HEADER -->
+      <div class="head">
+        <div class="brand">Ditto<span class="dot">.</span></div>
+        <div class="chips">
+          <div class="chip active">All</div>
+          <div class="chip">Pinned</div>
+          <div class="chip">Text</div>
+          <div class="chip">Links</div>
+          <div class="chip">Colors</div>
+          <div class="chip">Images</div>
+          <div class="chip">Files</div>
+        </div>
+        <div class="search">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+            <circle cx="6" cy="6" r="4.4" stroke="#9A9A96" stroke-width="1.4"/>
+            <line x1="9.4" y1="9.4" x2="12.4" y2="12.4" stroke="#9A9A96" stroke-width="1.4" stroke-linecap="round"/>
+          </svg>
+          <span class="ph">Search clipboard</span>
+          <span class="caret"></span>
+        </div>
+      </div>
+
+      <!-- CARD STRIP -->
+      <div class="strip">
+
+        <!-- 1: Terminal / git -->
+        <div class="card">
+          <div class="c-top"><span class="app">Terminal</span></div>
+          <div class="body mono clip-1">git commit <span class="kw">-m</span> "fix: debounce search"</div>
+          <div class="tags"><span class="tag">shell</span><span class="tag">git</span></div>
+          <div class="meta"><span>42 chars</span><span class="t">2m</span></div>
+        </div>
+
+        <!-- 2: Safari / link -->
+        <div class="card">
+          <div class="c-top"><span class="app">Safari</span></div>
+          <div class="body"><span class="link"><span class="host">github.com</span><span class="path">/AntreasAntoniou/ditto</span></span></div>
+          <div class="tags"><span class="tag">url</span><span class="tag">repository</span></div>
+          <div class="meta"><span>41 chars</span><span class="t">14m</span></div>
+        </div>
+
+        <!-- 3: Mail / pinned -->
+        <div class="card">
+          <div class="c-top"><span class="app">Mail</span><span class="pin">&#9679; Pinned</span></div>
+          <div class="body">Hi Cara — thank you, this is exactly the kind of thoughtful reply that makes a project fun to build.</div>
+          <div class="tags"><span class="tag">email</span><span class="tag">message</span></div>
+          <div class="meta"><span>98 chars</span><span class="t">1h</span></div>
+        </div>
+
+        <!-- 4: Figma / color -->
+        <div class="card">
+          <div class="c-top"><span class="app">Figma</span></div>
+          <div class="swatch-wrap">
+            <div class="swatch"></div>
+            <div class="hex">#6E8EFB</div>
+          </div>
+          <div class="meta"><span>HEX</span><span class="t">3h</span></div>
+        </div>
+
+        <!-- 5: Preview / image -->
+        <div class="card">
+          <div class="c-top"><span class="app">Preview</span></div>
+          <div class="img"></div>
+          <div class="meta"><span>PNG · 1.4&#8202;MB</span><span class="t">5h</span></div>
+        </div>
+
+        <!-- 6: TablePlus / SQL / selected -->
+        <div class="card selected">
+          <div class="c-top"><span class="app">TablePlus</span></div>
+          <div class="body mono">SELECT * FROM users WHERE active = 1</div>
+          <div class="tags"><span class="tag">sql</span><span class="tag">database</span></div>
+          <div class="meta"><span>36 chars</span><span class="t">6h</span></div>
+        </div>
+
+      </div>
+
+      <!-- FOOTER -->
+      <div class="foot">
+        <div class="hint"><span class="key">&#9166;</span><span class="lbl">Paste</span></div>
+        <div class="hint"><span class="key">&#8984;C</span><span class="lbl">Copy</span></div>
+        <div class="hint"><span class="key">&#9003;</span><span class="lbl">Delete</span></div>
+        <div class="hint"><span class="key">esc</span><span class="lbl">Close</span></div>
+        <div class="count">6 items</div>
+      </div>
+
+    </div>
+  </div>
+</body>
+</html>

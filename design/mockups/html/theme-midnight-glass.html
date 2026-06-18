@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html,body { width:1240px; height:360px; }
+  body {
+    font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif;
+    -webkit-font-smoothing:antialiased;
+    /* nocturnal scene behind the glass bar */
+    background:
+      radial-gradient(900px 500px at 18% -10%, rgba(70,230,208,.16), transparent 60%),
+      radial-gradient(800px 520px at 88% 120%, rgba(110,142,251,.20), transparent 58%),
+      radial-gradient(600px 400px at 60% 50%, rgba(124,77,255,.10), transparent 70%),
+      linear-gradient(160deg,#070A14 0%,#0A0E1A 50%,#05070F 100%);
+    display:flex; align-items:flex-end; justify-content:center;
+    overflow:hidden;
+  }
+  .mono { font-family:"SF Mono",ui-monospace,"JetBrains Mono","Menlo",monospace; }
+
+  /* ---------- the floating glass bar ---------- */
+  .bar {
+    width:1200px; height:328px; margin-bottom:16px;
+    border-radius:26px;
+    position:relative;
+    background:
+      linear-gradient(180deg, rgba(28,36,58,.62), rgba(14,19,33,.78));
+    backdrop-filter:blur(40px) saturate(180%);
+    -webkit-backdrop-filter:blur(40px) saturate(180%);
+    border:1px solid rgba(255,255,255,.09);
+    box-shadow:
+      0 1px 0 rgba(255,255,255,.10) inset,
+      0 40px 80px -30px rgba(0,0,0,.85),
+      0 0 0 1px rgba(0,0,0,.4),
+      0 0 60px -20px rgba(70,230,208,.18);
+    padding:20px 22px 16px;
+    display:flex; flex-direction:column;
+    overflow:hidden;
+  }
+  /* faint top sheen */
+  .bar::before {
+    content:""; position:absolute; inset:0; border-radius:26px; pointer-events:none;
+    background:linear-gradient(180deg, rgba(255,255,255,.05), transparent 18%);
+  }
+
+  /* ---------- header row ---------- */
+  .head { display:flex; align-items:center; gap:18px; }
+  .brand { display:flex; align-items:center; gap:10px; }
+  .dot {
+    width:11px; height:11px; border-radius:50%;
+    background:radial-gradient(circle at 35% 30%, #8CFFF0, #46E6D0 55%, #19A99A);
+    box-shadow:0 0 12px rgba(70,230,208,.85), 0 0 2px rgba(70,230,208,1);
+  }
+  .title { font-size:19px; font-weight:680; letter-spacing:-.3px; color:#F2F5FC; }
+
+  .chips { display:flex; gap:8px; align-items:center; margin-left:6px; }
+  .chip {
+    font-size:12.5px; font-weight:560; letter-spacing:.1px;
+    color:#9AA4BE; padding:7px 13px; border-radius:11px;
+    background:rgba(255,255,255,.035);
+    border:1px solid rgba(255,255,255,.05);
+  }
+  .chip.active {
+    color:#06120F; font-weight:660;
+    background:linear-gradient(180deg,#5FF0DB,#46E6D0);
+    border:1px solid rgba(70,230,208,.7);
+    box-shadow:0 4px 16px -4px rgba(70,230,208,.6), 0 0 0 1px rgba(70,230,208,.25);
+  }
+
+  /* search field, focused */
+  .search {
+    margin-left:auto;
+    display:flex; align-items:center; gap:9px;
+    width:268px; padding:9px 14px; border-radius:13px;
+    background:rgba(8,12,22,.55);
+    border:1px solid rgba(70,230,208,.55);
+    box-shadow:0 0 0 3px rgba(70,230,208,.18), 0 4px 18px -6px rgba(70,230,208,.35) inset;
+  }
+  .search svg { flex:0 0 auto; opacity:.95; }
+  .search .ph { color:#C7CEDE; font-size:13.5px; }
+  .caret { width:1.5px; height:16px; background:#46E6D0; border-radius:1px;
+           box-shadow:0 0 6px rgba(70,230,208,.9); margin-left:1px; }
+
+  /* ---------- card strip ---------- */
+  .strip {
+    display:flex; gap:13px; margin-top:18px; flex:1;
+    align-items:stretch;
+  }
+  .card {
+    position:relative;
+    width:188px; flex:0 0 188px;
+    border-radius:16px;
+    background:linear-gradient(180deg, rgba(255,255,255,.055), rgba(255,255,255,.02));
+    border:1px solid rgba(255,255,255,.075);
+    box-shadow:0 1px 0 rgba(255,255,255,.06) inset, 0 18px 30px -22px rgba(0,0,0,.9);
+    padding:13px 13px 11px;
+    display:flex; flex-direction:column;
+    overflow:hidden;
+  }
+  .src { display:flex; align-items:center; gap:7px; margin-bottom:9px; }
+  .ic { width:15px; height:15px; border-radius:5px; flex:0 0 auto;
+        box-shadow:0 1px 3px rgba(0,0,0,.5); }
+  .srcname { font-size:10.5px; font-weight:620; letter-spacing:.4px;
+             text-transform:uppercase; color:#8A93AE; }
+
+  .body { flex:1; }
+  .txt { font-size:13px; line-height:1.42; color:#E6EAF4; }
+  .txt.code { font-size:11.8px; color:#CFEFE9; line-height:1.5; }
+  .txt.dim { color:#D4DAE8; }
+  .clamp3 { display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
+  .clamp2 { display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+  .link { color:#7FA0FF; }
+
+  .tags { display:flex; gap:6px; margin-top:10px; }
+  .tag {
+    font-size:10px; font-weight:560; letter-spacing:.2px;
+    color:#9AA4C0; padding:3px 8px; border-radius:7px;
+    background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.06);
+  }
+  .cfoot {
+    margin-top:10px; padding-top:9px;
+    border-top:1px solid rgba(255,255,255,.06);
+    display:flex; justify-content:space-between; align-items:center;
+    font-size:10.5px; color:#727C97; letter-spacing:.2px;
+  }
+
+  /* color swatch card */
+  .swatch { height:62px; border-radius:11px; margin-bottom:9px;
+            box-shadow:0 6px 18px -8px rgba(110,142,251,.7), 0 0 0 1px rgba(255,255,255,.08) inset; }
+  .hexrow { display:flex; align-items:center; gap:8px; }
+  .hex { font-size:14.5px; font-weight:620; letter-spacing:.3px; color:#EAEEF8; }
+
+  /* image card */
+  .photo { flex:1; border-radius:11px; min-height:96px;
+           box-shadow:0 0 0 1px rgba(255,255,255,.08) inset; }
+
+  /* pinned */
+  .pin {
+    position:absolute; top:11px; right:11px;
+    width:20px; height:20px; border-radius:7px;
+    display:flex; align-items:center; justify-content:center;
+    background:rgba(70,230,208,.16);
+    border:1px solid rgba(70,230,208,.45);
+    box-shadow:0 0 10px rgba(70,230,208,.3);
+  }
+
+  /* selected card */
+  .card.sel {
+    background:linear-gradient(180deg, rgba(70,230,208,.13), rgba(70,230,208,.04));
+    border:1px solid rgba(70,230,208,.6);
+    box-shadow:0 0 0 1px rgba(70,230,208,.35), 0 0 26px -6px rgba(70,230,208,.55),
+               0 18px 30px -22px rgba(0,0,0,.9);
+  }
+  .card.sel::before {
+    content:""; position:absolute; left:0; top:14px; bottom:14px; width:3px;
+    border-radius:0 3px 3px 0;
+    background:linear-gradient(180deg,#7FF3E2,#46E6D0);
+    box-shadow:0 0 12px rgba(70,230,208,.9);
+  }
+
+  /* ---------- footer ---------- */
+  .foot {
+    display:flex; align-items:center; gap:20px; margin-top:14px;
+    padding-top:13px; border-top:1px solid rgba(255,255,255,.07);
+  }
+  .hint { display:flex; align-items:center; gap:8px;
+          font-size:11.5px; color:#8A93AE; letter-spacing:.2px; }
+  .key {
+    font-size:10.5px; font-weight:600; color:#C3CADB;
+    min-width:20px; height:20px; padding:0 7px;
+    display:flex; align-items:center; justify-content:center;
+    border-radius:6px;
+    background:rgba(255,255,255,.06);
+    border:1px solid rgba(255,255,255,.1);
+    box-shadow:0 1px 0 rgba(0,0,0,.4), 0 1px 0 rgba(255,255,255,.06) inset;
+  }
+  .count { margin-left:auto; font-size:11px; color:#6B7490; letter-spacing:.3px; }
+</style>
+</head>
+<body>
+  <div class="bar">
+
+    <!-- header -->
+    <div class="head">
+      <div class="brand">
+        <div class="dot"></div>
+        <div class="title">Ditto</div>
+      </div>
+      <div class="chips">
+        <div class="chip active">All</div>
+        <div class="chip">Pinned</div>
+        <div class="chip">Text</div>
+        <div class="chip">Links</div>
+        <div class="chip">Colors</div>
+        <div class="chip">Images</div>
+        <div class="chip">Files</div>
+      </div>
+      <div class="search">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+          <circle cx="10.5" cy="10.5" r="7" stroke="#46E6D0" stroke-width="2.2"/>
+          <line x1="16" y1="16" x2="21" y2="21" stroke="#46E6D0" stroke-width="2.2" stroke-linecap="round"/>
+        </svg>
+        <span class="ph">Search clipboard</span>
+        <span class="caret"></span>
+      </div>
+    </div>
+
+    <!-- cards -->
+    <div class="strip">
+
+      <!-- 1: Terminal / git -->
+      <div class="card">
+        <div class="src">
+          <div class="ic" style="background:linear-gradient(135deg,#2B2F3A,#10131B);"></div>
+          <span class="srcname">Terminal</span>
+        </div>
+        <div class="body">
+          <div class="txt code clamp3">git commit -m <span style="color:#9FB8FF;">"fix: debounce search"</span></div>
+          <div class="tags"><span class="tag">shell</span><span class="tag">git</span></div>
+        </div>
+        <div class="cfoot"><span>34 chars</span><span>2m</span></div>
+      </div>
+
+      <!-- 2: Safari / link -->
+      <div class="card">
+        <div class="src">
+          <div class="ic" style="background:linear-gradient(135deg,#5AB7FF,#1F6BD8);"></div>
+          <span class="srcname">Safari</span>
+        </div>
+        <div class="body">
+          <div class="txt mono clamp3" style="font-size:11.8px;line-height:1.5;"><span class="link">github.com/AntreasAntoniou/ditto</span></div>
+          <div class="tags"><span class="tag">url</span><span class="tag">repository</span></div>
+        </div>
+        <div class="cfoot"><span>43 chars</span><span>11m</span></div>
+      </div>
+
+      <!-- 3: Mail / pinned -->
+      <div class="card">
+        <div class="pin">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="#46E6D0">
+            <path d="M12 2l2.9 6 6.6.6-5 4.4 1.5 6.4L12 16.9 5.9 19.4 7.4 13l-5-4.4 6.6-.6z"/>
+          </svg>
+        </div>
+        <div class="src">
+          <div class="ic" style="background:linear-gradient(135deg,#4D9BFF,#2C6BE0);"></div>
+          <span class="srcname">Mail</span>
+        </div>
+        <div class="body">
+          <div class="txt dim clamp3">"Hi Cara — thank you, this is exactly the kind of thoughtful reply that makes a project fun to build."</div>
+          <div class="tags"><span class="tag">email</span><span class="tag">message</span></div>
+        </div>
+        <div class="cfoot"><span>99 chars</span><span>1h</span></div>
+      </div>
+
+      <!-- 4: Figma / color -->
+      <div class="card">
+        <div class="src">
+          <div class="ic" style="background:linear-gradient(135deg,#F24E1E,#A259FF);"></div>
+          <span class="srcname">Figma</span>
+        </div>
+        <div class="body">
+          <div class="swatch" style="background:linear-gradient(135deg,#8FA6FF,#6E8EFB 55%,#4E6BE0);"></div>
+          <div class="hexrow"><span class="hex mono">#6E8EFB</span></div>
+        </div>
+        <div class="cfoot"><span>Color</span><span>3h</span></div>
+      </div>
+
+      <!-- 5: Preview / image -->
+      <div class="card">
+        <div class="src">
+          <div class="ic" style="background:linear-gradient(135deg,#9AA4BE,#4A5268);"></div>
+          <span class="srcname">Preview</span>
+        </div>
+        <div class="photo" style="background:
+            radial-gradient(120px 90px at 25% 20%, rgba(255,200,120,.9), transparent 60%),
+            radial-gradient(140px 110px at 80% 80%, rgba(110,142,251,.95), transparent 62%),
+            linear-gradient(135deg,#FF7AB6,#7C4DFF 50%,#1FB6C9);"></div>
+        <div class="cfoot"><span>Image · PNG</span><span>5h</span></div>
+      </div>
+
+      <!-- 6: TablePlus / SQL selected -->
+      <div class="card sel">
+        <div class="src">
+          <div class="ic" style="background:linear-gradient(135deg,#46E6D0,#1F8E9E);"></div>
+          <span class="srcname">TablePlus</span>
+        </div>
+        <div class="body">
+          <div class="txt code clamp3"><span style="color:#7FF3E2;">SELECT</span> * <span style="color:#7FF3E2;">FROM</span> users <span style="color:#7FF3E2;">WHERE</span> active = <span style="color:#9FB8FF;">1</span></div>
+          <div class="tags"><span class="tag">sql</span><span class="tag">database</span></div>
+        </div>
+        <div class="cfoot"><span>37 chars</span><span>6h</span></div>
+      </div>
+
+    </div>
+
+    <!-- footer -->
+    <div class="foot">
+      <div class="hint"><span class="key">return</span><span>Paste</span></div>
+      <div class="hint"><span class="key">⌘C</span><span>Copy</span></div>
+      <div class="hint"><span class="key">delete</span><span>Delete</span></div>
+      <div class="hint"><span class="key">esc</span><span>Close</span></div>
+      <div class="count">6 of 248 clips</div>
+    </div>
+
+  </div>
+</body>
+</html>

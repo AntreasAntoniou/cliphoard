@@ -1,0 +1,336 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+    background: #0a0c10;
+  }
+  .bar {
+    width: 1040px; height: 640px;
+    position: relative;
+    border-radius: 18px;
+    overflow: hidden;
+    background:
+      radial-gradient(120% 80% at 50% -10%, rgba(91,140,255,0.10), transparent 60%),
+      linear-gradient(180deg, #1c2029 0%, #15181f 100%);
+    border: 1px solid rgba(255,255,255,0.08);
+    box-shadow: 0 24px 70px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.05);
+    display: flex; flex-direction: column;
+    color: #e7eaf0;
+  }
+
+  /* ===== Header ===== */
+  .head {
+    display: flex; align-items: center; gap: 16px;
+    padding: 16px 22px 14px;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+  }
+  .brand { display: flex; align-items: center; gap: 10px; }
+  .brand .dot {
+    width: 22px; height: 22px; border-radius: 7px;
+    background: linear-gradient(145deg, #5b8cff, #3a63d6);
+    box-shadow: 0 2px 8px rgba(91,140,255,0.45), inset 0 1px 0 rgba(255,255,255,0.4);
+  }
+  .brand .name { font-size: 16px; font-weight: 650; letter-spacing: -0.2px; }
+  .brand .ver { font-size: 11px; color: #6b7384; font-weight: 500; margin-left: 2px; }
+
+  .search {
+    margin-left: auto;
+    width: 340px;
+    display: flex; align-items: center; gap: 9px;
+    background: rgba(10,12,16,0.7);
+    border: 1.5px solid #5b8cff;
+    box-shadow: 0 0 0 3px rgba(91,140,255,0.22);
+    border-radius: 11px;
+    padding: 9px 13px;
+  }
+  .search svg { flex: none; opacity: 0.8; }
+  .search .ph { color: #aeb6c6; font-size: 13.5px; }
+  .search .caret {
+    width: 1.5px; height: 16px; background: #5b8cff;
+    margin-left: -2px;
+    animation: none;
+  }
+
+  /* ===== Chips ===== */
+  .chips {
+    display: flex; gap: 8px; align-items: center;
+    padding: 13px 22px 12px;
+  }
+  .chip {
+    font-size: 12.5px; font-weight: 520;
+    color: #9aa2b2;
+    padding: 6px 13px;
+    border-radius: 9px;
+    border: 1px solid rgba(255,255,255,0.07);
+    background: rgba(255,255,255,0.02);
+  }
+  .chip.active {
+    color: #fff;
+    background: rgba(91,140,255,0.18);
+    border-color: rgba(91,140,255,0.55);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.12);
+  }
+  .chips .count { margin-left: auto; font-size: 11.5px; color: #5e6677; font-weight: 500; }
+
+  /* ===== List ===== */
+  .list {
+    flex: 1;
+    overflow: hidden;
+    padding: 2px 12px;
+  }
+  .row {
+    display: grid;
+    grid-template-columns: 34px 1fr auto;
+    align-items: center;
+    column-gap: 14px;
+    padding: 11px 12px;
+    border-radius: 11px;
+    position: relative;
+    border: 1px solid transparent;
+  }
+  .row + .row { margin-top: 1px; }
+  .row:hover { background: rgba(255,255,255,0.025); }
+
+  /* kind glyph */
+  .glyph {
+    width: 34px; height: 34px; border-radius: 9px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 13px; font-weight: 700;
+    font-family: "SF Mono", ui-monospace, Menlo, monospace;
+    color: #cfd6e4;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.07);
+  }
+  .g-code { color: #8fe3a8; background: rgba(70,200,120,0.10); border-color: rgba(70,200,120,0.25); }
+  .g-link { color: #7fb4ff; background: rgba(91,140,255,0.12); border-color: rgba(91,140,255,0.28); }
+  .g-text { color: #d8b4ff; background: rgba(180,120,255,0.10); border-color: rgba(180,120,255,0.25); }
+  .g-color { padding: 0; border: 1px solid rgba(255,255,255,0.18); background: #6E8EFB; }
+  .g-img { padding:0; border: 1px solid rgba(255,255,255,0.12);
+    background: linear-gradient(135deg,#ff8a5b,#ff5b9e 45%,#7b61ff 100%); }
+  .g-sql { color: #ffd483; background: rgba(255,190,80,0.10); border-color: rgba(255,190,80,0.25); }
+
+  /* middle column */
+  .mid { min-width: 0; }
+  .content {
+    font-size: 13.5px; line-height: 1.35;
+    color: #e7eaf0;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    letter-spacing: -0.1px;
+  }
+  .content.mono { font-family: "SF Mono", ui-monospace, Menlo, monospace; font-size: 12.7px; color: #d5dceb; }
+  .content .key { color: #ff9ec4; }
+  .content .str { color: #8fe3a8; }
+  .meta-line { display: flex; align-items: center; gap: 8px; margin-top: 5px; }
+  .tag {
+    font-size: 10.5px; font-weight: 560; color: #aab2c2;
+    padding: 2px 7px; border-radius: 6px;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.06);
+  }
+  .swatch-label { font-size: 11px; color: #8b93a3; font-family: "SF Mono", ui-monospace, monospace; }
+
+  /* right column */
+  .right { display: flex; align-items: center; gap: 16px; justify-self: end; }
+  .src {
+    font-size: 12px; color: #8b93a3; font-weight: 520;
+    min-width: 78px; text-align: right;
+  }
+  .chars { font-size: 11px; color: #5e6677; min-width: 52px; text-align: right; font-variant-numeric: tabular-nums; }
+  .time { font-size: 11.5px; color: #6b7384; min-width: 26px; text-align: right; font-variant-numeric: tabular-nums; }
+
+  /* pinned + selected affordances */
+  .row.pinned::before {
+    content: ""; position: absolute; left: 0; top: 9px; bottom: 9px;
+    width: 3px; border-radius: 3px; background: #c8a93a;
+  }
+  .pin {
+    position: absolute; right: 12px; top: 9px;
+    font-size: 10px; color: #d8bd54;
+  }
+  .row.selected {
+    background: rgba(91,140,255,0.13);
+    border-color: rgba(91,140,255,0.45);
+    box-shadow: inset 0 0 0 1px rgba(91,140,255,0.15);
+  }
+  .row.selected::before {
+    content: ""; position: absolute; left: 0; top: 7px; bottom: 7px;
+    width: 3px; border-radius: 3px; background: #5b8cff;
+  }
+  .row.selected .src { color: #b9c8ff; }
+  .row.selected .content { color: #fff; }
+
+  /* ===== Footer ===== */
+  .foot {
+    display: flex; align-items: center; gap: 20px;
+    padding: 12px 22px;
+    border-top: 1px solid rgba(255,255,255,0.06);
+    background: rgba(10,12,16,0.4);
+  }
+  .hint { display: flex; align-items: center; gap: 7px; font-size: 11.5px; color: #8b93a3; }
+  .kbd {
+    font-size: 10.5px; color: #cdd4e2;
+    background: rgba(255,255,255,0.07);
+    border: 1px solid rgba(255,255,255,0.10);
+    border-bottom-width: 2px;
+    border-radius: 6px;
+    padding: 2px 7px; min-width: 18px; text-align: center;
+    font-family: "SF Mono", ui-monospace, monospace;
+  }
+  .foot .spacer { margin-left: auto; font-size: 11px; color: #4f5666; }
+</style>
+</head>
+<body>
+  <div class="bar">
+
+    <!-- Header -->
+    <div class="head">
+      <div class="brand">
+        <div class="dot"></div>
+        <span class="name">Ditto</span>
+        <span class="ver">clipboard</span>
+      </div>
+      <div class="search">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+          <circle cx="7" cy="7" r="5" stroke="#aeb6c6" stroke-width="1.6"/>
+          <path d="M11 11l3.5 3.5" stroke="#aeb6c6" stroke-width="1.6" stroke-linecap="round"/>
+        </svg>
+        <span class="ph">Search clipboard</span>
+        <span class="caret"></span>
+      </div>
+    </div>
+
+    <!-- Chips -->
+    <div class="chips">
+      <span class="chip active">All</span>
+      <span class="chip">Pinned</span>
+      <span class="chip">Text</span>
+      <span class="chip">Links</span>
+      <span class="chip">Colors</span>
+      <span class="chip">Images</span>
+      <span class="chip">Files</span>
+      <span class="count">6 of 248 clips</span>
+    </div>
+
+    <!-- List -->
+    <div class="list">
+
+      <!-- 1 CODE -->
+      <div class="row">
+        <div class="glyph g-code"></></div>
+        <div class="mid">
+          <div class="content mono">git commit -m "fix: debounce search"</div>
+          <div class="meta-line">
+            <span class="tag">shell</span>
+            <span class="tag">git</span>
+          </div>
+        </div>
+        <div class="right">
+          <span class="src">Terminal</span>
+          <span class="chars">37 ch</span>
+          <span class="time">2m</span>
+        </div>
+      </div>
+
+      <!-- 2 LINK -->
+      <div class="row">
+        <div class="glyph g-link">↗</div>
+        <div class="mid">
+          <div class="content">https://github.com/AntreasAntoniou/ditto</div>
+          <div class="meta-line">
+            <span class="tag">url</span>
+            <span class="tag">repository</span>
+          </div>
+        </div>
+        <div class="right">
+          <span class="src">Safari</span>
+          <span class="chars">41 ch</span>
+          <span class="time">14m</span>
+        </div>
+      </div>
+
+      <!-- 3 TEXT pinned -->
+      <div class="row pinned">
+        <div class="glyph g-text">¶</div>
+        <div class="mid">
+          <div class="content">Hi Cara — thank you, this is exactly the kind of thoughtful reply that makes a project fun to build.</div>
+          <div class="meta-line">
+            <span class="tag">email</span>
+            <span class="tag">message</span>
+          </div>
+        </div>
+        <div class="right">
+          <span class="src">Mail</span>
+          <span class="chars">99 ch</span>
+          <span class="time">1h</span>
+        </div>
+        <span class="pin">● pinned</span>
+      </div>
+
+      <!-- 4 COLOR -->
+      <div class="row">
+        <div class="glyph g-color"></div>
+        <div class="mid">
+          <div class="content" style="font-family:'SF Mono',ui-monospace,monospace;">#6E8EFB</div>
+          <div class="meta-line">
+            <span class="swatch-label">rgb(110, 142, 251) · solid</span>
+          </div>
+        </div>
+        <div class="right">
+          <span class="src">Figma</span>
+          <span class="chars">7 ch</span>
+          <span class="time">3h</span>
+        </div>
+      </div>
+
+      <!-- 5 IMAGE -->
+      <div class="row">
+        <div class="glyph g-img"></div>
+        <div class="mid">
+          <div class="content">Screenshot 2026-06-17 · 1488×936</div>
+          <div class="meta-line">
+            <span class="swatch-label">PNG · 412 KB</span>
+          </div>
+        </div>
+        <div class="right">
+          <span class="src">Preview</span>
+          <span class="chars">image</span>
+          <span class="time">5h</span>
+        </div>
+      </div>
+
+      <!-- 6 SQL selected -->
+      <div class="row selected">
+        <div class="glyph g-sql">▤</div>
+        <div class="mid">
+          <div class="content mono"><span class="key">SELECT</span> * <span class="key">FROM</span> users <span class="key">WHERE</span> active = <span class="str">1</span></div>
+          <div class="meta-line">
+            <span class="tag">sql</span>
+            <span class="tag">database</span>
+          </div>
+        </div>
+        <div class="right">
+          <span class="src">TablePlus</span>
+          <span class="chars">36 ch</span>
+          <span class="time">6h</span>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Footer -->
+    <div class="foot">
+      <span class="hint"><span class="kbd">return</span> Paste</span>
+      <span class="hint"><span class="kbd">⌘C</span> Copy</span>
+      <span class="hint"><span class="kbd">delete</span> Delete</span>
+      <span class="hint"><span class="kbd">esc</span> Close</span>
+      <span class="spacer">↑↓ to navigate</span>
+    </div>
+
+  </div>
+</body>
+</html>

@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html,body { width:1180px; height:560px; background:transparent; }
+  body { display:flex; align-items:center; justify-content:center;
+    font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif;
+    -webkit-font-smoothing:antialiased; }
+
+  .bar {
+    position:relative; width:1180px; height:560px; border-radius:22px; overflow:hidden;
+    background:linear-gradient(180deg,#171e28 0%,#10151d 60%,#0c1118 100%);
+    border:1px solid rgba(255,255,255,0.07);
+    box-shadow:0 40px 90px -20px rgba(0,0,0,0.65), inset 0 1px 0 rgba(255,255,255,0.06);
+    display:flex; flex-direction:column;
+  }
+
+  /* ---------- TOP CHROME ---------- */
+  .chrome { display:flex; align-items:center; gap:18px; padding:18px 24px 14px; }
+  .brand { display:flex; align-items:baseline; gap:9px; flex-shrink:0; }
+  .brand .logo { width:11px; height:11px; border-radius:3px;
+    background:linear-gradient(135deg,#5b8cff,#3a63d6); box-shadow:0 0 12px rgba(91,140,255,0.55);
+    align-self:center; }
+  .brand h1 { font-size:18px; font-weight:650; letter-spacing:.2px; color:#f4f6fa; }
+
+  .chips { display:flex; align-items:center; gap:7px; flex:1; }
+  .chip { font-size:12.5px; font-weight:500; color:#8a94a6; padding:5px 12px; border-radius:9px;
+    background:rgba(255,255,255,0.025); border:1px solid transparent; white-space:nowrap; }
+  .chip.active { color:#eaf0ff; background:rgba(91,140,255,0.16);
+    border-color:rgba(91,140,255,0.4); box-shadow:0 0 0 1px rgba(91,140,255,0.12) inset; }
+
+  .search { flex-shrink:0; display:flex; align-items:center; gap:8px; width:236px;
+    padding:8px 12px; border-radius:11px; background:rgba(9,13,19,0.85);
+    border:1px solid #5b8cff; box-shadow:0 0 0 3px rgba(91,140,255,0.22), 0 1px 2px rgba(0,0,0,0.4); }
+  .search svg { flex-shrink:0; }
+  .search .ph { font-size:13px; color:#aeb6c4; flex:1; }
+  .search .caret { width:1.5px; height:15px; background:#5b8cff; border-radius:1px;
+    box-shadow:0 0 6px rgba(91,140,255,0.8); }
+
+  /* ---------- COVERFLOW STAGE ---------- */
+  .stage { flex:1; position:relative; perspective:1600px; perspective-origin:50% 42%; }
+  .arc { position:absolute; inset:0; transform-style:preserve-3d; }
+
+  .card {
+    position:absolute; top:50%; left:50%; width:300px; height:300px;
+    border-radius:16px; transform-style:preserve-3d; overflow:hidden;
+    background:linear-gradient(180deg,#1b2330,#141a24);
+    border:1px solid rgba(255,255,255,0.07);
+    box-shadow:0 26px 60px -18px rgba(0,0,0,0.8);
+    display:flex; flex-direction:column; padding:18px;
+  }
+
+  /* arc placement; deepest cards first in DOM for correct stacking */
+  .pos-l2 { transform:translate(-50%,-50%) translateX(-455px) translateZ(-360px) rotateY(52deg) scale(.82); opacity:.42; }
+  .pos-l1 { transform:translate(-50%,-50%) translateX(-300px) translateZ(-150px) rotateY(40deg) scale(.9);  opacity:.66; }
+  .pos-r1 { transform:translate(-50%,-50%) translateX(300px)  translateZ(-150px) rotateY(-40deg) scale(.9); opacity:.66; }
+  .pos-r2 { transform:translate(-50%,-50%) translateX(455px)  translateZ(-360px) rotateY(-52deg) scale(.82); opacity:.42; }
+  .pos-hero { transform:translate(-50%,-50%) translateZ(40px) scale(1.04); z-index:10; }
+
+  .hero {
+    border:1.5px solid rgba(91,140,255,0.85);
+    box-shadow:0 0 0 4px rgba(91,140,255,0.18), 0 34px 70px -16px rgba(0,0,0,0.85),
+      0 0 60px -10px rgba(91,140,255,0.35);
+    background:linear-gradient(180deg,#1d2738,#161d29);
+  }
+
+  /* edge cards get a glassy darkening sheen to read as "behind" */
+  .pos-l2::after,.pos-l1::after,.pos-r1::after,.pos-r2::after{
+    content:""; position:absolute; inset:0; pointer-events:none;
+    background:linear-gradient(180deg,rgba(8,11,16,0) 55%,rgba(8,11,16,0.55) 100%);
+  }
+
+  .card .app { display:flex; align-items:center; gap:7px; font-size:11px; font-weight:600;
+    letter-spacing:.3px; text-transform:uppercase; color:#7d879a; margin-bottom:12px; }
+  .card .app .dot { width:14px; height:14px; border-radius:4px; flex-shrink:0; }
+  .card .body { flex:1; }
+  .card .content { font-size:14px; line-height:1.5; color:#dfe5ef; }
+  .card .content.mono { font-family:"SF Mono",ui-monospace,Menlo,monospace; font-size:13px;
+    color:#cfe0ff; }
+  .card .footer { display:flex; align-items:center; justify-content:space-between;
+    margin-top:14px; padding-top:12px; border-top:1px solid rgba(255,255,255,0.06); }
+  .tags { display:flex; gap:6px; }
+  .tag { font-size:10.5px; font-weight:600; color:#9fb0cf; padding:3px 8px; border-radius:6px;
+    background:rgba(91,140,255,0.1); border:1px solid rgba(91,140,255,0.2); }
+  .meta { font-size:11px; color:#6b7488; white-space:nowrap; }
+
+  .pin { position:absolute; top:14px; right:14px; width:24px; height:24px; border-radius:8px;
+    background:rgba(91,140,255,0.18); border:1px solid rgba(91,140,255,0.45);
+    display:flex; align-items:center; justify-content:center; }
+
+  .selbadge { font-size:10px; font-weight:700; letter-spacing:.4px; text-transform:uppercase;
+    color:#bcd1ff; background:rgba(91,140,255,0.22); border:1px solid rgba(91,140,255,0.5);
+    padding:2px 7px; border-radius:6px; }
+
+  /* color swatch card special */
+  .swatch { flex:1; border-radius:12px; margin:4px 0 0;
+    background:linear-gradient(135deg,#6E8EFB,#536ad6);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,0.3); display:flex; align-items:flex-end; padding:12px; }
+  .swatch .hex { font-family:"SF Mono",ui-monospace,Menlo,monospace; font-size:16px; font-weight:600;
+    color:#fff; text-shadow:0 1px 3px rgba(0,0,0,0.4); }
+
+  .photo { flex:1; border-radius:12px; margin-top:2px; overflow:hidden;
+    background:
+      radial-gradient(120% 90% at 18% 12%, #ffd36e 0%, rgba(255,211,110,0) 45%),
+      radial-gradient(120% 110% at 85% 25%, #ff7eb3 0%, rgba(255,126,179,0) 50%),
+      linear-gradient(135deg,#5b8cff 0%,#8a5bff 55%,#2bd6c0 100%); }
+
+  /* dot scrubber under stage */
+  .scrubber { position:absolute; bottom:8px; left:50%; transform:translateX(-50%);
+    display:flex; gap:8px; align-items:center; }
+  .scrubber i { width:6px; height:6px; border-radius:50%; background:rgba(255,255,255,0.18); display:block; }
+  .scrubber i.on { width:20px; border-radius:3px; background:#5b8cff; box-shadow:0 0 8px rgba(91,140,255,0.6); }
+
+  .count { position:absolute; top:8px; right:24px; font-size:11px; color:#5e667a; font-weight:500; }
+
+  /* ---------- FOOTER ---------- */
+  .footer-bar { display:flex; align-items:center; gap:22px; padding:12px 24px;
+    border-top:1px solid rgba(255,255,255,0.055); background:rgba(0,0,0,0.22); }
+  .hint { display:flex; align-items:center; gap:8px; font-size:12px; color:#8a94a6; }
+  .key { font-size:11px; font-weight:600; color:#cdd5e2; min-width:22px; text-align:center;
+    padding:3px 7px; border-radius:6px; background:rgba(255,255,255,0.06);
+    border:1px solid rgba(255,255,255,0.09); box-shadow:0 1px 0 rgba(0,0,0,0.3); }
+  .spacer { flex:1; }
+  .tip { font-size:11.5px; color:#5e667a; }
+</style>
+</head>
+<body>
+  <div class="bar">
+
+    <!-- TOP CHROME -->
+    <div class="chrome">
+      <div class="brand"><span class="logo"></span><h1>Ditto</h1></div>
+      <div class="chips">
+        <span class="chip active">All</span>
+        <span class="chip">Pinned</span>
+        <span class="chip">Text</span>
+        <span class="chip">Links</span>
+        <span class="chip">Colors</span>
+        <span class="chip">Images</span>
+        <span class="chip">Files</span>
+      </div>
+      <div class="search">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+          <circle cx="6" cy="6" r="4.4" stroke="#aeb6c4" stroke-width="1.4"/>
+          <line x1="9.3" y1="9.3" x2="12.3" y2="12.3" stroke="#aeb6c4" stroke-width="1.4" stroke-linecap="round"/>
+        </svg>
+        <span class="ph">Search clipboard</span>
+        <span class="caret"></span>
+      </div>
+    </div>
+
+    <!-- COVERFLOW STAGE -->
+    <div class="stage">
+      <div class="count">6 clips · ◀ ▶ to flip</div>
+      <div class="arc">
+
+        <!-- far left: CODE (clip 1) -->
+        <div class="card pos-l2">
+          <div class="app"><span class="dot" style="background:#2f3640"></span>Terminal</div>
+          <div class="body"><div class="content mono">git commit -m "fix: debounce search"</div></div>
+          <div class="footer"><div class="tags"><span class="tag">shell</span><span class="tag">git</span></div><span class="meta">36 · 5m</span></div>
+        </div>
+
+        <!-- near left: LINK (clip 2) -->
+        <div class="card pos-l1">
+          <div class="app"><span class="dot" style="background:#1b76ef"></span>Safari</div>
+          <div class="body"><div class="content" style="color:#9fc0ff">https://github.com/AntreasAntoniou/ditto</div></div>
+          <div class="footer"><div class="tags"><span class="tag">url</span><span class="tag">repository</span></div><span class="meta">41 · 8m</span></div>
+        </div>
+
+        <!-- far right: IMAGE (clip 5) -->
+        <div class="card pos-r2">
+          <div class="app"><span class="dot" style="background:#6f6f76"></span>Preview</div>
+          <div class="photo"></div>
+          <div class="footer"><span class="meta">PNG · 1.4 MB</span><span class="meta">22m</span></div>
+        </div>
+
+        <!-- near right: PINNED MAIL (clip 3) -->
+        <div class="card pos-r1">
+          <div class="pin">
+            <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
+              <path d="M5 1 L9 1 L8 4 L10 6 L6.6 6 L6 11 L5.4 6 L2 6 L4 4 Z" fill="#bcd1ff"/>
+            </svg>
+          </div>
+          <div class="app"><span class="dot" style="background:#3b82f6"></span>Mail</div>
+          <div class="body"><div class="content">"Hi Cara — thank you, this is exactly the kind of thoughtful reply that makes a project fun to build."</div></div>
+          <div class="footer"><div class="tags"><span class="tag">email</span><span class="tag">message</span></div><span class="meta">98 · 12m</span></div>
+        </div>
+
+        <!-- HERO center: SQL SELECTED (clip 6) -->
+        <div class="card pos-hero hero">
+          <div class="app"><span class="dot" style="background:#1b9e6f"></span>TablePlus
+            <span class="selbadge" style="margin-left:auto">Selected</span></div>
+          <div class="body">
+            <div class="content mono" style="font-size:15px;line-height:1.6">SELECT&nbsp;*&nbsp;FROM&nbsp;users<br>WHERE&nbsp;active&nbsp;=&nbsp;1</div>
+          </div>
+          <div class="footer"><div class="tags"><span class="tag">sql</span><span class="tag">database</span></div><span class="meta">34 chars · 1m</span></div>
+        </div>
+
+      </div>
+
+      <div class="scrubber"><i></i><i></i><i></i><i></i><i></i><i class="on"></i></div>
+    </div>
+
+    <!-- FOOTER -->
+    <div class="footer-bar">
+      <div class="hint"><span class="key">return</span>Paste</div>
+      <div class="hint"><span class="key">⌘C</span>Copy</div>
+      <div class="hint"><span class="key">delete</span>Delete</div>
+      <div class="hint"><span class="key">esc</span>Close</div>
+      <div class="spacer"></div>
+      <div class="tip">Color · Image · Link · Code teasing at the edges</div>
+    </div>
+
+  </div>
+</body>
+</html>
