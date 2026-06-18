@@ -39,12 +39,56 @@ final class PanelViewModel: ObservableObject {
         // Republish store changes so the two-object observation collapses into
         // one deterministic update path — fixes the live-while-open refresh case.
         storeObserver = store.objectWillChange.sink { [weak self] _ in
+            // Any store mutation (add/delete/pin/reclassify/embedder switch)
+            // invalidates the memoized results, closing the staleness windows the
+            // (count, lastAddedID) key alone would miss.
+            self?.cachedResultsKey = nil
             self?.objectWillChange.send()
         }
     }
 
+    /// Identity of the inputs `results` depends on. When this is unchanged we
+    /// return the cached array instead of recomputing (BL-10b) — `.essence`
+    /// otherwise re-runs dot-products over every item on each read (several
+    /// times per `body` pass and per keystroke).
+    ///
+    /// The store revision proxy is `(items.count, lastAddedID)`: adds and
+    /// removes change the count (and adds also bump `lastAddedID`), so they
+    /// invalidate the cache. Known minor limitation: an in-place mutation that
+    /// leaves both the count and `lastAddedID` untouched is not detected.
+    private struct ResultsKey: Equatable {
+        let query: String
+        let activeKind: ClipKind?
+        let pinnedOnly: Bool
+        let mode: SearchMode
+        let itemCount: Int
+        let lastAddedID: UUID?
+    }
+
+    private var cachedResultsKey: ResultsKey?
+    private var cachedResults: [ClipItem] = []
+
     var results: [ClipItem] {
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        let key = ResultsKey(
+            query: q,
+            activeKind: activeKind,
+            pinnedOnly: pinnedOnly,
+            mode: DeepSearch.mode,
+            itemCount: store.items.count,
+            lastAddedID: store.lastAddedID
+        )
+        if key == cachedResultsKey { return cachedResults }
+
+        let value = computeResults(query: q)
+        cachedResultsKey = key
+        cachedResults = value
+        return value
+    }
+
+    /// Pure computation behind `results` — same outputs as the previous inline
+    /// implementation. `q` is the already-trimmed query.
+    private func computeResults(query q: String) -> [ClipItem] {
         // Exact (or empty query) → substring filter as before.
         if DeepSearch.mode == .exact || q.isEmpty {
             return store.filtered(kind: activeKind, query: q, pinnedOnly: pinnedOnly)

@@ -41,6 +41,9 @@ These confirmed findings were fixed immediately (low-risk, unit-tested):
 
 - **Build-wave 2 (orchestra):** BL-09 (image thumbnailing via ImageIO + NSCache — card body decodes a 512px thumbnail, full-res kept for paste; integrator hand-wired the orphan-sweep + delete paths to keep/clean `<uuid>-thumb.png`, fixing a cross-wave defect the adversary caught); BL-17 (Settings shows live embedder state + drops the non-functional High/EmbeddingGemma tier); BL-22 partial (debug `embedtest`/`opensettings` Darwin observers gated behind #if DEBUG; `setup-signing.sh` drops the over-broad `-A`).
 
+
+- **Staircase wave A (orchestra):** BL-10a (vDSP/Accelerate cosine — identical results), BL-21 (embedder signature carries a `-v1` version token so re-conversion invalidates stale vectors), BL-08 (incremental tag index + repositioning instead of full rebuild on the per-copy hot path; integrator added the togglePin reposition the adversary caught), BL-10b (memoized `results`, invalidated on any store change), BL-16 (model license attribution in About).
+
 Everything below remains open.
 
 # Prioritized Backlog

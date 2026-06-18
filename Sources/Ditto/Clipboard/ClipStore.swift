@@ -104,7 +104,11 @@ final class ClipStore: ObservableObject {
         trim()
         // Keep the pinned-first / recency order consistent with every other path.
         sortStable()
-        rebuildTagIndex()
+        // Incrementally index the new item rather than rebuilding the whole map.
+        // `trim()` may have evicted other (unpinned) items; drop those too so the
+        // index stays in sync with `items`.
+        pruneTagIndexToItems()
+        addToTagIndex(item)
         lastAddedID = item.id
         db?.insert(item)
         Feedback.playCapture()
@@ -120,6 +124,75 @@ final class ClipStore: ObservableObject {
             for tag in item.embeddings[sig]?.tags ?? [] { index[tag, default: []].append(item) }
         }
         tagIndex = index
+    }
+
+    /// The active-model tag ids attached to a clip, or an empty list.
+    private func activeTags(of item: ClipItem) -> [Int] {
+        item.embeddings[EmbedderProvider.active.signature]?.tags ?? []
+    }
+
+    /// Insert `item` into each of its active-model tag buckets at the position
+    /// dictated by the current `items` order, so the bucket contents stay
+    /// byte-for-byte identical to a full `rebuildTagIndex()`. O(tags · bucket)
+    /// instead of O(n · tags).
+    ///
+    /// Buckets are re-ordered to `items` order on insert. This matters because
+    /// other paths (markUsed / togglePin / dedup-bump) reorder `items` *without*
+    /// re-indexing — exactly as the original full-rebuild-on-add code did, which
+    /// would re-sort the whole bucket on the next add — so a stale relative order
+    /// must not survive a new-item add.
+    private func addToTagIndex(_ item: ClipItem) {
+        // Map every item to its index in `items` so buckets can be kept in the
+        // same order a full rebuild (which iterates `items`) would produce.
+        var order: [UUID: Int] = [:]
+        order.reserveCapacity(items.count)
+        for (i, it) in items.enumerated() { order[it.id] = i }
+        guard order[item.id] != nil else { return }
+        for tag in activeTags(of: item) {
+            var bucket = tagIndex[tag] ?? []
+            bucket.append(item)
+            bucket.sort { (order[$0.id] ?? .max) < (order[$1.id] ?? .max) }
+            tagIndex[tag] = bucket
+        }
+    }
+
+    /// Re-sort the buckets containing `item` back into `items` order after a move
+    /// reshuffled `items`. Only the moved item's own buckets can be affected, so
+    /// this stays cheap (O(itemTags · bucket)).
+    private func repositionInTagIndex(_ item: ClipItem) {
+        let tags = activeTags(of: item)
+        guard !tags.isEmpty else { return }
+        var order: [UUID: Int] = [:]
+        order.reserveCapacity(items.count)
+        for (i, it) in items.enumerated() { order[it.id] = i }
+        for tag in tags {
+            guard var bucket = tagIndex[tag], bucket.contains(where: { $0.id == item.id })
+            else { continue }
+            bucket.sort { (order[$0.id] ?? .max) < (order[$1.id] ?? .max) }
+            tagIndex[tag] = bucket
+        }
+    }
+
+    /// Remove `item` from every tag bucket it appears in, dropping now-empty
+    /// buckets so the map matches a full rebuild (which never holds empty keys).
+    private func removeFromTagIndex(_ item: ClipItem) {
+        for (tag, bucket) in tagIndex {
+            guard bucket.contains(where: { $0.id == item.id }) else { continue }
+            let pruned = bucket.filter { $0.id != item.id }
+            if pruned.isEmpty { tagIndex[tag] = nil } else { tagIndex[tag] = pruned }
+        }
+    }
+
+    /// Drop any tag-bucket entries for items no longer in `items` (e.g. evicted by
+    /// `trim()`), dropping now-empty buckets. Keeps incremental updates in sync
+    /// without a full rebuild.
+    private func pruneTagIndexToItems() {
+        let live = Set(items.map { $0.id })
+        for (tag, bucket) in tagIndex {
+            guard bucket.contains(where: { !live.contains($0.id) }) else { continue }
+            let pruned = bucket.filter { live.contains($0.id) }
+            if pruned.isEmpty { tagIndex[tag] = nil } else { tagIndex[tag] = pruned }
+        }
     }
 
     /// Point the store at the now-active model: rebuild the tag index for its
@@ -204,13 +277,17 @@ final class ClipStore: ObservableObject {
     func togglePin(_ item: ClipItem) {
         item.pinned.toggle()
         sortStable()
+        // Toggling the pin moves only this item across the pinned boundary; other
+        // items keep their relative order, so repositioning just this item's
+        // buckets keeps tagIndex identical to a full rebuild (BL-08 correctness).
+        repositionInTagIndex(item)
         db?.updateMeta(item)
     }
 
     func delete(_ item: ClipItem) {
         items.removeAll { $0.id == item.id }
         removePayload(item)
-        rebuildTagIndex()
+        removeFromTagIndex(item)
         db?.delete(id: item.id)
     }
 
@@ -258,6 +335,10 @@ final class ClipStore: ObservableObject {
     private func move(_ item: ClipItem, toFront: Bool) {
         guard items.contains(where: { $0.id == item.id }) else { return }
         sortStable()   // pinned-first, then recency — fully determines order
+        // Reordering `items` shifts where `item` sits inside its tag buckets.
+        // Keep the buckets in `items` order so the index stays identical to a full
+        // rebuild without paying for one on every bump (markUsed / dedup).
+        repositionInTagIndex(item)
     }
 
     private func sortStable() {

@@ -1,5 +1,6 @@
 import Foundation
 import CoreML
+import Accelerate
 
 // MARK: - Levels & modes
 
@@ -145,7 +146,7 @@ final class OgmaEmbedder: TextEmbedder {
         self.model = model
         self.tokenizer = tokenizer
         self.dimension = dimension
-        self.signature = "\(modelName)-\(dimension)"
+        self.signature = "\(modelName)-\(dimension)-v1"
     }
 
     func embed(_ text: String) -> [Float] { run(text, task: .doc) }
@@ -317,8 +318,8 @@ enum SemanticRanker {
     static func cosine(_ a: [Float], _ b: [Float]) -> Float {
         guard a.count == b.count, !a.isEmpty else { return 0 }
         var dot: Float = 0
-        for i in a.indices { dot += a[i] * b[i] }
-        return dot // inputs L2-normalised
+        vDSP_dotpr(a, 1, b, 1, &dot, vDSP_Length(a.count))
+        return dot // inputs L2-normalised → dot == cosine
     }
 
     /// Essence search: full query·item cosine, best-first, thresholded.
