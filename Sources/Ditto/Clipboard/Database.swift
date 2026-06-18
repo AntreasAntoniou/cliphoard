@@ -17,6 +17,8 @@ final class Database {
         }
         exec("PRAGMA journal_mode = WAL;")
         exec("PRAGMA foreign_keys = ON;")
+        exec("PRAGMA busy_timeout = 5000;")     // wait out brief WAL contention
+        exec("PRAGMA synchronous = NORMAL;")
         exec("""
         CREATE TABLE IF NOT EXISTS clips (
             id TEXT PRIMARY KEY, kind TEXT NOT NULL, text TEXT NOT NULL,
@@ -34,7 +36,7 @@ final class Database {
         exec("CREATE INDEX IF NOT EXISTS idx_clips_order ON clips(pinned, last_used_at);")
     }
 
-    deinit { sqlite3_close(db) }
+    deinit { sqlite3_close_v2(db) }   // v2 tolerates outstanding statements
 
     // MARK: Reads
 
@@ -203,10 +205,16 @@ extension Database {
 
     static func vectorFromBlob(_ stmt: OpaquePointer?, _ i: Int32) -> [Float] {
         guard let data = blob(stmt, i) else { return [] }
-        let count = data.count / MemoryLayout<Float16>.stride
+        let stride = MemoryLayout<Float16>.stride
+        guard data.count % stride == 0 else {   // malformed blob → treat as no vector
+            NSLog("Ditto db: embedding blob length \(data.count) not a multiple of \(stride)")
+            return []
+        }
+        let count = data.count / stride
+        // loadUnaligned: a Data buffer is not guaranteed 2-byte aligned, so a
+        // bound Float16 pointer would be undefined behavior.
         return data.withUnsafeBytes { raw in
-            let buf = raw.bindMemory(to: Float16.self)
-            return (0..<count).map { Float(buf[$0]) }
+            (0..<count).map { Float(raw.loadUnaligned(fromByteOffset: $0 * stride, as: Float16.self)) }
         }
     }
 

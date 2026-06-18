@@ -105,6 +105,24 @@ final class IngestIndexingTests: XCTestCase {
         XCTAssertFalse(ClipIndexer.isStale(item), "freshly indexed item must not be stale")
     }
 
+    func testDegenerateEmbeddingIsStale() {
+        let sig = EmbedderProvider.active.signature   // hashing-256
+        let dim = EmbedderProvider.active.dimension
+
+        let zero = ClipItem(kind: .text, text: "zero")
+        zero.embeddings[sig] = ModelEmbedding(vector: [Float](repeating: 0, count: dim), tags: [])
+        XCTAssertTrue(ClipIndexer.isStale(zero), "all-zero vector is degenerate -> stale (retry)")
+
+        let wrongLen = ClipItem(kind: .text, text: "wrong")
+        wrongLen.embeddings[sig] = ModelEmbedding(vector: [1, 2, 3], tags: [])
+        XCTAssertTrue(ClipIndexer.isStale(wrongLen), "wrong-length vector -> stale")
+
+        let ok = ClipItem(kind: .text, text: "ok")
+        var v = [Float](repeating: 0, count: dim); v[5] = 0.5
+        ok.embeddings[sig] = ModelEmbedding(vector: v, tags: [1])
+        XCTAssertFalse(ClipIndexer.isStale(ok), "right-length non-zero vector -> not stale")
+    }
+
     func testUnprocessedItemIsStale() {
         let fresh = ClipItem(kind: .text, text: "never embedded")
         XCTAssertTrue(ClipIndexer.isStale(fresh), "no embedding for active model → stale")

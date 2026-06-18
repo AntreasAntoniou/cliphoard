@@ -155,10 +155,13 @@ final class OgmaEmbedder: TextEmbedder {
         var ids = tokenizer.encode(text).map { Int32($0) }
         if ids.count > maxLen { ids = Array(ids.prefix(maxLen - 1)) + [ids[ids.count - 1]] }
         let len = ids.count
+        // Return [] (not a zero vector) on every failure path. A zero vector would
+        // be cached as a valid embedding and never retried, permanently corrupting
+        // this clip's tags/search; an empty result keeps it stale for re-indexing.
         guard let idArr = try? MLMultiArray(shape: [1, NSNumber(value: len)], dataType: .int32),
               let maskArr = try? MLMultiArray(shape: [1, NSNumber(value: len)], dataType: .int32),
               let taskArr = try? MLMultiArray(shape: [1], dataType: .int32) else {
-            return [Float](repeating: 0, count: dimension)
+            return []
         }
         for i in 0..<len { idArr[i] = NSNumber(value: ids[i]); maskArr[i] = 1 }
         taskArr[0] = NSNumber(value: task.rawValue)
@@ -170,11 +173,11 @@ final class OgmaEmbedder: TextEmbedder {
             out = try model.prediction(from: input)
         } catch {
             NSLog("Ditto OgmaEmbedder: prediction failed (ids=\(ids.prefix(8))): \(error)")
-            return [Float](repeating: 0, count: dimension)
+            return []
         }
         guard let emb = out.featureValue(for: "embedding")?.multiArrayValue else {
             NSLog("Ditto OgmaEmbedder: no 'embedding' output; features=\(out.featureNames)")
-            return [Float](repeating: 0, count: dimension)
+            return []
         }
         var v = [Float](repeating: 0, count: emb.count)
         for i in 0..<emb.count { v[i] = emb[i].floatValue }
@@ -198,7 +201,9 @@ enum EmbedderProvider {
     @discardableResult
     static func configure(level: DeepSearchLevel) -> Bool {
         let before = active.signature
-        if let name = level.modelName,
+        // OgmaTokenizer implements ONLY ogma's tokenizer (metaspace + offset); it
+        // would mis-tokenize a non-ogma model (e.g. EmbeddingGemma). Gate to ogma.
+        if let name = level.modelName, name.hasPrefix("ogma"),
            let modelURL = Bundle.main.url(forResource: name, withExtension: "mlmodelc"),
            let tokFolder = Bundle.main.url(forResource: "\(name)-tokenizer", withExtension: nil),
            let model = try? MLModel(contentsOf: modelURL),
@@ -266,13 +271,23 @@ enum ClipIndexer {
     static func index(_ item: ClipItem) {
         let embedder = EmbedderProvider.active
         let vec = embedder.embed(SemanticRanker.searchText(item))
+        // Don't cache a failed/degenerate embedding — leave the clip stale so it's
+        // retried, rather than poisoning its tags/search permanently.
+        guard isUsable(vec, dimension: embedder.dimension) else { return }
         let tags = TagSpace.classify(vec, embedder: embedder, topK: 5)
         item.embeddings[embedder.signature] = ModelEmbedding(vector: vec, tags: tags)
     }
 
-    /// True when the clip has no embedding for the active model yet.
+    /// A vector is usable if it's the right length and not all-zeros.
+    static func isUsable(_ vec: [Float], dimension: Int) -> Bool {
+        vec.count == dimension && vec.contains { $0 != 0 }
+    }
+
+    /// True when the clip has no usable embedding for the active model yet (no
+    /// entry, or a degenerate zero/wrong-length vector from a past failure).
     static func isStale(_ item: ClipItem) -> Bool {
-        !item.isEmbedded(by: EmbedderProvider.active.signature)
+        guard let emb = item.embeddings[EmbedderProvider.active.signature] else { return true }
+        return !isUsable(emb.vector, dimension: EmbedderProvider.active.dimension)
     }
 
     /// Use the embedding's top tags to correct a single-token `text` clip the

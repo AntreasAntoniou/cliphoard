@@ -51,7 +51,10 @@ final class OgmaTokenizer {
     /// Encode text to model input ids (already offset, with `[CLS]`/`[SEP]`).
     func encode(_ text: String) -> [Int] {
         var ids = [clsId]
-        for word in normalize(text).split(separator: " ") {
+        // Split on ALL whitespace (not just ASCII space) so newlines/tabs in
+        // multi-line clips don't get folded into a metaspace "word" that the
+        // Unigram vocab can't match and falls through to per-char UNK runs.
+        for word in normalize(text).split(whereSeparator: { $0.isWhitespace }) {
             ids.append(contentsOf: unigram("\u{2581}" + word))   // ▁ metaspace prefix
         }
         ids.append(sepId)
@@ -68,8 +71,9 @@ final class OgmaTokenizer {
             $0.properties.generalCategory != .nonspacingMark
         }))
         s = s.lowercased()
-        while s.contains("  ") { s = s.replacingOccurrences(of: "  ", with: " ") }
-        return s.trimmingCharacters(in: .whitespaces)
+        // Collapse every whitespace run (spaces, tabs, newlines) to one space.
+        s = s.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
+        return s.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     // MARK: Unigram Viterbi (best segmentation by summed log-prob)

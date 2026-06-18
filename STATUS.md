@@ -26,6 +26,17 @@ The confirmed tally is **1 Critical, 13 High, 11 Medium, 13 Low**. None of the C
 
 ---
 
+# Resolved in the audit-integration pass
+
+These confirmed findings were fixed immediately (low-risk, unit-tested):
+- **BL-04 (H3) tokenizer whitespace** — `OgmaTokenizer.encode`/`normalize` now split on all Unicode whitespace, so multi-line clips no longer become UNK runs. Regression test `OgmaTokenizerTests.testMultiLineDoesNotProduceUnkRuns` + a checked-in tokenizer fixture.
+- **BL-05 (H10) degenerate embeddings** — `OgmaEmbedder.run` returns `[]` on failure (not a zero vector); `ClipIndexer.index` skips caching empties; `isStale` treats all-zero/wrong-length vectors as stale (retried). Test `testDegenerateEmbeddingIsStale`.
+- **BL-06 (H11) partial / BL-13** — `busy_timeout=5000`, `synchronous=NORMAL`, `sqlite3_close_v2`, Float16 read via `loadUnaligned` (was UB) + blob-length validation. (UI-surfacing of write failures still open below.)
+- **BL-17 (M4) partial** — `EmbedderProvider.configure` gated to `ogma`-prefixed model names so the Gemma tier can never load OgmaTokenizer and mis-tokenize.
+- **BL-T1 (partial)** `DatabaseTests`; **BL-T3 (partial)** `OgmaTokenizerTests`.
+
+Everything below remains open.
+
 # Prioritized Backlog
 
 Severity tags reference confirmed findings in AUDIT.md. Each item is spec'd (problem / approach / files / acceptance) so work can resume without re-discovery. Test gaps are included as backlog items (BL-T*).
