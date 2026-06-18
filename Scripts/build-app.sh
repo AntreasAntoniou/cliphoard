@@ -59,8 +59,10 @@ fi
 # identity keeps it constant. If that identity is not present, fall back to ad-hoc
 # (`-`), which mints a fresh identity each build and thus drops the AX grant on
 # every rebuild (see SPEC Tier 6.6). Run Scripts/setup-signing.sh once to fix that.
+# Note: no `-v` (valid-only) — a self-signed identity is reported NOT_TRUSTED and
+# filtered by `-v`, yet codesign can still sign with it perfectly well.
 SIGN_ID="Ditto Local Signing"
-if security find-identity -v -p codesigning 2>/dev/null | grep -qF "$SIGN_ID"; then
+if security find-identity -p codesigning 2>/dev/null | grep -qF "$SIGN_ID"; then
     echo "▸ Signing (stable: $SIGN_ID)…"
     codesign --force --deep --sign "$SIGN_ID" "$APP" 2>/dev/null || echo "  (codesign skipped)"
 else

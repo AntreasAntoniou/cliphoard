@@ -25,7 +25,7 @@ IDENTITY_NAME="Ditto Local Signing"
 # --- Already present? Then there is nothing to do. ---------------------------
 # `security find-identity -v -p codesigning` lists valid identities usable for
 # codesigning; if ours is in there, bail out early (idempotent).
-if security find-identity -v -p codesigning 2>/dev/null | grep -qF "$IDENTITY_NAME"; then
+if security find-identity -p codesigning 2>/dev/null | grep -qF "$IDENTITY_NAME"; then
     echo "✓ Code-signing identity already present: \"$IDENTITY_NAME\" — nothing to do."
     exit 0
 fi
@@ -95,7 +95,7 @@ security import "$P12" \
     -T /usr/bin/codesign
 
 # --- Verify the identity is now usable for codesigning. ----------------------
-if security find-identity -v -p codesigning 2>/dev/null | grep -qF "$IDENTITY_NAME"; then
+if security find-identity -p codesigning 2>/dev/null | grep -qF "$IDENTITY_NAME"; then
     echo "✓ Created \"$IDENTITY_NAME\" in $LOGIN_KEYCHAIN"
     echo "  Now run Scripts/build-app.sh — it will prefer this identity over ad-hoc signing."
 else
