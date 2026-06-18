@@ -13,6 +13,17 @@ final class ClipStore: ObservableObject {
     /// any query-time embedding or per-item dot products.
     private(set) var tagIndex: [Int: [ClipItem]] = [:]
 
+    /// Live progress of a background (re)indexing pass, or nil when idle.
+    @Published private(set) var indexing: IndexingProgress?
+
+    struct IndexingProgress {
+        var done: Int
+        var total: Int
+        /// Estimated seconds remaining (from the observed per-item rate).
+        var etaSeconds: Double?
+        var fraction: Double { total > 0 ? Double(done) / Double(total) : 0 }
+    }
+
     /// Maximum number of unpinned items kept (0 = unlimited). Pinned items are
     /// always kept regardless.
     var historyLimit: Int {
@@ -90,17 +101,27 @@ final class ClipStore: ObservableObject {
     func reindexStale() {
         let stale = items.filter { ClipIndexer.isStale($0) }
         guard !stale.isEmpty else { return }
+        let total = stale.count
+        let started = Date()
+        indexing = IndexingProgress(done: 0, total: total, etaSeconds: nil)
         Task { @MainActor in
-            var processed = 0
+            var done = 0
             for item in stale {
                 ClipIndexer.index(item)
-                processed += 1
-                if processed % 16 == 0 { await Task.yield() }
+                done += 1
+                // Publish progress + reveal new tags every few items.
+                if done % 8 == 0 || done == total {
+                    let elapsed = Date().timeIntervalSince(started)
+                    let eta = done > 0 ? elapsed / Double(done) * Double(total - done) : nil
+                    indexing = IndexingProgress(done: done, total: total, etaSeconds: eta)
+                    rebuildTagIndex()
+                    await Task.yield()
+                }
             }
             rebuildTagIndex()
             save()
-            objectWillChange.send()
-            DebugLog.write("reindexed \(processed) stale items → \(EmbedderProvider.active.signature)")
+            indexing = nil
+            DebugLog.write("reindexed \(done) stale items → \(EmbedderProvider.active.signature)")
         }
     }
 

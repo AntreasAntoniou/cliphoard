@@ -63,7 +63,9 @@ enum SearchMode: String, CaseIterable, Identifiable {
 
 enum DeepSearch {
     static var level: DeepSearchLevel {
-        get { DeepSearchLevel(rawValue: UserDefaults.standard.string(forKey: "deepSearchLevel") ?? "off") ?? .off }
+        // Default to a model on (ogma-small) so clips are tagged out of the box;
+        // search MODE stays exact (predictable) until the user opts into semantic.
+        get { DeepSearchLevel(rawValue: UserDefaults.standard.string(forKey: "deepSearchLevel") ?? "normal") ?? .normal }
         set { UserDefaults.standard.set(newValue.rawValue, forKey: "deepSearchLevel") }
     }
     static var mode: SearchMode {

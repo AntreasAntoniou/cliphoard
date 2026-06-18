@@ -17,6 +17,7 @@ struct ContentView: View {
         VStack(spacing: 0) {
             toolbar
             Divider().opacity(0.5)
+            if let progress = store.indexing { indexingBar(progress) }
             if model.showSettings {
                 SettingsView(settings: settings, store: store)
             } else {
@@ -50,8 +51,10 @@ struct ContentView: View {
 
             if !model.showSettings {
                 HStack(spacing: 6) {
-                    Image(systemName: "magnifyingglass").foregroundStyle(.secondary).font(.system(size: 12))
-                    TextField("Search", text: $model.query)
+                    let semantic = DeepSearch.mode != .exact
+                    Image(systemName: semantic ? "sparkles" : "magnifyingglass")
+                        .foregroundStyle(semantic ? Theme.accent : .secondary).font(.system(size: 12))
+                    TextField(semantic ? "\(DeepSearch.mode.title) search" : "Search", text: $model.query)
                         .textFieldStyle(.plain)
                         .font(.system(size: 13))
                         .frame(width: 180)
@@ -173,9 +176,27 @@ struct ContentView: View {
     /// The active model's top tag names for a clip (falls back to any cached
     /// model's tags), so the card can show how the system classified it.
     @MainActor private func tagNames(for item: ClipItem) -> [String] {
-        let sig = EmbedderProvider.active.signature
-        let ids = item.embeddings[sig]?.tags ?? item.embeddings.values.first?.tags ?? []
+        // Only the ACTIVE model's tags — no fallback to a stale model's tags, so a
+        // freshly captured clip and an old one are always consistent.
+        guard DeepSearch.level != .off,
+              let ids = item.embeddings[EmbedderProvider.active.signature]?.tags else { return [] }
         return ids.prefix(3).compactMap { TagSpace.names.indices.contains($0) ? TagSpace.names[$0] : nil }
+    }
+
+    private func indexingBar(_ p: ClipStore.IndexingProgress) -> some View {
+        VStack(spacing: 3) {
+            HStack(spacing: 6) {
+                Image(systemName: "wand.and.stars").font(.system(size: 10)).foregroundStyle(Theme.accent)
+                Text("Tagging \(p.done) of \(p.total)…").font(.system(size: 11)).foregroundStyle(.secondary)
+                Spacer()
+                if let eta = p.etaSeconds, eta > 0.5 {
+                    Text("~\(Int(eta.rounded()))s left").font(.system(size: 11)).foregroundStyle(.tertiary)
+                }
+            }
+            ProgressView(value: p.fraction).progressViewStyle(.linear).tint(Theme.accent)
+        }
+        .padding(.horizontal, 16).padding(.vertical, 6)
+        .background(Theme.accent.opacity(0.06))
     }
 
     private var emptyState: some View {
