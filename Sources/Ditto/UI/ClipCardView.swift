@@ -6,6 +6,8 @@ struct ClipCardView: View {
     let index: Int
     let selected: Bool
     let storeDir: URL
+    /// A few of this clip's auto-assigned tags, so users see how it's classified.
+    var tags: [String] = []
     var onActivate: () -> Void
     var onPin: () -> Void
     var onDelete: () -> Void
@@ -18,6 +20,7 @@ struct ClipCardView: View {
             Divider().opacity(0.4)
             content
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            tagRow
             footer
         }
         .frame(width: Theme.cardWidth, height: Theme.cardHeight)
@@ -125,6 +128,24 @@ struct ClipCardView: View {
             .font(.system(size: 30))
             .foregroundStyle(.secondary)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    @ViewBuilder private var tagRow: some View {
+        if !tags.isEmpty {
+            HStack(spacing: 4) {
+                ForEach(tags.prefix(3), id: \.self) { tag in
+                    Text(tag)
+                        .font(.system(size: 9, weight: .medium))
+                        .lineLimit(1)
+                        .padding(.horizontal, 5).padding(.vertical, 2)
+                        .background(Theme.accent.opacity(0.15), in: Capsule())
+                        .foregroundStyle(Theme.accent)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 10)
+            .padding(.bottom, 4)
+        }
     }
 
     private var footer: some View {

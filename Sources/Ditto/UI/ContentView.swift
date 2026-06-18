@@ -129,6 +129,7 @@ struct ContentView: View {
                                 index: idx,
                                 selected: idx == model.selection,
                                 storeDir: store.storeDirectory,
+                                tags: tagNames(for: item),
                                 onActivate: { model.onPaste?(item, false) },
                                 onPin: { store.togglePin(item) },
                                 onDelete: { store.delete(item) }
@@ -167,6 +168,14 @@ struct ContentView: View {
             .onChange(of: model.query) { _ in proxy.scrollTo(0, anchor: .leading) }
         }
         .frame(maxHeight: .infinity)
+    }
+
+    /// The active model's top tag names for a clip (falls back to any cached
+    /// model's tags), so the card can show how the system classified it.
+    @MainActor private func tagNames(for item: ClipItem) -> [String] {
+        let sig = EmbedderProvider.active.signature
+        let ids = item.embeddings[sig]?.tags ?? item.embeddings.values.first?.tags ?? []
+        return ids.prefix(3).compactMap { TagSpace.names.indices.contains($0) ? TagSpace.names[$0] : nil }
     }
 
     private var emptyState: some View {

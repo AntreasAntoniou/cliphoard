@@ -68,7 +68,12 @@ final class EssenceRankingTests: XCTestCase {
 
 @MainActor
 final class IngestIndexingTests: XCTestCase {
-    override func setUp() { super.setUp(); Feedback.soundEnabled = false }
+    override func setUp() {
+        super.setUp()
+        Feedback.soundEnabled = false
+        DeepSearch.level = .normal // a tier is selected so ingest embeds (active = hashing fallback here)
+    }
+    override func tearDown() { DeepSearch.level = .off; super.tearDown() }
 
     private func tempStore() -> ClipStore {
         ClipStore(directory: FileManager.default.temporaryDirectory
@@ -79,45 +84,42 @@ final class IngestIndexingTests: XCTestCase {
         let store = tempStore()
         let item = ClipItem(kind: .text, text: "select * from users where id = 1")
         store.add(item)
-        XCTAssertNotNil(item.vector)
-        XCTAssertEqual(item.tagIDs?.count, 5)
+        let sig = EmbedderProvider.active.signature
+        XCTAssertNotNil(item.embeddings[sig]?.vector)
+        XCTAssertEqual(item.embeddings[sig]?.tags.count, 5)
     }
 
     func testTagIndexLookupIsPopulated() {
         let store = tempStore()
         let item = ClipItem(kind: .text, text: "git commit -m fix the parser bug")
         store.add(item)
-        let tag = try! XCTUnwrap(item.tagIDs?.first)
+        let tag = try! XCTUnwrap(item.embeddings[EmbedderProvider.active.signature]?.tags.first)
         XCTAssertTrue(store.items(taggedWith: tag).contains { $0.id == item.id })
     }
 
-    func testAddStampsVectorModelAndIsNotStale() {
+    func testAddCachesForActiveModelAndIsNotStale() {
         let store = tempStore()
         let item = ClipItem(kind: .text, text: "hello there")
         store.add(item)
-        XCTAssertEqual(item.vectorModel, EmbedderProvider.active.signature)
+        XCTAssertTrue(item.isEmbedded(by: EmbedderProvider.active.signature))
         XCTAssertFalse(ClipIndexer.isStale(item), "freshly indexed item must not be stale")
     }
 
     func testUnprocessedItemIsStale() {
         let fresh = ClipItem(kind: .text, text: "never embedded")
-        XCTAssertTrue(ClipIndexer.isStale(fresh), "nil-vector item is stale")
-        let wrongModel = ClipItem(kind: .text, text: "other model")
-        wrongModel.vector = [0, 0]; wrongModel.vectorModel = "some-other-model-999"
-        XCTAssertTrue(ClipIndexer.isStale(wrongModel), "different-model item is stale")
+        XCTAssertTrue(ClipIndexer.isStale(fresh), "no embedding for active model → stale")
+        let otherModel = ClipItem(kind: .text, text: "other model only")
+        otherModel.embeddings["some-other-model-999"] = ModelEmbedding(vector: [0, 0], tags: [])
+        XCTAssertTrue(ClipIndexer.isStale(otherModel), "embedded only by a different model → stale")
     }
 
-    func testVectorModelPersists() {
-        let dir = FileManager.default.temporaryDirectory
-            .appendingPathComponent("DittoTests-vm-\(UUID().uuidString)")
-        do {
-            let store = ClipStore(directory: dir)
-            store.add(ClipItem(kind: .text, text: "remember my model"))
-        }
-        let reloaded = ClipStore(directory: dir)
-        XCTAssertEqual(reloaded.items.first?.vectorModel, EmbedderProvider.active.signature)
-        // Reload must not leave items stale (no redundant reprocessing needed).
-        XCTAssertFalse(ClipIndexer.isStale(reloaded.items.first!))
+    func testPerModelCacheIsKeptAcrossModels() {
+        let item = ClipItem(kind: .text, text: "cached by two models")
+        item.embeddings["ogma-small-256"] = ModelEmbedding(vector: [1, 0], tags: [3])
+        item.embeddings["ogma-micro-128"] = ModelEmbedding(vector: [0, 1], tags: [7])
+        XCTAssertTrue(item.isEmbedded(by: "ogma-small-256"))
+        XCTAssertTrue(item.isEmbedded(by: "ogma-micro-128"))   // round-trip switch is free
+        XCTAssertEqual(item.embeddings.count, 2)
     }
 
     func testVectorsPersistAndReload() {
@@ -128,7 +130,9 @@ final class IngestIndexingTests: XCTestCase {
             store.add(ClipItem(kind: .text, text: "persisted vector entry"))
         }
         let reloaded = ClipStore(directory: dir)
-        XCTAssertNotNil(reloaded.items.first?.vector)
-        XCTAssertEqual(reloaded.items.first?.tagIDs?.count, 5)
+        let sig = EmbedderProvider.active.signature
+        XCTAssertNotNil(reloaded.items.first?.embeddings[sig]?.vector)
+        XCTAssertEqual(reloaded.items.first?.embeddings[sig]?.tags.count, 5)
+        XCTAssertFalse(ClipIndexer.isStale(reloaded.items.first!), "reload shouldn't need reprocessing")
     }
 }

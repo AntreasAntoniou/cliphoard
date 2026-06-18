@@ -215,7 +215,7 @@ enum EmbedderProvider {
     /// search doesn't use vectors — so we don't churn embeddings needlessly.
     static func configureAndReindex(level: DeepSearchLevel, store: ClipStore) {
         configure(level: level)
-        if level != .off { store.reindexStale() }
+        if level != .off { store.refreshForActiveModel() }
     }
 }
 
@@ -283,14 +283,13 @@ enum ClipIndexer {
     static func index(_ item: ClipItem) {
         let embedder = EmbedderProvider.active
         let vec = embedder.embed(SemanticRanker.searchText(item))
-        item.vector = vec
-        item.tagIDs = TagSpace.classify(vec, embedder: embedder, topK: 5)
-        item.vectorModel = embedder.signature
+        let tags = TagSpace.classify(vec, embedder: embedder, topK: 5)
+        item.embeddings[embedder.signature] = ModelEmbedding(vector: vec, tags: tags)
     }
 
-    /// True when the clip still needs (re)processing for the active embedder.
+    /// True when the clip has no embedding for the active model yet.
     static func isStale(_ item: ClipItem) -> Bool {
-        item.vector == nil || item.vectorModel != EmbedderProvider.active.signature
+        !item.isEmbedded(by: EmbedderProvider.active.signature)
     }
 }
 
@@ -317,7 +316,7 @@ enum SemanticRanker {
         let qv = embedder.embed(query, query: true)
         let q = query.lowercased()
         let scored = items.map { item -> (ClipItem, Float) in
-            let vec = item.vector ?? embedder.embed(searchText(item))
+            let vec = item.embeddings[embedder.signature]?.vector ?? embedder.embed(searchText(item))
             let substring = searchText(item).lowercased().contains(q)
             return (item, (substring ? 1 : 0) + cosine(qv, vec))
         }

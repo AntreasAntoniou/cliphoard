@@ -49,8 +49,9 @@ final class ClipStore: ObservableObject {
             save()
             return
         }
-        // Embed + tag at ingest so essence/tag search are ready immediately.
-        if ClipIndexer.isStale(item) { ClipIndexer.index(item) }
+        // Embed + tag at ingest (for the active model) so semantic search is
+        // ready immediately. Skipped in the `off` tier, which uses no vectors.
+        if DeepSearch.level != .off && ClipIndexer.isStale(item) { ClipIndexer.index(item) }
         items.insert(item, at: 0)
         trim()
         // Keep the pinned-first / recency order consistent with every other path
@@ -67,17 +68,25 @@ final class ClipStore: ObservableObject {
     func items(taggedWith tagID: Int) -> [ClipItem] { tagIndex[tagID] ?? [] }
 
     private func rebuildTagIndex() {
+        let sig = EmbedderProvider.active.signature
         var index: [Int: [ClipItem]] = [:]
         for item in items {
-            for tag in item.tagIDs ?? [] { index[tag, default: []].append(item) }
+            for tag in item.embeddings[sig]?.tags ?? [] { index[tag, default: []].append(item) }
         }
         tagIndex = index
     }
 
-    /// Re-embed only the entries that aren't already in the active model's space
-    /// (nil vectors, pre-indexing data, or a different model). Runs in the
-    /// background, yielding between items so the UI stays responsive, and is
-    /// resumable — an interrupted pass just leaves the rest stale for next time.
+    /// Point the store at the now-active model: rebuild the tag index for its
+    /// cached tags and fill in any clips it hasn't embedded yet.
+    func refreshForActiveModel() {
+        rebuildTagIndex()
+        reindexStale()
+    }
+
+    /// Embed only the entries the active model hasn't processed yet (a clip the
+    /// model already embedded — e.g. on a round-trip model switch — is skipped).
+    /// Runs in the background, yields between items so the UI stays responsive,
+    /// and is resumable — an interrupted pass leaves the rest for next time.
     func reindexStale() {
         let stale = items.filter { ClipIndexer.isStale($0) }
         guard !stale.isEmpty else { return }
@@ -200,9 +209,16 @@ final class ClipStore: ObservableObject {
         guard let data = try? Data(contentsOf: indexURL) else { return }
         if let decoded = try? JSONDecoder().decode([ClipItem].self, from: data) {
             items = decoded
+            // Migrate legacy single-vector fields into the per-model cache.
+            for item in items {
+                if item.embeddings.isEmpty, let v = item.vector {
+                    item.embeddings[item.vectorModel ?? "hashing-256"] =
+                        ModelEmbedding(vector: v, tags: item.tagIDs ?? [])
+                }
+                item.vector = nil; item.tagIDs = nil; item.vectorModel = nil
+            }
             // Don't embed here — the embedder isn't configured yet at store init.
-            // `reindexStale()` (after the model is loaded) processes anything that
-            // needs it, so we never redundantly re-embed already-current entries.
+            // `refreshForActiveModel()` (after the model loads) fills any gaps.
             sortStable()
             rebuildTagIndex()
         }

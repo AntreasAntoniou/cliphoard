@@ -30,6 +30,12 @@ enum ClipKind: String, Codable, CaseIterable {
     }
 }
 
+/// A cached embedding for one model: the vector plus the top-K preset tag ids.
+struct ModelEmbedding: Codable {
+    var vector: [Float]
+    var tags: [Int]
+}
+
 /// A single entry in the clipboard history.
 ///
 /// Heavy payloads (image data) are stored on disk next to the metadata and
@@ -53,14 +59,19 @@ final class ClipItem: Codable, Identifiable {
     /// Bundle id / name of the app the clip was copied from.
     var sourceApp: String?
     var useCount: Int
-    /// Embedding of the clip's searchable text, computed at ingest (essence search).
+    /// Per-model cache: embedder signature → {vector, tags}. Keeping one entry
+    /// per model means switching to a model the clip was already embedded by is
+    /// free (no recompute) — only genuinely unprocessed (model, clip) pairs run.
+    var embeddings: [String: ModelEmbedding] = [:]
+
+    // Legacy single-vector fields (pre per-model cache). Decoded only to migrate
+    // old data into `embeddings`, then cleared. Not written for new clips.
     var vector: [Float]?
-    /// Top-K preset tag ids assigned at ingest (tag search). See `TagSpace`.
     var tagIDs: [Int]?
-    /// Signature of the embedder that produced `vector`/`tagIDs` (e.g.
-    /// "ogma-small-256"). Lets us reprocess only clips not already in the active
-    /// model's space when the model changes — and resume an interrupted reindex.
     var vectorModel: String?
+
+    /// Whether this clip already has an embedding for `signature`.
+    func isEmbedded(by signature: String) -> Bool { embeddings[signature] != nil }
 
     init(kind: ClipKind, text: String) {
         self.id = UUID()
