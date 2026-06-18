@@ -44,21 +44,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             let me = Unmanaged<AppDelegate>.fromOpaque(observer).takeUnretainedValue()
             DispatchQueue.main.async { me.toggle() }
         }, "ai.axiotic.ditto.toggle" as CFString, nil, .deliverImmediately)
+        #if DEBUG
         // Embed self-test: logs the active embedder's vector for a fixed string
-        // so it can be diffed against the Python reference.
+        // so it can be diffed against the Python reference. Debug-only: any
+        // process could post this, so it must not exist in release builds.
         CFNotificationCenterAddObserver(center, ctx, { _, observer, _, _, _ in
             guard let observer else { return }
             let me = Unmanaged<AppDelegate>.fromOpaque(observer).takeUnretainedValue()
             DispatchQueue.main.async { me.embedSelfTest() }
         }, "ai.axiotic.ditto.embedtest" as CFString, nil, .deliverImmediately)
-        // Open straight into Settings (for screenshot/testing).
+        // Open straight into Settings (for screenshot/testing). Debug-only.
         CFNotificationCenterAddObserver(center, ctx, { _, observer, _, _, _ in
             guard let observer else { return }
             let me = Unmanaged<AppDelegate>.fromOpaque(observer).takeUnretainedValue()
             DispatchQueue.main.async { if !me.isVisible { me.show() }; me.model.showSettings = true }
         }, "ai.axiotic.ditto.opensettings" as CFString, nil, .deliverImmediately)
+        #endif
     }
 
+    #if DEBUG
     private func embedSelfTest() {
         let e = EmbedderProvider.active
         let v = e.embed("the quick brown fox")
@@ -66,6 +70,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let norm = (v.reduce(0) { $0 + $1 * $1 }).squareRoot()
         NSLog("EMBEDTEST sig=\(e.signature) dim=\(v.count) norm=\(String(format: "%.5f", norm)) head=[\(head)]")
     }
+    #endif
 
     // MARK: Status bar
 

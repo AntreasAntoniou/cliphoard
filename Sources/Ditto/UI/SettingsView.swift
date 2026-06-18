@@ -125,11 +125,14 @@ struct SettingsView: View {
                         Text("Embedding model")
                         Spacer()
                         Picker("", selection: $settings.deepSearchLevel) {
-                            ForEach(DeepSearchLevel.allCases) { Text($0.title).tag($0) }
+                            // .high (EmbeddingGemma) has no bundled/converted model and
+                            // always falls back, so it's not offered (audit BL-17).
+                            ForEach(DeepSearchLevel.allCases.filter { $0 != .high }) { Text($0.title).tag($0) }
                         }
                         .labelsHidden().frame(width: 180)
                         .disabled(settings.searchMode == .exact)
                     }
+                    embedderStatus
                     Text("Exact = substring · Tag = fast preset-tag lookup · Essence = full vector similarity. Models run on-device (CoreML); falls back to a built-in embedder until bundled.")
                         .font(.system(size: 11)).foregroundStyle(.secondary)
                 }
@@ -246,6 +249,22 @@ struct SettingsView: View {
     }
 
     // MARK: Building blocks
+
+    /// Live status line for the active embedder. The hashing fallback means no
+    /// converted semantic model is loaded; anything else is a real on-device model.
+    @ViewBuilder
+    private var embedderStatus: some View {
+        let signature = EmbedderProvider.active.signature
+        let isFallback = signature.hasPrefix("hashing")
+        HStack(spacing: 6) {
+            Image(systemName: isFallback ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
+                .foregroundStyle(isFallback ? .orange : .green)
+            Text(isFallback ? "Semantic models not installed — using basic matching"
+                            : "Semantic model active: \(signature)")
+                .foregroundStyle(isFallback ? Color.secondary : Color.green)
+        }
+        .font(.system(size: 11))
+    }
 
     @ViewBuilder
     private func section<Content: View>(_ title: String, @ViewBuilder _ content: () -> Content) -> some View {

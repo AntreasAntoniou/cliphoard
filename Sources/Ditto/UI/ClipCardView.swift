@@ -14,6 +14,24 @@ struct ClipCardView: View {
 
     @State private var hovering = false
 
+    /// Decoded thumbnails keyed by file name, so the body doesn't re-decode the
+    /// image on every hover/selection re-evaluation (audit BL-09/H8).
+    private static let imageCache = NSCache<NSString, NSImage>()
+
+    /// Loads the downsampled `<uuid>-thumb.png` if it exists, else the full-res
+    /// original, decoding at most once per file name thanks to `imageCache`.
+    private func cachedImage(for file: String) -> NSImage? {
+        let thumbName = (file as NSString).deletingPathExtension + "-thumb.png"
+        let thumbURL = storeDir.appendingPathComponent(thumbName)
+        let useThumb = FileManager.default.fileExists(atPath: thumbURL.path)
+        let name = useThumb ? thumbName : file
+        if let cached = Self.imageCache.object(forKey: name as NSString) { return cached }
+        let url = useThumb ? thumbURL : storeDir.appendingPathComponent(file)
+        guard let image = NSImage(contentsOf: url) else { return nil }
+        Self.imageCache.setObject(image, forKey: name as NSString)
+        return image
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
@@ -85,7 +103,7 @@ struct ClipCardView: View {
         switch item.kind {
         case .image:
             if let file = item.payloadFile,
-               let nsImage = NSImage(contentsOf: storeDir.appendingPathComponent(file)) {
+               let nsImage = cachedImage(for: file) {
                 Image(nsImage: nsImage)
                     .resizable()
                     .aspectRatio(contentMode: .fill)

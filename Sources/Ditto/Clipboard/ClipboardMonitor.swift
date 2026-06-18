@@ -1,4 +1,5 @@
 import AppKit
+import ImageIO
 import UniformTypeIdentifiers
 
 /// Polls `NSPasteboard.general` and turns new contents into `ClipItem`s.
@@ -132,7 +133,31 @@ final class ClipboardMonitor {
               let png = rep.representation(using: .png, properties: [:]) else { return nil }
         let name = "\(id.uuidString).png"
         let url = store.storeDirectory.appendingPathComponent(name)
-        do { try png.write(to: url); return name } catch { return nil }
+        do { try png.write(to: url) } catch { return nil }
+        // Best-effort: also write a downsampled thumbnail next to the original so
+        // the SwiftUI card body decodes a small image instead of the full-res PNG
+        // on every re-evaluation (audit BL-09/H8). The full-res PNG above is kept
+        // for paste; if thumbnailing fails we simply skip it and the card falls
+        // back to the original.
+        Self.writeThumbnail(from: png, to: store.storeDirectory.appendingPathComponent("\(id.uuidString)-thumb.png"))
+        return name
+    }
+
+    /// Downsample `pngData` to a thumbnail no larger than `maxPixelSize` on its
+    /// longest edge and write it as PNG to `url`. Best-effort: any failure is
+    /// silently ignored.
+    private static func writeThumbnail(from pngData: Data, to url: URL, maxPixelSize: Int = 512) {
+        guard let source = CGImageSourceCreateWithData(pngData as CFData, nil) else { return }
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: maxPixelSize,
+        ]
+        guard let thumb = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary),
+              let dest = CGImageDestinationCreateWithURL(url as CFURL, UTType.png.identifier as CFString, 1, nil)
+        else { return }
+        CGImageDestinationAddImage(dest, thumb, nil)
+        CGImageDestinationFinalize(dest)
     }
 
     static func detectKind(for string: String) -> ClipKind {

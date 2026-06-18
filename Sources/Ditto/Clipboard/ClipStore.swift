@@ -63,10 +63,18 @@ final class ClipStore: ObservableObject {
     /// database. Errors are ignored — this is purely housekeeping.
     private func sweepOrphanPayloads() {
         let referenced = Set(items.compactMap { $0.payloadFile })
+        // A clip "<uuid>.png" may have a sidecar thumbnail "<uuid>-thumb.png"
+        // (ClipboardMonitor.writeThumbnail). Keep a thumbnail whose original is
+        // still referenced — otherwise the sweep deletes every thumbnail on launch.
+        func isLiveThumbnail(_ name: String) -> Bool {
+            guard name.hasSuffix("-thumb.png") else { return false }
+            return referenced.contains(String(name.dropLast("-thumb.png".count)) + ".png")
+        }
         guard let entries = try? FileManager.default.contentsOfDirectory(
             at: dir, includingPropertiesForKeys: nil) else { return }
         for url in entries where url.pathExtension.lowercased() == "png" {
-            if !referenced.contains(url.lastPathComponent) {
+            let name = url.lastPathComponent
+            if !referenced.contains(name) && !isLiveThumbnail(name) {
                 try? FileManager.default.removeItem(at: url)
             }
         }
@@ -262,6 +270,9 @@ final class ClipStore: ObservableObject {
     private func removePayload(_ item: ClipItem) {
         if let f = item.payloadFile {
             try? FileManager.default.removeItem(at: dir.appendingPathComponent(f))
+            // Remove the sidecar thumbnail too.
+            let thumb = (f as NSString).deletingPathExtension + "-thumb.png"
+            try? FileManager.default.removeItem(at: dir.appendingPathComponent(thumb))
         }
     }
 

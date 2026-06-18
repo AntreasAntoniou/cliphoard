@@ -85,13 +85,12 @@ openssl pkcs12 -export \
     -passout "pass:$P12_PASS"
 
 # 3) Import into the login keychain.
-#    -A         : allow any application to access the imported key (avoids repeated
-#                 keychain-access prompts when codesign runs).
-#    -T codesign: explicitly trust /usr/bin/codesign to use the key.
+#    -T codesign: explicitly trust /usr/bin/codesign to use the key. We do NOT
+#                 pass -A (which would grant ALL apps access to the signing key);
+#                 only codesign should be able to use it.
 security import "$P12" \
     -k "$LOGIN_KEYCHAIN" \
     -P "$P12_PASS" \
-    -A \
     -T /usr/bin/codesign
 
 # --- Verify the identity is now usable for codesigning. ----------------------
