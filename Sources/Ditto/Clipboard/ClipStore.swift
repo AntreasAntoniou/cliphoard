@@ -50,7 +50,7 @@ final class ClipStore: ObservableObject {
             return
         }
         // Embed + tag at ingest so essence/tag search are ready immediately.
-        if item.vector == nil { ClipIndexer.index(item) }
+        if ClipIndexer.isStale(item) { ClipIndexer.index(item) }
         items.insert(item, at: 0)
         trim()
         // Keep the pinned-first / recency order consistent with every other path
@@ -74,12 +74,25 @@ final class ClipStore: ObservableObject {
         tagIndex = index
     }
 
-    /// Recompute vectors + tags for every entry (e.g. after the model tier
-    /// changes, since vectors from different models aren't comparable).
-    func reindexAll() {
-        for item in items { ClipIndexer.index(item) }
-        rebuildTagIndex()
-        save()
+    /// Re-embed only the entries that aren't already in the active model's space
+    /// (nil vectors, pre-indexing data, or a different model). Runs in the
+    /// background, yielding between items so the UI stays responsive, and is
+    /// resumable — an interrupted pass just leaves the rest stale for next time.
+    func reindexStale() {
+        let stale = items.filter { ClipIndexer.isStale($0) }
+        guard !stale.isEmpty else { return }
+        Task { @MainActor in
+            var processed = 0
+            for item in stale {
+                ClipIndexer.index(item)
+                processed += 1
+                if processed % 16 == 0 { await Task.yield() }
+            }
+            rebuildTagIndex()
+            save()
+            objectWillChange.send()
+            DebugLog.write("reindexed \(processed) stale items → \(EmbedderProvider.active.signature)")
+        }
     }
 
     func togglePin(_ item: ClipItem) {
@@ -187,8 +200,9 @@ final class ClipStore: ObservableObject {
         guard let data = try? Data(contentsOf: indexURL) else { return }
         if let decoded = try? JSONDecoder().decode([ClipItem].self, from: data) {
             items = decoded
-            // Back-fill vectors/tags for entries saved before indexing existed.
-            for item in items where item.vector == nil { ClipIndexer.index(item) }
+            // Don't embed here — the embedder isn't configured yet at store init.
+            // `reindexStale()` (after the model is loaded) processes anything that
+            // needs it, so we never redundantly re-embed already-current entries.
             sortStable()
             rebuildTagIndex()
         }

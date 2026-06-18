@@ -210,15 +210,12 @@ enum EmbedderProvider {
         return active.signature != before
     }
 
-    /// Configure for `level` and re-embed all stored entries if the embedder
-    /// identity changed (vectors from different models aren't comparable).
+    /// Configure for `level`, then reprocess only the entries not already in the
+    /// active model's space. Skipped entirely for the `off` tier, whose substring
+    /// search doesn't use vectors — so we don't churn embeddings needlessly.
     static func configureAndReindex(level: DeepSearchLevel, store: ClipStore) {
         configure(level: level)
-        let sig = active.signature
-        if UserDefaults.standard.string(forKey: "vectorSignature") != sig {
-            store.reindexAll()
-            UserDefaults.standard.set(sig, forKey: "vectorSignature")
-        }
+        if level != .off { store.reindexStale() }
     }
 }
 
@@ -288,6 +285,12 @@ enum ClipIndexer {
         let vec = embedder.embed(SemanticRanker.searchText(item))
         item.vector = vec
         item.tagIDs = TagSpace.classify(vec, embedder: embedder, topK: 5)
+        item.vectorModel = embedder.signature
+    }
+
+    /// True when the clip still needs (re)processing for the active embedder.
+    static func isStale(_ item: ClipItem) -> Bool {
+        item.vector == nil || item.vectorModel != EmbedderProvider.active.signature
     }
 }
 

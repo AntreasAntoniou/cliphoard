@@ -57,6 +57,10 @@ final class ClipItem: Codable, Identifiable {
     var vector: [Float]?
     /// Top-K preset tag ids assigned at ingest (tag search). See `TagSpace`.
     var tagIDs: [Int]?
+    /// Signature of the embedder that produced `vector`/`tagIDs` (e.g.
+    /// "ogma-small-256"). Lets us reprocess only clips not already in the active
+    /// model's space when the model changes — and resume an interrupted reindex.
+    var vectorModel: String?
 
     init(kind: ClipKind, text: String) {
         self.id = UUID()
