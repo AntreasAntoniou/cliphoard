@@ -32,7 +32,7 @@ Five independent lenses: **brand/emotion** (Vesna), **legibility/contrast** (Okw
 
 1. **spotlight-palette** — *Verdict: broadest backing — top-3 across brand, legibility, speed, AND native-craft (4 lenses). The adversary flaw (wasteful preview pane, ambiguous selection) is real but fixable.* **← COUNCIL PICK**
 2. **compact-list-rows** — *Verdict: the density/speed workhorse — top-3 for legibility, speed, native-craft, and density (4 lenses), and the only front-runner the adversary says SURVIVES daily use. "Compact" is a misnomer to fix (3-line rows → 1 line).*
-3. **spotlight-rail** — *Verdict: legibility's and craft's favorite — the most convincingly Mac-native structure (Raycast DNA, ⌘ glyphs, syntax-highlighted detail). Not stress-tested = lower exposure.*
+3. **spotlight-rail** — *Verdict: legibility's and craft's favorite — the most convincingly Mac-native structure (command-palette DNA, ⌘ glyphs, syntax-highlighted detail). Not stress-tested = lower exposure.*
 4. **ditto-plainline** — *Verdict: pure density (speed + density top-3), but brand calls it "unfinished/generic" and legibility flags low-contrast metadata columns. The functional minimalist.*
 5. **timeline-spine** — *Verdict: brand-only love (calm narrative rhythm); no other lens scored it. Charming, unproven on speed/density.*
 6. **ditto-dashboard** — *Verdict: density's clever pick — the ONLY layout that designs for overflow ("213 more in history"). But brand calls it joyless enterprise admin. Strong dissent both ways.*

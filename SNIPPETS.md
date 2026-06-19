@@ -1,6 +1,6 @@
 # Snippets — design spec
 
-**Goal:** close the biggest functional gap vs. Paste/Alfred — a library of *saved,
+**Goal:** close the biggest functional gap in most clipboard managers — a library of *saved,
 reusable* clips (email signatures, addresses, boilerplate, canned replies, code
 templates) that live separately from the ephemeral copy history.
 
