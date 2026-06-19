@@ -1,8 +1,8 @@
-# Ditto — Agents.md (navigation map)
+# Yank — Agents.md (navigation map)
 
 > A native, open-source macOS menu-bar **clipboard manager**. Press **⌃⌥⌘V** and a
 > borderless `NSPanel` slides up from the bottom of the active screen showing your
-> clipboard history as a horizontal strip of cards; pick one and Ditto writes it
+> clipboard history as a horizontal strip of cards; pick one and Yank writes it
 > back to the pasteboard and simulates ⌘V into the app you were using. Built only
 > on Swift + AppKit + SwiftUI + Carbon + `sqlite3` (no Electron, no network, no
 > account, no telemetry). History persists in a **SQLite** DB (`ditto.sqlite`,
@@ -21,14 +21,14 @@
 
 ## 1. Directory / file map (path → responsibility)
 
-### App entry & wiring — `Sources/Ditto/App/`
+### App entry & wiring — `Sources/Yank/App/`
 | Path | Responsibility |
 | --- | --- |
 | `App/Main.swift` | `@main struct Main`. Builds `NSApplication`, sets `AppDelegate` as delegate, `setActivationPolicy(.accessory)` (no Dock icon), retains the delegate via `objc_setAssociatedObject(app, "dittoDelegate", …)`, then `app.run()`. Struct (not `main.swift`) to avoid the top-level-code vs `@MainActor` conflict under SwiftPM. |
 | `App/AppDelegate.swift` | The conductor (`@MainActor`, `NSApplicationDelegate`, `NSMenuDelegate`). Owns `store`/`monitor`/`model`/`panel`/`hotKey`/`statusItem`. `applicationDidFinishLaunching` wires the status item, panel, hotkey, Darwin remote toggles, calls `EmbedderProvider.configureAndReindex`, and `monitor.start()`. Builds the status menu (`rebuildMenu`/`menuNeedsUpdate`), handles keyboard (`handleKey`), and runs the paste flow (`show`/`hide`/`commit`/`copyToClipboard`). |
 | `App/HotKey.swift` | `final class HotKey`. Registers the global shortcut via Carbon `RegisterEventHotKey` + an `InstallEventHandler` on `GetApplicationEventTarget()`. Hotkey id signature `0x4454_4f48` ('DTOH'). `onPressed` callback dispatched to main. Carbon is used as the only reliable no-entitlement system-wide shortcut API. |
 
-### Clipboard core — `Sources/Ditto/Clipboard/`
+### Clipboard core — `Sources/Yank/Clipboard/`
 | Path | Responsibility |
 | --- | --- |
 | `Clipboard/ClipItem.swift` | `enum ClipKind {text,link,color,image,file}` (with `symbolName`/`title`) and `final class ClipItem: Codable, Identifiable` — the history entry. Also `struct ModelEmbedding {vector:[Float]; tags:[Int]}`. Reference type; `kind` is now **mutable** (the embedder can promote text→link). Holds `embeddings: [String: ModelEmbedding]` (per-model cache keyed by embedder signature) plus legacy `vector`/`tagIDs`/`vectorModel` (decoded only to migrate). Resilient `init(from:)` (every field optional-with-default → schema changes never wipe history). Derived `preview`, `characterCountLabel`, `signature` (dedup key, `img:`/`file:`/`color:`/`text:` prefix), `isEmbedded(by:)`. |
@@ -37,14 +37,14 @@
 | `Clipboard/Database.swift` | `final class Database` — thin SQLite store (links `sqlite3`). WAL + foreign keys. Tables `clips` and `embeddings` (`PRIMARY KEY(clip_id, model)`, cascade delete) + an order index. Incremental row ops: `insert`/`updateMeta`/`upsertEmbedding`/`delete`/`deleteUnpinned`/`delete(ids:)`/`transaction`. `loadAll()` reconstructs `ClipItem`s with their embeddings. Vectors stored as **Float16 BLOBs** (`blob(fromVector:)`/`vectorFromBlob`); tags as a comma-joined string. |
 | `Clipboard/Paster.swift` | `@MainActor enum Paster`. `writeToPasteboard(_:store:plain:)` clears + writes by kind (image from disk / file URL / RTF+string; `plain:true` strips RTF). `paste(into:)` activates the prior app then after 0.12 s sends a synthetic ⌘V (`CGEvent` virtual key `0x09`, `.maskCommand`, posted to `.cghidEventTap` — needs Accessibility). |
 
-### Search & on-device embeddings — `Sources/Ditto/Search/`
+### Search & on-device embeddings — `Sources/Yank/Search/`
 | Path | Responsibility |
 | --- | --- |
 | `Search/DeepSearch.swift` | The whole semantic-search engine in one file. Enums `DeepSearchLevel {off,low,normal,high}` (maps to CoreML model name + dimension; default `normal`) and `SearchMode {exact,tag,essence}` (default `exact`); `enum DeepSearch` holds both in UserDefaults. `protocol TextEmbedder` (+ `signature`, `embed`, query/doc variant). `struct HashingEmbedder` (FNV-1a tri-gram fallback, `"hashing-256"`). `final class OgmaEmbedder` (CoreML `MLModel` + `OgmaTokenizer`, task tokens QRY=4/DOC=5/SYM=6, dim 128/256/768). `enum EmbedderProvider` (owns `active` embedder; `configure`/`configureAndReindex`). `enum TagSpace` (tag vectors cache, `classify`, `nearestTag`). `enum ClipIndexer` (`index`, `isStale`, `refineKind` text→link). `enum SemanticRanker` (`searchText`, `cosine`, `essence`). |
 | `Search/OgmaTokenizer.swift` | `final class OgmaTokenizer` — a faithful Swift reimplementation of ogma's Unigram/SentencePiece tokenizer from the bundled `tokenizer.json`. NFKD-normalize → strip accents → lowercase → collapse spaces → whitespace split → `▁` metaspace prefix → Unigram Viterbi → wrap `[CLS]`…`[SEP]` → add the `+n_special_tokens` offset. Validated to match the PyTorch reference token ids bit-for-bit. |
 | `Search/TagBaskets.swift` | `struct TagBasket {id,name,tags}` (with caching `fingerprint`) and `enum TagBaskets` — the tag taxonomies. Five built-in baskets (`general` (100 tags), `developer`, `writing`, `business`, `everyday`) plus a UserDefaults-backed editable `custom` basket. `active`/`activeID` select the basket used by `TagSpace`. |
 
-### Floating bar UI — `Sources/Ditto/UI/`
+### Floating bar UI — `Sources/Yank/UI/`
 | Path | Responsibility |
 | --- | --- |
 | `UI/FloatingPanel.swift` | `final class FloatingPanel: NSPanel`. Borderless, nonactivating, level `.mainMenu+1`, joins all spaces; `barHeight 380`. **Stores a hosting controller** and rebuilds it on every present: `setContent(_:)` retains a `() -> NSViewController` builder; `refresh()` rebuilds an `NSHostingController`, installs it as `contentViewController`, forces synchronous layout — fixes the reopen-stale-content bug. `slideIn()` (0.28 s easeOut from below the screen edge) / `slideOut()` (0.2 s easeIn → `orderOut`). `targetScreen()` = screen under mouse. `resignKey()` → `onResignKey?()`. |
@@ -54,17 +54,17 @@
 | `UI/SettingsView.swift` | `final class AppSettings: ObservableObject` (two-way bindings over the persisted settings: sound, debug log, history limit, launch-at-login, search mode, embedding tier, active basket, custom tags; live `axTrusted` polling) **and** `struct SettingsView` — the in-bar settings surface (sections General/Sound/Search/Tags/History/Permissions & Advanced; `relaunch()` helper for AX). |
 | `UI/Theme.swift` | `enum Theme` (`cardWidth 220`, `cardHeight 250`, `accent`, `color(fromHex:)` for 3/6/8-digit hex). `struct FlowLayout: Layout` (wrapping tag-pill layout). `struct VisualEffectBackground: NSViewRepresentable` (blurred material; default `.hudWindow`/`.behindWindow`). |
 
-### Support — `Sources/Ditto/Support/`
+### Support — `Sources/Yank/Support/`
 | Path | Responsibility |
 | --- | --- |
-| `Support/Feedback.swift` | `@MainActor enum Feedback` (capture sound: `soundEnabled`/`soundName` defaults true/"Tink", 14 `availableSounds`, `play(named:)` volume 0.4 w/ beep fallback, `playCapture()`). `enum DebugLog` (`enabled` over UserDefaults `debugLog`; append-only ISO-8601 writer to `…/Ditto/debug.log`; `write(_:)`). |
+| `Support/Feedback.swift` | `@MainActor enum Feedback` (capture sound: `soundEnabled`/`soundName` defaults true/"Tink", 14 `availableSounds`, `play(named:)` volume 0.4 w/ beep fallback, `playCapture()`). `enum DebugLog` (`enabled` over UserDefaults `debugLog`; append-only ISO-8601 writer to `…/Yank/debug.log`; `write(_:)`). |
 | `Support/LoginItem.swift` | `@MainActor enum LoginItem` — launch-at-login via `SMAppService.mainApp` (`.enabled` status / `register()` / `unregister()`). Shared by the menu and Settings. |
 
-### Tests — `Tests/DittoTests/`
+### Tests — `Tests/YankTests/`
 | Path | Responsibility |
 | --- | --- |
-| `Tests/DittoTests/DittoTests.swift` | XCTest suites: `ClassificationTests` (`detectKind` text/link/color edge cases incl. hex-like words, bare domains, host-less url), `CodableResilienceTests` (legacy/minimal decode, embedding round-trip), `ColorParsingTests` (hex→RGBA), `SignatureTests` (dedup keys), `ClipStoreTests` (add/dedup/trim/unlimited/pin/filter/clear/**persistence round-trip via temp dir**/counts), `PasterTests` (plain strips RTF / rich keeps it). |
-| `Tests/DittoTests/DeepSearchTests.swift` | `EmbeddingTests` (HashingEmbedder determinism, FNV-1a stability, L2 norm, cosine, similarity ordering), `TagSpaceTests` (100 tags, classify top-5, nearestTag), `EssenceRankingTests` (substring ranks first), `IngestIndexingTests` (add embeds+tags, tag-index populated, staleness, per-model cache, vectors persist+reload). |
+| `Tests/YankTests/YankTests.swift` | XCTest suites: `ClassificationTests` (`detectKind` text/link/color edge cases incl. hex-like words, bare domains, host-less url), `CodableResilienceTests` (legacy/minimal decode, embedding round-trip), `ColorParsingTests` (hex→RGBA), `SignatureTests` (dedup keys), `ClipStoreTests` (add/dedup/trim/unlimited/pin/filter/clear/**persistence round-trip via temp dir**/counts), `PasterTests` (plain strips RTF / rich keeps it). |
+| `Tests/YankTests/DeepSearchTests.swift` | `EmbeddingTests` (HashingEmbedder determinism, FNV-1a stability, L2 norm, cosine, similarity ordering), `TagSpaceTests` (100 tags, classify top-5, nearestTag), `EssenceRankingTests` (substring ranks first), `IngestIndexingTests` (add embeds+tags, tag-index populated, staleness, per-model cache, vectors persist+reload). |
 
 ### On-device model pipeline — `tools/`
 | Path | Responsibility |
@@ -79,12 +79,12 @@
 ### Build / packaging — repo root, `Scripts/`, `Resources/`
 | Path | Responsibility |
 | --- | --- |
-| `Package.swift` | SwiftPM manifest. `swift-tools-version:5.9`, `platforms [.macOS(.v13)]`. Executable target `Ditto` (`Sources/Ditto`) links `AppKit`, `SwiftUI`, `Carbon`, `UniformTypeIdentifiers` + library `sqlite3`. Test target `DittoTests`. No external package dependencies. |
+| `Package.swift` | SwiftPM manifest. `swift-tools-version:5.9`, `platforms [.macOS(.v13)]`. Executable target `Yank` (`Sources/Yank`) links `AppKit`, `SwiftUI`, `Carbon`, `UniformTypeIdentifiers` + library `sqlite3`. Test target `YankTests`. No external package dependencies. |
 | `Makefile` | `build` (`swift build`), `app` (`Scripts/build-app.sh release`), `run` (`app` + `open`), `install` (copy to `/Applications`), `clean`. |
-| `Scripts/build-app.sh` | Builds `build/Ditto.app`: `swift build -c`, assembles bundle + Info.plist, renders the icon, compiles any `tools/models/*.mlpackage` → `.mlmodelc` and bundles them + the `<name>-tokenizer/` folder (remapping `tokenizer_class`→`T5Tokenizer`), then code-signs — preferring the stable `Ditto Local Signing` identity, else ad-hoc `-`. |
+| `Scripts/build-app.sh` | Builds `build/Yank.app`: `swift build -c`, assembles bundle + Info.plist, renders the icon, compiles any `tools/models/*.mlpackage` → `.mlmodelc` and bundles them + the `<name>-tokenizer/` folder (remapping `tokenizer_class`→`T5Tokenizer`), then code-signs — preferring the stable `Ditto Local Signing` identity, else ad-hoc `-`. |
 | `Scripts/setup-signing.sh` | One-time, **user-run** creation of a stable self-signed `Ditto Local Signing` code-signing identity in the login keychain (OpenSSL → legacy PKCS#12 → `security import`), so the Accessibility grant survives rebuilds. Idempotent; modifies the login keychain (may prompt for password). |
 | `Scripts/make-icon.swift` | Renders the app icon (indigo→purple gradient rounded rect + white `doc.on.clipboard.fill` SF Symbol) at the 10 `.iconset` sizes for `iconutil`. |
-| `Resources/Info.plist` | Bundle metadata: `CFBundleIdentifier ai.axiotic.ditto`, version `1.0.0`, **`LSUIElement true`** (accessory/no Dock icon), `LSMinimumSystemVersion 13.0`, `NSAppleEventsUsageDescription`, `CFBundleIconFile Ditto`, copyright. |
+| `Resources/Info.plist` | Bundle metadata: `CFBundleIdentifier ai.axiotic.ditto`, version `1.0.0`, **`LSUIElement true`** (accessory/no Dock icon), `LSMinimumSystemVersion 13.0`, `NSAppleEventsUsageDescription`, `CFBundleIconFile Yank`, copyright. |
 | `README.md` / `SPEC.md` / `LICENSE` / `.gitignore` | Docs (README is current; **SPEC is stale** — pre-deep-search/SQLite) + MIT license + ignores. |
 
 ---
@@ -148,13 +148,13 @@ Selecting (Enter / double-click / ⌘1–9) → `model.onPaste(item,plain)` → 
 
 ```bash
 make build         # swift build (debug binary)
-make app           # Scripts/build-app.sh release → build/Ditto.app (bundles models if present)
+make app           # Scripts/build-app.sh release → build/Yank.app (bundles models if present)
 make run           # build app + open it
-make install       # copy build/Ditto.app to /Applications
+make install       # copy build/Yank.app to /Applications
 make clean         # swift package clean + rm -rf build .build
 
 swift build [-c release]           # direct SwiftPM build
-swift test                         # run DittoTests (XCTest)
+swift test                         # run YankTests (XCTest)
 Scripts/build-app.sh [debug|release]   # assemble bundle + icon + models + codesign
 Scripts/setup-signing.sh           # one-time: stable self-signed identity (login keychain)
 ```
@@ -212,7 +212,7 @@ Poll 0.4 s / tolerance 0.1 / `.common`. Panel `barHeight 380`, level `.mainMenu+
 1. **Download** (`_dl.py <repo>`) → `tools/models/<name>/` (HF snapshot; brotli disabled).
 2. **Convert** (`convert_ogma.py models/<name>`) → loads ogma via `trust_remote_code`, wraps `forward(input_ids, attention_mask, task_token_ids)` with `F.normalize`, traces, `coremltools.convert` → `tools/models/<name>.mlpackage` with flexible sequence length and a printed PyTorch-vs-CoreML parity cosine (1.00000).
 3. **Verify tokenizer/embeddings** (`reference.py` → `reference.json`) — golden token ids / vector heads / norms the Swift side is matched against bit-for-bit. `_compat.py` provides the `StrEnum` shim for Python 3.10.
-4. **Bundle** (`Scripts/build-app.sh`) — compiles every `tools/models/*.mlpackage` to `.mlmodelc` into `Ditto.app/Contents/Resources`, and copies each model's `tokenizer.json`/`config.json`/`tokenizer_config.json` into a `<name>-tokenizer/` folder (remapping `tokenizer_class`→`T5Tokenizer`).
+4. **Bundle** (`Scripts/build-app.sh`) — compiles every `tools/models/*.mlpackage` to `.mlmodelc` into `Yank.app/Contents/Resources`, and copies each model's `tokenizer.json`/`config.json`/`tokenizer_config.json` into a `<name>-tokenizer/` folder (remapping `tokenizer_class`→`T5Tokenizer`).
 5. **Load at runtime** — `EmbedderProvider.configure(level:)` resolves `<name>.mlmodelc` + `<name>-tokenizer` from the bundle; on success uses `OgmaEmbedder` (CoreML), else falls back to `HashingEmbedder`. The Swift `OgmaTokenizer` reproduces ogma's Unigram pipeline (metaspace `▁`, `+n_special_tokens` offset) so token ids match the Python reference exactly.
 
 Model tiers: low `axiotic/ogma-micro` (2.3M, 128-dim) · normal `axiotic/ogma-small` (8.6M, 256-dim, default) · high `google/embeddinggemma-300m` (300M, 768-dim, gated). Each `OgmaEmbedder` has a `signature` (`"<name>-<dim>"`); vectors/tags are only comparable within one signature, which is why the per-model cache and the `hashing-256` fallback are kept separate.

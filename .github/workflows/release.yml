@@ -58,19 +58,19 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
         run: |
-          xcrun notarytool store-credentials ditto-notary \
+          xcrun notarytool store-credentials yank-notary \
             --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_PASSWORD"
 
       - name: Build, sign, notarize, package DMG
         env:
           DEVID: ${{ secrets.MACOS_DEVID }}
-          NOTARY_PROFILE: ditto-notary
+          NOTARY_PROFILE: yank-notary
         run: bash Scripts/release.sh
 
       - name: Compute DMG checksum
         id: dmg
         run: |
-          FILE=$(ls build/Ditto-*.dmg)
+          FILE=$(ls build/Yank-*.dmg)
           echo "path=$FILE" >> "$GITHUB_OUTPUT"
           echo "sha256=$(shasum -a 256 "$FILE" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
 
@@ -80,11 +80,11 @@ jobs:
           files: ${{ steps.dmg.outputs.path }}
           generate_release_notes: true
           body: |
-            ### Ditto ${{ github.ref_name }}
+            ### Yank ${{ github.ref_name }}
             A fast, private, open-source clipboard manager for macOS.
 
             - macOS 13 Ventura or later · Universal (Apple Silicon & Intel) · notarized
             - **SHA-256:** `${{ steps.dmg.outputs.sha256 }}`
 
-            Install: download the DMG, drag Ditto to Applications, and press ⌃⌥⌘V.
-            Or via Homebrew once the cask is published: `brew install --cask ditto`.
+            Install: download the DMG, drag Yank to Applications, and press ⌃⌥⌘V.
+            Or via Homebrew once the cask is published: `brew install --cask yank`.

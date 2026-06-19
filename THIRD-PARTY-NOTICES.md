@@ -1,9 +1,9 @@
 # Third-Party Notices
 
-Ditto itself is released under the [MIT License](LICENSE). It bundles and builds
+Yank itself is released under the [MIT License](LICENSE). It bundles and builds
 on the following third-party components, each under its own license. **Note the
 non-commercial model licenses below** — they govern the model weights shipped
-inside the distributed `.app`, not Ditto's own source code.
+inside the distributed `.app`, not Yank's own source code.
 
 ## On-device embedding models
 
@@ -12,8 +12,8 @@ inside the distributed `.app`, not Ditto's own source code.
 - **Attribution:** Derived with attribution to Jina AI (the `jina-embeddings`
   family). See each model's `README.md` under `tools/models/`.
 - **Implication:** The CoreML conversions of these models are bundled inside the
-  distributed Ditto binary. Under CC-BY-NC-4.0 the **weights may not be used for
-  commercial purposes**. Ditto's own code is MIT and unaffected; this restriction
+  distributed Yank binary. Under CC-BY-NC-4.0 the **weights may not be used for
+  commercial purposes**. Yank's own code is MIT and unaffected; this restriction
   applies to the bundled weights. Axiotic owns these models and may grant other
   terms for its own products — contact the maintainer if you need commercial use.
 

@@ -1,6 +1,6 @@
-# Releasing Ditto
+# Releasing Yank
 
-Ditto is distributed directly (Developer ID + notarization), not via the Mac App
+Yank is distributed directly (Developer ID + notarization), not via the Mac App
 Store — a clipboard manager that synthesizes ⌘V and registers a global hotkey
 can't run under the App Sandbox.
 
@@ -10,7 +10,7 @@ can't run under the App Sandbox.
    certificate (Xcode → Settings → Accounts, or developer.apple.com).
 2. **Notary credentials** stored in your keychain (used by `Scripts/release.sh`):
    ```sh
-   xcrun notarytool store-credentials ditto-notary \
+   xcrun notarytool store-credentials yank-notary \
      --apple-id "you@example.com" --team-id "ABCDE12345"
    # password = an app-specific password from appleid.apple.com
    ```
@@ -24,10 +24,10 @@ can't run under the App Sandbox.
 **Locally:**
 ```sh
 DEVID="Developer ID Application: Your Name (ABCDE12345)" \
-NOTARY_PROFILE=ditto-notary \
+NOTARY_PROFILE=yank-notary \
 bash Scripts/release.sh
-# → build/Ditto-<version>.dmg  (signed, notarized, stapled)
-gh release create v1.0.0 build/Ditto-*.dmg --generate-notes
+# → build/Yank-<version>.dmg  (signed, notarized, stapled)
+gh release create v1.0.0 build/Yank-*.dmg --generate-notes
 ```
 
 **Via CI:** push a tag and `.github/workflows/release.yml` does the rest:
@@ -37,11 +37,11 @@ git tag v1.0.0 && git push origin v1.0.0
 
 ## Homebrew cask
 
-`Casks/ditto.rb` is the cask source. Publish it from a tap repo
+`Casks/yank.rb` is the cask source. Publish it from a tap repo
 (`github.com/AntreasAntoniou/homebrew-tap`) and bump `version` + `sha256` per
 release (the release step prints the DMG SHA-256). Users then:
 ```sh
-brew install --cask antreasantoniou/tap/ditto
+brew install --cask antreasantoniou/tap/yank
 ```
 
 ## Prerequisite: bundled models

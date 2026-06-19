@@ -1,4 +1,4 @@
-# Ditto
+# Yank
 
 A floating clipboard manager for macOS — a native, open-source take on [Paste](https://pasteapp.io). Press **⌃⌥⌘V** anywhere and your clipboard history slides up from the bottom of the screen as a strip of cards. Pick one and it pastes straight back into whatever app you were using.
 
@@ -23,7 +23,7 @@ A floating clipboard manager for macOS — a native, open-source take on [Paste]
 
 | Shortcut | Action |
 | --- | --- |
-| `⌃⌥⌘V` | Show / hide the Ditto bar |
+| `⌃⌥⌘V` | Show / hide the Yank bar |
 | `← →` | Move selection |
 | `↩` | Paste selected clip |
 | `⌘C` / `⌃C` | Copy selected clip to the clipboard (no paste) |
@@ -42,15 +42,15 @@ permissions, debug logging).
 Requires macOS 13+ and the Swift toolchain (Xcode 15+).
 
 ```bash
-git clone https://github.com/AntreasAntoniou/ditto.git
-cd ditto
-make run          # builds Ditto.app and launches it
+git clone https://github.com/AntreasAntoniou/yank.git
+cd yank
+make run          # builds Yank.app and launches it
 ```
 
 Other targets:
 
 ```bash
-make app          # build build/Ditto.app
+make app          # build build/Yank.app
 make install      # copy to /Applications
 make build        # debug binary only
 make clean
@@ -58,24 +58,24 @@ make clean
 
 ### Permissions
 
-On first launch macOS will ask for **Accessibility** access — Ditto needs it to send the ⌘V keystroke that pastes into the focused app. Grant it under *System Settings → Privacy & Security → Accessibility*. Until then, selecting a clip still copies it to the clipboard; you just paste manually.
+On first launch macOS will ask for **Accessibility** access — Yank needs it to send the ⌘V keystroke that pastes into the focused app. Grant it under *System Settings → Privacy & Security → Accessibility*. Until then, selecting a clip still copies it to the clipboard; you just paste manually.
 
 ## How it works
 
 | Piece | File |
 | --- | --- |
-| Pasteboard polling + type detection | `Sources/Ditto/Clipboard/ClipboardMonitor.swift` |
-| History model, dedup, in-memory index, trimming | `Sources/Ditto/Clipboard/ClipStore.swift` |
-| SQLite store (incremental rows, Float16 vector BLOBs, WAL) | `Sources/Ditto/Clipboard/Database.swift` |
-| Write-back + simulated paste | `Sources/Ditto/Clipboard/Paster.swift` |
-| Global hotkey (Carbon) | `Sources/Ditto/App/HotKey.swift` |
-| Slide-up panel | `Sources/Ditto/UI/FloatingPanel.swift` |
-| Bar & card UI (SwiftUI) | `Sources/Ditto/UI/ContentView.swift`, `ClipCardView.swift` |
-| App wiring, menu, keyboard | `Sources/Ditto/App/AppDelegate.swift` |
+| Pasteboard polling + type detection | `Sources/Yank/Clipboard/ClipboardMonitor.swift` |
+| History model, dedup, in-memory index, trimming | `Sources/Yank/Clipboard/ClipStore.swift` |
+| SQLite store (incremental rows, Float16 vector BLOBs, WAL) | `Sources/Yank/Clipboard/Database.swift` |
+| Write-back + simulated paste | `Sources/Yank/Clipboard/Paster.swift` |
+| Global hotkey (Carbon) | `Sources/Yank/App/HotKey.swift` |
+| Slide-up panel | `Sources/Yank/UI/FloatingPanel.swift` |
+| Bar & card UI (SwiftUI) | `Sources/Yank/UI/ContentView.swift`, `ClipCardView.swift` |
+| App wiring, menu, keyboard | `Sources/Yank/App/AppDelegate.swift` |
 
 ## Deep search (on-device embeddings)
 
-Beyond exact substring search, Ditto can search **semantically**, fully on-device:
+Beyond exact substring search, Yank can search **semantically**, fully on-device:
 
 - **Essence search** — embeds your query and ranks the whole history by meaning
   (full vector cosine).
@@ -98,7 +98,7 @@ history from the *cached* vectors — no re-embedding — so it's fast.
 Enable it in the in-bar **Settings → Search**. Until the CoreML models are
 bundled, a built-in deterministic embedder is used as a fallback so search always
 works. Token ids and embeddings match the PyTorch reference exactly (the tokenizer
-is reimplemented in Swift — see `Sources/Ditto/Search/OgmaTokenizer.swift`).
+is reimplemented in Swift — see `Sources/Yank/Search/OgmaTokenizer.swift`).
 
 To produce/bundle the models, run the pipeline in [`tools/`](tools/README.md):
 

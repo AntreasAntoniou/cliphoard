@@ -1,10 +1,10 @@
-# Ditto — Readiness Status for a Wide Userbase
+# Yank — Readiness Status for a Wide Userbase
 
 **Verdict: NOT-READY** (for wide distribution). Closer to **beta** for a technical, build-from-source audience.
 
 ## Rationale
 
-Ditto is a well-structured developer project with thoughtful internals (the all-`@MainActor` model eliminates classic data races, resilient Codable decoding, corrupt-JSON quarantine, graceful model-absent fallback, a deliberate fix for the stale-render panel bug). But three classes of problem block a wide release:
+Yank is a well-structured developer project with thoughtful internals (the all-`@MainActor` model eliminates classic data races, resilient Codable decoding, corrupt-JSON quarantine, graceful model-absent fallback, a deliberate fix for the stale-render panel bug). But three classes of problem block a wide release:
 
 1. **It cannot be installed by non-technical users (Critical C1, High H12).** There is no notarized/hardened/stapled artifact and no prebuilt download — the only path is `git clone` + Xcode + Swift toolchain, and even a built `.app` is ad-hoc/self-signed so Gatekeeper blocks it on any other Mac. For a menu-bar clipboard manager whose target persona is non-technical, this alone is release-blocking.
 
@@ -60,62 +60,62 @@ Severity tags reference confirmed findings in AUDIT.md. Each item is spec'd (pro
 
 ### BL-01. Notarized, hardened, stapled distributable (C1, H12)
 - **Problem:** No installable artifact; ad-hoc/self-signed builds are Gatekeeper-blocked on every other Mac; only install path is clone + Xcode.
-- **Approach:** Add a release script that (a) builds a **universal** binary (`swift build --arch arm64 --arch x86_64` or build-both + `lipo -create`), (b) signs with a Developer ID Application cert using `--options runtime --timestamp` and an entitlements file, (c) `xcrun notarytool submit --wait` then `xcrun stapler staple`, (d) packages a `.dmg`/`.zip`, (e) publishes to GitHub Releases. Add a minimal `Ditto.entitlements`. Update README with a download + drag-to-Applications section; keep build-from-source as secondary.
-- **Files:** `Scripts/build-app.sh` (or new `Scripts/release.sh`), new `Resources/Ditto.entitlements`, `Makefile`, `README.md`.
-- **Acceptance:** A downloaded `.dmg` opens on a clean second Mac (both arm64 and x86_64) with no Gatekeeper warning; `spctl -a -vv Ditto.app` reports "accepted, source=Notarized Developer ID"; `stapler validate` passes; README links the release.
+- **Approach:** Add a release script that (a) builds a **universal** binary (`swift build --arch arm64 --arch x86_64` or build-both + `lipo -create`), (b) signs with a Developer ID Application cert using `--options runtime --timestamp` and an entitlements file, (c) `xcrun notarytool submit --wait` then `xcrun stapler staple`, (d) packages a `.dmg`/`.zip`, (e) publishes to GitHub Releases. Add a minimal `Yank.entitlements`. Update README with a download + drag-to-Applications section; keep build-from-source as secondary.
+- **Files:** `Scripts/build-app.sh` (or new `Scripts/release.sh`), new `Resources/Yank.entitlements`, `Makefile`, `README.md`.
+- **Acceptance:** A downloaded `.dmg` opens on a clean second Mac (both arm64 and x86_64) with no Gatekeeper warning; `spctl -a -vv Yank.app` reports "accepted, source=Notarized Developer ID"; `stapler validate` passes; README links the release.
 
 ### BL-02. Encrypt history at rest + sandbox + file protection (H5)
 - **Problem:** Full clipboard history (incl. credentials) stored as plaintext SQLite + plain PNGs in an unsandboxed app.
 - **Approach:** Encrypt clip `text`/`rtf`/payloads at rest (SQLCipher, or symmetric encryption with a key in the Keychain via `SecItem`). Set a restrictive file-protection/resource-protection key on the store directory. Adopt App Sandbox with minimal entitlements (this interacts with BL-01's entitlements and with auto-paste's Accessibility/AppleEvents — validate the paste path still works sandboxed). Offer an "encrypt history" toggle and an auto-expire/retention option; cap the default `historyLimit` (do not leave 0=Unlimited as the only bound).
-- **Files:** `Sources/Ditto/Clipboard/Database.swift`, `Sources/Ditto/Clipboard/ClipStore.swift`, `Sources/Ditto/Clipboard/ClipboardMonitor.swift` (image persist), new Keychain helper, `Resources/Ditto.entitlements`, `Sources/Ditto/UI/SettingsView.swift`.
-- **Acceptance:** `strings ditto.sqlite` shows no clip plaintext; the Keychain holds the encryption key; a non-Ditto process cannot read clip content; auto-paste still works under sandbox; a documented retention default applies.
+- **Files:** `Sources/Yank/Clipboard/Database.swift`, `Sources/Yank/Clipboard/ClipStore.swift`, `Sources/Yank/Clipboard/ClipboardMonitor.swift` (image persist), new Keychain helper, `Resources/Yank.entitlements`, `Sources/Yank/UI/SettingsView.swift`.
+- **Acceptance:** `strings ditto.sqlite` shows no clip plaintext; the Keychain holds the encryption key; a non-Yank process cannot read clip content; auto-paste still works under sandbox; a documented retention default applies.
 
 ### BL-03. Move CoreML inference and indexing off the main actor (H1, H2, M1, M9)
 - **Problem:** Synchronous `model.prediction` runs on `@MainActor` in ingest (every copy), query (every keystroke), and the mislabeled "background" reindex/reclassify loops; reentrancy across `await` points; DB isolation is by convention.
 - **Approach:** Make `OgmaEmbedder` an `actor` (or run `model.prediction` on a dedicated background queue / `MLModel` async API) and make `embed`/`index`/`classify` async. In `ClipStore.add`, insert the clip immediately (kind/text), then embed+classify in a background Task and hop to `@MainActor` only to write `item.embeddings` + update the tag index. Convert `reindexStale`/`reclassifyAllTags` so the per-item expensive work runs off-main and only progress/state writes hop back. While here, annotate `Database` as `@MainActor` (or wrap it in an actor/serial queue) so isolation is compiler-enforced before any DB call moves off-main; re-validate `items.contains(item)` after each yield (M1).
-- **Files:** `Sources/Ditto/Search/DeepSearch.swift` (OgmaEmbedder, ClipIndexer, TagSpace), `Sources/Ditto/Clipboard/ClipStore.swift`, `Sources/Ditto/Clipboard/Database.swift`.
+- **Files:** `Sources/Yank/Search/DeepSearch.swift` (OgmaEmbedder, ClipIndexer, TagSpace), `Sources/Yank/Clipboard/ClipStore.swift`, `Sources/Yank/Clipboard/Database.swift`.
 - **Acceptance:** Copying large text or typing in Essence/Tag mode does not block the run loop (measured: main-thread hang < 16ms during a copy/keystroke with a bundled ogma model); a model switch over 5k clips keeps the UI responsive; no DB call executes off the isolated context without serialization; reindex against a concurrently-trimmed history produces no stale-snapshot writes.
 
 ### BL-04. Fix tokenizer whitespace handling + add parity test (H3, M3, M5, L8)
 - **Problem:** `encode()` splits only on ASCII space, so newlines/tabs become UNK runs that corrupt embeddings for multi-line clips (the dominant content). No parity test guards the "bit-for-bit" claim; the normalizer is hardcoded; UNK score is a hardcoded `-25`.
 - **Approach:** In `encode`, split on all Unicode whitespace (`split(whereSeparator: { $0.isWhitespace })`); in `normalize`, collapse every whitespace run to one space before trimming with `.whitespacesAndNewlines`. Add a checked-in `tokenizer.json` fixture and a Swift test asserting `encode` equals `reference.json` ids (incl. CLS=9/SEP=10 offset). Read the declared `normalizer`/`pre_tokenizer` from tokenizer.json (or assert it matches and refuse to load otherwise). Read the real `unk_score` instead of the `-25` literal.
-- **Files:** `Sources/Ditto/Search/OgmaTokenizer.swift`, `Tests/DittoTests/` (new tokenizer test + fixture).
+- **Files:** `Sources/Yank/Search/OgmaTokenizer.swift`, `Tests/YankTests/` (new tokenizer test + fixture).
 - **Acceptance:** `"foo\nbar\tbaz"` produces no spurious UNK ids; parity test matches reference ids for all sample strings incl. multi-line and OOV (url/base64) inputs; a normalizer mismatch in tokenizer.json is detected at load.
 
 ### BL-05. Never persist a degenerate embedding; make staleness detect bad vectors (H10)
 - **Problem:** Failed inference returns an all-zero vector that is cached and treated as "embedded" forever, permanently corrupting tags/search for that clip.
 - **Approach:** Have `OgmaEmbedder.run` return `[]` on each failure path; have `ClipIndexer.index` skip caching when `vec.isEmpty`; have `isStale` also return true when the cached vector is all-zeros or has the wrong length for the active dimension (so `reindexStale` retries). Skip caching/upsert in the reindex loop when `index()` produced an empty/degenerate vector.
-- **Files:** `Sources/Ditto/Search/DeepSearch.swift`, `Sources/Ditto/Clipboard/ClipItem.swift`, `Sources/Ditto/Clipboard/ClipStore.swift`.
+- **Files:** `Sources/Yank/Search/DeepSearch.swift`, `Sources/Yank/Clipboard/ClipItem.swift`, `Sources/Yank/Clipboard/ClipStore.swift`.
 - **Acceptance:** A simulated prediction failure leaves the clip stale (not "embedded"); the next reindex re-attempts it; no zero-vector rows persist; an all-zeros stored vector is reported stale.
 
 ### BL-06. Surface SQLite write failures instead of silently diverging from memory (H11)
 - **Problem:** Write helpers ignore `sqlite3_step`; `prepare()` silently skips the write on failure; `transaction()` never rolls back. The UI shows changes (pins/clears) that vanish on relaunch.
 - **Approach:** Make write helpers return `Bool`/throw on `sqlite3_step != SQLITE_DONE` and on prepare failure; have ClipStore check results and warn the user (or refuse the optimistic UI mutation) on failure. Wrap `transaction()` in do/catch with `ROLLBACK`, COMMIT only on success. Add `busy_timeout=5000` + `synchronous=NORMAL`, use `sqlite3_close_v2` (L3). On `db==nil`, surface a one-time "history can't be saved" warning instead of running as a silent ephemeral store (Robustness-L).
-- **Files:** `Sources/Ditto/Clipboard/Database.swift`, `Sources/Ditto/Clipboard/ClipStore.swift`, `Sources/Ditto/App/AppDelegate.swift` (warning surface).
+- **Files:** `Sources/Yank/Clipboard/Database.swift`, `Sources/Yank/Clipboard/ClipStore.swift`, `Sources/Yank/App/AppDelegate.swift` (warning surface).
 - **Acceptance:** A forced write failure (read-only DB) surfaces a user-visible warning and does not leave the UI showing an unpersisted pin; `transaction()` rolls back on a mid-batch error; opening a missing/corrupt DB warns the user.
 
 ### BL-07. Capture-time secret protection (H6)
 - **Problem:** Secrets from apps that don't set the two `org.nspasteboard` hints (Keychain, SecureField, CLIs) are captured and persisted.
 - **Approach:** Add a user-configurable app-exclusion list keyed on `NSWorkspace.frontmostApplication.bundleIdentifier`; pre-populate with known password managers/Keychain. Honor `org.nspasteboard.AutoGeneratedType`. Add an opt-in heuristic to skip likely-secret short high-entropy strings. Pairs with BL-02 (encrypt) for defense-in-depth.
-- **Files:** `Sources/Ditto/Clipboard/ClipboardMonitor.swift`, `Sources/Ditto/UI/SettingsView.swift`, settings storage.
+- **Files:** `Sources/Yank/Clipboard/ClipboardMonitor.swift`, `Sources/Yank/UI/SettingsView.swift`, settings storage.
 - **Acceptance:** Copying from an excluded bundle id is not stored; `AutoGeneratedType` pasteboards are skipped; exclusion list persists and is editable in Settings.
 
 ### BL-T1. Test gap: SQLite Database layer + Float16 round-trip (P0)
 - **Problem:** `Database.swift` (the durable store) has zero direct tests; Float16 round-trip, tag parsing, cascade, and `loadAll` ordering are unverified.
 - **Approach/Tests:** `testFloat16BlobRoundTripWithinTolerance`, `testVectorFromBlobPreservesCount`, `testTagsFromTextHandlesEmptyAndMalformed`, `testInsertThenLoadAllReturnsEquivalentClip`, `testDeleteCascadesEmbeddings`, `testDeleteUnpinnedKeepsPinned`, `testLoadAllOrdersPinnedThenRecency`, `testUpdateMetaPersistsPinAndKindChange`, `testOpenCreatesSchemaAndIsIdempotentOnReopen`.
-- **Files:** `Tests/DittoTests/DatabaseTests.swift` (new).
+- **Files:** `Tests/YankTests/DatabaseTests.swift` (new).
 - **Acceptance:** All pass against a temp-dir DB; round-trip within ~1e-3 tolerance for in-range values.
 
 ### BL-T2. Test gap: legacy history.json → SQLite migration (P0)
 - **Problem:** One-time migration (fold legacy vectors, quarantine corrupt JSON, skip when non-empty) is untested; a bug silently destroys user history.
 - **Approach/Tests:** `testMigratesLegacyJSONIntoSqliteAndArchives`, `testLegacyVectorFoldedIntoEmbeddingsUnderVectorModel`, `testCorruptLegacyJSONIsPreservedNotWiped`, `testMigrationSkippedWhenDatabaseNonEmpty`, `testMigratedJSONNotReimportedOnSecondLaunch`.
-- **Files:** `Tests/DittoTests/MigrationTests.swift` (new).
+- **Files:** `Tests/YankTests/MigrationTests.swift` (new).
 - **Acceptance:** All pass; corrupt input yields `history.corrupt.json` with original preserved and empty items; no double-import.
 
 ### BL-T3. Test gap: OgmaTokenizer parity (P0)
 - **Problem:** The load-bearing tokenizer claiming bit-for-bit parity has no test (M3); also guards BL-04.
 - **Approach/Tests:** `testEncodeMatchesReferenceIdsForKnownStrings`, `testEncodeWrapsWithClsAndSepAndOffset`, `testNormalizeStripsAccentsLowercasesAndCollapsesSpaces`, `testUnigramFallsBackToUnkForUnknownChars`, `testEncodeAppliesMetaspacePrefixPerWord`, `testInitReturnsNilForMissingOrMalformedTokenizerJson`, plus a multi-line/UNK regression test from BL-04.
-- **Files:** `Tests/DittoTests/OgmaTokenizerTests.swift` (new) + checked-in `tokenizer.json` fixture.
+- **Files:** `Tests/YankTests/OgmaTokenizerTests.swift` (new) + checked-in `tokenizer.json` fixture.
 - **Acceptance:** All pass against the fixture; multi-line input produces no spurious UNK.
 
 ## P1 — Important; fix before claiming "ready"
@@ -123,106 +123,106 @@ Severity tags reference confirmed findings in AUDIT.md. Each item is spec'd (pro
 ### BL-08. Incremental tag index + insertion-order maintenance in add() (H7, Memory-L reindex)
 - **Problem:** O(n) full sort + full tag-index rebuild on every copy; O(n²) rebuilds during reindex.
 - **Approach:** Maintain `tagIndex` incrementally (append to tag buckets on add, remove on delete; full rebuild only on model/basket change). Replace the always-full `sortStable()` with an insertion at the correct position (order is pinned + lastUsedAt). Use Sets/ids in buckets. Apply the same incremental update inside `reindexStale`/`reclassifyAllTags` instead of rebuilding every 8/16 items.
-- **Files:** `Sources/Ditto/Clipboard/ClipStore.swift`.
+- **Files:** `Sources/Yank/Clipboard/ClipStore.swift`.
 - **Acceptance:** Per-copy work is O(log n) insertion + O(tags) bucket update (profiled at 10k clips); a model switch over 10k clips does not do O(n²) index work.
 
 ### BL-09. Thumbnail + cache for image clips (H8)
 - **Problem:** Full-resolution PNG decoded inside the SwiftUI card body, no cache.
 - **Approach:** At persist time generate a downsampled thumbnail (`CGImageSourceCreateThumbnailAtIndex`, `kCGImageSourceThumbnailMaxPixelSize` ≈ card size) and store it; render the thumbnail in the card. Cache decoded thumbnails in an `NSCache` keyed by `payloadFile`. Load full-res only on paste (`Paster`).
-- **Files:** `Sources/Ditto/Clipboard/ClipboardMonitor.swift`, `Sources/Ditto/UI/ClipCardView.swift`, `Sources/Ditto/Clipboard/Paster.swift`.
+- **Files:** `Sources/Yank/Clipboard/ClipboardMonitor.swift`, `Sources/Yank/UI/ClipCardView.swift`, `Sources/Yank/Clipboard/Paster.swift`.
 - **Acceptance:** Scrolling/keystrokes over image clips trigger no full-res decode in `body`; peak memory with several 4K screenshots is bounded; paste still writes the original image.
 
 ### BL-10. Memoize results; Accelerate-backed Essence ranking (H9)
 - **Problem:** `results` recomputed several times per body pass and per keystroke; Essence dot-products every vector each time.
 - **Approach:** Memoize `results` keyed by (query, activeKind, pinnedOnly, mode, store revision); compute once and pass the array down rather than reading the computed property repeatedly. For Essence, hold a contiguous `[[Float]]`/flat buffer and use vDSP for dot products with a top-K heap instead of a full sort.
-- **Files:** `Sources/Ditto/UI/PanelViewModel.swift`, `Sources/Ditto/UI/ContentView.swift`, `Sources/Ditto/Search/DeepSearch.swift`.
+- **Files:** `Sources/Yank/UI/PanelViewModel.swift`, `Sources/Yank/UI/ContentView.swift`, `Sources/Yank/Search/DeepSearch.swift`.
 - **Acceptance:** A single body pass computes `results` once; arrow-key navigation does not re-run full ranking; Essence over 10k clips ranks in a fraction of the current time (profiled).
 
 ### BL-11. Make first-responder/focus deterministic on summon (H4, L12, L11)
 - **Problem:** Search field never made first responder; keyboard nav gated on `panel.isKeyWindow`; Up/Down are dead keys.
 - **Approach:** Add `@FocusState searchFocused`, bind `.focused`, set true on present (`.onChange(of: model.presentToken)` + `.onAppear`) and verify/force first responder after `slideIn`. Gate the key monitor on `panel.isVisible` rather than `isKeyWindow`, or force/confirm key status post-animation. Map Up/Down to `moveSelection(-1)/(+1)` (or remove the case so events fall through).
-- **Files:** `Sources/Ditto/UI/ContentView.swift`, `Sources/Ditto/App/AppDelegate.swift`, `Sources/Ditto/UI/FloatingPanel.swift`.
+- **Files:** `Sources/Yank/UI/ContentView.swift`, `Sources/Yank/App/AppDelegate.swift`, `Sources/Yank/UI/FloatingPanel.swift`.
 - **Acceptance:** Summon-then-type always lands in the search field; arrows/Enter/⌘-digits work immediately after summon in repeated trials; Up/Down do something or fall through (no silent no-op).
 
 ### BL-12. Resolve QRY/DOC tag-classification consistency (M6)
 - **Problem:** Ingest tagging uses DOC↔DOC; tag search uses QRY↔DOC — different geometries on ogma.
 - **Approach:** Make task-token usage consistent (embed tag names once per task space, or verify ogma's QRY/DOC preserves nearest-tag identity). Add an integration test on an asymmetric embedder stub asserting ingest-tag == query-tag for representative inputs.
-- **Files:** `Sources/Ditto/Search/DeepSearch.swift`, `Tests/DittoTests/`.
+- **Files:** `Sources/Yank/Search/DeepSearch.swift`, `Tests/YankTests/`.
 - **Acceptance:** For a representative input set, the tag assigned at ingest equals the tag selected by `nearestTag` on the matching query.
 
 ### BL-13. Atomic insert + DB hardening (M8, M7, L3, L4)
 - **Problem:** Clip row + embeddings not in one transaction; unaligned Float16 read (UB); lossy/unvalidated blob; no busy_timeout/checkpoint.
 - **Approach:** Wrap `insert()` row + all `upsertEmbedding` in one `transaction { }`. Replace `bindMemory(to: Float16.self)` with `loadUnaligned`. Validate `data.count % stride == 0` (skip/log non-conforming, treat as stale). Already covered partly by BL-06: `busy_timeout`, `synchronous=NORMAL`, `sqlite3_close_v2`, `wal_checkpoint(TRUNCATE)` on clean shutdown.
-- **Files:** `Sources/Ditto/Clipboard/Database.swift`.
+- **Files:** `Sources/Yank/Clipboard/Database.swift`.
 - **Acceptance:** A clip and its embeddings commit atomically; the Float16 read uses unaligned loads; malformed blobs are detected, not silently shortened.
 
 ### BL-14. Coalesce/serialize reindex & reclassify passes (M2)
 - **Problem:** No guard against overlapping passes; `indexing` progress flickers and can finish early.
 - **Approach:** Store the in-flight indexing Task in a property; cancel-and-replace (or coalesce) on a new request; check `Task.isCancelled` in the loop. Single ownership of the `indexing` published state.
-- **Files:** `Sources/Ditto/Clipboard/ClipStore.swift`.
+- **Files:** `Sources/Yank/Clipboard/ClipStore.swift`.
 - **Acceptance:** Rapid model+basket changes run a single coherent pass; progress is monotonic and ends exactly once.
 
 ### BL-15. Accessibility annotations on the core surface (M11)
 - **Problem:** No accessibility labels; icon-only buttons and card fragments are unlabeled to VoiceOver.
 - **Approach:** Add `.accessibilityElement(children: .combine)` + `.accessibilityLabel`/`.accessibilityHint` to each ClipCardView (kind, source app, preview, index, pinned); label the search field and all icon-only buttons; expose selection via `.accessibilityAddTraits(.isSelected)`.
-- **Files:** `Sources/Ditto/UI/ClipCardView.swift`, `Sources/Ditto/UI/ContentView.swift`, `Sources/Ditto/UI/SettingsView.swift`.
+- **Files:** `Sources/Yank/UI/ClipCardView.swift`, `Sources/Yank/UI/ContentView.swift`, `Sources/Yank/UI/SettingsView.swift`.
 - **Acceptance:** VoiceOver reads each card as a single labeled element with kind/preview/index; every icon-only button has a name; selected card announces "selected".
 
 ### BL-16. Resolve model license + in-app attribution (Distribution M, license)
 - **Problem:** Bundling CC-BY-NC-4.0 ogma weights into an MIT app that permits selling; no Jina attribution in-app.
 - **Approach:** Decide per-artifact licensing: keep weights unbundled (download at first run) OR add the CC-BY-NC attribution + NonCommercial notice in-app (About box) and in distribution materials. Reconcile the MIT app license with the NC weights. Pairs with BL-17 (download-at-first-run mechanism).
-- **Files:** `tools/README.md`, `LICENSE`, `Sources/Ditto/App/AppDelegate.swift` (About), README.
+- **Files:** `tools/README.md`, `LICENSE`, `Sources/Yank/App/AppDelegate.swift` (About), README.
 - **Acceptance:** The shipped artifact's licensing is internally consistent; Jina/ogma attribution is visible in About; if models are bundled, the NC notice is present.
 
 ### BL-17. Surface active-embedder state + model availability (Distribution M, M4)
 - **Problem:** Semantic search silently degrades to hashing when no model is bundled; the "High (EmbeddingGemma)" tier is selectable but always falls back.
 - **Approach:** Surface the active embedder in Settings ("Semantic models not installed — using basic matching"). Either bundle the converted ogma-small `.mlmodelc` in the release artifact, or add a first-run model download. Hide/disable the High tier (or mark "coming soon") until a Gemma converter + bundled model exist; gate `OgmaTokenizer` to ogma model names so it never mis-tokenizes a Gemma model (M4).
-- **Files:** `Sources/Ditto/UI/SettingsView.swift`, `Sources/Ditto/Search/DeepSearch.swift`, `Scripts/build-app.sh`.
+- **Files:** `Sources/Yank/UI/SettingsView.swift`, `Sources/Yank/Search/DeepSearch.swift`, `Scripts/build-app.sh`.
 - **Acceptance:** Settings shows the live embedder state; the High tier is not selectable until functional; a bundled-or-downloaded ogma model makes Tag/Essence semantic.
 
 ### BL-T4. Test gap: basket reclassify & tag-index correctness (P1)
 - **Tests:** `testReclassifyAllTagsUpdatesTagsFromCachedVectorWithoutReembedding`, `testReclassifyRebuildsTagIndexToNewBasketIds`, `testTagVectorCacheInvalidatesWhenBasketFingerprintChanges`, `testClassifyTagIdsStayInRangeForSmallBasket`, `testCustomBasketPersistsAndBecomesActive`.
-- **Files:** `Tests/DittoTests/ReclassifyTests.swift` (new).
+- **Files:** `Tests/YankTests/ReclassifyTests.swift` (new).
 - **Acceptance:** Switching basket changes tags without re-embedding; the per-(model,basket) vector cache invalidates on basket edit.
 
 ### BL-T5. Test gap: refineKind promotion + capture priority/skip (P1/P2)
 - **Tests:** `testRefineKindPromotesWhitespaceFreeTextToLinkWhenTagged`, `testRefineKindLeavesMultiWordTextAlone`, `testRefineKindDoesNotDemoteNonText`, `testCapturePrioritizesFileOverText`, `testTransientSkipped`, `testDetectKindClassifiesIPv4AndIPv6AndLongUrlBoundary`. (Capture tests need a fakeable pasteboard seam.)
-- **Files:** `Tests/DittoTests/RefineKindTests.swift`, `CaptureTests.swift` (new).
+- **Files:** `Tests/YankTests/RefineKindTests.swift`, `CaptureTests.swift` (new).
 - **Acceptance:** Promotion/skip logic is asserted; capture priority verified via a test seam.
 
 ### BL-T6. Test gap: search ranking edge cases (essence threshold/fallback, tag retrieval) (P1)
 - **Tests:** `testEssenceFallbackReturnsTopKWhenAllBelowThreshold`, `testEssenceSubstringBoostOutranksPureCosine`, `testEssenceFiltersOutBelowThresholdItems`, `testTagSearchRetrievesClipsSharingQueryTag`, `testFilteredMatchesFilePathAndColorHex`, `testNearestTagPicksLinkTagForUrlQuery`.
-- **Files:** `Tests/DittoTests/SearchRankingTests.swift` (new).
+- **Files:** `Tests/YankTests/SearchRankingTests.swift` (new).
 - **Acceptance:** Threshold/fallback/boost branches exercised; tag-mode end-to-end retrieval asserted.
 
 ## P2 — Polish / hardening
 
 ### BL-18. Image-persist failure handling + orphan PNG sweep (M10, L5)
 - **Approach:** If `persistImage` fails, drop the image clip (don't store an unpastable entry) or surface an error. Log payload-delete failures. Add a startup sweep removing `*.png` with no matching clip id; or centralize all deletes so cleanup can't be bypassed.
-- **Files:** `Sources/Ditto/Clipboard/ClipboardMonitor.swift`, `Sources/Ditto/Clipboard/ClipStore.swift`.
+- **Files:** `Sources/Yank/Clipboard/ClipboardMonitor.swift`, `Sources/Yank/Clipboard/ClipStore.swift`.
 - **Acceptance:** No unpastable image clips; orphan sweep removes unreferenced PNGs at startup.
 
 ### BL-19. Localization scaffolding (Distribution L)
 - **Approach:** Wrap user-facing strings in `String(localized:)`; add base `Localizable.strings` and `InfoPlist.strings` for the usage descriptions.
-- **Files:** `Sources/Ditto/UI/*`, `Sources/Ditto/App/AppDelegate.swift`, `Resources/`.
+- **Files:** `Sources/Yank/UI/*`, `Sources/Yank/App/AppDelegate.swift`, `Resources/`.
 - **Acceptance:** All visible strings localizable; English ships via the localization APIs.
 
 ### BL-20. Privacy logging hardening (M-low cluster)
 - **Approach:** Never log clip content/previews/token ids; log only kind + length + change count. Use `os_log` with `privacy:.private`. Add log rotation/size cap; delete `debug.log` when the toggle is turned off; fix the first-write truncation (create-then-append).
-- **Files:** `Sources/Ditto/Support/Feedback.swift`, `Sources/Ditto/Clipboard/ClipboardMonitor.swift`, `Sources/Ditto/Search/DeepSearch.swift`.
+- **Files:** `Sources/Yank/Support/Feedback.swift`, `Sources/Yank/Clipboard/ClipboardMonitor.swift`, `Sources/Yank/Search/DeepSearch.swift`.
 - **Acceptance:** No clip-derived data in any log; debug.log is bounded and purged on disable.
 
 ### BL-21. Per-model signature fingerprint + migration marker (L6, L7, L10)
 - **Approach:** Include a weight/tokenizer fingerprint or version in the embedder signature so re-conversion invalidates stale vectors. Validate vector length vs active dimension on load. On dedup-bump, re-index if stale. Use a UserDefaults "migrated" marker instead of the file-rename + empty-db heuristic (L-robustness).
-- **Files:** `Sources/Ditto/Search/DeepSearch.swift`, `Sources/Ditto/Clipboard/ClipStore.swift`.
+- **Files:** `Sources/Yank/Search/DeepSearch.swift`, `Sources/Yank/Clipboard/ClipStore.swift`.
 - **Acceptance:** A re-converted model invalidates old vectors; wrong-length vectors are treated as stale; migration runs at most once.
 
 ### BL-22. Build/control-surface hygiene (L cluster)
 - **Approach:** Gate `embedtest`/`opensettings` Darwin observers behind `#if DEBUG`. Drop `-A` in `setup-signing.sh` (use `-T /usr/bin/codesign`). Build poll-path log strings lazily; move skip checks ahead of allocation. Contrast-aware foreground for selected chips. Optionally keep one persistent `NSHostingController`.
-- **Files:** `Sources/Ditto/App/AppDelegate.swift`, `Scripts/setup-signing.sh`, `Sources/Ditto/Clipboard/ClipboardMonitor.swift`, `Sources/Ditto/UI/ContentView.swift`, `Sources/Ditto/UI/FloatingPanel.swift`.
+- **Files:** `Sources/Yank/App/AppDelegate.swift`, `Scripts/setup-signing.sh`, `Sources/Yank/Clipboard/ClipboardMonitor.swift`, `Sources/Yank/UI/ContentView.swift`, `Sources/Yank/UI/FloatingPanel.swift`.
 - **Acceptance:** No world-postable control surface in release; signing key not exposed to all apps; no per-copy allocation when logging is off; selected chips legible across all system accents.
 
 ### BL-T7. Test isolation against global state (P2)
 - **Approach:** Add setUp/tearDown snapshotting+restoring `deepSearchLevel`/`searchMode`/`activeBasket`/`customTags`; parameterize the tag-count test over all built-in baskets instead of hardcoding 100.
-- **Files:** `Tests/DittoTests/` (shared base/test helpers).
+- **Files:** `Tests/YankTests/` (shared base/test helpers).
 - **Acceptance:** Suite is order- and environment-independent; `testTagSpaceCountMatchesActiveBasket` covers developer(45)/everyday(28)/general(100).

@@ -1,11 +1,11 @@
 # Privacy Policy
 
-**Short version: Ditto keeps everything on your Mac. Nothing you copy ever leaves
+**Short version: Yank keeps everything on your Mac. Nothing you copy ever leaves
 your device. There is no telemetry, no analytics, and no account.**
 
-## What Ditto stores, and where
+## What Yank stores, and where
 
-Ditto saves your clipboard history so you can get items back later. Everything is
+Yank saves your clipboard history so you can get items back later. Everything is
 stored **locally** on your Mac, under:
 
 ```
@@ -18,9 +18,9 @@ Semantic-search embeddings are computed **on-device** (Apple CoreML) and stored 
 the same local database. No clipboard content, embedding, or usage data is ever
 transmitted anywhere.
 
-## What Ditto does NOT do
+## What Yank does NOT do
 
-- ❌ No network requests. Ditto makes no outbound connections for its core
+- ❌ No network requests. Yank makes no outbound connections for its core
   functionality and sends your data to no server — ours or anyone else's.
 - ❌ No telemetry, analytics, crash reporting, or usage tracking.
 - ❌ No account, sign-in, or cloud sync.
@@ -28,11 +28,11 @@ transmitted anywhere.
 
 ## Sensitive content
 
-Ditto deliberately tries **not** to capture secrets:
+Yank deliberately tries **not** to capture secrets:
 
 - It ignores pasteboards apps mark as transient, concealed, or auto-generated —
   the flags password managers (1Password, Keychain, etc.) use.
-- You can add any app to an exclusion denylist (`excludedBundleIDs`) so Ditto
+- You can add any app to an exclusion denylist (`excludedBundleIDs`) so Yank
   never records what you copy from it.
 - Clip contents are never written to logs.
 
@@ -42,19 +42,19 @@ database as sensitive, and use the exclusion list for apps that handle secrets.
 ## Permissions
 
 - **Accessibility** — used solely to paste the selected clip into the app you were
-  using (by synthesizing ⌘V). Ditto does not read other apps' contents.
+  using (by synthesizing ⌘V). Yank does not read other apps' contents.
 - **Input monitoring / global hotkey** — to summon the bar with ⌃⌥⌘V.
 
 ## Your control
 
 - **Delete a clip:** select it and press ⌘⌫.
-- **Clear history:** remove unpinned items from the bar, or quit Ditto and delete
+- **Clear history:** remove unpinned items from the bar, or quit Yank and delete
   the folder above.
-- **Uninstall:** drag Ditto to the Trash and delete `~/Library/Application Support/Ditto/`.
+- **Uninstall:** drag Yank to the Trash and delete `~/Library/Application Support/Ditto/`.
 
 ## Why there's no sync (on purpose)
 
-Every other major clipboard manager sells cross-device sync. Ditto deliberately
+Every other major clipboard manager sells cross-device sync. Yank deliberately
 does not — and never will — and that is a feature, not an omission.
 
 **Your clipboard is the single most sensitive ambient stream on your computer.**
