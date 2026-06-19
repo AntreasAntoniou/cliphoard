@@ -28,6 +28,8 @@ struct ThemeTokens {
 /// default and preserves the original look so nothing changes unless chosen.
 enum ThemePreset: String, CaseIterable, Identifiable {
     case system, swiss, glass, highContrast, paper
+    // Popular code-editor palettes (One Dark, Dracula, …).
+    case oneDark, dracula, tokyoNight, catppuccin, gruvbox, monokai, nightOwl
     var id: String { rawValue }
 
     var title: String {
@@ -37,7 +39,29 @@ enum ThemePreset: String, CaseIterable, Identifiable {
         case .glass:        return "Midnight Glass"
         case .highContrast: return "High Contrast"
         case .paper:        return "Paper & Ink"
+        case .oneDark:      return "One Dark"
+        case .dracula:      return "Dracula"
+        case .tokyoNight:   return "Tokyo Night"
+        case .catppuccin:   return "Catppuccin Mocha"
+        case .gruvbox:      return "Gruvbox Dark"
+        case .monokai:      return "Monokai"
+        case .nightOwl:     return "Night Owl"
         }
+    }
+
+    /// A flat dark code-editor theme: solid editor background, slightly lifted
+    /// panel for cards, the palette's signature accent, and a muted comment color
+    /// for secondary chrome. Semantic text adapts via the forced dark scheme.
+    private static func editor(bg: String, panel: String, accent: String,
+                               pin: String, muted: String) -> ThemeTokens {
+        ThemeTokens(
+            accent: Theme.color(fromHex: accent), pin: Theme.color(fromHex: pin),
+            cornerRadius: 12, usesMaterials: false,
+            barFill: Theme.color(fromHex: bg), cardFill: Theme.color(fromHex: panel),
+            border: Color.white.opacity(0.10), borderHover: Color.white.opacity(0.20),
+            selectedBorderWidth: 2,
+            tagFill: Color.white.opacity(0.07), tagText: Theme.color(fromHex: muted),
+            scheme: .dark)
     }
 
     var tokens: ThemeTokens {
@@ -91,6 +115,20 @@ enum ThemePreset: String, CaseIterable, Identifiable {
                 tagFill: Color(.sRGB, red: 0.90, green: 0.87, blue: 0.80, opacity: 1),
                 tagText: Color(.sRGB, red: 0.45, green: 0.40, blue: 0.32, opacity: 1),
                 scheme: .light, fontDesign: .serif)
+        case .oneDark:
+            return Self.editor(bg: "#21252b", panel: "#282c34", accent: "#61afef", pin: "#d19a66", muted: "#9097a3")
+        case .dracula:
+            return Self.editor(bg: "#21222c", panel: "#282a36", accent: "#bd93f9", pin: "#ffb86c", muted: "#7b86b0")
+        case .tokyoNight:
+            return Self.editor(bg: "#16161e", panel: "#1a1b26", accent: "#7aa2f7", pin: "#e0af68", muted: "#6b75a3")
+        case .catppuccin:
+            return Self.editor(bg: "#181825", panel: "#1e1e2e", accent: "#cba6f7", pin: "#fab387", muted: "#9399b2")
+        case .gruvbox:
+            return Self.editor(bg: "#1d2021", panel: "#282828", accent: "#fabd2f", pin: "#fe8019", muted: "#a89984")
+        case .monokai:
+            return Self.editor(bg: "#1e1f1c", panel: "#272822", accent: "#a6e22e", pin: "#fd971f", muted: "#9d967f")
+        case .nightOwl:
+            return Self.editor(bg: "#010e1a", panel: "#011627", accent: "#82aaff", pin: "#f78c6c", muted: "#637777")
         }
     }
 }
