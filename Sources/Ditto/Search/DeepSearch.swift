@@ -295,8 +295,15 @@ enum ClipIndexer {
     /// regex/detector missed — e.g. an obfuscated URL the model recognises as a
     /// link. Conservative: only promotes whitespace-free text → link.
     static func refineKind(_ item: ClipItem) {
+        // Only let embeddings OVERRIDE deterministic detection when a real semantic
+        // model is active — the HashingEmbedder fallback's tags are essentially
+        // random and were mis-promoting ordinary words into Links. Also require the
+        // text to actually look link-ish (a dot/scheme/@), so a plain word is never
+        // reclassified.
         guard item.kind == .text,
+              EmbedderProvider.active.signature.hasPrefix("ogma"),
               !item.text.contains(where: { $0.isWhitespace }),
+              item.text.contains(where: { ".:@/".contains($0) }),
               let tags = item.embeddings[EmbedderProvider.active.signature]?.tags else { return }
         let linkTags = Set(["url link", "email address", "domain name"])
         let topNames = tags.prefix(2).compactMap { TagSpace.names.indices.contains($0) ? TagSpace.names[$0] : nil }

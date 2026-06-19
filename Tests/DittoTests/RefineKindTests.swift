@@ -1,8 +1,10 @@
 import XCTest
 @testable import Ditto
 
-/// Audit BL-T5: `ClipIndexer.refineKind` uses the embedding's top tags to rescue a
-/// link the regex/detector missed — but only conservatively (single-token text).
+/// `ClipIndexer.refineKind` may use embedding tags to rescue a link the detector
+/// missed — but ONLY when a real ogma model is active. Under the HashingEmbedder
+/// fallback (the default until a model is bundled) its tags are unreliable, so
+/// refineKind must be a no-op there, leaving deterministic detection authoritative.
 @MainActor
 final class RefineKindTests: XCTestCase {
     private var savedLevel: DeepSearchLevel!
@@ -13,7 +15,7 @@ final class RefineKindTests: XCTestCase {
         savedLevel = DeepSearch.level
         savedBasket = TagBaskets.activeID
         // A tier is on (active = HashingEmbedder fallback in tests) and the General
-        // basket is active so "url link" / "email address" / "domain name" exist.
+        // basket is active so "url link" / "email address" exist.
         DeepSearch.level = .normal
         TagBaskets.activeID = "general"
     }
@@ -26,42 +28,41 @@ final class RefineKindTests: XCTestCase {
 
     private var sig: String { EmbedderProvider.active.signature }
 
-    /// Index of a known link-ish tag in the active basket.
     private func tagID(_ name: String) -> Int {
         let i = TagBaskets.general.tags.firstIndex(of: name)
         XCTAssertNotNil(i, "expected '\(name)' in the General basket")
         return i ?? 0
     }
 
-    /// A whitespace-free text clip whose top tag is "url link" is promoted to .link.
-    func testPromotesWhitespaceFreeTextWithLinkTag() {
-        let item = ClipItem(kind: .text, text: "bit.ly/xY9z")
-        item.embeddings[sig] = ModelEmbedding(vector: [1, 0], tags: [tagID("url link"), 99])
-        ClipIndexer.refineKind(item)
-        XCTAssertEqual(item.kind, .link, "single-token text with a link tag → link")
+    /// The fix: with the unreliable HashingEmbedder active, a url-ish clip carrying
+    /// a "url link" tag is NOT promoted — random fallback tags must not override
+    /// detection (this is what put ordinary words into the Links category).
+    func testFallbackEmbedderDoesNotPromote() {
+        XCTAssertFalse(sig.hasPrefix("ogma"), "tests run on the hashing fallback")
+        let url = ClipItem(kind: .text, text: "bit.ly/xY9z")
+        url.embeddings[sig] = ModelEmbedding(vector: [1, 0], tags: [tagID("url link"), 99])
+        ClipIndexer.refineKind(url)
+        XCTAssertEqual(url.kind, .text, "hashing tags must not promote to link")
+
+        let email = ClipItem(kind: .text, text: "ada@example.com")
+        email.embeddings[sig] = ModelEmbedding(vector: [1, 0], tags: [tagID("email address")])
+        ClipIndexer.refineKind(email)
+        XCTAssertEqual(email.kind, .text)
     }
 
-    /// An email tag also promotes (it's in the link set).
-    func testPromotesOnEmailTag() {
-        let item = ClipItem(kind: .text, text: "ada@example.com")
-        item.embeddings[sig] = ModelEmbedding(vector: [1, 0], tags: [tagID("email address")])
+    /// Even setting the gate aside, a plain word with no url-ish character is never
+    /// link material — the secondary guard that stops "ordinary words → Links".
+    func testPlainWordNeverPromoted() {
+        let item = ClipItem(kind: .text, text: "Combined")
+        item.embeddings[sig] = ModelEmbedding(vector: [1, 0], tags: [tagID("url link")])
         ClipIndexer.refineKind(item)
-        XCTAssertEqual(item.kind, .link)
+        XCTAssertEqual(item.kind, .text)
     }
 
-    /// Multi-word text is left alone even if it carries a link tag — the promotion
-    /// only targets single-token content (an obfuscated URL), not prose.
+    /// Multi-word prose is left alone regardless.
     func testLeavesMultiWordTextAlone() {
         let item = ClipItem(kind: .text, text: "visit our site at example dot com")
         item.embeddings[sig] = ModelEmbedding(vector: [1, 0], tags: [tagID("url link")])
-        ClipIndexer.refineKind(item)
-        XCTAssertEqual(item.kind, .text, "whitespace present → not refined")
-    }
-
-    /// A non-link top tag leaves single-token text alone.
-    func testLeavesNonLinkSingleTokenAlone() {
-        let item = ClipItem(kind: .text, text: "deadbeefcafe")
-        item.embeddings[sig] = ModelEmbedding(vector: [1, 0], tags: [tagID("hash digest")])
         ClipIndexer.refineKind(item)
         XCTAssertEqual(item.kind, .text)
     }
@@ -71,7 +72,7 @@ final class RefineKindTests: XCTestCase {
         let img = ClipItem(kind: .image, text: "screenshot.png")
         img.embeddings[sig] = ModelEmbedding(vector: [1, 0], tags: [tagID("url link")])
         ClipIndexer.refineKind(img)
-        XCTAssertEqual(img.kind, .image, "non-text kinds are untouched")
+        XCTAssertEqual(img.kind, .image)
 
         let color = ClipItem(kind: .color, text: "#FF8800")
         color.embeddings[sig] = ModelEmbedding(vector: [1, 0], tags: [tagID("url link")])

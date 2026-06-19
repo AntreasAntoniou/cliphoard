@@ -52,9 +52,24 @@ final class ClipStore: ObservableObject {
         db = Database(path: dir.appendingPathComponent("ditto.sqlite").path)
         migrateLegacyJSONIfNeeded()
         items = db?.loadAll() ?? []
+        repairKinds()
         sortStable()
         rebuildTagIndex()
         sweepOrphanPayloads()
+    }
+
+    /// Re-derive each text-bearing clip's kind from deterministic detection,
+    /// repairing rows a past embedding-based `refineKind` mis-promoted (e.g. plain
+    /// words stored as Links). Image/file clips are pasteboard-typed and skipped.
+    /// Idempotent and cheap (O(n)); runs once per launch.
+    private func repairKinds() {
+        for item in items where item.payloadFile == nil && item.filePath == nil {
+            let correct = ClipboardMonitor.detectKind(for: item.text)
+            guard correct != item.kind else { continue }
+            item.kind = correct
+            item.colorHex = correct == .color ? item.text.trimmingCharacters(in: .whitespaces) : nil
+            db?.updateMeta(item)
+        }
     }
 
     /// Best-effort: delete any "*.png" payload files in the store directory that

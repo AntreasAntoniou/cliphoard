@@ -154,6 +154,9 @@ struct ContentView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(spacing: 14) {
                     let results = model.results
+                    // Leading sentinel: resets scroll to here (not to card 0), so the
+                    // first card keeps its margin instead of jamming against the edge.
+                    Color.clear.frame(width: 0.5, height: 1).id("head")
                     if results.isEmpty {
                         emptyState
                     } else {
@@ -192,14 +195,14 @@ struct ContentView: View {
             }
             // Every time the bar is summoned, snap back to the newest clip.
             .onChange(of: model.presentToken) { _ in
-                proxy.scrollTo(0, anchor: .leading)
+                proxy.scrollTo("head", anchor: .leading)
             }
             // Changing the filter (category / pinned / search) produces a shorter
             // list; snap to the start so it isn't hidden past a stale scroll
             // offset — which made categories look empty/wrong.
-            .onChange(of: model.activeKind) { _ in proxy.scrollTo(0, anchor: .leading) }
-            .onChange(of: model.pinnedOnly) { _ in proxy.scrollTo(0, anchor: .leading) }
-            .onChange(of: model.query) { _ in proxy.scrollTo(0, anchor: .leading) }
+            .onChange(of: model.activeKind) { _ in proxy.scrollTo("head", anchor: .leading) }
+            .onChange(of: model.pinnedOnly) { _ in proxy.scrollTo("head", anchor: .leading) }
+            .onChange(of: model.query) { _ in proxy.scrollTo("head", anchor: .leading) }
         }
         .frame(maxHeight: .infinity)
     }
@@ -374,8 +377,11 @@ struct ContentView: View {
     /// model's tags), so the card can show how the system classified it.
     @MainActor private func tagNames(for item: ClipItem) -> [String] {
         // Only the ACTIVE model's tags — no fallback to a stale model's tags, so a
-        // freshly captured clip and an old one are always consistent.
+        // freshly captured clip and an old one are always consistent. Suppress tags
+        // entirely on the HashingEmbedder fallback: without a real semantic model
+        // its classifications are unreliable and were showing misleading pills.
         guard DeepSearch.level != .off,
+              EmbedderProvider.active.signature.hasPrefix("ogma"),
               let ids = item.embeddings[EmbedderProvider.active.signature]?.tags else { return [] }
         // Return all assigned tags; the card shows a couple whole tags + "+N".
         return ids.compactMap { TagSpace.names.indices.contains($0) ? TagSpace.names[$0] : nil }

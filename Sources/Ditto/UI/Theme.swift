@@ -30,6 +30,8 @@ enum ThemePreset: String, CaseIterable, Identifiable {
     case system, swiss, glass, highContrast, paper
     // Popular code-editor palettes (One Dark, Dracula, …).
     case oneDark, dracula, tokyoNight, catppuccin, gruvbox, monokai, nightOwl
+    // Popular light palettes.
+    case solarizedLight, githubLight, catppuccinLatte, rosePineDawn, oneLight
     var id: String { rawValue }
 
     var title: String {
@@ -46,7 +48,27 @@ enum ThemePreset: String, CaseIterable, Identifiable {
         case .gruvbox:      return "Gruvbox Dark"
         case .monokai:      return "Monokai"
         case .nightOwl:     return "Night Owl"
+        case .solarizedLight:  return "Solarized Light"
+        case .githubLight:     return "GitHub Light"
+        case .catppuccinLatte: return "Catppuccin Latte"
+        case .rosePineDawn:    return "Rosé Pine Dawn"
+        case .oneLight:        return "One Light"
         }
+    }
+
+    /// A flat light editor theme: paper-white background, a faintly tinted card
+    /// panel, signature accent, and a muted secondary color. Dark text comes from
+    /// the forced light scheme.
+    private static func lightEditor(bg: String, panel: String, accent: String,
+                                    pin: String, muted: String) -> ThemeTokens {
+        ThemeTokens(
+            accent: Theme.color(fromHex: accent), pin: Theme.color(fromHex: pin),
+            cornerRadius: 10, usesMaterials: false,
+            barFill: Theme.color(fromHex: bg), cardFill: Theme.color(fromHex: panel),
+            border: Color.black.opacity(0.10), borderHover: Color.black.opacity(0.22),
+            selectedBorderWidth: 2,
+            tagFill: Color.black.opacity(0.05), tagText: Theme.color(fromHex: muted),
+            scheme: .light)
     }
 
     /// A flat dark code-editor theme: solid editor background, slightly lifted
@@ -129,6 +151,16 @@ enum ThemePreset: String, CaseIterable, Identifiable {
             return Self.editor(bg: "#1e1f1c", panel: "#272822", accent: "#a6e22e", pin: "#fd971f", muted: "#9d967f")
         case .nightOwl:
             return Self.editor(bg: "#010e1a", panel: "#011627", accent: "#82aaff", pin: "#f78c6c", muted: "#637777")
+        case .solarizedLight:
+            return Self.lightEditor(bg: "#eee8d5", panel: "#fdf6e3", accent: "#268bd2", pin: "#cb4b16", muted: "#657b83")
+        case .githubLight:
+            return Self.lightEditor(bg: "#f6f8fa", panel: "#ffffff", accent: "#0969da", pin: "#bc4c00", muted: "#57606a")
+        case .catppuccinLatte:
+            return Self.lightEditor(bg: "#e6e9ef", panel: "#eff1f5", accent: "#8839ef", pin: "#fe640b", muted: "#6c6f85")
+        case .rosePineDawn:
+            return Self.lightEditor(bg: "#faf4ed", panel: "#fffaf3", accent: "#907aa9", pin: "#b4637a", muted: "#797593")
+        case .oneLight:
+            return Self.lightEditor(bg: "#fafafa", panel: "#ffffff", accent: "#4078f2", pin: "#c18401", muted: "#a0a1a7")
         }
     }
 }
