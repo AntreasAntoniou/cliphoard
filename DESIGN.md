@@ -80,3 +80,13 @@ This gives the product owner a premium-feeling palette layout on a legible defau
 - **ditto-dashboard: lone density champion.** The only design that answers "what happens past the visible set" ("213 more in history" + per-kind counts) — a genuinely important capability brand dismisses as "joyless." Steal its overflow affordance even if you don't ship its chrome.
 - **midnight-glass vs. swiss-grayscale is the bake-off's core tension.** Brand + craft crown the glass; legibility + speed + density + the adversary crown grayscale. I broke it for swiss on daily-survivability — but midnight-glass earns the #2 preset *only if* its metadata contrast is fixed.
 - **timeline-spine** got real love from exactly one lens (brand) and silence from the rest — promising but unvalidated; not shortlist-ready without speed/density evidence.
+
+---
+
+## Implemented (SwiftUI)
+
+The shortlist now ships as live options in **Settings → Appearance**:
+- **Themes** (Theme picker): System (default), Swiss Grayscale, Midnight Glass, High Contrast, Paper & Ink — token-driven in `Theme.swift`, applied via `.tint`/`.preferredColorScheme`/`.fontDesign`. Adversary fixes baked in (Swiss splits selection-blue vs pin-amber; Glass keeps legible footer contrast).
+- **Layouts** (Layout picker): Card Strip (default), Spotlight Palette (results + live preview), Compact List (dense rows). Arrow keys are layout-agnostic (Up/Left=prev, Down/Right=next).
+
+Each preset/layout was re-shot from the running app to verify against its mockup. Picks not yet wired: Paper is available but the bake-off's recommended *default* remains System to avoid surprise; switch in Settings.

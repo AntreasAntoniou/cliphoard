@@ -246,12 +246,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         switch Int(event.keyCode) {
         case kVK_Escape:
             hide(paste: false); return nil
-        case kVK_LeftArrow:
+        // Layout-agnostic: Up/Left = previous, Down/Right = next, so arrows work
+        // for both the horizontal strip and the vertical list/spotlight layouts.
+        case kVK_LeftArrow, kVK_UpArrow:
             model.moveSelection(-1); return nil
-        case kVK_RightArrow:
+        case kVK_RightArrow, kVK_DownArrow:
             model.moveSelection(1); return nil
-        case kVK_DownArrow, kVK_UpArrow:
-            return nil
         case kVK_Return, kVK_ANSI_KeypadEnter:
             model.commitSelection(plain: plain); return nil
         case kVK_ANSI_C where cmd || control:

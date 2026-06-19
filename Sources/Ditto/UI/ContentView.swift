@@ -24,7 +24,11 @@ struct ContentView: View {
             if model.showSettings {
                 SettingsView(settings: settings, store: store)
             } else {
-                cards
+                switch settings.layoutMode {
+                case .strip:     cards
+                case .spotlight: spotlightLayout
+                case .list:      listLayout
+                }
             }
             footer
         }
@@ -200,6 +204,172 @@ struct ContentView: View {
         .frame(maxHeight: .infinity)
     }
 
+    // MARK: Alternate layouts (bake-off shortlist)
+
+    /// Compact one-line rows — dense, fast to scan (the "Compact List" layout).
+    private var listLayout: some View {
+        ScrollViewReader { proxy in
+            ScrollView(.vertical, showsIndicators: false) {
+                LazyVStack(spacing: 2) {
+                    let results = model.results
+                    if results.isEmpty {
+                        emptyState.frame(maxWidth: .infinity)
+                    } else {
+                        ForEach(Array(results.enumerated()), id: \.element.id) { idx, item in
+                            clipRow(idx, item).id(idx)
+                        }
+                    }
+                }
+                .padding(.horizontal, 12).padding(.vertical, 8)
+                .scrollTargets(proxy, model: model, store: store)
+            }
+        }
+        .frame(maxHeight: .infinity)
+    }
+
+    /// Search-first command palette: results on the left, a live preview of the
+    /// selected clip on the right (the "Spotlight Palette" layout).
+    private var spotlightLayout: some View {
+        HStack(spacing: 0) {
+            ScrollViewReader { proxy in
+                ScrollView(.vertical, showsIndicators: false) {
+                    LazyVStack(spacing: 2) {
+                        let results = model.results
+                        if results.isEmpty {
+                            emptyState.frame(maxWidth: .infinity)
+                        } else {
+                            ForEach(Array(results.enumerated()), id: \.element.id) { idx, item in
+                                clipRow(idx, item).id(idx)
+                            }
+                        }
+                    }
+                    .padding(10)
+                    .scrollTargets(proxy, model: model, store: store)
+                }
+            }
+            .frame(width: 430)
+            Divider().opacity(0.5)
+            previewPane
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .frame(maxHeight: .infinity)
+    }
+
+    /// A single dense row used by both list and spotlight layouts.
+    private func clipRow(_ idx: Int, _ item: ClipItem) -> some View {
+        let selected = idx == model.selection
+        return HStack(spacing: 10) {
+            Image(systemName: item.kind.symbolName)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Theme.accent)
+                .frame(width: 20)
+            Text(rowText(item))
+                .font(.system(size: 12.5))
+                .lineLimit(1)
+            Spacer(minLength: 8)
+            ForEach(tagNames(for: item).prefix(1), id: \.self) { tag in
+                Text(tag)
+                    .font(.system(size: 9.5, weight: .medium))
+                    .padding(.horizontal, 6).padding(.vertical, 2)
+                    .background(Theme.t.tagFill, in: Capsule())
+                    .foregroundStyle(Theme.t.tagText)
+            }
+            if item.pinned {
+                Image(systemName: "pin.fill").font(.system(size: 9)).foregroundStyle(Theme.pin)
+            }
+            Text(item.sourceApp ?? item.kind.title)
+                .font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
+                .frame(width: 78, alignment: .trailing)
+            Text(item.createdAt, style: .relative)
+                .font(.system(size: 11)).foregroundStyle(.secondary)
+                .frame(width: 52, alignment: .trailing)
+        }
+        .padding(.horizontal, 12).padding(.vertical, 8)
+        .background(selected ? Theme.accent.opacity(0.16) : Color.clear,
+                    in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(selected ? Theme.accent : .clear, lineWidth: 1.5)
+        )
+        .contentShape(Rectangle())
+        .onTapGesture { model.click(idx) }
+    }
+
+    /// A single-line textual summary of a clip for the dense rows.
+    private func rowText(_ item: ClipItem) -> String {
+        switch item.kind {
+        case .color: return item.colorHex ?? "Color"
+        case .image: return "Image"
+        case .file:  return (item.filePath as NSString?)?.lastPathComponent ?? "File"
+        default:     return item.preview
+        }
+    }
+
+    /// The right-hand preview of the selected clip in the spotlight layout.
+    @ViewBuilder private var previewPane: some View {
+        let results = model.results
+        if results.indices.contains(model.selection) {
+            let item = results[model.selection]
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 8) {
+                    Image(systemName: item.kind.symbolName).foregroundStyle(Theme.accent)
+                    Text(item.sourceApp ?? item.kind.title)
+                        .font(.system(size: 12, weight: .semibold)).foregroundStyle(.secondary)
+                    Spacer()
+                    Text(item.characterCountLabel).font(.system(size: 11)).foregroundStyle(.secondary)
+                }
+                previewBody(item)
+                let tags = tagNames(for: item)
+                if !tags.isEmpty {
+                    FlowLayout(spacing: 5) {
+                        ForEach(tags, id: \.self) { tag in
+                            Text(tag).font(.system(size: 10))
+                                .padding(.horizontal, 7).padding(.vertical, 3)
+                                .background(Theme.t.tagFill, in: Capsule())
+                                .foregroundStyle(Theme.t.tagText)
+                        }
+                    }
+                }
+            }
+            .padding(16)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        } else {
+            Text("Select a clip").foregroundStyle(.tertiary)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
+    @ViewBuilder private func previewBody(_ item: ClipItem) -> some View {
+        switch item.kind {
+        case .image:
+            if let f = item.payloadFile,
+               let img = NSImage(contentsOf: store.storeDirectory.appendingPathComponent(f)) {
+                Image(nsImage: img).resizable().aspectRatio(contentMode: .fit)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            } else { placeholderText("Image") }
+        case .color:
+            HStack(spacing: 14) {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(Theme.color(fromHex: item.colorHex ?? "#000000"))
+                    .frame(width: 96, height: 96)
+                    .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Theme.t.border))
+                Text(item.colorHex ?? "")
+                    .font(.system(size: 18, weight: .semibold, design: .monospaced))
+                Spacer()
+            }
+        default:
+            ScrollView {
+                Text(item.text).font(.system(size: 13)).textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
+    private func placeholderText(_ s: String) -> some View {
+        Text(s).foregroundStyle(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
     /// The active model's top tag names for a clip (falls back to any cached
     /// model's tags), so the card can show how the system classified it.
     @MainActor private func tagNames(for item: ClipItem) -> [String] {
@@ -282,5 +452,26 @@ struct ContentView: View {
                 .background(Color.primary.opacity(0.1), in: RoundedRectangle(cornerRadius: 4))
             Text(label).font(.system(size: 10)).foregroundStyle(.secondary)
         }
+    }
+}
+
+/// Shared scroll-into-view wiring for the vertical layouts (list / spotlight),
+/// mirroring the horizontal strip's behavior: follow keyboard selection, reveal
+/// newly added clips, and snap to the top when the filter/query changes.
+private extension View {
+    @MainActor func scrollTargets(_ proxy: ScrollViewProxy, model: PanelViewModel, store: ClipStore) -> some View {
+        self
+            .onChange(of: model.scrollRequest) { t in
+                withAnimation(.easeOut(duration: 0.18)) { proxy.scrollTo(t, anchor: .center) }
+            }
+            .onChange(of: store.lastAddedID) { id in
+                guard let id, let idx = model.results.firstIndex(where: { $0.id == id }) else { return }
+                model.selection = idx
+                withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(idx, anchor: .center) }
+            }
+            .onChange(of: model.presentToken) { _ in proxy.scrollTo(0, anchor: .top) }
+            .onChange(of: model.activeKind) { _ in proxy.scrollTo(0, anchor: .top) }
+            .onChange(of: model.pinnedOnly) { _ in proxy.scrollTo(0, anchor: .top) }
+            .onChange(of: model.query) { _ in proxy.scrollTo(0, anchor: .top) }
     }
 }
