@@ -36,7 +36,7 @@ enum ThemePreset: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .system:       return "System"
+        case .system:       return "Automatic (One Dark / Swiss)"
         case .swiss:        return "Swiss Grayscale"
         case .glass:        return "Midnight Glass"
         case .highContrast: return "High Contrast"
@@ -89,7 +89,9 @@ enum ThemePreset: String, CaseIterable, Identifiable {
     var tokens: ThemeTokens {
         switch self {
         case .system:
-            return ThemeTokens(accent: .accentColor, pin: .orange)
+            // Follow the macOS appearance: One Dark in Dark Mode, Swiss in Light.
+            let dark = NSApp.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            return dark ? ThemePreset.oneDark.tokens : ThemePreset.swiss.tokens
         case .swiss:
             return ThemeTokens(
                 accent: Color(.sRGB, red: 0.16, green: 0.50, blue: 0.96, opacity: 1),

@@ -58,17 +58,32 @@ final class ClipStore: ObservableObject {
         sweepOrphanPayloads()
     }
 
-    /// Re-derive each text-bearing clip's kind from deterministic detection,
-    /// repairing rows a past embedding-based `refineKind` mis-promoted (e.g. plain
-    /// words stored as Links). Image/file clips are pasteboard-typed and skipped.
+    /// Heal stored rows: (1) re-derive each text-bearing clip's kind from
+    /// deterministic detection, repairing rows a past embedding-based `refineKind`
+    /// mis-promoted (e.g. plain words stored as Links); (2) drop image clips whose
+    /// payload PNG has vanished, since they render as broken cards in Images.
     /// Idempotent and cheap (O(n)); runs once per launch.
     private func repairKinds() {
-        for item in items where item.payloadFile == nil && item.filePath == nil {
+        var orphanedImages: [ClipItem] = []
+        for item in items {
+            if item.kind == .image {
+                if let f = item.payloadFile,
+                   !FileManager.default.fileExists(atPath: dir.appendingPathComponent(f).path) {
+                    orphanedImages.append(item)
+                }
+                continue
+            }
+            guard item.payloadFile == nil, item.filePath == nil else { continue }
             let correct = ClipboardMonitor.detectKind(for: item.text)
             guard correct != item.kind else { continue }
             item.kind = correct
             item.colorHex = correct == .color ? item.text.trimmingCharacters(in: .whitespaces) : nil
             db?.updateMeta(item)
+        }
+        if !orphanedImages.isEmpty {
+            let ids = Set(orphanedImages.map { $0.id })
+            items.removeAll { ids.contains($0.id) }
+            db?.delete(ids: Array(ids))
         }
     }
 
@@ -111,9 +126,10 @@ final class ClipStore: ObservableObject {
         }
         // Embed + tag at ingest (for the active model) so semantic search is
         // ready immediately. Skipped in the `off` tier, which uses no vectors.
+        // NB: the clip's KIND is whatever deterministic detection decided — we no
+        // longer let embeddings reclassify it (that put non-URLs into Links).
         if DeepSearch.level != .off && ClipIndexer.isStale(item) {
             ClipIndexer.index(item)
-            ClipIndexer.refineKind(item)   // let the embedding correct the bucket
         }
         items.insert(item, at: 0)
         trim()

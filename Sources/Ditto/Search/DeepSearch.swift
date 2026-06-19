@@ -291,24 +291,9 @@ enum ClipIndexer {
         return !isUsable(emb.vector, dimension: EmbedderProvider.active.dimension)
     }
 
-    /// Use the embedding's top tags to correct a single-token `text` clip the
-    /// regex/detector missed — e.g. an obfuscated URL the model recognises as a
-    /// link. Conservative: only promotes whitespace-free text → link.
-    static func refineKind(_ item: ClipItem) {
-        // Only let embeddings OVERRIDE deterministic detection when a real semantic
-        // model is active — the HashingEmbedder fallback's tags are essentially
-        // random and were mis-promoting ordinary words into Links. Also require the
-        // text to actually look link-ish (a dot/scheme/@), so a plain word is never
-        // reclassified.
-        guard item.kind == .text,
-              EmbedderProvider.active.signature.hasPrefix("ogma"),
-              !item.text.contains(where: { $0.isWhitespace }),
-              item.text.contains(where: { ".:@/".contains($0) }),
-              let tags = item.embeddings[EmbedderProvider.active.signature]?.tags else { return }
-        let linkTags = Set(["url link", "email address", "domain name"])
-        let topNames = tags.prefix(2).compactMap { TagSpace.names.indices.contains($0) ? TagSpace.names[$0] : nil }
-        if topNames.contains(where: { linkTags.contains($0) }) { item.kind = .link }
-    }
+    // refineKind was removed: a clip's KIND is now decided solely by deterministic
+    // detection (ClipboardMonitor.detectKind / pasteboard type). Letting embeddings
+    // reclassify kinds put non-URLs into the Links category and was unreliable.
 }
 
 // MARK: - Ranking
