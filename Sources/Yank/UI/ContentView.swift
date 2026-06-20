@@ -9,6 +9,7 @@ struct ContentView: View {
     /// Drives first-responder focus into the search field on summon (BL-11/H4):
     /// the panel is non-activating, so nothing otherwise makes the field key.
     @FocusState private var searchFocused: Bool
+    @State private var modeHover = false
 
     init(model: PanelViewModel, store: ClipStore) {
         self.model = model
@@ -161,20 +162,31 @@ struct ContentView: View {
             }
             .pickerStyle(.inline)
         } label: {
-            HStack(spacing: 4) {
+            HStack(spacing: 5) {
                 Image(systemName: settings.searchMode.symbol).font(.system(size: 10))
                 Text(settings.searchMode.title).font(.system(size: 11, weight: .semibold))
-                Image(systemName: "chevron.down").font(.system(size: 8, weight: .bold)).opacity(0.5)
+                // The macOS pop-up "double chevron" reads instantly as a clickable selector.
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: 8, weight: .bold)).opacity(0.8)
             }
-            .foregroundStyle(settings.searchMode == .exact ? Color.primary : Theme.accent)
-            .padding(.horizontal, 9).padding(.vertical, 6)
-            .background(Color.primary.opacity(0.07), in: Capsule())
+            .foregroundStyle(Theme.accent)
+            .padding(.horizontal, 10).padding(.vertical, 6)
+            .background(Theme.accent.opacity(modeHover ? 0.20 : 0.12), in: Capsule())
+            .overlay(Capsule().strokeBorder(Theme.accent.opacity(modeHover ? 0.6 : 0.35), lineWidth: 1))
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
         .fixedSize()
-        .help("Search mode — Exact, Smart, or Tag")
+        // Hover: brighten + show the pointing-hand cursor so it's obviously clickable.
+        .onHover { h in
+            modeHover = h
+            if h { NSCursor.pointingHand.push() } else { NSCursor.pop() }
+        }
+        .help("Search mode — click to switch (Smart · Exact · Tag)")
+        .accessibilityElement()
         .accessibilityLabel("Search mode: \(settings.searchMode.title)")
+        .accessibilityHint("Click to switch between Smart, Exact, and Tag")
+        .accessibilityAddTraits(.isButton)
     }
 
     // MARK: Cards

@@ -13,6 +13,7 @@ final class AppSettings: ObservableObject {
     @Published var debugLogging: Bool { didSet { UserDefaults.standard.set(debugLogging, forKey: "debugLog") } }
     @Published var historyLimit: Int { didSet { store.historyLimit = historyLimit } }
     @Published var launchAtLogin: Bool { didSet { LoginItem.set(launchAtLogin) } }
+    @Published var activateOnSummon: Bool { didSet { UserDefaults.standard.set(activateOnSummon, forKey: "activateOnSummon") } }
     @Published var themePreset: ThemePreset { didSet { Theme.preset = themePreset } }
     @Published var layoutMode: LayoutMode { didSet { Theme.layout = layoutMode } }
     @Published var searchMode: SearchMode {
@@ -54,6 +55,7 @@ final class AppSettings: ObservableObject {
         debugLogging = DebugLog.enabled
         historyLimit = store.historyLimit
         launchAtLogin = LoginItem.enabled
+        activateOnSummon = UserDefaults.standard.bool(forKey: "activateOnSummon")
         themePreset = Theme.preset
         layoutMode = Theme.layout
         searchMode = DeepSearch.mode
@@ -95,6 +97,12 @@ struct SettingsView: View {
                         Spacer()
                         keycap("⌃⌥⌘V")
                     }
+                    Toggle("Take over focus when summoned", isOn: $settings.activateOnSummon)
+                    Text(settings.activateOnSummon
+                         ? "On: Yank becomes the active app each time you summon it. Use this only if typing doesn't reliably land in the search field — it briefly takes the menu bar from your app and makes pasting a touch slower."
+                         : "Off (recommended): the bar floats over your work without taking over — your current app keeps its focus and menu bar, and pasting back is faster. Turn this on only if the search field won't accept typing on your setup.")
+                        .font(.system(size: 11)).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
 
                 section("Appearance") {

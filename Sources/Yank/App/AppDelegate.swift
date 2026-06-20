@@ -185,7 +185,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         model.presentToken &+= 1
         isVisible = true
         isClosing = false
-        NSApp.activate(ignoringOtherApps: true)
+        // Off by default: the bar is a non-activating panel, so it can float over
+        // your work and become key WITHOUT making Yank the frontmost app (keeps the
+        // host app's focus + menu bar, and makes paste faster — no re-activation
+        // dance). The toggle exists only as a fallback if the search field doesn't
+        // reliably take focus on a given setup. (Settings → General.)
+        if UserDefaults.standard.bool(forKey: "activateOnSummon") {
+            NSApp.activate(ignoringOtherApps: true)
+        }
         panel.slideIn()
     }
 
