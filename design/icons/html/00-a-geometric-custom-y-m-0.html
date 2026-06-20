@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Yank</title>
+<style>
+  html,body{margin:0;padding:0;}
+  body{width:512px;height:512px;overflow:hidden;background:transparent;}
+  svg{display:block;}
+</style>
+</head>
+<body>
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Yank app icon">
+  <defs>
+    <!-- Tile background gradient -->
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#222A3B"/>
+      <stop offset="0.45" stop-color="#161C28"/>
+      <stop offset="1" stop-color="#0A0D15"/>
+    </linearGradient>
+    <!-- Subtle radial sheen top-left -->
+    <radialGradient id="sheen" cx="0.32" cy="0.20" r="0.85">
+      <stop offset="0" stop-color="#000000" stop-opacity="0"/>
+      <stop offset="0" stop-color="#46557A" stop-opacity="0.55"/>
+      <stop offset="0.55" stop-color="#46557A" stop-opacity="0"/>
+    </radialGradient>
+    <!-- Glyph gradient mint -> cyan -->
+    <linearGradient id="glyph" x1="0.15" y1="0" x2="0.85" y2="1">
+      <stop offset="0" stop-color="#6BF0D2"/>
+      <stop offset="0.5" stop-color="#37CFE0"/>
+      <stop offset="1" stop-color="#23A6F2"/>
+    </linearGradient>
+    <!-- Glyph top highlight -->
+    <linearGradient id="glyphHi" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#EAFBFF" stop-opacity="0.9"/>
+      <stop offset="0.18" stop-color="#EAFBFF" stop-opacity="0"/>
+    </linearGradient>
+    <!-- Drop shadow for tile -->
+    <filter id="tileShadow" x="-25%" y="-25%" width="150%" height="150%">
+      <feDropShadow dx="0" dy="14" stdDeviation="20" flood-color="#000000" flood-opacity="0.45"/>
+    </filter>
+    <!-- Soft glow under glyph -->
+    <filter id="glyphGlow" x="-40%" y="-40%" width="180%" height="180%">
+      <feDropShadow dx="0" dy="10" stdDeviation="14" flood-color="#0BD9C4" flood-opacity="0.35"/>
+    </filter>
+    <!-- Squircle clip -->
+    <clipPath id="squircleClip">
+      <path d="M256 24
+               C 120 24, 88 24, 56 56
+               C 24 88, 24 120, 24 256
+               C 24 392, 24 424, 56 456
+               C 88 488, 120 488, 256 488
+               C 392 488, 424 488, 456 456
+               C 488 424, 488 392, 488 256
+               C 488 120, 488 88, 456 56
+               C 424 24, 392 24, 256 24 Z"/>
+    </clipPath>
+  </defs>
+
+  <!-- Tile with shadow -->
+  <g filter="url(#tileShadow)">
+    <path d="M256 24
+             C 120 24, 88 24, 56 56
+             C 24 88, 24 120, 24 256
+             C 24 392, 24 424, 56 456
+             C 88 488, 120 488, 256 488
+             C 392 488, 424 488, 456 456
+             C 488 424, 488 392, 488 256
+             C 488 120, 488 88, 456 56
+             C 424 24, 392 24, 256 24 Z"
+          fill="url(#tile)"/>
+  </g>
+
+  <!-- Inner depth: sheen + top hairline, clipped to tile -->
+  <g clip-path="url(#squircleClip)">
+    <rect x="24" y="24" width="464" height="464" fill="url(#sheen)"/>
+    <!-- top inner highlight line -->
+    <path d="M256 26 C 124 26, 92 26, 62 56" stroke="#9FB2D9" stroke-opacity="0.25" stroke-width="2" fill="none"/>
+    <!-- bottom inner vignette -->
+    <rect x="24" y="300" width="464" height="188" fill="#000000" opacity="0.18"/>
+  </g>
+
+  <!-- HERO GLYPH: geometric Y / yank-arrow -->
+  <!-- Composition centered around x=256. Upper V arms meet at the junction,
+       lower stem is a thick shaft, with a notch separating arms from stem,
+       and an arrowhead at the bottom reinforcing "yank down". -->
+  <g filter="url(#glyphGlow)">
+    <g fill="url(#glyph)">
+      <!-- Left arm (wedge) -->
+      <path d="M150 150
+               L 196 150
+               L 268 252
+               L 256 300
+               L 216 300 Z"/>
+      <!-- Right arm (wedge) — extends slightly past for distinctiveness -->
+      <path d="M362 150
+               L 316 150
+               L 244 252
+               L 256 300
+               L 296 300 Z"/>
+      <!-- Central stem / shaft -->
+      <path d="M228 286
+               L 284 286
+               L 284 360
+               L 228 360 Z"/>
+      <!-- Arrowhead (downward yank) -->
+      <path d="M196 350
+               L 316 350
+               L 256 420 Z"/>
+    </g>
+
+    <!-- Notch separating the V from the stem: a thin dark gap for the monogram feel -->
+    <path d="M232 300 L 280 300 L 274 286 L 238 286 Z" fill="#0A0D15" opacity="0.0"/>
+
+    <!-- Top highlight overlay on arms (premium light) -->
+    <g fill="url(#glyphHi)" opacity="0.9">
+      <path d="M150 150 L 196 150 L 214 175 L 168 175 Z"/>
+      <path d="M362 150 L 316 150 L 298 175 L 344 175 Z"/>
+    </g>
+  </g>
+
+  <!-- crisp inner edge stroke on glyph for definition -->
+  <g fill="none" stroke="#0A1018" stroke-opacity="0.18" stroke-width="2">
+    <path d="M150 150 L 196 150 L 268 252 L 256 300 L 216 300 Z"/>
+    <path d="M362 150 L 316 150 L 244 252 L 256 300 L 296 300 Z"/>
+    <path d="M228 286 L 284 286 L 284 360 L 228 360 Z"/>
+    <path d="M196 350 L 316 350 L 256 420 Z"/>
+  </g>
+</svg>
+</body>
+</html>

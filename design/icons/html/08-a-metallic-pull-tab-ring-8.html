@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Yank</title>
+<style>
+  html,body{margin:0;padding:0;}
+  body{width:512px;height:512px;overflow:hidden;background:transparent;}
+  svg{display:block;}
+</style>
+</head>
+<body>
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- Tile background gradient -->
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2B2F3A"/>
+      <stop offset="0.55" stop-color="#191C25"/>
+      <stop offset="1" stop-color="#11131A"/>
+    </linearGradient>
+    <!-- Subtle top sheen -->
+    <linearGradient id="sheen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.16"/>
+      <stop offset="0.18" stop-color="#FFFFFF" stop-opacity="0.04"/>
+      <stop offset="0.4" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+    <!-- Accent gradient for the pull tab -->
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#7C6BFF"/>
+      <stop offset="0.5" stop-color="#5B8CFF"/>
+      <stop offset="1" stop-color="#3F6BF0"/>
+    </linearGradient>
+    <!-- Bright top edge of grip -->
+    <linearGradient id="gripEdge" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#EAF0FF"/>
+      <stop offset="1" stop-color="#5B8CFF"/>
+    </linearGradient>
+    <!-- Slot interior -->
+    <linearGradient id="slot" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#05060A"/>
+      <stop offset="1" stop-color="#1A1E2A"/>
+    </linearGradient>
+    <!-- Motion trail fade -->
+    <linearGradient id="trail" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#5B8CFF" stop-opacity="0.0"/>
+      <stop offset="1" stop-color="#7C6BFF" stop-opacity="0.55"/>
+    </linearGradient>
+
+    <!-- Tile drop shadow -->
+    <filter id="tileShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="18" stdDeviation="20" flood-color="#000000" flood-opacity="0.45"/>
+    </filter>
+    <!-- Glyph glow/shadow -->
+    <filter id="glow" x="-60%" y="-60%" width="220%" height="220%">
+      <feDropShadow dx="0" dy="10" stdDeviation="14" flood-color="#3F6BF0" flood-opacity="0.55"/>
+    </filter>
+
+    <!-- Squircle clip -->
+    <clipPath id="squircle">
+      <path d="M256 24
+               C 120 24, 56 24, 40 40
+               C 24 56, 24 120, 24 256
+               C 24 392, 24 456, 40 472
+               C 56 488, 120 488, 256 488
+               C 392 488, 456 488, 472 472
+               C 488 456, 488 392, 488 256
+               C 488 120, 488 56, 472 40
+               C 456 24, 392 24, 256 24 Z"/>
+    </clipPath>
+  </defs>
+
+  <!-- Tile -->
+  <g filter="url(#tileShadow)">
+    <path d="M256 24
+             C 120 24, 56 24, 40 40
+             C 24 56, 24 120, 24 256
+             C 24 392, 24 456, 40 472
+             C 56 488, 120 488, 256 488
+             C 392 488, 456 488, 472 472
+             C 488 456, 488 392, 488 256
+             C 488 120, 488 56, 472 40
+             C 456 24, 392 24, 256 24 Z"
+          fill="url(#tile)"/>
+  </g>
+
+  <!-- Inner content clipped to tile -->
+  <g clip-path="url(#squircle)">
+    <!-- soft radial vignette glow behind glyph -->
+    <ellipse cx="256" cy="250" rx="180" ry="200" fill="#3F6BF0" opacity="0.12"/>
+
+    <!-- The slot the tab is being pulled from -->
+    <g transform="translate(256,360)">
+      <!-- slot opening -->
+      <rect x="-92" y="-22" width="184" height="44" rx="22" fill="url(#slot)"/>
+      <rect x="-92" y="-22" width="184" height="44" rx="22" fill="none" stroke="#000000" stroke-opacity="0.5" stroke-width="2"/>
+      <!-- subtle rim highlight on slot bottom edge -->
+      <rect x="-92" y="14" width="184" height="6" rx="3" fill="#FFFFFF" opacity="0.06"/>
+    </g>
+
+    <!-- Motion trail under the tab, emerging from slot -->
+    <rect x="232" y="300" width="48" height="70" rx="24" fill="url(#trail)"/>
+
+    <!-- The pull tab being yanked up -->
+    <g filter="url(#glow)">
+      <!-- stem -->
+      <rect x="236" y="210" width="40" height="140" rx="20" fill="url(#accent)"/>
+      <!-- stem center highlight -->
+      <rect x="246" y="214" width="8" height="132" rx="4" fill="#EAF0FF" opacity="0.35"/>
+
+      <!-- grip ring (the part you hook a finger / yank) -->
+      <circle cx="256" cy="170" r="74" fill="none" stroke="url(#accent)" stroke-width="40"/>
+      <!-- bright top edge on ring -->
+      <path d="M 256 96 A 74 74 0 0 1 330 170" fill="none" stroke="url(#gripEdge)" stroke-width="40" stroke-linecap="round" opacity="0.9"/>
+      <!-- inner ring hole subtle shading -->
+      <circle cx="256" cy="170" r="54" fill="#11131A"/>
+      <circle cx="256" cy="170" r="54" fill="url(#slot)" opacity="0.6"/>
+      <!-- specular dot -->
+      <circle cx="224" cy="128" r="11" fill="#FFFFFF" opacity="0.55"/>
+    </g>
+
+    <!-- top sheen over everything -->
+    <path d="M24 24 H488 V200 H24 Z" fill="url(#sheen)"/>
+  </g>
+
+  <!-- crisp inner stroke for premium edge -->
+  <path d="M256 26
+           C 121 26, 57 26, 41.5 41.5
+           C 26 57, 26 121, 26 256
+           C 26 391, 26 455, 41.5 470.5
+           C 57 486, 121 486, 256 486
+           C 391 486, 455 486, 470.5 470.5
+           C 486 455, 486 391, 486 256
+           C 486 121, 486 57, 470.5 41.5
+           C 455 26, 391 26, 256 26 Z"
+        fill="none" stroke="#FFFFFF" stroke-opacity="0.10" stroke-width="2"/>
+</svg>
+</body>
+</html>

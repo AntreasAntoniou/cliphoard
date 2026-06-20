@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Yank</title>
+<style>
+  html,body{margin:0;padding:0;}
+  body{width:512px;height:512px;overflow:hidden;background:transparent;}
+  svg{display:block;}
+</style>
+</head>
+<body>
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- Tile background gradient -->
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#16487A"/>
+      <stop offset="0.5" stop-color="#103A63"/>
+      <stop offset="1" stop-color="#0A1E36"/>
+    </linearGradient>
+    <!-- Subtle top sheen -->
+    <linearGradient id="sheen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.20"/>
+      <stop offset="0.35" stop-color="#ffffff" stop-opacity="0.04"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+    <!-- Amber card gradient -->
+    <linearGradient id="card" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FFC65A"/>
+      <stop offset="1" stop-color="#FF7A1A"/>
+    </linearGradient>
+    <!-- Hook gradient (white with faint cool edge) -->
+    <linearGradient id="hook" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#DCE9F5"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#34E0C8" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#34E0C8" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- Drop shadow for the whole tile -->
+    <filter id="tileShadow" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="14" stdDeviation="18" flood-color="#000000" flood-opacity="0.35"/>
+    </filter>
+    <!-- Soft shadow under the floating elements -->
+    <filter id="softShadow" x="-40%" y="-40%" width="180%" height="180%">
+      <feDropShadow dx="0" dy="6" stdDeviation="9" flood-color="#000814" flood-opacity="0.40"/>
+    </filter>
+
+    <!-- Squircle clip -->
+    <clipPath id="squircle">
+      <path d="M16,256
+               C16,96 96,16 256,16
+               C416,16 496,96 496,256
+               C496,416 416,496 256,496
+               C96,496 16,416 16,256 Z"/>
+    </clipPath>
+  </defs>
+
+  <!-- Tile -->
+  <g filter="url(#tileShadow)">
+    <path d="M16,256
+             C16,96 96,16 256,16
+             C416,16 496,96 496,256
+             C496,416 416,496 256,496
+             C96,496 16,416 16,256 Z"
+          fill="url(#tile)"/>
+  </g>
+
+  <g clip-path="url(#squircle)">
+    <!-- top sheen -->
+    <rect x="0" y="0" width="512" height="300" fill="url(#sheen)"/>
+    <!-- teal glow behind hook -->
+    <circle cx="300" cy="250" r="170" fill="url(#glow)"/>
+
+    <!-- Speed / pull lines (leftward motion of the card) -->
+    <g stroke-linecap="round" fill="none">
+      <line x1="118" y1="318" x2="208" y2="318" stroke="#9FE7DC" stroke-opacity="0.85" stroke-width="14"/>
+      <line x1="96"  y1="356" x2="172" y2="356" stroke="#9FE7DC" stroke-opacity="0.55" stroke-width="12"/>
+      <line x1="138" y1="280" x2="200" y2="280" stroke="#9FE7DC" stroke-opacity="0.45" stroke-width="11"/>
+    </g>
+
+    <!-- The clip card being yanked -->
+    <g filter="url(#softShadow)">
+      <rect x="206" y="270" width="150" height="104" rx="22" fill="url(#card)"/>
+      <!-- card "text" lines -->
+      <rect x="232" y="300" width="98" height="13" rx="6.5" fill="#7A3300" fill-opacity="0.45"/>
+      <rect x="232" y="328" width="70" height="13" rx="6.5" fill="#7A3300" fill-opacity="0.30"/>
+    </g>
+
+    <!-- The hook: a bold J curling around to grab the card -->
+    <g filter="url(#softShadow)">
+      <path d="M300,118
+               L300,250
+               C300,300 268,332 218,332
+               C176,332 148,304 145,266"
+            fill="none"
+            stroke="url(#hook)"
+            stroke-width="42"
+            stroke-linecap="round"/>
+      <!-- barb of the hook -->
+      <path d="M145,266 L120,236 M145,266 L182,250"
+            fill="none"
+            stroke="url(#hook)"
+            stroke-width="42"
+            stroke-linecap="round"
+            stroke-linejoin="round"/>
+      <!-- eyelet at top of hook -->
+      <circle cx="300" cy="118" r="30" fill="none" stroke="url(#hook)" stroke-width="40"/>
+    </g>
+
+    <!-- inner top highlight stroke for premium edge -->
+    <path d="M16,256
+             C16,96 96,16 256,16
+             C416,16 496,96 496,256"
+          fill="none" stroke="#ffffff" stroke-opacity="0.18" stroke-width="2"/>
+  </g>
+</svg>
+</body>
+</html>

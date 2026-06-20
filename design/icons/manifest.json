@@ -1,0 +1,82 @@
+[
+ {
+  "i": 0,
+  "file": "00-a-geometric-custom-y-m-0",
+  "name": "Yank",
+  "concept": "A geometric custom \"Y\" monogram where the Y's stem is cut by a sharp horizontal notch and ",
+  "palette": "Tile gradient: #1C2230 \u2192 #0C0F18 (deep graphite-indigo). Glyph gradient: #5BE6C9",
+  "rationale": "A confident geometric Y monogram whose lower stem doubles as a yank-down arrow \u2014 instantly readable as the brand letter "
+ },
+ {
+  "i": 1,
+  "file": "01-a-bold-hook-catches-the-1",
+  "name": "Yank",
+  "concept": "A bold hook catches the trailing edge of a clip-card and pulls it back along a motion path",
+  "palette": "Background: #0A1A2F \u2192 #123A5E (deep ocean-to-steel blue). Hook: #FFFFFF. Card: #",
+  "rationale": "A clean steel-blue tile with a white hook snagging an amber card and pulling it left\u2014instantly says \"grab it and yank it"
+ },
+ {
+  "i": 2,
+  "file": "02-a-reinterpreted-clipboar-2",
+  "name": "Yank",
+  "concept": "A reinterpreted clipboard. The board is a clean, light rounded rect floating on a deep ind",
+  "palette": "Tile indigo #2A2E4A -> #1C1E33 -> #121324; accent mint->cyan #5EEAD4 -> #2FB6FF;",
+  "rationale": "A clipboard whose clip becomes a downward pull-arrow, turning the office cliche into a literal one-keystroke \"yank it ba"
+ },
+ {
+  "i": 3,
+  "file": "03-a-small-stack-of-rounded-3",
+  "name": "Yank",
+  "concept": "A small stack of rounded clip \"cards\" representing clipboard history, with the topmost car",
+  "palette": "Tile gradient #1B2440 \u2192 #0E1426 (deep indigo-slate); back cards #3A4670 / #2A335",
+  "rationale": "One mark fuses the clipboard's stacked history with the upward \"yank\" of pulling the top clip back into your hands."
+ },
+ {
+  "i": 4,
+  "file": "04-a-vim-native-mark-a-bol-4",
+  "name": "Yank",
+  "concept": "A Vim-native mark: a bold lowercase monospace \"y\" (yank = copy) sitting next to a glowing ",
+  "palette": "Tile graphite #2B2F3A -> #1C1F27 -> #141620; glyph off-white #EDEFF5; cursor min",
+  "rationale": "A monospace \"y\" plus a blinking terminal block cursor speaks Vim/yank fluently to developers while staying a single bold"
+ },
+ {
+  "i": 5,
+  "file": "05-a-single-bold-snap-back-5",
+  "name": "Yank",
+  "concept": "A single bold \"snap-back\" loop arrow: a clip travels out along a curve, hooks around a ret",
+  "palette": "Tile gradient #1B2230 \u2192 #0C0F17 (graphite); arrow gradient #34E0C4 \u2192 #18A8FF (cy",
+  "rationale": "One elegant return-loop arrow on dark graphite says \"copy out, yank it back\" instantly and stays legible at 32px."
+ },
+ {
+  "i": 6,
+  "file": "06-the-app-s-signature-moti-6",
+  "name": "Yank",
+  "concept": "The app's signature motion \u2014 a panel sliding UP from the bottom of the screen \u2014 abstracted",
+  "palette": "Tile: #0E1116 \u2192 #1A2230 (deep slate). Panel/glyph: #5EEAD4 \u2192 #34D399 (mint/teal ",
+  "rationale": "A rising mint panel with an upward chevron and motion echoes turns Yank's slide-up retrieval gesture into a sharp, singl"
+ },
+ {
+  "i": 7,
+  "file": "07-a-premium-horseshoe-magn-7",
+  "name": "Yank",
+  "concept": "A premium horseshoe magnet, rendered as a clean geometric U with two pole tips, centered o",
+  "palette": "Background indigo #2B2D6B \u2192 violet #6C3DF4; magnet body steel #E8ECF5 \u2192 #AEB6CC;",
+  "rationale": "A clean horseshoe magnet on a confident indigo-violet tile turns Yank's \"grab everything you copy\" into one bold, instan"
+ },
+ {
+  "i": 8,
+  "file": "08-a-metallic-pull-tab-ring-8",
+  "name": "Yank",
+  "concept": "A metallic pull-tab/ring-pull being yanked straight up out of a slot, leaving a short moti",
+  "palette": "Tile gradient #2B2F3A\u2192#11131A (graphite); accent stem/ring #5B8CFF\u2192#7C6BFF (elec",
+  "rationale": "A satisfying ring-pull mid-yank turns the Vim \"yank\" verb into a tactile, instantly-readable gesture that holds up at 32"
+ },
+ {
+  "i": 9,
+  "file": "09-an-abstract-geometric-y-9",
+  "name": "Yank",
+  "concept": "An abstract geometric \"yank-hook\": a bold Y-rooted stem that splits into a chevron and cur",
+  "palette": "Background gradient #1B1230 \u2192 #2E1A52 (deep indigo/violet); glyph mint-to-cyan g",
+  "rationale": "A sharp violet-on-mint abstract hook-monogram that simultaneously says \"Y\" and \"pull it back,\" instantly legible at 32px"
+ }
+]

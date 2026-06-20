@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Yank</title>
+<style>
+  html, body { margin: 0; padding: 0; }
+  body {
+    width: 512px;
+    height: 512px;
+    overflow: hidden;
+  }
+  svg { display: block; }
+</style>
+</head>
+<body>
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- Tile background: deep terminal graphite with a cool top-light -->
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2B2F3A"/>
+      <stop offset="0.5" stop-color="#1C1F27"/>
+      <stop offset="1" stop-color="#141620"/>
+    </linearGradient>
+
+    <!-- Subtle inner sheen on the tile -->
+    <radialGradient id="sheen" cx="0.5" cy="0.06" r="0.9">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.16"/>
+      <stop offset="0.45" stop-color="#ffffff" stop-opacity="0.03"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- The block cursor accent: electric mint -> cyan -->
+    <linearGradient id="cursor" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#5BFFC7"/>
+      <stop offset="1" stop-color="#2FE6E6"/>
+    </linearGradient>
+
+    <!-- Glow for the cursor block -->
+    <filter id="glow" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="10" result="b"/>
+      <feMerge>
+        <feMergeNode in="b"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <!-- Drop shadow under the whole tile -->
+    <filter id="tileShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="14" stdDeviation="20" flood-color="#000000" flood-opacity="0.45"/>
+    </filter>
+
+    <!-- Squircle clip -->
+    <clipPath id="squircle">
+      <rect x="32" y="24" width="448" height="448" rx="100" ry="100"/>
+    </clipPath>
+  </defs>
+
+  <!-- Tile -->
+  <g filter="url(#tileShadow)">
+    <rect x="32" y="24" width="448" height="448" rx="100" ry="100" fill="url(#tile)"/>
+  </g>
+
+  <g clip-path="url(#squircle)">
+    <!-- top sheen -->
+    <rect x="32" y="24" width="448" height="448" fill="url(#sheen)"/>
+
+    <!-- The glyph: lowercase monospace "y" with a terminal block cursor.
+         Drawn with thick rounded strokes for legibility at 32px. -->
+    <g stroke-linecap="round" stroke-linejoin="round" fill="none">
+      <!-- y: right stem dropping into a curved descender (clearly a y),
+           left arm joining at the x-height baseline. Monospace-flavored,
+           thick rounded strokes for legibility at 32px. -->
+      <!-- right stem + descender tail curving left -->
+      <path d="M286 176 L286 312 Q286 372 226 372 L196 372"
+            stroke="#EDEFF5" stroke-width="42"/>
+      <!-- left arm meeting the stem at the bowl join -->
+      <path d="M176 176 L176 244 Q176 296 228 296 L286 296"
+            stroke="#EDEFF5" stroke-width="42"/>
+    </g>
+
+    <!-- Terminal block cursor sitting just after the y, x-height aligned -->
+    <g filter="url(#glow)">
+      <rect x="322" y="190" width="62" height="106" rx="11" fill="url(#cursor)"/>
+    </g>
+  </g>
+
+  <!-- Crisp 1px inner edge to seat the tile -->
+  <rect x="32.5" y="24.5" width="447" height="447" rx="99.5" ry="99.5"
+        fill="none" stroke="#ffffff" stroke-opacity="0.10" stroke-width="1"/>
+</svg>
+</body>
+</html>

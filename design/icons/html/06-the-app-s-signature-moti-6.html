@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Yank</title>
+<style>
+  html,body{margin:0;padding:0;}
+  body{width:512px;height:512px;overflow:hidden;background:transparent;}
+  svg{display:block;}
+</style>
+</head>
+<body>
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- Tile background gradient -->
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1A2230"/>
+      <stop offset="1" stop-color="#0E1116"/>
+    </linearGradient>
+    <!-- subtle top sheen -->
+    <linearGradient id="sheen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.10"/>
+      <stop offset="0.45" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+    <!-- Panel/glyph gradient -->
+    <linearGradient id="panel" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#6FF3DC"/>
+      <stop offset="1" stop-color="#2DD4A6"/>
+    </linearGradient>
+    <linearGradient id="panelEdge" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#A8FBEC"/>
+      <stop offset="1" stop-color="#2DD4A6"/>
+    </linearGradient>
+    <!-- Drop shadow for the whole tile -->
+    <filter id="tileShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="14" stdDeviation="20" flood-color="#000000" flood-opacity="0.35"/>
+    </filter>
+    <!-- Glow under the rising panel -->
+    <filter id="panelGlow" x="-60%" y="-60%" width="220%" height="220%">
+      <feDropShadow dx="0" dy="0" stdDeviation="14" flood-color="#2DD4A6" flood-opacity="0.45"/>
+    </filter>
+    <clipPath id="tileClip">
+      <rect x="40" y="32" width="432" height="432" rx="96" ry="96"/>
+    </clipPath>
+  </defs>
+
+  <!-- Tile -->
+  <g filter="url(#tileShadow)">
+    <rect x="40" y="32" width="432" height="432" rx="96" ry="96" fill="url(#tile)"/>
+  </g>
+
+  <g clip-path="url(#tileClip)">
+    <!-- top sheen -->
+    <rect x="40" y="32" width="432" height="432" rx="96" ry="96" fill="url(#sheen)"/>
+
+    <!-- Motion echo trails beneath the panel (the slide-up wake) -->
+    <rect x="176" y="356" width="160" height="40" rx="20" fill="#2DD4BF" opacity="0.14"/>
+    <rect x="160" y="312" width="192" height="48" rx="24" fill="#2DD4BF" opacity="0.26"/>
+
+    <!-- The rising panel -->
+    <g filter="url(#panelGlow)">
+      <rect x="140" y="150" width="232" height="176" rx="40" fill="url(#panel)"/>
+      <!-- bright top lip of the panel -->
+      <rect x="140" y="150" width="232" height="56" rx="40" fill="url(#panelEdge)" opacity="0.55"/>
+    </g>
+
+    <!-- Upward chevron knocked into the panel face -->
+    <path d="M256 196 L320 264 L286 264 L286 296 L226 296 L226 264 L192 264 Z"
+          fill="#0E1116"/>
+  </g>
+</svg>
+</body>
+</html>

@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  html,body{margin:0;padding:0;}
+  body{width:512px;height:512px;overflow:hidden;background:transparent;}
+  svg{display:block;}
+</style>
+</head>
+<body>
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- Tile background -->
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#212C50"/>
+      <stop offset="0.55" stop-color="#141C36"/>
+      <stop offset="1" stop-color="#0C1122"/>
+    </linearGradient>
+    <!-- subtle top sheen -->
+    <linearGradient id="sheen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.16"/>
+      <stop offset="0.4" stop-color="#ffffff" stop-opacity="0.0"/>
+    </linearGradient>
+    <!-- yanked card face -->
+    <linearGradient id="topcard" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#DFE6F7"/>
+    </linearGradient>
+    <!-- accent caret -->
+    <linearGradient id="accent" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#7AE0FF"/>
+      <stop offset="1" stop-color="#4F8DFF"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.4" r="0.7">
+      <stop offset="0" stop-color="#4F8DFF" stop-opacity="0.45"/>
+      <stop offset="1" stop-color="#4F8DFF" stop-opacity="0"/>
+    </radialGradient>
+
+    <filter id="tileShadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="14" stdDeviation="16" flood-color="#000000" flood-opacity="0.34"/>
+    </filter>
+    <filter id="cardShadow" x="-60%" y="-60%" width="220%" height="220%">
+      <feDropShadow dx="0" dy="10" stdDeviation="14" flood-color="#04070F" flood-opacity="0.55"/>
+    </filter>
+    <filter id="liftShadow" x="-80%" y="-80%" width="260%" height="260%">
+      <feDropShadow dx="0" dy="22" stdDeviation="22" flood-color="#020409" flood-opacity="0.55"/>
+    </filter>
+
+    <clipPath id="tileClip">
+      <rect x="16" y="16" width="480" height="480" rx="108" ry="108"/>
+    </clipPath>
+  </defs>
+
+  <!-- Tile -->
+  <g filter="url(#tileShadow)">
+    <rect x="16" y="16" width="480" height="480" rx="108" ry="108" fill="url(#tile)"/>
+  </g>
+  <g clip-path="url(#tileClip)">
+    <rect x="16" y="16" width="480" height="300" fill="url(#sheen)"/>
+    <ellipse cx="256" cy="300" rx="220" ry="200" fill="url(#glow)"/>
+  </g>
+
+  <!-- Card stack (history) -->
+  <!-- deepest card -->
+  <g filter="url(#cardShadow)">
+    <rect x="150" y="318" width="212" height="60" rx="22" fill="#2B355C"/>
+  </g>
+  <!-- middle card -->
+  <g filter="url(#cardShadow)">
+    <rect x="138" y="276" width="236" height="64" rx="24" fill="#3A4778"/>
+    <rect x="166" y="300" width="120" height="14" rx="7" fill="#566394" opacity="0.9"/>
+  </g>
+  <!-- next card just below the yanked one -->
+  <g filter="url(#cardShadow)">
+    <rect x="128" y="228" width="256" height="70" rx="26" fill="#4A599A"/>
+    <rect x="158" y="256" width="150" height="15" rx="7.5" fill="#6B7BBE"/>
+  </g>
+
+  <!-- Yanked top card: lifted up and tilted -->
+  <g transform="rotate(-7 256 150)" filter="url(#liftShadow)">
+    <rect x="120" y="118" width="272" height="92" rx="30" fill="url(#topcard)"/>
+    <!-- accent left edge -->
+    <rect x="120" y="118" width="16" height="92" rx="8" fill="url(#accent)"/>
+    <!-- text lines -->
+    <rect x="168" y="146" width="150" height="16" rx="8" fill="#3A4778"/>
+    <rect x="168" y="172" width="100" height="14" rx="7" fill="#9AA6CC"/>
+  </g>
+
+  <!-- Yank motion: upward caret / pull arrow -->
+  <g transform="translate(256 96)">
+    <path d="M0 -38 L40 18 L18 18 L18 64 L-18 64 L-18 18 L-40 18 Z"
+          fill="url(#accent)"/>
+  </g>
+</svg>
+</body>
+</html>
