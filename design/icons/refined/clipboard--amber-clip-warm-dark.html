@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Yank</title>
+<style>
+  html, body { margin: 0; padding: 0; }
+  body { width: 512px; height: 512px; margin: 0; overflow: hidden; background: transparent; }
+  svg { display: block; }
+</style>
+</head>
+<body>
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0"   stop-color="#3A2E2A"/>
+      <stop offset="0.55" stop-color="#241C1A"/>
+      <stop offset="1"   stop-color="#181210"/>
+    </linearGradient>
+    <radialGradient id="sheen" cx="0.5" cy="0.0" r="1.0">
+      <stop offset="0"   stop-color="#FFB36E" stop-opacity="0.32"/>
+      <stop offset="0.55" stop-color="#FFB36E" stop-opacity="0.05"/>
+      <stop offset="1"   stop-color="#FFB36E" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="board" x1="0" y1="0" x2="0.4" y2="1">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#F0E4D6"/>
+    </linearGradient>
+    <linearGradient id="clip" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFD36E"/>
+      <stop offset="1" stop-color="#FF8A3D"/>
+    </linearGradient>
+    <filter id="tileShadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="18" stdDeviation="20" flood-color="#000000" flood-opacity="0.45"/>
+    </filter>
+    <filter id="boardShadow" x="-50%" y="-50%" width="200%" height="200%">
+      <feDropShadow dx="0" dy="14" stdDeviation="18" flood-color="#0F0805" flood-opacity="0.55"/>
+    </filter>
+    <filter id="clipShadow" x="-80%" y="-80%" width="260%" height="260%">
+      <feDropShadow dx="0" dy="8" stdDeviation="14" flood-color="#FF8A3D" flood-opacity="0.55"/>
+    </filter>
+    <clipPath id="tileClip">
+      <rect x="32" y="32" width="448" height="448" rx="96" ry="96"/>
+    </clipPath>
+  </defs>
+
+  <g filter="url(#tileShadow)">
+    <rect x="32" y="32" width="448" height="448" rx="96" ry="96" fill="url(#tile)"/>
+  </g>
+  <g clip-path="url(#tileClip)">
+    <rect x="32" y="32" width="448" height="448" fill="url(#sheen)"/>
+    <rect x="33" y="33" width="446" height="446" rx="95" ry="95"
+          fill="none" stroke="#FFFFFF" stroke-opacity="0.12" stroke-width="2"/>
+  </g>
+
+  <!-- Board -->
+  <g filter="url(#boardShadow)">
+    <rect x="156" y="168" width="200" height="216" rx="40" ry="40" fill="url(#board)"/>
+  </g>
+
+  <!-- Content lines -->
+  <g fill="#C7B49C">
+    <rect x="192" y="278" width="128" height="20" rx="10"/>
+    <rect x="192" y="320" width="128" height="20" rx="10"/>
+    <rect x="192" y="362" width="76"  height="20" rx="10"/>
+  </g>
+
+  <!-- Clip clamp -->
+  <g filter="url(#clipShadow)">
+    <rect x="200" y="140" width="112" height="68" rx="30" fill="url(#clip)"/>
+    <rect x="226" y="124" width="60" height="44" rx="22" fill="url(#clip)"/>
+    <rect x="240" y="160" width="32" height="22" rx="11" fill="#181210" fill-opacity="0.85"/>
+  </g>
+</svg>
+</body>
+</html>

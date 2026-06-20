@@ -1,0 +1,62 @@
+[
+ {
+  "concept": "y-monogram",
+  "label": "primary",
+  "file": "y-monogram--primary"
+ },
+ {
+  "concept": "y-monogram",
+  "label": "Light tile, single-tone glyph",
+  "file": "y-monogram--light-tile-single-to"
+ },
+ {
+  "concept": "y-monogram",
+  "label": "Warm coral-amber glyph on near-black",
+  "file": "y-monogram--warm-coral-amber-gly"
+ },
+ {
+  "concept": "clipboard",
+  "label": "primary",
+  "file": "clipboard--primary"
+ },
+ {
+  "concept": "clipboard",
+  "label": "Light tile, indigo clip",
+  "file": "clipboard--light-tile-indigo-cl"
+ },
+ {
+  "concept": "clipboard",
+  "label": "Amber clip, warm dark tile",
+  "file": "clipboard--amber-clip-warm-dark"
+ },
+ {
+  "concept": "slide-up",
+  "label": "primary",
+  "file": "slide-up--primary"
+ },
+ {
+  "concept": "slide-up",
+  "label": "Light tile, indigo mark",
+  "file": "slide-up--light-tile-indigo-ma"
+ },
+ {
+  "concept": "slide-up",
+  "label": "Cutout mark on solid teal tile",
+  "file": "slide-up--cutout-mark-on-solid"
+ },
+ {
+  "concept": "vim-y",
+  "label": "primary",
+  "file": "vim-y--primary"
+ },
+ {
+  "concept": "vim-y",
+  "label": "Light tile, ink-on-paper",
+  "file": "vim-y--light-tile-ink-on-pa"
+ },
+ {
+  "concept": "vim-y",
+  "label": "Block-cursor terminal nod",
+  "file": "vim-y--block-cursor-termina"
+ }
+]
