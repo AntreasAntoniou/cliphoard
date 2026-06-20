@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Yank</title>
+<style>
+  html,body{margin:0;padding:0;}
+  body{width:512px;height:512px;overflow:hidden;background:transparent;}
+  svg{display:block;}
+</style>
+</head>
+<body>
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Yank app icon: Command-V paste glyph">
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2A3350"/>
+      <stop offset="0.45" stop-color="#1A2034"/>
+      <stop offset="1" stop-color="#0B0E18"/>
+    </linearGradient>
+    <radialGradient id="sheen" cx="0.30" cy="0.16" r="0.95">
+      <stop offset="0" stop-color="#5A6CB0" stop-opacity="0.55"/>
+      <stop offset="0.55" stop-color="#5A6CB0" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="glyph" x1="0.1" y1="0" x2="0.9" y2="1">
+      <stop offset="0" stop-color="#8BFADF"/>
+      <stop offset="0.5" stop-color="#34D2E2"/>
+      <stop offset="1" stop-color="#1F9CF0"/>
+    </linearGradient>
+    <linearGradient id="glyphHi" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#F2FEFF" stop-opacity="0.85"/>
+      <stop offset="0.30" stop-color="#F2FEFF" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="tileShadow" x="-25%" y="-25%" width="150%" height="150%">
+      <feDropShadow dx="0" dy="14" stdDeviation="20" flood-color="#000000" flood-opacity="0.45"/>
+    </filter>
+    <filter id="glyphGlow" x="-40%" y="-40%" width="180%" height="180%">
+      <feDropShadow dx="0" dy="9" stdDeviation="15" flood-color="#10DBC9" flood-opacity="0.42"/>
+    </filter>
+    <clipPath id="squircleClip">
+      <path d="M256 24 C 120 24, 88 24, 56 56 C 24 88, 24 120, 24 256 C 24 392, 24 424, 56 456 C 88 488, 120 488, 256 488 C 392 488, 424 488, 456 456 C 488 424, 488 392, 488 256 C 488 120, 488 88, 456 56 C 424 24, 392 24, 256 24 Z"/>
+    </clipPath>
+  </defs>
+
+  <!-- macOS squircle tile -->
+  <g filter="url(#tileShadow)">
+    <path d="M256 24 C 120 24, 88 24, 56 56 C 24 88, 24 120, 24 256 C 24 392, 24 424, 56 456 C 88 488, 120 488, 256 488 C 392 488, 424 488, 456 456 C 488 424, 488 392, 488 256 C 488 120, 488 88, 456 56 C 424 24, 392 24, 256 24 Z" fill="url(#tile)"/>
+  </g>
+
+  <g clip-path="url(#squircleClip)">
+    <rect x="24" y="24" width="464" height="464" fill="url(#sheen)"/>
+    <rect x="24" y="300" width="464" height="188" fill="#000000" opacity="0.14"/>
+  </g>
+
+  <!--
+       HERO GLYPH = the paste keystroke, "Command V" (Yank pastes from the clipboard).
+       Top: a bold, solid chevron V.
+       Bottom: the Command "looped square" U+2318 / Saint John's Arms - a square whose
+       four corners each open into a ring. Drawn as ONE continuous round-capped stroked
+       path so the weight is even and the four loops stay OPEN and legible at 32px / 16px
+       (they never fill in).
+  -->
+  <g filter="url(#glyphGlow)">
+    <g transform="translate(0,14)">
+
+      <!-- ===== BOLD V (accent, top) ===== -->
+      <g fill="url(#glyph)">
+        <path d="M146 122 L 224 122 L 256 196 L 288 122 L 366 122 L 288 256 L 224 256 Z"/>
+      </g>
+      <!-- top highlight on the V arms -->
+      <g fill="url(#glyphHi)">
+        <path d="M146 122 L 224 122 L 238 154 L 160 154 Z"/>
+        <path d="M366 122 L 288 122 L 274 154 L 352 154 Z"/>
+      </g>
+
+      <!-- ===== COMMAND looped-square (hero, bottom) =====
+           ONE continuous stroked path: square bars + four corner rings whose
+           centres sit AT the square corners. Each corner is a 270deg arc
+           (large-arc=1, sweep=1) bulging diagonally OUTWARD, leaving a clean
+           open hole. Even, chunky weight that stays legible at 32px / 16px.
+           Square corners: (200,326)(312,326)(312,438)(200,438); ring r=30. -->
+      <g fill="none" stroke="url(#glyph)" stroke-width="22"
+         stroke-linecap="round" stroke-linejoin="round">
+        <path d="M 228 324 L 284 324
+                 A 32 32 0 1 1 312 352
+                 L 312 412
+                 A 32 32 0 1 1 284 440
+                 L 228 440
+                 A 32 32 0 1 1 200 412
+                 L 200 352
+                 A 32 32 0 1 1 228 324 Z"/>
+      </g>
+    </g>
+  </g>
+</svg>
+</body>
+</html>

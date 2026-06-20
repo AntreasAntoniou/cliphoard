@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Yank</title>
+<style>
+  html,body{margin:0;padding:0;}
+  body{width:512px;height:512px;overflow:hidden;background:transparent;}
+  svg{display:block;}
+</style>
+</head>
+<body>
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Yank app icon: Command-V paste glyph">
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2A3350"/>
+      <stop offset="0.45" stop-color="#1A2034"/>
+      <stop offset="1" stop-color="#0B0E18"/>
+    </linearGradient>
+    <radialGradient id="sheen" cx="0.30" cy="0.16" r="0.95">
+      <stop offset="0" stop-color="#5A6CB0" stop-opacity="0.55"/>
+      <stop offset="0.55" stop-color="#5A6CB0" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="glyph" x1="0.1" y1="0" x2="0.9" y2="1">
+      <stop offset="0" stop-color="#8BFADF"/>
+      <stop offset="0.5" stop-color="#34D2E2"/>
+      <stop offset="1" stop-color="#1F9CF0"/>
+    </linearGradient>
+    <linearGradient id="glyphHi" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#F2FEFF" stop-opacity="0.85"/>
+      <stop offset="0.30" stop-color="#F2FEFF" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="tileShadow" x="-25%" y="-25%" width="150%" height="150%">
+      <feDropShadow dx="0" dy="14" stdDeviation="20" flood-color="#000000" flood-opacity="0.45"/>
+    </filter>
+    <filter id="glyphGlow" x="-40%" y="-40%" width="180%" height="180%">
+      <feDropShadow dx="0" dy="9" stdDeviation="15" flood-color="#10DBC9" flood-opacity="0.42"/>
+    </filter>
+    <clipPath id="squircleClip">
+      <path d="M256 24 C 120 24, 88 24, 56 56 C 24 88, 24 120, 24 256 C 24 392, 24 424, 56 456 C 88 488, 120 488, 256 488 C 392 488, 424 488, 456 456 C 488 424, 488 392, 488 256 C 488 120, 488 88, 456 56 C 424 24, 392 24, 256 24 Z"/>
+    </clipPath>
+  </defs>
+
+  <!-- macOS squircle tile -->
+  <g filter="url(#tileShadow)">
+    <path d="M256 24 C 120 24, 88 24, 56 56 C 24 88, 24 120, 24 256 C 24 392, 24 424, 56 456 C 88 488, 120 488, 256 488 C 392 488, 424 488, 456 456 C 488 424, 488 392, 488 256 C 488 120, 488 88, 456 56 C 424 24, 392 24, 256 24 Z" fill="url(#tile)"/>
+  </g>
+
+  <g clip-path="url(#squircleClip)">
+    <rect x="24" y="24" width="464" height="464" fill="url(#sheen)"/>
+    <rect x="24" y="300" width="464" height="188" fill="#000000" opacity="0.14"/>
+  </g>
+
+  <!--
+       HERO GLYPH = the paste keystroke, "Command V".
+       Top: a bold, compact chevron V (accent).
+       Bottom (dominant hero): the Command "looped square" U+2318 / Saint John's
+       Arms - a square whose four corners each open into a ring. Drawn from eight
+       chunky, round-capped stroked sub-paths so weight is even and the four loops
+       stay OPEN and legible at 32px and 16px (they never fill in).
+
+       Looped-square construction: a tangent square (side 88, centred on x=256)
+       whose four straight edges are tangent to four corner rings (radius 24).
+       Each ring is a ~300deg open arc whose gap faces diagonally outward, joined
+       to its neighbours by the straight edges at the tangent points.
+  -->
+  <g filter="url(#glyphGlow)">
+    <g transform="translate(0,14)">
+
+      <!-- ===== BOLD V (accent, top) ===== -->
+      <g fill="url(#glyph)">
+        <path d="M146 122 L 224 122 L 256 196 L 288 122 L 366 122 L 288 256 L 224 256 Z"/>
+      </g>
+      <!-- top highlight on the V arms -->
+      <g fill="url(#glyphHi)">
+        <path d="M146 122 L 224 122 L 238 154 L 160 154 Z"/>
+        <path d="M366 122 L 288 122 L 274 154 L 352 154 Z"/>
+      </g>
+
+      <!-- ===== COMMAND looped-square (hero, bottom) ===== -->
+      <g fill="none" stroke="url(#glyph)" stroke-width="25"
+         stroke-linecap="round" stroke-linejoin="round">
+        <!-- four straight edges between ring tangent points -->
+        <path d="M188 312 L 324 312"/>
+        <path d="M188 400 L 324 400"/>
+        <path d="M212 288 L 212 424"/>
+        <path d="M300 288 L 300 424"/>
+        <!-- four open corner rings (gap faces outward) -->
+        <path d="M188 312 A 24 24 0 1 1 212 288"/>
+        <path d="M324 312 A 24 24 0 1 0 300 288"/>
+        <path d="M324 400 A 24 24 0 1 1 300 424"/>
+        <path d="M188 400 A 24 24 0 1 0 212 424"/>
+      </g>
+    </g>
+  </g>
+</svg>
+</body>
+</html>

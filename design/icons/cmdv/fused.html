@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Yank</title>
+<style>
+  html,body{margin:0;padding:0;}
+  body{width:512px;height:512px;overflow:hidden;background:transparent;}
+  svg{display:block;}
+</style>
+</head>
+<body>
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Yank app icon — V over Command glyph (the paste shortcut)">
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2A3350"/>
+      <stop offset="0.45" stop-color="#1A2034"/>
+      <stop offset="1" stop-color="#0B0E18"/>
+    </linearGradient>
+    <radialGradient id="sheen" cx="0.30" cy="0.18" r="0.9">
+      <stop offset="0" stop-color="#5566A0" stop-opacity="0.55"/>
+      <stop offset="0.55" stop-color="#5566A0" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="glyph" x1="0.12" y1="0" x2="0.9" y2="1">
+      <stop offset="0" stop-color="#7BF5D6"/>
+      <stop offset="0.5" stop-color="#34D2E2"/>
+      <stop offset="1" stop-color="#1F9CF0"/>
+    </linearGradient>
+    <linearGradient id="glyphHi" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#F2FEFF" stop-opacity="0.85"/>
+      <stop offset="0.24" stop-color="#F2FEFF" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="tileShadow" x="-25%" y="-25%" width="150%" height="150%">
+      <feDropShadow dx="0" dy="14" stdDeviation="20" flood-color="#000000" flood-opacity="0.45"/>
+    </filter>
+    <filter id="glyphGlow" x="-40%" y="-40%" width="180%" height="180%">
+      <feDropShadow dx="0" dy="8" stdDeviation="14" flood-color="#10DBC9" flood-opacity="0.40"/>
+    </filter>
+    <clipPath id="squircleClip">
+      <path d="M256 24 C 120 24, 88 24, 56 56 C 24 88, 24 120, 24 256 C 24 392, 24 424, 56 456 C 88 488, 120 488, 256 488 C 392 488, 424 488, 456 456 C 488 424, 488 392, 488 256 C 488 120, 488 88, 456 56 C 424 24, 392 24, 256 24 Z"/>
+    </clipPath>
+  </defs>
+
+  <!-- Squircle tile + soft drop shadow -->
+  <g filter="url(#tileShadow)">
+    <path d="M256 24 C 120 24, 88 24, 56 56 C 24 88, 24 120, 24 256 C 24 392, 24 424, 56 456 C 88 488, 120 488, 256 488 C 392 488, 424 488, 456 456 C 488 424, 488 392, 488 256 C 488 120, 488 88, 456 56 C 424 24, 392 24, 256 24 Z" fill="url(#tile)"/>
+  </g>
+
+  <!-- Background sheen + subtle floor shading -->
+  <g clip-path="url(#squircleClip)">
+    <rect x="24" y="24" width="464" height="464" fill="url(#sheen)"/>
+    <rect x="24" y="300" width="464" height="188" fill="#000000" opacity="0.16"/>
+  </g>
+
+  <!-- HERO MARK = ⌘V (the paste keystroke).
+       A bold V flows downward and merges into the top loops of a continuous
+       Command glyph (Saint John's Arms / looped square): a square outline with
+       an open, rounded loop bulging at each of the four corners. -->
+  <g filter="url(#glyphGlow)">
+    <!-- Command glyph as ONE continuous path: four bars + four open corner loops -->
+    <path d="M 184 228 L 328 228 A 28 28 0 1 1 356 256 L 356 400 A 28 28 0 1 1 328 428 L 184 428 A 28 28 0 1 1 156 400 L 156 256 A 28 28 0 1 1 184 228 Z"
+          fill="none" stroke="url(#glyph)" stroke-width="32" stroke-linejoin="round"/>
+    <!-- V arms descending into the top-left and top-right loops -->
+    <g fill="none" stroke="url(#glyph)" stroke-width="32" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M146 106 L 184 228"/>
+      <path d="M366 106 L 328 228"/>
+    </g>
+    <!-- Premium top highlight on the V arms -->
+    <g fill="none" stroke="url(#glyphHi)" stroke-width="32" stroke-linecap="round">
+      <path d="M146 106 L 166 170"/>
+      <path d="M366 106 L 346 170"/>
+    </g>
+  </g>
+</svg>
+</body>
+</html>
