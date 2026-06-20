@@ -19,3 +19,10 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+---
+
+This MIT License applies to the Yank source code. Yank bundles third-party
+components — the on-device embedding models — under their own, separate licenses;
+see THIRD-PARTY-NOTICES.md. In particular the bundled ogma models are CC-BY-NC-4.0
+(non-commercial), and the grants above (including to sell) do not extend to them.
