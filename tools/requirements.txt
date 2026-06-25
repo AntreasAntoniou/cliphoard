@@ -9,8 +9,13 @@
 #    (_cast: "only 0-dimensional arrays can be converted to Python scalars").
 #  - coremltools 8.x hits a 'slice'-op regression on the model's rotary
 #    embedding ("Could not convert Var to a NumPy dtype"). 9.0 converts cleanly.
+#  - numpy MUST stay <2: under numpy 2.x coremltools' int cast raises
+#    "only 0-dimensional arrays can be converted to Python scalars" (numpy 2.0
+#    made int(array) on a 1-element array an error). The shipping models were
+#    built on numpy 1.x.
 torch==2.7.1
 coremltools==9.0
+numpy<2
 transformers
 sentencepiece
 safetensors
