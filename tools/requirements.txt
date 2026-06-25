@@ -2,13 +2,19 @@
 # CoreML — used by tools/restore-models.sh (which calls tools/_dl.py and
 # tools/convert_ogma.py) and by the CI workflows. Target: Python 3.11.
 #
-# Unpinned for the first run so pip resolves a mutually-compatible latest set.
-# REPRODUCIBILITY: after your first green `Models` workflow run, freeze these to
-# the resolved versions (copy from the run's `pip freeze`) so releases convert
-# against a known-good stack and never drift.
-torch
+# WHY torch is pinned: coremltools' Torch frontend only supports torch up to
+# 2.7.0. With an unpinned `pip install torch` (which now resolves to 2.12.x) the
+# CoreML conversion fails in coremltools' _cast op:
+#   "TypeError: only 0-dimensional arrays can be converted to Python scalars"
+# (coremltools itself warns: "Torch 2.7.0 is the most recent version that has
+# been tested"). Pinning torch to the tested ceiling keeps the convert working.
+#
+# REPRODUCIBILITY: after your first green `Models` workflow run, freeze the rest
+# of these to the resolved versions (copy from that run's `pip freeze`) so
+# releases convert against a fully known-good stack and never drift.
+torch==2.7.0
+coremltools>=8.0,<9.0
 transformers
-coremltools
 sentencepiece
 safetensors
 huggingface_hub
