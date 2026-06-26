@@ -11,6 +11,8 @@ import CryptoKit
 @MainActor
 final class ImageEncryptionTests: XCTestCase {
     private var tempDir: URL!
+    private var store: ClipStore!
+    private var monitor: ClipboardMonitor!
     private static let migrationFlag = "imagesEncryptedV1"
 
     override func setUp() {
@@ -22,12 +24,35 @@ final class ImageEncryptionTests: XCTestCase {
         tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("DittoImageEncTests-\(UUID().uuidString)")
         try? FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        store = ClipStore(directory: tempDir)
+        monitor = ClipboardMonitor(store: store)
     }
 
     override func tearDown() {
         try? FileManager.default.removeItem(at: tempDir)
         UserDefaults.standard.removeObject(forKey: Self.migrationFlag)
+        store = nil
+        monitor = nil
         super.tearDown()
+    }
+
+    /// A rasterisable image so `monitor.capture` drives the real persistImage seal
+    /// path (tiff → png → seal → write).
+    private func rasterisableImage(blue: CGFloat = 1.0) -> NSImage {
+        let size = NSSize(width: 8, height: 8)
+        let img = NSImage(size: size)
+        img.lockFocus()
+        NSColor(red: 0, green: 0, blue: blue, alpha: 1).setFill()
+        NSRect(origin: .zero, size: size).fill()
+        img.unlockFocus()
+        return img
+    }
+
+    private func capturedImageItem(blue: CGFloat = 1.0) throws -> ClipItem {
+        let pb = FakePasteboard()
+        pb.image = rasterisableImage(blue: blue)
+        return try XCTUnwrap(monitor.capture(from: pb),
+                             "a rasterisable image must be captured")
     }
 
     // MARK: Helpers
@@ -116,29 +141,66 @@ final class ImageEncryptionTests: XCTestCase {
 
     /// (3) Two captures of byte-identical images reuse the same `<hash>.png`:
     /// the hash is taken over the PLAINTEXT png, so encryption leaves T2's
-    /// content-addressed dedup intact (still one payload on disk).
-    func testByteIdenticalImagesReuseSamePayloadHash() {
-        let pngA = pngData(red: 1.0)
-        let pngB = pngData(red: 1.0)
-        XCTAssertEqual(pngA, pngB, "fixture must produce byte-identical PNGs")
-        // Hash is over plaintext bytes — identical content => identical filename.
-        XCTAssertEqual(sha256Hex(pngA), sha256Hex(pngB))
-
-        let hash = sha256Hex(pngA)
-        // First capture seals + writes; a second capture for the same content
-        // sees the file already present and reuses it (filename-based dedup).
-        let url = tempDir.appendingPathComponent("\(hash).png")
-        if !FileManager.default.fileExists(atPath: url.path) {
-            try! Crypto.seal(pngA)!.write(to: url)
-        }
+    /// content-addressed dedup intact (still one payload on disk). Driven through
+    /// `monitor.capture` so the real persistImage `fileExists` reuse early-return
+    /// is exercised — the second capture must NOT rewrite the existing payload.
+    func testByteIdenticalImagesReuseSamePayloadHash() throws {
+        let first = try capturedImageItem(blue: 1.0)
+        let payload = try XCTUnwrap(first.payloadFile)
+        let url = tempDir.appendingPathComponent(payload)
         XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
-        // Sealing does not change the content address: the second capture's hash
-        // still resolves to the one existing payload.
-        XCTAssertEqual(sha256Hex(pngB), hash)
 
+        // Record the sealed bytes + modification date of the first write.
+        let sealedFirst = try Data(contentsOf: url)
+        XCTAssertTrue(Crypto.isSealed(sealedFirst), "first capture must seal the payload")
+        let firstAttrs = try FileManager.default.attributesOfItem(atPath: url.path)
+        let firstMod = firstAttrs[.modificationDate] as? Date
+
+        // A second capture of byte-identical content must reuse the existing file
+        // (same payloadFile + hash) WITHOUT rewriting it.
+        let second = try capturedImageItem(blue: 1.0)
+        XCTAssertEqual(second.payloadFile, first.payloadFile,
+                       "byte-identical content must resolve to the same payload file")
+        XCTAssertEqual(second.imageHash, first.imageHash,
+                       "byte-identical content must resolve to the same hash")
+
+        // The file was reused, not rewritten: bytes are byte-identical (a fresh
+        // seal would use a new random nonce → different ciphertext) and the
+        // modification date is unchanged.
+        let sealedSecond = try Data(contentsOf: url)
+        XCTAssertEqual(sealedFirst, sealedSecond,
+                       "the reused payload must not be re-sealed (a new seal would change the nonce)")
+        if let firstMod {
+            let secondMod = (try FileManager.default.attributesOfItem(atPath: url.path))[.modificationDate] as? Date
+            XCTAssertEqual(firstMod, secondMod, "the reused payload must not be rewritten")
+        }
+
+        // Exactly one payload on disk for the shared content.
         let pngs = (try? FileManager.default.contentsOfDirectory(atPath: tempDir.path))?
             .filter { $0.hasSuffix(".png") && !$0.hasSuffix("-thumb.png") } ?? []
         XCTAssertEqual(pngs.count, 1, "byte-identical images must share one payload")
+    }
+
+    /// (5) A NEW capture (not the migration path) seals its payload AND thumbnail
+    /// at rest: both files carry the `enc1:` marker, are NOT a valid PNG header,
+    /// and round-trip back to a decodable PNG via Crypto.open. Guards against a
+    /// regression where persistImage/writeThumbnail dropped the seal and wrote
+    /// plaintext PNGs through the live capture seam.
+    func testNewCaptureSealsPayloadAndThumbnail() throws {
+        let item = try capturedImageItem(blue: 0.5)
+        let payload = try XCTUnwrap(item.payloadFile)
+        let base = (payload as NSString).deletingPathExtension
+
+        for name in [payload, "\(base)-thumb.png"] {
+            let url = tempDir.appendingPathComponent(name)
+            let raw = try Data(contentsOf: url)
+            XCTAssertTrue(Crypto.isSealed(raw), "\(name) must carry the enc1: marker after capture")
+            XCTAssertFalse(isPNGHeader(raw), "\(name) must NOT start with PNG magic at rest")
+
+            let opened = try XCTUnwrap(Crypto.open(raw), "\(name) must decrypt via Crypto.open")
+            XCTAssertTrue(isPNGHeader(opened), "decrypted \(name) must be a valid PNG")
+            XCTAssertNotNil(NSImage(data: opened), "decrypted \(name) must decode to an NSImage")
+        }
     }
 
     /// (4) encryptImagePayloadsIfNeeded() seals a pre-seeded plaintext PNG+thumb

@@ -438,8 +438,13 @@ struct ContentView: View {
     @ViewBuilder private func previewBody(_ item: ClipItem) -> some View {
         switch item.kind {
         case .image:
+            // Payloads are sealed at rest — read the bytes, decrypt via
+            // Crypto.open, then decode. Legacy plaintext PNGs pass through
+            // Crypto.open untouched, so old histories still render.
             if let f = item.payloadFile,
-               let img = NSImage(contentsOf: store.storeDirectory.appendingPathComponent(f)) {
+               let stored = try? Data(contentsOf: store.storeDirectory.appendingPathComponent(f)),
+               let png = Crypto.open(stored),
+               let img = NSImage(data: png) {
                 Image(nsImage: img).resizable().aspectRatio(contentMode: .fit)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             } else { placeholderText("Image") }

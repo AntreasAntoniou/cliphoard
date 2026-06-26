@@ -32,8 +32,13 @@ lives in your login Keychain.
 
 The only data that is *not* encrypted is what cannot be: the live system pasteboard
 and the in-memory copy of the clip you are pasting, which are plaintext by necessity
-while in use. Nothing Yank writes to disk is stored in the clear. Still, treat the
-storage folder as sensitive and use the exclusion list for apps where you copy secrets.
+while in use. Every value Yank writes to disk going forward is sealed before it
+touches the filesystem. One caveat for upgrades: if you ran an older, pre-encryption
+build, those earlier builds saved some image payloads unencrypted. On first launch the
+new build re-seals them in place, but because macOS filesystems (APFS) are
+copy-on-write, the freed unencrypted blocks are not zeroed and may remain recoverable
+in unallocated disk space until the OS reuses or trims them. So treat the storage
+folder as sensitive and use the exclusion list for apps where you copy secrets.
 
 ## What Yank does NOT do
 

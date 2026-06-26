@@ -103,7 +103,10 @@ final class ClipStore: ObservableObject {
     /// this upgrades PNGs written before encryption. Non-destructive: any `*.png`
     /// already carrying the marker is skipped, so the pass is idempotent and safe
     /// to re-run if interrupted (the read path's Crypto.open still handles any
-    /// not-yet-sealed file). Filename-based, so T2's `<hash>.png` / `<hash>-thumb.png`
+    /// not-yet-sealed file). The overwrite is atomic (write-temp-then-rename), so
+    /// an interrupted/failed write can never leave a torn payload that is neither
+    /// valid PNG nor a complete `enc1:` ciphertext — the original plaintext stays
+    /// intact and the pass simply re-runs next launch. Filename-based, so T2's `<hash>.png` / `<hash>-thumb.png`
     /// naming and sweepOrphanPayloads/delete paths are unaffected. Gated by a flag.
     private func encryptImagePayloadsIfNeeded() {
         let flag = "imagesEncryptedV1"
@@ -113,7 +116,7 @@ final class ClipStore: ObservableObject {
             for url in entries where url.pathExtension.lowercased() == "png" {
                 guard let raw = try? Data(contentsOf: url), !Crypto.isSealed(raw),
                       let sealed = Crypto.seal(raw), Crypto.isSealed(sealed) else { continue }
-                do { try sealed.write(to: url) } catch { continue }
+                do { try sealed.write(to: url, options: .atomic) } catch { continue }
                 try? FileManager.default.setAttributes(
                     [.posixPermissions: 0o600], ofItemAtPath: url.path)
             }

@@ -173,7 +173,9 @@ final class ClipboardMonitor {
         // `enc1:` marker, not PNG magic. Read sites (Paster / ClipCardView /
         // ContentView preview) decrypt via Crypto.open.
         guard let sealed = Crypto.seal(png), Crypto.isSealed(sealed) else { return nil }
-        do { try sealed.write(to: url) } catch { return nil }
+        // Atomic write (temp-then-rename): an interrupted capture can never leave a
+        // torn payload that is neither valid PNG nor a complete `enc1:` ciphertext.
+        do { try sealed.write(to: url, options: .atomic) } catch { return nil }
         // Owner-only (0600): even sealed, these payloads (possibly screenshots of
         // password vaults / 2FA) must not be group/other-readable.
         try? FileManager.default.setAttributes(
@@ -207,7 +209,7 @@ final class ClipboardMonitor {
         CGImageDestinationAddImage(dest, thumb, nil)
         guard CGImageDestinationFinalize(dest),
               let sealed = Crypto.seal(buffer as Data), Crypto.isSealed(sealed),
-              (try? sealed.write(to: url)) != nil else { return }
+              (try? sealed.write(to: url, options: .atomic)) != nil else { return }
         // Owner-only (0600): the thumbnail is an (encrypted) derivative of the clip.
         try? FileManager.default.setAttributes(
             [.posixPermissions: 0o600], ofItemAtPath: url.path)

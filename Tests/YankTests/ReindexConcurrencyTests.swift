@@ -122,6 +122,26 @@ final class ReindexConcurrencyTests: XCTestCase {
         }
     }
 
+    /// Count the maximal non-`nil` segments that actually ran to completion
+    /// (`done == total`, `total > 0`). A pass that was cancelled by a later pass
+    /// breaks at its first `Task.isCancelled` check and so NEVER publishes a
+    /// `done == total` emission — only the surviving (coalesced) pass does. Two
+    /// independent passes both running to completion would each contribute one.
+    private func completedSegmentCount(_ log: [ClipStore.IndexingProgress?]) -> Int {
+        var completed = 0
+        var segmentDidComplete = false
+        for entry in log {
+            guard let p = entry else {
+                if segmentDidComplete { completed += 1 }
+                segmentDidComplete = false
+                continue
+            }
+            if p.total > 0 && p.done == p.total { segmentDidComplete = true }
+        }
+        if segmentDidComplete { completed += 1 }
+        return completed
+    }
+
     // MARK: 1 — overlapping passes coalesce to a single idle, rebuild-correct end
 
     func testOverlappingReindexAndReclassifyCoalesceToSinglePass() async {
@@ -168,6 +188,14 @@ final class ReindexConcurrencyTests: XCTestCase {
         XCTAssertNil(store.indexing, "the coalesced overlap must settle back to idle")
         XCTAssertGreaterThanOrEqual(log.contains { $0 != nil } ? 1 : 0, 1,
                                     "at least one pass must have published progress")
+
+        // Coalescing, asserted directly: the second call cancels the first's task,
+        // so the cancelled pass breaks at its first `Task.isCancelled` check and
+        // NEVER reaches `done == total`. Exactly ONE pass runs to completion. A
+        // non-cancelling implementation that ran both passes fully and sequentially
+        // would record TWO completed segments here and fail this assertion.
+        XCTAssertEqual(completedSegmentCount(log), 1,
+                       "overlapping passes must coalesce: exactly one pass runs to done == total")
 
         // …and the tag index it leaves behind is byte-identical to a full rebuild
         // over `items` — no pass wrote (or left behind) a stale snapshot.
