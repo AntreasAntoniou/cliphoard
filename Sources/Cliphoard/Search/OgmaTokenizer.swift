@@ -16,6 +16,14 @@ final class OgmaTokenizer {
     private let sepId: Int
     private let offset: Int
     private let unkScore: Float = -25
+    /// Length (in Characters) of the longest vocab piece. Bounds the Viterbi
+    /// inner loop: no valid segmentation can start further back than this, so a
+    /// whitespace-free clip of length n costs O(n * maxPieceChars) instead of O(n^2).
+    private let maxPieceChars: Int
+    /// Hard cap (in Characters) on normalized text length. Pathological
+    /// megabyte-scale blobs (minified JSON, base64) are truncated to a
+    /// representative prefix so total tokenization work stays bounded.
+    private let maxEncodeChars = 4096
 
     /// - Parameter folder: a directory containing `tokenizer.json` and `config.json`.
     init?(folder: URL) {
@@ -40,6 +48,8 @@ final class OgmaTokenizer {
         self.clsId = cls
         self.sepId = sep
         self.unkId = (model["unk_id"] as? Int) ?? 1
+        // Longest key in Characters; at least 1 so the window is always valid.
+        self.maxPieceChars = max(1, dict.keys.map { $0.count }.max() ?? 1)
 
         // The model reserves `n_special_tokens` ids (pad/unk/bos/eos/qry/doc/sym)
         // below the tokenizer vocab; every tokenizer id is shifted up by that.
@@ -51,10 +61,17 @@ final class OgmaTokenizer {
     /// Encode text to model input ids (already offset, with `[CLS]`/`[SEP]`).
     func encode(_ text: String) -> [Int] {
         var ids = [clsId]
+        // Cap the normalized text to a representative prefix so a pathological
+        // whitespace-free megabyte blob (minified JSON, base64, a long token)
+        // can't drive unbounded tokenization work on the main actor.
+        var normalized = normalize(text)
+        if normalized.count > maxEncodeChars {
+            normalized = String(normalized.prefix(maxEncodeChars))
+        }
         // Split on ALL whitespace (not just ASCII space) so newlines/tabs in
         // multi-line clips don't get folded into a metaspace "word" that the
         // Unigram vocab can't match and falls through to per-char UNK runs.
-        for word in normalize(text).split(whereSeparator: { $0.isWhitespace }) {
+        for word in normalized.split(whereSeparator: { $0.isWhitespace }) {
             ids.append(contentsOf: unigram("\u{2581}" + word))   // ▁ metaspace prefix
         }
         ids.append(sepId)
@@ -88,7 +105,10 @@ final class OgmaTokenizer {
         var tokenAt = [Int](repeating: unkId, count: n + 1)
         best[0] = 0
         for end in 1...n {
-            for start in 0..<end where best[start] > neg {
+            // Only starts within maxPieceChars of `end` can match a vocab piece,
+            // so bounding the window is exact (loses no valid segmentation) and
+            // turns the Viterbi cost from O(n^2) into O(n * maxPieceChars).
+            for start in max(0, end - maxPieceChars)..<end where best[start] > neg {
                 if let entry = vocab[String(chars[start..<end])] {
                     let sc = best[start] + entry.score
                     if sc > best[end] { best[end] = sc; back[end] = start; tokenAt[end] = entry.id }

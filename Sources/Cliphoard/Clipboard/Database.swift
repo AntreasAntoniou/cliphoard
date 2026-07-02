@@ -8,6 +8,9 @@ import SQLite3
 /// All access is on the main actor (mirroring `ClipStore`), so no extra locking.
 final class Database {
     private var db: OpaquePointer?
+    /// Set true by `step` whenever a write inside the current transaction fails,
+    /// so `transaction` rolls back instead of committing a partial write.
+    private var txnFailed = false
     private static let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
     init?(path: String) {
@@ -54,8 +57,9 @@ final class Database {
         prepareEach("SELECT clip_id, model, vector, tags FROM embeddings;") { stmt in
             let clipID = column(stmt, 0)
             let model = column(stmt, 1)
-            let vec = Self.vectorFromBlob(stmt, 2)
-            let tags = Self.tags(fromText: column(stmt, 3))
+            // Decrypt at-rest embedding columns (legacy plaintext passes through).
+            let vec = Self.vectorFromBlob(Crypto.open(Self.blob(stmt, 2)))
+            let tags = Self.tags(fromText: Crypto.open(column(stmt, 3)))
             embByClip[clipID, default: [:]][model] = ModelEmbedding(vector: vec, tags: tags)
         }
         // 2. Clips.
@@ -140,8 +144,9 @@ final class Database {
         prepare("INSERT OR REPLACE INTO embeddings (clip_id, model, vector, tags) VALUES (?,?,?,?);") { stmt in
             bindText(stmt, 1, clipID.uuidString)
             bindText(stmt, 2, model)
-            bindBlob(stmt, 3, Self.blob(fromVector: embedding.vector))
-            bindText(stmt, 4, embedding.tags.map(String.init).joined(separator: ","))
+            // Encrypt the embedding vector + tags at rest.
+            bindBlob(stmt, 3, Crypto.seal(Self.blob(fromVector: embedding.vector)))
+            bindText(stmt, 4, Crypto.seal(embedding.tags.map(String.init).joined(separator: ",")))
             ok = step(stmt)
         }
         return ok
@@ -168,7 +173,10 @@ final class Database {
     }
 
     func transaction(_ body: () -> Void) {
-        exec("BEGIN;"); body(); exec("COMMIT;")
+        exec("BEGIN;")
+        txnFailed = false
+        body()
+        exec(txnFailed ? "ROLLBACK;" : "COMMIT;")
     }
 
     // MARK: Low-level helpers
@@ -191,6 +199,7 @@ final class Database {
     private func step(_ stmt: OpaquePointer?) -> Bool {
         if sqlite3_step(stmt) == SQLITE_DONE { return true }
         NSLog("Cliphoard db step error: \(String(cString: sqlite3_errmsg(db)))")
+        txnFailed = true   // any failed write aborts the enclosing transaction
         return false
     }
 
@@ -230,8 +239,10 @@ extension Database {
         return halves.withUnsafeBytes { Data($0) }
     }
 
-    static func vectorFromBlob(_ stmt: OpaquePointer?, _ i: Int32) -> [Float] {
-        guard let data = blob(stmt, i) else { return [] }
+    /// Float16 BLOB → [Float]. Accepts already-decrypted `Data` so callers can
+    /// `Crypto.open` the column before parsing.
+    static func vectorFromBlob(_ data: Data?) -> [Float] {
+        guard let data else { return [] }
         let stride = MemoryLayout<Float16>.stride
         guard data.count % stride == 0 else {   // malformed blob → treat as no vector
             NSLog("Cliphoard db: embedding blob length \(data.count) not a multiple of \(stride)")

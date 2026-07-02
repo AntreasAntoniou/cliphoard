@@ -475,8 +475,16 @@ final class ClipStore: ObservableObject {
         let decoded: [ClipItem]
         do { decoded = try JSONDecoder().decode([ClipItem].self, from: data) }
         catch {
-            NSLog("Cliphoard: legacy history decode failed: \(error) — keeping history.corrupt.json")
-            try? data.write(to: dir.appendingPathComponent("history.corrupt.json"))
+            NSLog("Cliphoard: legacy history decode failed: \(error) — keeping history.corrupt.json (sealed)")
+            // Never leave plaintext clip history on disk. Seal the bytes (enc1:
+            // marker) before archiving so at-rest recovery is possible without
+            // exposing passwords/tokens the legacy file may contain.
+            if let sealed = Crypto.seal(data) {
+                try? sealed.write(to: dir.appendingPathComponent("history.corrupt.json"), options: .atomic)
+                try? FileManager.default.setAttributes(
+                    [.posixPermissions: 0o600],
+                    ofItemAtPath: dir.appendingPathComponent("history.corrupt.json").path)
+            }
             return
         }
         for item in decoded {
@@ -488,9 +496,17 @@ final class ClipStore: ObservableObject {
             item.vector = nil; item.tagIDs = nil; item.vectorModel = nil
         }
         db?.transaction { decoded.forEach { db?.insert($0) } }
-        // Archive the JSON so we don't re-import (and as a safety backup).
-        try? FileManager.default.moveItem(at: jsonURL,
-            to: dir.appendingPathComponent("history.migrated.json"))
-        DebugLog.write("migrated \(decoded.count) clips from history.json → sqlite")
+        // Archive the JSON so we don't re-import (and as a safety backup), but
+        // never as plaintext: this is exactly the upgrade audience at-rest
+        // encryption is meant to protect. Seal the bytes (enc1: marker) into
+        // history.migrated.json, then remove the original plaintext history.json.
+        if let sealed = Crypto.seal(data) {
+            let archiveURL = dir.appendingPathComponent("history.migrated.json")
+            try? sealed.write(to: archiveURL, options: .atomic)
+            try? FileManager.default.setAttributes(
+                [.posixPermissions: 0o600], ofItemAtPath: archiveURL.path)
+            try? FileManager.default.removeItem(at: jsonURL)
+        }
+        DebugLog.write("migrated \(decoded.count) clips from history.json → sqlite (archive sealed)")
     }
 }

@@ -45,4 +45,27 @@ final class OgmaTokenizerTests: XCTestCase {
     func testMissingFolderReturnsNil() {
         XCTAssertNil(OgmaTokenizer(folder: URL(fileURLWithPath: "/no/such/dir")))
     }
+
+    /// CP-01: a large whitespace-free clip (base64/minified blob) used to become
+    /// one giant metaspace word and drive an O(n^2) Viterbi that hung the main
+    /// actor. The encode-time prefix cap + windowed Viterbi must keep both the
+    /// work and the emitted id count bounded — NOT proportional to the input.
+    func testLargeWhitespaceFreeInputIsBounded() throws {
+        let tok = try tokenizer()
+        let n = 200_000
+        let blob = String(repeating: "a", count: n)   // no whitespace, all OOV -> UNK path
+
+        let start = Date()
+        let ids = tok.encode(blob)
+        let elapsed = Date().timeIntervalSince(start)
+
+        // Bounded by the internal 4096-Character prefix cap (+ metaspace + CLS/SEP),
+        // decisively less than the 200k-scale count the O(n^2) path would imply.
+        XCTAssertLessThan(ids.count, 4_200, "id count must track the cap, not the input length")
+        XCTAssertLessThan(ids.count, n / 10, "id count must not be proportional to input size")
+        XCTAssertEqual(ids.first, cls)
+        XCTAssertEqual(ids.last, sep)
+        // Comfortably fast; the un-capped O(n^2) path would take many seconds.
+        XCTAssertLessThan(elapsed, 2.0, "encoding a large blob must stay fast")
+    }
 }

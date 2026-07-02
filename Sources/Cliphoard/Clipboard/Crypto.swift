@@ -152,7 +152,10 @@ enum Crypto {
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
             kSecValueData as String: data,
-            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock,
+            // ThisDeviceOnly: the at-rest key must never leave this Mac. Non-migratable
+            // items are excluded from keychain backups / Migration Assistant, so the raw
+            // AES-256 key cannot travel alongside the encrypted DB on non-Secure-Enclave Macs.
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
         ]
         SecItemDelete(query as CFDictionary)
         SecItemAdd(query as CFDictionary, nil)

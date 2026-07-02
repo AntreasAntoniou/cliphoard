@@ -62,6 +62,10 @@ final class MigrationTests: XCTestCase {
             ],
         ])
 
+        // Capture the exact on-disk bytes before migration so we can assert the
+        // sealed archive round-trips back to them verbatim.
+        let originalJSON = try Data(contentsOf: dir.appendingPathComponent("history.json"))
+
         let store = ClipStore(directory: dir)
 
         XCTAssertEqual(store.items.count, 2, "both legacy clips loaded")
@@ -84,6 +88,14 @@ final class MigrationTests: XCTestCase {
         // JSON archived so a relaunch doesn't re-import it.
         XCTAssertFalse(exists("history.json"), "original consumed")
         XCTAssertTrue(exists("history.migrated.json"), "archived as backup")
+
+        // The archive must NOT be plaintext: it carries the enc1: seal marker and
+        // round-trips (via Crypto.open) back to the original history.json bytes, so
+        // recovery is possible without leaving readable clip text on disk.
+        let archiveBytes = try Data(contentsOf: dir.appendingPathComponent("history.migrated.json"))
+        XCTAssertTrue(Crypto.isSealed(archiveBytes), "archive sealed, not plaintext")
+        XCTAssertEqual(Crypto.open(archiveBytes), originalJSON,
+                       "sealed archive round-trips to the original history.json bytes")
     }
 
     /// Re-opening the same directory must not re-import (clip count is non-zero and
@@ -113,7 +125,10 @@ final class MigrationTests: XCTestCase {
         // Not migrated/archived as a success.
         XCTAssertFalse(exists("history.migrated.json"))
 
+        // Preserved for recovery, but SEALED — never readable plaintext on disk.
         let preserved = try Data(contentsOf: dir.appendingPathComponent("history.corrupt.json"))
-        XCTAssertEqual(preserved, garbage, "corrupt bytes preserved verbatim")
+        XCTAssertTrue(Crypto.isSealed(preserved), "corrupt archive sealed, not plaintext")
+        XCTAssertEqual(Crypto.open(preserved), garbage,
+                       "sealed corrupt archive round-trips to the original garbage bytes")
     }
 }
