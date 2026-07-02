@@ -1,4 +1,4 @@
-# Yank — Design Bake-off
+# Cliphoard — Design Bake-off
 
 A 20-agent creative team designed **10 themes** (color/material) and **10 layouts** (structure) as HTML mockups of the bar, all showing the same six sample clips. Headless Chrome rendered them; a 5-lens visual-QA committee (brand, legibility, task-speed, native-craft, density) judged them in isolation, an adversary stress-tested the front-runners, and the result was synthesized below.
 
@@ -6,7 +6,7 @@ A 20-agent creative team designed **10 themes** (color/material) and **10 layout
 
 ---
 
-# Yank Clipboard Bar — Final Integrated Recommendation
+# Cliphoard Clipboard Bar — Final Integrated Recommendation
 
 ## How I weighted this
 Five independent lenses: **brand/emotion** (Vesna), **legibility/contrast** (Okwe), **task-speed** (Lin), **native-craft** (Soderberg), **density/scale** (Ravi). I counted how many lenses backed each option, then folded in the adversary stress-tests — which hit the front-runners hard, especially on the contrast-vs-mood fault line. Dissent is preserved, not averaged away.

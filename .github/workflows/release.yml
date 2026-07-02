@@ -85,13 +85,13 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
         run: |
-          xcrun notarytool store-credentials yank-notary \
+          xcrun notarytool store-credentials cliphoard-notary \
             --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_PASSWORD"
 
       - name: Build, sign, notarize, package DMG
         env:
           DEVID: ${{ secrets.MACOS_DEVID }}
-          NOTARY_PROFILE: yank-notary
+          NOTARY_PROFILE: cliphoard-notary
         run: bash Scripts/release.sh
 
       - name: Compute DMG checksum

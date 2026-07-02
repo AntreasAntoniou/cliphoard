@@ -10,7 +10,7 @@ can't run under the App Sandbox.
    certificate (Xcode → Settings → Accounts, or developer.apple.com).
 2. **Notary credentials** stored in your keychain (used by `Scripts/release.sh`):
    ```sh
-   xcrun notarytool store-credentials yank-notary \
+   xcrun notarytool store-credentials cliphoard-notary \
      --apple-id "you@example.com" --team-id "ABCDE12345"
    # password = an app-specific password from appleid.apple.com
    ```
@@ -24,7 +24,7 @@ can't run under the App Sandbox.
 **Locally:**
 ```sh
 DEVID="Developer ID Application: Your Name (ABCDE12345)" \
-NOTARY_PROFILE=yank-notary \
+NOTARY_PROFILE=cliphoard-notary \
 bash Scripts/release.sh
 # → build/Cliphoard-<version>.dmg  (signed, notarized, stapled)
 gh release create v1.0.0 build/Cliphoard-*.dmg --generate-notes
@@ -37,11 +37,11 @@ git tag v1.0.0 && git push origin v1.0.0
 
 ## Homebrew cask
 
-`Casks/yank.rb` is the cask source. Publish it from a tap repo
+`Casks/cliphoard.rb` is the cask source. Publish it from a tap repo
 (`github.com/AntreasAntoniou/homebrew-tap`) and bump `version` + `sha256` per
 release (the release step prints the DMG SHA-256). Users then:
 ```sh
-brew install --cask antreasantoniou/tap/yank
+brew install --cask antreasantoniou/tap/cliphoard
 ```
 
 ## Prerequisite: bundled models
@@ -52,5 +52,8 @@ before `Scripts/release.sh`. A local release uses whatever is in `tools/models/`
 
 ## Versioning
 
-Bump `CFBundleShortVersionString` / `CFBundleVersion` in the bundle's `Info.plist`
-(set by `Scripts/build-app.sh`) before tagging.
+Bump `CFBundleShortVersionString` / `CFBundleVersion` in `Resources/Info.plist`
+before tagging — `Scripts/build-app.sh` copies that plist into the bundle verbatim,
+so the version must be edited at the source. Keep the git tag (`vX.Y.Z`), the
+`Info.plist` version, and `Casks/cliphoard.rb`'s `version` in lockstep: the DMG is
+named from the plist while the release-download URL directory comes from the tag.

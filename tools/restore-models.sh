@@ -34,7 +34,7 @@ cd "$(dirname "$0")"            # operate from tools/, like the README examples
 ROOT="$(cd .. && pwd)"
 
 # Default set of models to restore. Keep in sync with Scripts/build-app.sh /
-# Sources/Yank/Search/DeepSearch.swift (low → ogma-micro, normal → ogma-small).
+# Sources/Cliphoard/Search/DeepSearch.swift (low → ogma-micro, normal → ogma-small).
 MODELS="${MODELS:-ogma-micro ogma-small}"
 HF_REPO_PREFIX="${HF_REPO_PREFIX:-axiotic}"
 

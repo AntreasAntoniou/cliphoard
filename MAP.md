@@ -1,25 +1,25 @@
-# Yank / Ditto — Codebase Map
+# Cliphoard / Ditto — Codebase Map
 
-> **Yank** (bundle id `ai.axiotic.ditto`) is a macOS menu-bar clipboard manager with on-device semantic search. It captures every copy into an encrypted SQLite history, embeds entries with a CoreML model (with a deterministic hashing fallback), tags them against a 100-tag taxonomy, and surfaces them in a borderless floating bar invoked by a global hotkey (⌃⌥⌘V), pasting the chosen clip into the previously-frontmost app via a synthetic Cmd-V.
+> **Cliphoard** (bundle id `ai.axiotic.ditto`) is a macOS menu-bar clipboard manager with on-device semantic search. It captures every copy into an encrypted SQLite history, embeds entries with a CoreML model (with a deterministic hashing fallback), tags them against a 100-tag taxonomy, and surfaces them in a borderless floating bar invoked by a global hotkey (⌃⌥⌘V), pasting the chosen clip into the previously-frontmost app via a synthetic Cmd-V.
 
 ## Overview / Architecture
 
-The app is a single SwiftPM executable target (`Yank`) plus a test target (`YankTests`). It is a non-sandboxed, `LSUIElement` accessory app (no Dock icon) targeting macOS 13+. Functionality is organized in four layers:
+The app is a single SwiftPM executable target (`Cliphoard`) plus a test target (`CliphoardTests`). It is a non-sandboxed, `LSUIElement` accessory app (no Dock icon) targeting macOS 13+. Functionality is organized in four layers:
 
-1. **App / control layer** (`Sources/Yank/App`) — `@main` entrypoint, the `AppDelegate` that owns every subsystem and wires the status-bar menu, the global Carbon hotkey, and the present/hide/commit-paste flow.
-2. **Clipboard / data layer** (`Sources/Yank/Clipboard`) — the data model (`ClipItem`), the polling capture engine (`ClipboardMonitor`), the durable store (`ClipStore` over `Database`/SQLite), at-rest encryption (`Crypto`), and the paste actuator (`Paster`).
-3. **Search layer** (`Sources/Yank/Search`) — the semantic engine: embedders (CoreML `OgmaEmbedder` + `HashingEmbedder` fallback), the `OgmaTokenizer` port, the `TagBaskets` taxonomies, and `TagSpace`/`ClipIndexer`/`SemanticRanker`.
-4. **UI layer** (`Sources/Yank/UI`) — SwiftUI floating bar (`FloatingPanel` + `ContentView`), per-clip cards (`ClipCardView`), the view model (`PanelViewModel`), settings (`SettingsView`/`AppSettings`), onboarding, and the `Theme` system.
+1. **App / control layer** (`Sources/Cliphoard/App`) — `@main` entrypoint, the `AppDelegate` that owns every subsystem and wires the status-bar menu, the global Carbon hotkey, and the present/hide/commit-paste flow.
+2. **Clipboard / data layer** (`Sources/Cliphoard/Clipboard`) — the data model (`ClipItem`), the polling capture engine (`ClipboardMonitor`), the durable store (`ClipStore` over `Database`/SQLite), at-rest encryption (`Crypto`), and the paste actuator (`Paster`).
+3. **Search layer** (`Sources/Cliphoard/Search`) — the semantic engine: embedders (CoreML `OgmaEmbedder` + `HashingEmbedder` fallback), the `OgmaTokenizer` port, the `TagBaskets` taxonomies, and `TagSpace`/`ClipIndexer`/`SemanticRanker`.
+4. **UI layer** (`Sources/Cliphoard/UI`) — SwiftUI floating bar (`FloatingPanel` + `ContentView`), per-clip cards (`ClipCardView`), the view model (`PanelViewModel`), settings (`SettingsView`/`AppSettings`), onboarding, and the `Theme` system.
 
-Cross-cutting **Support** (`Sources/Yank/Support`) provides audible feedback + debug logging (`Feedback`/`DebugLog`) and launch-at-login (`LoginItem`).
+Cross-cutting **Support** (`Sources/Cliphoard/Support`) provides audible feedback + debug logging (`Feedback`/`DebugLog`) and launch-at-login (`LoginItem`).
 
-**Build & distribution**: `Makefile` → `Scripts/build-app.sh` assembles `Yank.app` (binary + Info.plist + rendered icon + bundled CoreML models/tokenizers + code-signing). `Scripts/release.sh` signs/notarizes/staples a DMG. `Scripts/setup-signing.sh` creates a stable local signing identity so the Accessibility grant survives rebuilds. A Python `tools/` toolchain restores ogma HF models and converts them to CoreML `.mlpackage`; two GitHub Actions workflows (`models.yml`, `release.yml`) exercise that path and cut releases.
+**Build & distribution**: `Makefile` → `Scripts/build-app.sh` assembles `Cliphoard.app` (binary + Info.plist + rendered icon + bundled CoreML models/tokenizers + code-signing). `Scripts/release.sh` signs/notarizes/staples a DMG. `Scripts/setup-signing.sh` creates a stable local signing identity so the Accessibility grant survives rebuilds. A Python `tools/` toolchain restores ogma HF models and converts them to CoreML `.mlpackage`; two GitHub Actions workflows (`models.yml`, `release.yml`) exercise that path and cut releases.
 
 ## Entry Points
 
-- **`Sources/Yank/App/Main.swift`** — `@main struct Main`; creates `NSApplication` + `AppDelegate`, sets `.accessory` policy, runs the app. This is the runtime entrypoint.
-- **`Sources/Yank/App/AppDelegate.swift`** — `applicationDidFinishLaunching`; the de-facto application bootstrap that constructs `ClipStore`, `ClipboardMonitor`, `PanelViewModel`, `FloatingPanel`, and `HotKey`.
-- **`Package.swift`** — SwiftPM manifest defining the `Yank` executable and `YankTests` targets.
+- **`Sources/Cliphoard/App/Main.swift`** — `@main struct Main`; creates `NSApplication` + `AppDelegate`, sets `.accessory` policy, runs the app. This is the runtime entrypoint.
+- **`Sources/Cliphoard/App/AppDelegate.swift`** — `applicationDidFinishLaunching`; the de-facto application bootstrap that constructs `ClipStore`, `ClipboardMonitor`, `PanelViewModel`, `FloatingPanel`, and `HotKey`.
+- **`Package.swift`** — SwiftPM manifest defining the `Cliphoard` executable and `CliphoardTests` targets.
 - **`Makefile`** — developer build/run/install/clean entrypoints.
 - **`Scripts/build-app.sh`** / **`Scripts/release.sh`** — app-bundle and DMG release entrypoints.
 - **`tools/restore-models.sh`** — model restore+convert orchestrator (consumed by `build-app.sh` and CI).
@@ -30,22 +30,22 @@ Cross-cutting **Support** (`Sources/Yank/Support`) provides audible feedback + d
 
 | File | Lang | Role | Key symbols |
 |---|---|---|---|
-| `Package.swift` | swift | SwiftPM manifest: `Yank` executable target (AppKit/SwiftUI/Carbon/UTI + sqlite3) + `YankTests` (Fixtures resource copy) | `let package` |
+| `Package.swift` | swift | SwiftPM manifest: `Cliphoard` executable target (AppKit/SwiftUI/Carbon/UTI + sqlite3) + `CliphoardTests` (Fixtures resource copy) | `let package` |
 | `Makefile` | make | Build entrypoints | `build`, `app`, `run`, `install`, `clean` |
 | `Resources/Info.plist` | plist | App bundle Info: `ai.axiotic.ditto` v1.0.0, `LSUIElement` accessory, min macOS 13, AppleEvents usage string | `CFBundleIdentifier`, `LSUIElement`, `LSMinimumSystemVersion` |
-| `Casks/yank.rb` | ruby | Homebrew Cask for DMG distribution via tap | `cask "yank"` |
+| `Casks/cliphoard.rb` | ruby | Homebrew Cask for DMG distribution via tap | `cask "cliphoard"` |
 
 ### Scripts/ (build, sign, release)
 
 | File | Lang | Role | Key symbols |
 |---|---|---|---|
-| `build-app.sh` | bash | Assembles `Yank.app`: swift build release, copy binary+plist, render icon, bundle CoreML models/tokenizers + LICENSE, code-sign (stable identity preferred, else ad-hoc) | `SIGN_ID`, `APP` |
+| `build-app.sh` | bash | Assembles `Cliphoard.app`: swift build release, copy binary+plist, render icon, bundle CoreML models/tokenizers + LICENSE, code-sign (stable identity preferred, else ad-hoc) | `SIGN_ID`, `APP` |
 | `make-icon.swift` | swift | Renders the app icon (Cmd-V glyph on graphite squircle) into a full `.iconset` for `iconutil` | `drawIcon(size:)`, `svgArc(...)`, `png(...)`, `VB` |
 | `release.sh` | bash | Release pipeline: build, Developer-ID sign + Hardened Runtime + entitlements, notarize/staple, package+sign+notarize DMG; degrades to local self-signed | `DEVID`, `NOTARY_PROFILE`, `say`, `warn` |
 | `setup-signing.sh` | bash | One-time: create stable self-signed "Ditto Local Signing" identity so AX grant survives rebuilds; idempotent | `IDENTITY_NAME` |
-| `Yank.entitlements` | plist | Deliberately empty: app is NOT sandboxed (needs global hotkey + synthetic Cmd-V); Hardened Runtime, AX at runtime | — |
+| `Cliphoard.entitlements` | plist | Deliberately empty: app is NOT sandboxed (needs global hotkey + synthetic Cmd-V); Hardened Runtime, AX at runtime | — |
 
-### Sources/Yank/App/ (control layer)
+### Sources/Cliphoard/App/ (control layer)
 
 | File | Lang | Role | Key symbols |
 |---|---|---|---|
@@ -53,7 +53,7 @@ Cross-cutting **Support** (`Sources/Yank/Support`) provides audible feedback + d
 | `AppDelegate.swift` | swift | Central controller: builds status-bar menu; owns store/monitor/viewmodel/panel/hotkey; wires hotkey + Darwin-notification toggle; present/hide/commit-paste with AX-trust handling; routes key events | `AppDelegate`, `PasteStatus`, `applicationDidFinishLaunching`, `rebuildMenu`, `setupPanel`, `toggle`, `show`, `hide(paste:)`, `commit(_:plain:)`, `handleKey`, `setupHotKey`, `promptAccessibility` |
 | `HotKey.swift` | swift | Single system-wide global hotkey via Carbon Hot Key API → `onPressed` on main queue | `HotKey`, `register(keyCode:modifiers:)`, `unregister()` |
 
-### Sources/Yank/Clipboard/ (data layer)
+### Sources/Cliphoard/Clipboard/ (data layer)
 
 | File | Lang | Role | Key symbols |
 |---|---|---|---|
@@ -64,7 +64,7 @@ Cross-cutting **Support** (`Sources/Yank/Support`) provides audible feedback + d
 | `Database.swift` | swift | Thin SQLite (C API) store: clips + embeddings tables (WAL, encrypted content, Float16 BLOB vectors), CRUD, ordering, transactions, vacuum, blob/vector/tag (de)serialization | `Database`, `init?(path:)`, `loadAll`, `insert`, `updateMeta`, `upsertEmbedding`, `delete`, `transaction`, `blob(fromVector:)`, `vectorFromBlob`, `tags(fromText:)` |
 | `Paster.swift` | swift | `@MainActor` pasteboard writer + actuator: writes clip (text/RTF/image/file, plain option) and synthesizes Cmd-V into prior frontmost app | `Paster`, `writeToPasteboard`, `paste(into:)`, `sendCommandV` |
 
-### Sources/Yank/Search/ (semantic engine)
+### Sources/Cliphoard/Search/ (semantic engine)
 
 | File | Lang | Role | Key symbols |
 |---|---|---|---|
@@ -72,14 +72,14 @@ Cross-cutting **Support** (`Sources/Yank/Support`) provides audible feedback + d
 | `OgmaTokenizer.swift` | swift | Faithful Swift port of ogma Unigram/SentencePiece tokenizer (from bundled tokenizer.json/config.json): NFKD → whitespace split → metaspace → Unigram Viterbi → CLS/SEP + offset | `OgmaTokenizer`, `init?(folder:)`, `encode`, `normalize`, `unigram` |
 | `TagBaskets.swift` | swift | `TagBasket` model + built-in taxonomies (general/developer/writing/business/everyday) + UserDefaults custom basket; active selection drives `TagSpace` | `TagBasket`, `TagBaskets`, `general`, `builtIn`, `custom`, `active`, `activeID` |
 
-### Sources/Yank/Support/ (cross-cutting)
+### Sources/Cliphoard/Support/ (cross-cutting)
 
 | File | Lang | Role | Key symbols |
 |---|---|---|---|
 | `Feedback.swift` | swift | Audible capture feedback (system sound) + `DebugLog` append-only diagnostics file; both UserDefaults-backed | `Feedback`, `DebugLog`, `playCapture`, `DebugLog.write` |
 | `LoginItem.swift` | swift | Launch-at-login via `SMAppService` (macOS 13+) | `LoginItem`, `enabled`, `set(_:)` |
 
-### Sources/Yank/UI/ (SwiftUI front end)
+### Sources/Cliphoard/UI/ (SwiftUI front end)
 
 | File | Lang | Role | Key symbols |
 |---|---|---|---|
@@ -91,11 +91,11 @@ Cross-cutting **Support** (`Sources/Yank/Support`) provides audible feedback + d
 | `OnboardingView.swift` | swift | First-run welcome window: explains hotkey + one-time Accessibility grant, polls AX trust, re-openable from menu | `Onboarding`, `OnboardingView`, `showIfNeeded`, `present` |
 | `Theme.swift` | swift | Theming: `ThemeTokens`, `ThemePreset` (system + dark/light palettes), `LayoutMode`, `Theme` facade (persistence, backgrounds, hex→Color) + reusable `FlowLayout`, `VisualEffectBackground` | `ThemeTokens`, `ThemePreset`, `LayoutMode`, `Theme`, `FlowLayout`, `VisualEffectBackground` |
 
-### Tests/YankTests/
+### Tests/CliphoardTests/
 
 | File | Role | Key classes |
 |---|---|---|
-| `YankTests.swift` | Broad: kind detection, Codable resilience, hex parsing, dedup signatures, ClipStore behavior, Paster plain-vs-rich RTF | `ClassificationTests`, `CodableResilienceTests`, `ColorParsingTests`, `SignatureTests`, `ClipStoreTests`, `PasterTests` |
+| `CoreTests.swift` | Broad: kind detection, Codable resilience, hex parsing, dedup signatures, ClipStore behavior, Paster plain-vs-rich RTF | `ClassificationTests`, `CodableResilienceTests`, `ColorParsingTests`, `SignatureTests`, `ClipStoreTests`, `PasterTests` |
 | `CaptureSkipTests.swift` | `ClipboardMonitor.shouldSkip`: excluded bundle IDs + private types skipped | `CaptureSkipTests` |
 | `CryptoTests.swift` | `Crypto` round-trips, legacy plaintext pass-through, ciphertext opacity (BL-02) | `CryptoTests` |
 | `DatabaseTests.swift` | SQLite `Database`: Float16 round-trip, insert/loadAll, cascade delete, deleteUnpinned, ordering, reopen persistence (BL-T1) | `DatabaseTests` |
@@ -154,7 +154,7 @@ Search layer:
 
 Build/dist:
   Makefile ──▶ build-app.sh ──▶ make-icon.swift, Info.plist, setup-signing.sh
-            └▶ release.sh ──▶ build-app.sh, Yank.entitlements
+            └▶ release.sh ──▶ build-app.sh, Cliphoard.entitlements
   tools/restore-models.sh ──▶ _dl.py, convert_ogma.py (── _compat, requirements.txt)
                               └▶ feeds models into build-app.sh
   CI: models.yml / release.yml ──▶ restore-models.sh, release.sh

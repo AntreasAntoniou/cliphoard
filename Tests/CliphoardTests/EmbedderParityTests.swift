@@ -13,7 +13,7 @@ import CoreML
 /// ids match checked-in golden values from `tools/reference.json`.
 ///
 /// MODEL DETECTION (first that resolves wins):
-///   1. `$YANK_OGMA_MODEL_DIR` — a directory containing `<name>.mlpackage` and a
+///   1. `$CLIPHOARD_OGMA_MODEL_DIR` — a directory containing `<name>.mlpackage` and a
 ///      sibling `<name>/` tokenizer folder (the exact layout produced by
 ///      `tools/restore-models.sh`), OR a directory that is itself a `.mlpackage`
 ///      with a sibling tokenizer folder.
@@ -30,7 +30,7 @@ import CoreML
 ///   #    from tools/reference.json into `goldenIds` / `goldenHead` below. The
 ///   #    values here are kept byte-identical to that entry.
 ///   # 4. (optional) run this XCTest against the real model end-to-end:
-///   YANK_OGMA_MODEL_DIR="$PWD/tools/models" swift test --filter EmbedderParityTests
+///   CLIPHOARD_OGMA_MODEL_DIR="$PWD/tools/models" swift test --filter EmbedderParityTests
 final class EmbedderParityTests: XCTestCase {
 
     /// The fixed probe string — same constant `AppDelegate.embedSelfTest` uses, and
@@ -58,7 +58,7 @@ final class EmbedderParityTests: XCTestCase {
         let tokenizerFolder: URL
     }
 
-    /// Default model used when `$YANK_OGMA_MODEL_DIR` is unset. The checked-in
+    /// Default model used when `$CLIPHOARD_OGMA_MODEL_DIR` is unset. The checked-in
     /// goldens were produced from ogma-small (256-dim) — see tools/reference.py.
     private let defaultModelName = "ogma-small"
 
@@ -78,7 +78,7 @@ final class EmbedderParityTests: XCTestCase {
 
         // 1. Env override. May point at a directory holding <name>.mlpackage +
         //    <name>/ tokenizer, or directly at a <name>.mlpackage.
-        if let dir = ProcessInfo.processInfo.environment["YANK_OGMA_MODEL_DIR"], !dir.isEmpty {
+        if let dir = ProcessInfo.processInfo.environment["CLIPHOARD_OGMA_MODEL_DIR"], !dir.isEmpty {
             let url = URL(fileURLWithPath: dir)
             if url.pathExtension == "mlpackage" {
                 if let m = model(at: url) { return m }
@@ -142,7 +142,7 @@ final class EmbedderParityTests: XCTestCase {
                 No ogma CoreML model found — skipping golden-vector parity. \
                 The .mlpackage models are gitignored; restore one with \
                 `MODELS="\(defaultModelName)" tools/restore-models.sh`, or point \
-                $YANK_OGMA_MODEL_DIR at a directory containing <name>.mlpackage + a \
+                $CLIPHOARD_OGMA_MODEL_DIR at a directory containing <name>.mlpackage + a \
                 sibling <name>/ tokenizer folder.
                 """)
         }

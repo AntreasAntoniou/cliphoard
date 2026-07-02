@@ -9,13 +9,13 @@
 #      or download it from developer.apple.com. Find its name:
 #         security find-identity -p codesigning -v | grep "Developer ID Application"
 #   2. Store a notarization profile in your keychain (no password in this script):
-#         xcrun notarytool store-credentials ditto-notary \
+#         xcrun notarytool store-credentials cliphoard-notary \
 #            --apple-id "you@example.com" --team-id "ABCDE12345"
 #      (use an app-specific password from appleid.apple.com)
 #
 # Then release with:
 #   DEVID="Developer ID Application: Your Name (ABCDE12345)" \
-#   NOTARY_PROFILE="ditto-notary" \
+#   NOTARY_PROFILE="cliphoard-notary" \
 #   bash Scripts/release.sh
 #
 set -euo pipefail

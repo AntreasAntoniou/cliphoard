@@ -25,7 +25,7 @@ cask "cliphoard" do
   # Scripts/release.sh. Kept side-effect-free so `ruby -c` / `brew` parsing pass.
   if sha256.to_s == "0000000000000000000000000000000000000000000000000000000000000000" &&
      !Homebrew::EnvConfig.developer?
-    odie "Casks/yank.rb still has the all-zero placeholder sha256 — fill in the " \
+    odie "Casks/cliphoard.rb still has the all-zero placeholder sha256 — fill in the " \
          "released DMG's sha256 (see Scripts/release.sh / release.yml) before publishing."
   end
 
