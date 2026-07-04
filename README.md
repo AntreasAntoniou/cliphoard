@@ -1,4 +1,4 @@
-<h1 align="center">Cliphoard</h1>
+<h1 align="center"><img src="docs/img/logo.png" alt="Cliphoard" width="380"></h1>
 
 <p align="center"><b>Copy anything. Hoard everything.</b><br>
 A fast, private, open-source clipboard manager for macOS — searchable by <i>meaning</i>, entirely on your Mac.</p>
