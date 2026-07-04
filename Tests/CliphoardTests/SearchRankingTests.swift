@@ -50,4 +50,55 @@ final class SearchRankingTests: XCTestCase {
         let ranked = SemanticRanker.essence(query: "zzqqxx", items: items, embedder: e)
         XCTAssertEqual(ranked.count, 12, "fallback is capped at the top 12")
     }
+
+    // MARK: - Neural (pure model) mode
+
+    /// Neural ranks purely by cosine — the semantically-closest clip comes first,
+    /// with no substring requirement.
+    func testNeuralRanksClosestFirst() {
+        let close = text("banana smoothie recipe")
+        let far   = text("tax accounting ledger")
+        let ranked = SemanticRanker.neural(query: "banana milkshake", items: [far, close], embedder: e)
+        XCTAssertEqual(ranked.first?.text, "banana smoothie recipe",
+                       "closest by meaning ranks first, order-independent of input")
+    }
+
+    /// Pure-meaning mode never goes empty: when nothing clears the bar it falls
+    /// back to the closest handful (capped at 8) rather than returning nothing.
+    func testNeuralFallsBackWhenAllBelowThreshold() {
+        let items = (0..<12).map { text("unrelated filler item number \($0)") }
+        let ranked = SemanticRanker.neural(query: "zzqqxx", items: items, embedder: e)
+        XCTAssertFalse(ranked.isEmpty, "neural surfaces the closest guesses, never empty")
+        XCTAssertLessThanOrEqual(ranked.count, 8, "fallback is capped at the top 8")
+    }
+
+    // MARK: - Smart (exact + tag + neural hybrid)
+
+    /// Exact substring hits are guaranteed first, ahead of any non-substring clip.
+    @MainActor
+    func testSmartRanksExactHitsFirst() {
+        let exact = text("banana milkshake recipe")   // contains the query verbatim
+        let related = text("banana smoothie drink")   // semantically close, not a substring
+        let unrelated = text("tax accounting ledger")
+        let ranked = SemanticRanker.smart(query: "banana milkshake",
+                                          items: [related, unrelated, exact], embedder: e)
+        XCTAssertEqual(ranked.first?.text, "banana milkshake recipe",
+                       "the exact substring hit outranks everything")
+    }
+
+    /// A semantically-related non-substring clip still surfaces (below the exact
+    /// hit), while an unrelated clip is filtered out.
+    @MainActor
+    func testSmartKeepsRelatedNonExactAndDropsUnrelated() {
+        let exact = text("banana milkshake recipe")
+        let related = text("banana smoothie drink")   // shares tokens/trigrams → clears the bar
+        let unrelated = text("quarterly tax ledger")  // no overlap → filtered
+        let ranked = SemanticRanker.smart(query: "banana milkshake",
+                                          items: [exact, related, unrelated], embedder: e)
+        XCTAssertEqual(ranked.first?.text, "banana milkshake recipe")
+        XCTAssertTrue(ranked.contains { $0.text == "banana smoothie drink" },
+                      "a related non-exact clip is kept")
+        XCTAssertFalse(ranked.contains { $0.text == "quarterly tax ledger" },
+                       "an unrelated clip is dropped")
+    }
 }

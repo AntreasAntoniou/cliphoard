@@ -105,8 +105,11 @@ final class PanelViewModel: ObservableObject {
             guard let tag = TagSpace.nearestTag(toQuery: q, embedder: embedder) else { return [] }
             let ids = Set(store.items(taggedWith: tag).map { $0.id })
             return scoped.filter { ids.contains($0.id) }
+        case .neural:
+            // Pure model-based semantic ranking (cosine only, no substring/tags).
+            return SemanticRanker.neural(query: q, items: scoped, embedder: embedder)
         case .smart:
-            // Exact substring hits first, then semantically-closest remaining.
+            // Clever hybrid: exact hits first, then blended neural + shared-tag topic.
             return SemanticRanker.smart(query: q, items: scoped, embedder: embedder)
         }
     }

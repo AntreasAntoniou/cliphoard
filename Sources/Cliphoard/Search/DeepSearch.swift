@@ -45,31 +45,44 @@ enum DeepSearchLevel: String, CaseIterable, Identifiable {
     }
 }
 
-/// How the bar searches.
+/// How the bar searches. Ordered simplest → smartest; `smart` is the default.
 /// - `exact`: case-insensitive substring (no vectors) — the literal words you type.
-/// - `smart` (default): exact substring matches first, then the semantically
-///   closest remaining clips (hybrid) — you always get the obvious hit, plus
-///   meaning-based suggestions below it.
 /// - `tag`: classify the query to its nearest preset tag, then O(1) lookup of
-///   entries pre-tagged at ingest.
+///   entries pre-tagged at ingest — search by auto category.
+/// - `neural`: pure model-based semantic ranking — every clip scored by the
+///   on-device embedding model's query·clip cosine, no substring, no tags.
+/// - `smart` (default): the clever hybrid — exact substring hits are guaranteed
+///   and rank first, then the rest are ordered by a blend of neural cosine and
+///   shared-tag topic agreement.
 enum SearchMode: String, CaseIterable, Identifiable {
-    case exact, smart, tag
+    case exact, tag, neural, smart
     var id: String { rawValue }
     var title: String {
         switch self {
-        case .exact: return "Exact"
-        case .smart: return "Smart"
-        case .tag:   return "Tag"
+        case .exact:  return "Exact"
+        case .tag:    return "Tag"
+        case .neural: return "Neural"
+        case .smart:  return "Smart"
         }
     }
     var blurb: String {
         switch self {
-        case .exact: return "The literal words you type"
-        case .smart: return "Exact matches first, then by meaning"
-        case .tag:   return "By auto category"
+        case .exact:  return "The literal words you type"
+        case .tag:    return "By auto category"
+        case .neural: return "Pure meaning, by the model"
+        case .smart:  return "Exact, tag & neural — combined"
         }
     }
-    var symbol: String { self == .exact ? "magnifyingglass" : "sparkles" }
+    var symbol: String {
+        switch self {
+        case .exact:  return "magnifyingglass"
+        case .tag:    return "tag"
+        case .neural: return "brain"
+        case .smart:  return "sparkles"
+        }
+    }
+    /// True for modes that need the embedding model / vectors (everything but exact).
+    var usesModel: Bool { self != .exact }
 }
 
 enum DeepSearch {
@@ -339,24 +352,59 @@ enum SemanticRanker {
                              : kept).map { $0.0 }
     }
 
-    /// Hybrid "Smart" search: exact substring hits FIRST (deterministic, in the
-    /// list's existing order), then the semantically-closest remaining clips above
-    /// threshold. No top-K fallback — when nothing is relevant we don't pad the
-    /// results with unrelated guesses (that was the old Essence-default complaint).
+    /// Pure NEURAL search: rank every clip by the model's query·clip cosine in the
+    /// embedding space — no substring, no tags, just meaning. This is the raw
+    /// semantic signal, exposed as its own mode. Thresholded, but with a top-K
+    /// fallback so the model's closest guesses are never hidden when the bar isn't
+    /// cleared.
+    static func neural(query: String, items: [ClipItem], embedder: TextEmbedder) -> [ClipItem] {
+        let qv = embedder.embed(query, query: true)
+        let scored = items.map { item -> (ClipItem, Float) in
+            let vec = item.embeddings[embedder.signature]?.vector ?? embedder.embed(searchText(item))
+            return (item, cosine(qv, vec))
+        }
+        let kept = scored.filter { $0.1 >= 0.20 }.sorted { $0.1 > $1.1 }
+        if kept.isEmpty {
+            return scored.sorted { $0.1 > $1.1 }.prefix(min(items.count, 8)).map { $0.0 }
+        }
+        return kept.map { $0.0 }
+    }
+
+    /// Hybrid "Smart" search — the clever combination of all three signals:
+    ///   • EXACT substring hits are guaranteed and always rank first.
+    ///   • NEURAL cosine similarity in the model's space orders the rest by meaning.
+    ///   • TAG agreement — the query's nearest preset categories vs the clip's own
+    ///     ingest tags — boosts clips that share the query's *topic* even when the
+    ///     wording and vectors are only loosely related.
+    /// score = exactBonus + cosine + tagBoost. Exact hits (bonus 10) sort above
+    /// everything; among the rest, meaning + shared category decide the order.
+    /// Non-exact clips must clear a threshold on (cosine + tagBoost) so nothing
+    /// unrelated is padded in.
+    ///
+    /// `@MainActor` because the tag leg reads `TagSpace` (main-actor cache); it is
+    /// only ever called from the main-actor view model, like the `tag` mode.
+    @MainActor
     static func smart(query: String, items: [ClipItem], embedder: TextEmbedder) -> [ClipItem] {
         let q = query.lowercased()
-        let exact = items.filter { searchText($0).lowercased().contains(q) }
-        let exactIDs = Set(exact.map { $0.id })
         let qv = embedder.embed(query, query: true)
-        let semantic = items
-            .filter { !exactIDs.contains($0.id) }
-            .map { item -> (ClipItem, Float) in
-                let vec = item.embeddings[embedder.signature]?.vector ?? embedder.embed(searchText(item))
-                return (item, cosine(qv, vec))
-            }
-            .filter { $0.1 >= 0.12 }
-            .sorted { $0.1 > $1.1 }
-            .map { $0.0 }
-        return exact + semantic
+        // The query's nearest preset categories — the "tag" leg of the hybrid.
+        let queryTags = Set(TagSpace.classify(qv, embedder: embedder, topK: 3))
+
+        let scored = items.map { item -> (item: ClipItem, score: Float, exact: Bool) in
+            let emb = item.embeddings[embedder.signature]
+            let vec = emb?.vector ?? embedder.embed(searchText(item))
+            let exact = searchText(item).lowercased().contains(q)
+            let neural = cosine(qv, vec)
+            let shared = emb.map { Set($0.tags).intersection(queryTags).count } ?? 0
+            let tagBoost = Float(min(shared, 2)) * 0.10          // up to +0.20 for topic agreement
+            let score = (exact ? 10 : 0) + neural + tagBoost
+            return (item, score, exact)
+        }
+        // Keep every exact hit; keep the rest only when meaning OR shared topic
+        // clears the bar, so the list stays relevant instead of padded with noise.
+        return scored
+            .filter { $0.exact || $0.score >= 0.18 }
+            .sorted { $0.score > $1.score }
+            .map { $0.item }
     }
 }
