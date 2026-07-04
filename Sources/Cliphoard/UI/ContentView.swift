@@ -138,8 +138,8 @@ struct ContentView: View {
         if let icon = brandIconImage {
             Image(nsImage: icon)
                 .resizable().interpolation(.high)
-                .frame(width: 40, height: 40)
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .frame(width: 52, height: 52)
+                .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
                 .accessibilityHidden(true)
         } else {
             Image(systemName: "command").font(.system(size: 20)).foregroundStyle(Theme.accent)
