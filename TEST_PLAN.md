@@ -1,6 +1,6 @@
-# Yank — Merged Test Plan
+# Cliphoard — Merged Test Plan
 
-Merge of the two reviewer test plans, deduplicated and prioritized. Current state: **44 tests pass** (`swift test` → "Executed 44 tests, with 0 failures") across `YankTests.swift` and `DeepSearchTests.swift`.
+Merge of the two reviewer test plans, deduplicated and prioritized. Current state: **44 tests pass** (`swift test` → "Executed 44 tests, with 0 failures") across `CoreTests.swift` and `DeepSearchTests.swift`.
 
 ## Current coverage (well covered — do not duplicate)
 
@@ -24,7 +24,7 @@ Merge of the two reviewer test plans, deduplicated and prioritized. Current stat
 ### TP-0. Test isolation harness (prerequisite)
 - `setUp`/`tearDown` snapshot + restore `deepSearchLevel`, `searchMode`, `activeBasket`, `customTags`.
 - `testTagSpaceCountMatchesActiveBasket` — parameterize over all built-in baskets instead of hardcoding 100.
-- **File:** shared `Tests/YankTests/TestSupport.swift`.
+- **File:** shared `Tests/CliphoardTests/TestSupport.swift`.
 
 ### TP-1. OgmaTokenizer parity & whitespace (guards AUDIT H3, M3, M5, L8)
 - `testEncodeMatchesReferenceIdsForKnownStrings` — golden ids from `reference.json` for several inputs.
@@ -35,7 +35,7 @@ Merge of the two reviewer test plans, deduplicated and prioritized. Current stat
 - `testEncodeAppliesMetaspacePrefixPerWord`.
 - `testEncodeOOVStringsUrlAndBase64` — OOV-adjacent inputs (UNK-score sensitivity, L8).
 - `testInitReturnsNilForMissingOrMalformedTokenizerJson`.
-- **File:** `Tests/YankTests/OgmaTokenizerTests.swift` (new) + checked-in `tokenizer.json` fixture.
+- **File:** `Tests/CliphoardTests/OgmaTokenizerTests.swift` (new) + checked-in `tokenizer.json` fixture.
 
 ### TP-2. SQLite Database layer + Float16 BLOB round-trip (guards AUDIT M7, M8, L4, and durability)
 - `testFloat16BlobRoundTripWithinTolerance` — `[0.1,0.2,…]` → blob → back, assert ~1e-3.
@@ -48,7 +48,7 @@ Merge of the two reviewer test plans, deduplicated and prioritized. Current stat
 - `testUpdateMetaPersistsPinAndKindChange`.
 - `testOpenCreatesSchemaAndIsIdempotentOnReopen`.
 - `testTwoModelReload` — two models' vectors for one clip survive reload (from plan 1).
-- **File:** `Tests/YankTests/DatabaseTests.swift` (new).
+- **File:** `Tests/CliphoardTests/DatabaseTests.swift` (new).
 
 ### TP-3. Legacy history.json → SQLite migration (guards AUDIT robustness-L, data integrity)
 - `testMigratesLegacyJSONIntoSqliteAndArchives`.
@@ -56,17 +56,17 @@ Merge of the two reviewer test plans, deduplicated and prioritized. Current stat
 - `testCorruptLegacyJSONIsPreservedNotWiped` — `history.corrupt.json` written, items empty, original kept.
 - `testMigrationSkippedWhenDatabaseNonEmpty`.
 - `testMigratedJSONNotReimportedOnSecondLaunch`.
-- **File:** `Tests/YankTests/MigrationTests.swift` (new).
+- **File:** `Tests/CliphoardTests/MigrationTests.swift` (new).
 
 ### TP-4. Degenerate-embedding handling (guards AUDIT H10)
 - `testFailedEmbeddingLeavesItemStaleNotCached` — simulated failure (empty vector) is not persisted; item stays stale.
 - `testAllZeroOrWrongLengthVectorReportsStale`.
-- **File:** `Tests/YankTests/EmbeddingFailureTests.swift` (new). *(Requires the BL-05 change to make failures observable.)*
+- **File:** `Tests/CliphoardTests/EmbeddingFailureTests.swift` (new). *(Requires the BL-05 change to make failures observable.)*
 
 ### TP-5. SQLite write-failure surfacing (guards AUDIT H11)
 - `testWriteFailureIsReportedNotSilentlySwallowed` — forced read-only/failed step returns failure to ClipStore.
 - `testTransactionRollsBackOnMidBatchError`.
-- **File:** `Tests/YankTests/DatabaseTests.swift`. *(Requires BL-06.)*
+- **File:** `Tests/CliphoardTests/DatabaseTests.swift`. *(Requires BL-06.)*
 
 ---
 
@@ -79,11 +79,11 @@ Merge of the two reviewer test plans, deduplicated and prioritized. Current stat
 - `testClassifyTagIdsStayInRangeForSmallBasket` — everyday(28)/developer(45).
 - `testCustomBasketPersistsAndBecomesActive`.
 - `testReclassifySwitch` (from plan 1).
-- **File:** `Tests/YankTests/ReclassifyTests.swift` (new).
+- **File:** `Tests/CliphoardTests/ReclassifyTests.swift` (new).
 
 ### TP-7. QRY/DOC tag-classification consistency (guards AUDIT M6)
 - `testIngestTagEqualsQueryTagForAsymmetricEmbedder` — stub embedder distinguishing qry/doc, asserts ingest-tag == `nearestTag` query-tag for representative inputs.
-- **File:** `Tests/YankTests/DeepSearchTests.swift` (add stub + test).
+- **File:** `Tests/CliphoardTests/DeepSearchTests.swift` (add stub + test).
 
 ### TP-8. Search ranking edge cases (essence threshold/fallback + tag retrieval)
 - `testEssenceFallbackReturnsTopKWhenAllBelowThreshold`.
@@ -93,14 +93,14 @@ Merge of the two reviewer test plans, deduplicated and prioritized. Current stat
 - `testFilteredMatchesFilePathAndColorHex`.
 - `testNearestTagPicksLinkTagForUrlQuery`.
 - `testEssenceFallback` (from plan 1).
-- **File:** `Tests/YankTests/SearchRankingTests.swift` (new).
+- **File:** `Tests/CliphoardTests/SearchRankingTests.swift` (new).
 
 ### TP-9. refineKind promotion (guards content-mutation classification)
 - `testRefineKindPromotesWhitespaceFreeTextToLinkWhenTagged`.
 - `testRefineKindLeavesMultiWordTextAlone`.
 - `testRefineKindDoesNotDemoteNonText`.
 - `testRefineKindLink` (from plan 1).
-- **File:** `Tests/YankTests/RefineKindTests.swift` (new).
+- **File:** `Tests/CliphoardTests/RefineKindTests.swift` (new).
 
 ---
 
@@ -111,17 +111,17 @@ Merge of the two reviewer test plans, deduplicated and prioritized. Current stat
 - `testTransientSkipped` — transient/concealed pasteboard skipped (from both plans).
 - `testExcludedBundleIdNotCaptured` — once BL-07 lands.
 - `testDetectKindClassifiesIPv4AndIPv6AndLongUrlBoundary`.
-- **File:** `Tests/YankTests/CaptureTests.swift` (new) + pasteboard seam.
+- **File:** `Tests/CliphoardTests/CaptureTests.swift` (new) + pasteboard seam.
 
 ### TP-11. Concurrency / reindex safety (guards AUDIT M1, M2; after BL-03/BL-14)
 - `testConcurrentAddDuringReindexDoesNotWriteStaleSnapshot`.
 - `testOverlappingReindexAndReclassifyCoalesceToSinglePass` — `indexing` progress monotonic, ends once.
-- **File:** `Tests/YankTests/ReindexConcurrencyTests.swift` (new).
+- **File:** `Tests/CliphoardTests/ReindexConcurrencyTests.swift` (new).
 
 ### TP-12. Image payload robustness (guards AUDIT M10, L5)
 - `testPersistImageFailureDoesNotStoreUnpastableClip`.
 - `testOrphanPngSweepRemovesUnreferencedFiles`.
-- **File:** `Tests/YankTests/PayloadTests.swift` (new). *(After BL-18.)*
+- **File:** `Tests/CliphoardTests/PayloadTests.swift` (new). *(After BL-18.)*
 
 ---
 

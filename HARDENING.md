@@ -1,18 +1,18 @@
-# Yank — Hardening Audit
+# Cliphoard — Hardening Audit
 
 _A 10-persona usability/functionality/intuitiveness audit. Each persona was a distinct user/expert with a hard negative constraint (forced orthogonality); every high-severity finding was adversarially refuted before inclusion. 10 personas · 68 raw findings · 17 confirmed after refutation._
 
 ---
 
-# YANK HARDENING AUDIT
+# CLIPHOARD HARDENING AUDIT
 
-Synthesis of 10 persona audits + adversarial refutation verdicts. Source root: `/Users/antreas/Projects/ditto/Sources/Yank/`.
+Synthesis of 10 persona audits + adversarial refutation verdicts. Source root: `/Users/antreas/Projects/ditto/Sources/Cliphoard/`.
 
 Scoring note: each issue ranked by **severity (post-refutation) × confidence × lens-count (independent personas) × adversary-confirmation**. Findings the refuter downgraded are reported at the revised severity, but where multiple independent lenses converged on the same root cause I flag that convergence as a confidence multiplier even when each lens individually rated it lower.
 
 ---
 
-## 1. BOTTOM LINE — the 4 things hurting Yank most right now
+## 1. BOTTOM LINE — the 4 things hurting Cliphoard most right now
 
 **1. The silent-paste-without-Accessibility trap is the worst first-run experience in the app.** Four separate personas (margo, tomas, knox, chaos) independently hit the same defect from different angles, and the refuter confirmed every one. `AppDelegate.commit` (lines 209–221) writes the clip to the pasteboard, then calls `hide(paste: AXIsProcessTrusted())`. When untrusted: the bar slides away identically to success, no Cmd-V fires, no HUD/banner/sound, and the one-shot `didPromptAX` (line 21) means after the first dismissed prompt every future Enter is a feedback-free no-op. The single most-advertised action ("↩ Paste", `ContentView.swift:441`) silently does nothing. **This is the #1 fix** — highest cross-lens convergence (4 lenses) at confirmed medium-to-high severity.
 
@@ -48,7 +48,7 @@ Scoring note: each issue ranked by **severity (post-refutation) × confidence ×
 
 | # | Problem · Impact · Fix | Severity | Lenses |
 |---|---|---|---|
-| C1 | **`NSApp.activate(ignoringOtherApps:true)` defeats the `.nonactivatingPanel`.** `show()` (line 188) force-activates Yank right before `slideIn()`, demoting the host app and stealing the global menu bar — the exact thing `.nonactivatingPanel`+`canBecomeKey=true` was chosen to avoid. All the downstream compensation (re-activate previousApp, 0.12s activate-then-Cmd-V dance, resignKey juggling) exists to paper over this self-inflicted activation. Fix: drop the `activate` call; become key via `makeKeyAndOrderFront` without activating; the paste path then no longer needs to re-activate or wait. **This is soren's root-cause finding and is upstream of C5, F1, and the paste-latency issue.** | high (lone-but-deep) | soren |
+| C1 | **`NSApp.activate(ignoringOtherApps:true)` defeats the `.nonactivatingPanel`.** `show()` (line 188) force-activates Cliphoard right before `slideIn()`, demoting the host app and stealing the global menu bar — the exact thing `.nonactivatingPanel`+`canBecomeKey=true` was chosen to avoid. All the downstream compensation (re-activate previousApp, 0.12s activate-then-Cmd-V dance, resignKey juggling) exists to paper over this self-inflicted activation. Fix: drop the `activate` call; become key via `makeKeyAndOrderFront` without activating; the paste path then no longer needs to re-activate or wait. **This is soren's root-cause finding and is upstream of C5, F1, and the paste-latency issue.** | high (lone-but-deep) | soren |
 | C2 | **Hardcoded `⌃⌥⌘V`, no rebind, no failure handling.** (See Bottom Line #4.) `RegisterEventHotKey`/`InstallEventHandler` return values discarded (`HotKey.swift:22,33`). Fix: key-recorder in Settings (KeyboardShortcuts pkg), persist, re-register live, surface `OSStatus` failure; ship a saner 2-key default. | medium (was high) | dex, soren |
 | C3 | **"Automatic" theme won't live-update on system appearance flip.** Presets set a concrete `scheme`; `.system` resolves `effectiveAppearance` once at token-build time with no KVO observer (`Theme.swift:92–94`, `ContentView.swift:46`). Sunset auto-switch / Control-Center toggle leaves a long-lived open bar wrong. Fix: observe `AppleInterfaceThemeChangedNotification` / KVO `effectiveAppearance` → refresh. | high | soren |
 | C4 | **⌘1–9 badges are positional, not stable.** Badge `"⌘\(index+1)"` and `quickSelect` both index `model.results`, which re-sorts pinned-first on every add/pin/filter (`ClipCardView.swift:93–97`, `AppDelegate.swift:268–270`). "My password is ⌘3" mispastes after any new copy — dressed as a stable accelerator it isn't. Fix: freeze numbering to unfiltered recency, OR bind ⌘1–9 to pinned clips in pin order (priya's variant), OR make it unmistakably ephemeral. | medium | soren, priya |
@@ -73,7 +73,7 @@ Scoring note: each issue ranked by **severity (post-refutation) × confidence ×
 | # | Problem · Impact · Fix | Severity | Lenses |
 |---|---|---|---|
 | E1 | **Image clips stored as plaintext PNGs** contradicting README's encryption claim. (Bottom Line #2.) Fix: AES-GCM seal PNG bytes before write (or BLOB in SQLite); decrypt on read; restrictive POSIX perms on store dir; until then correct README/PRIVACY. | high (conf 0.97) | vera |
-| E2 | **The exclusion denylist has no UI.** `excludedBundleIDs` is read at `ClipboardMonitor.swift:71` and never written anywhere in Sources; PRIVACY.md (35–40) tells users they can exclude apps "so Yank never records what you copy from it" — populatable only via `defaults write`. The primary user-facing privacy control is illusory. Fix: a Privacy/Excluded-apps Settings section with an app picker + "exclude the app this clip came from" card action. | high | vera |
+| E2 | **The exclusion denylist has no UI.** `excludedBundleIDs` is read at `ClipboardMonitor.swift:71` and never written anywhere in Sources; PRIVACY.md (35–40) tells users they can exclude apps "so Cliphoard never records what you copy from it" — populatable only via `defaults write`. The primary user-facing privacy control is illusory. Fix: a Privacy/Excluded-apps Settings section with an app picker + "exclude the app this clip came from" card action. | high | vera |
 | E3 | **At-rest encryption is largely cosmetic in its own threat model.** 256-bit key in login keychain with `kSecAttrAccessibleAfterFirstUnlock`, no `kSecAttrAccessControl`/Secure-Enclave; unsandboxed; key sits beside the ciphertext. Any same-user process reads both. (Not separately refuted, but the substance overlaps E1's confirmed encryption-overclaim.) Fix: bind key with `.userPresence`/Secure Enclave OR stop overselling and document the real model ("on a running logged-in Mac, same-user processes can decrypt; equals FileVault + login keychain"). | high (lone, conf 0.9) | vera |
 | E4 | **Plain-copied secrets are captured.** `shouldSkip` only honors denylist + Transient/Concealed/AutoGenerated flags; `cat .env\|pbcopy`, terminals, browser reveal-fields, JWTs land in `capture()` and get indexed/tagged (tag baskets literally include "api key"/"access token"/"password"). Fix: opt-in content heuristics (entropy, `KEY=`/`TOKEN=`, JWT/PEM/AWS shapes), per-clip "never store from this app", concealed marker. | medium (was high) | vera, priya |
 | E5 | **Source-app + timestamps stored in cleartext** (`Database.insert`): a per-clip behavioral map (which app, when, how often) survives even when the body is encrypted. Fix: encrypt `source_app` or document it; option to not record it. | medium | vera |

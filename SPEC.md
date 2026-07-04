@@ -1,4 +1,4 @@
-# Yank — Authoritative Engineering Specification
+# Cliphoard — Authoritative Engineering Specification
 
 > ⚠️ **This SPEC predates the SQLite store, on-device deep search, in-bar
 > settings, and tag baskets. For the current state see [Agents.md](Agents.md)
@@ -10,7 +10,7 @@
 > adversarial verification reports and re-checked against live source + on-disk
 > state at `/Users/antreas/Projects/ditto` on **2026-06-17**. Every contested fact
 > below was re-read from the code or the running system; code-verified facts win
-> over any draft claim. Remote: `https://github.com/AntreasAntoniou/yank`.
+> over any draft claim. Remote: `https://github.com/AntreasAntoniou/cliphoard`.
 > Target: macOS 13+ (`Package.swift` → `.macOS(.v13)`; `Info.plist
 > LSMinimumSystemVersion 13.0`); built/run on macOS 26 / Darwin 25.6 / arm64,
 > Swift 5.9 tools.
@@ -50,7 +50,7 @@
 
 ## APEX — Vision (one sentence)
 
-**Yank is a native, open-source, no-account, telemetry-free macOS menu-bar
+**Cliphoard is a native, open-source, no-account, telemetry-free macOS menu-bar
 clipboard manager that, on the global shortcut `⌃⌥⌘V`, slides a horizontal strip
 of clipboard-history cards up from the bottom of the active screen and pastes the
 chosen clip straight back into the app you were using — a Swift/AppKit/SwiftUI
@@ -67,7 +67,7 @@ reimplementation of the commercial "Paste" app's core flow.**
    `app.setActivationPolicy(.accessory)`; `Resources/Info.plist` sets
    `LSUIElement = true`. No Dock icon; one `NSStatusItem`, one `FloatingPanel`,
    no main window.
-3. **Capture is sacred.** Every copy in any app — bar open or closed, Yank
+3. **Capture is sacred.** Every copy in any app — bar open or closed, Cliphoard
    frontmost or not — must be recorded. App Nap is explicitly defeated
    (`ClipboardMonitor.start()` activity assertion) to keep this promise. This
    promise is also the locus of the open refresh defect (Tier 6).
@@ -172,7 +172,7 @@ ClipStore.add(item)
 ### 3.3 Presentation path (the open defect lives here — Tier 6)
 
 ```
-HotKey ⌃⌥⌘V  ─or─  Darwin "ai.axiotic.ditto.toggle"  ─or─  menu "Open Yank"
+HotKey ⌃⌥⌘V  ─or─  Darwin "ai.axiotic.ditto.toggle"  ─or─  menu "Open Cliphoard"
   ▼
 AppDelegate.toggle() → show()
   │  guard !isVisible
@@ -229,17 +229,17 @@ hide(paste:false) → slideOut → previousApp?.activate
 ## TIER 4 — Component-by-Component Spec (exhaustive; real symbols & values)
 
 ### `Package.swift`
-`swift-tools-version:5.9`. Package `Yank`; `platforms: [.macOS(.v13)]`; one
-`.executableTarget` named `Yank`, `path: "Sources/Yank"`; linked frameworks
+`swift-tools-version:5.9`. Package `Cliphoard`; `platforms: [.macOS(.v13)]`; one
+`.executableTarget` named `Cliphoard`, `path: "Sources/Cliphoard"`; linked frameworks
 `AppKit`, `SwiftUI`, `Carbon`, `UniformTypeIdentifiers`. No test target.
 
-### `Sources/Yank/App/Main.swift`
+### `Sources/Cliphoard/App/Main.swift`
 `@main struct Main`; `@MainActor static func main()`. `NSApplication.shared`,
 instantiates `AppDelegate`, sets `app.delegate`, `setActivationPolicy(.accessory)`,
 retains the delegate via `objc_setAssociatedObject(app, "dittoDelegate", delegate,
 .OBJC_ASSOCIATION_RETAIN)`, then `app.run()`.
 
-### `Sources/Yank/App/AppDelegate.swift`
+### `Sources/Cliphoard/App/AppDelegate.swift`
 `@MainActor final class AppDelegate: NSObject, NSApplicationDelegate`.
 - `applicationDidFinishLaunching`: `setupStatusItem()` · `setupPanel()` ·
   `setupHotKey()` · `setupRemoteToggle()` · `monitor.start()`. **No launch-time AX
@@ -250,14 +250,14 @@ retains the delegate via `objc_setAssociatedObject(app, "dittoDelegate", delegat
   to main. (No observer removal — process-lifetime singleton, benign.)
 - `setupStatusItem()`: variable-length status item; button image SF Symbol
   `"doc.on.clipboard"` (`isTemplate=true`); calls `rebuildMenu()`.
-- `rebuildMenu()`: **Open Yank (⌃⌥⌘V)** · sep · **History Limit** submenu (tags
+- `rebuildMenu()`: **Open Cliphoard (⌃⌥⌘V)** · sep · **History Limit** submenu (tags
   `[0,100,200,500,1000,5000]`, `0`→"Unlimited", "N items", checkmark on current
   `store.historyLimit`) · **Launch at Login** (checked via
   `SMAppService.mainApp.status == .enabled`) · **Play Sound on Copy** (vs
   `Feedback.soundEnabled`) · **Copy Sound** submenu (`Feedback.availableSounds`,
   checked vs `Feedback.soundName`) · **Debug Logging** (vs `DebugLog.enabled`) ·
   sep · **Grant Accessibility…** (shown only if `!AXIsProcessTrusted()`) ·
-  **Clear Unpinned History** · **About Yank** · sep · **Quit Yank** (`q`).
+  **Clear Unpinned History** · **About Cliphoard** · sep · **Quit Cliphoard** (`q`).
 - `setupPanel()`: wires `model.onPaste = commit`, `model.onClose =
   hide(paste:false)`, `panel.onResignKey = { if isVisible && !isClosing {
   hide(paste:false) } }`; calls `panel.setContent(ContentView(model:model,
@@ -285,7 +285,7 @@ retains the delegate via `objc_setAssociatedObject(app, "dittoDelegate", delegat
   (NSAlert), `quit`, `promptAccessibility` (`AXIsProcessTrustedWithOptions` with
   prompt).
 
-### `Sources/Yank/App/HotKey.swift`
+### `Sources/Cliphoard/App/HotKey.swift`
 `final class HotKey`. Fields: `ref: EventHotKeyRef?`, `handler: EventHandlerRef?`,
 `id = EventHotKeyID(signature: OSType(0x4454_4F48) /* 'DTOH' */, id: 1)`,
 `onPressed: (() -> Void)?`. `register(keyCode:modifiers:)` installs a
@@ -294,7 +294,7 @@ retains the delegate via `objc_setAssociatedObject(app, "dittoDelegate", delegat
 dispatches `onPressed` to main. `unregister()`/`deinit` tear both down. Carbon
 chosen as the only reliable no-entitlement system-wide shortcut API.
 
-### `Sources/Yank/Clipboard/ClipItem.swift`
+### `Sources/Cliphoard/Clipboard/ClipItem.swift`
 `enum ClipKind: String, Codable, CaseIterable { text, link, color, image, file }`
 with `symbolName` (`text.alignleft`/`link`/`paintpalette`/`photo`/`doc`) and
 `title` (`Text`/`Links`/`Colors`/`Images`/`Files`).
@@ -311,7 +311,7 @@ with `symbolName` (`text.alignleft`/`link`/`paintpalette`/`photo`/`doc`) and
 > fields in place (e.g. `lastUsedAt`) does not by itself emit `objectWillChange`;
 > only the array reorder via `@Published items` does. Audit alongside Tier 6 H1.
 
-### `Sources/Yank/Clipboard/ClipStore.swift`
+### `Sources/Cliphoard/Clipboard/ClipStore.swift`
 `@MainActor final class ClipStore: ObservableObject`.
 `@Published private(set) var items: [ClipItem] = []`.
 `historyLimit: Int` — computed over UserDefaults key `"historyLimit"` (**default
@@ -340,7 +340,7 @@ with `symbolName` (`text.alignleft`/`link`/`paintpalette`/`photo`/`doc`) and
 - `save()`: `JSONEncoder` → atomic write. `load()`: decode `[ClipItem]` +
   `sortStable`.
 
-### `Sources/Yank/Clipboard/ClipboardMonitor.swift`
+### `Sources/Cliphoard/Clipboard/ClipboardMonitor.swift`
 `@MainActor final class ClipboardMonitor`. Fields: `store`, `timer: Timer?`,
 `activity: NSObjectProtocol?`, `lastChangeCount: Int` (init from
 `NSPasteboard.general.changeCount`), `ignoreChangeCount: Int = -1`.
@@ -370,7 +370,7 @@ with `symbolName` (`text.alignleft`/`link`/`paintpalette`/`photo`/`doc`) and
   > || scheme == "mailto"` parses as `(A && B) || C`, so a host-less `mailto:`
   > still classifies as `.link` (intended, but fragile — parenthesize).
 
-### `Sources/Yank/Clipboard/Paster.swift`
+### `Sources/Cliphoard/Clipboard/Paster.swift`
 `@MainActor enum Paster`. `writeToPasteboard(_:store:)`: `clearContents()` then by
 kind — image (`writeObjects([NSImage])` from disk), file (`writeObjects([URL as
 NSURL])`), default (`setData(rtf)` if present, then `setString(text, .string)`).
@@ -378,7 +378,7 @@ NSURL])`), default (`setData(rtf)` if present, then `setString(text, .string)`).
 (`CGEvent` virtual key `0x09` ('v') down/up with `.maskCommand`, posted to
 `.cghidEventTap` — requires Accessibility).
 
-### `Sources/Yank/UI/FloatingPanel.swift`
+### `Sources/Cliphoard/UI/FloatingPanel.swift`
 `final class FloatingPanel: NSPanel`. `static let barHeight: CGFloat = 380`.
 `var onResignKey: (() -> Void)?`. `init()` — contentRect 800×380; styleMask
 `[.borderless, .nonactivatingPanel, .fullSizeContentView]`, backing `.buffered`;
@@ -397,7 +397,7 @@ and `rootView` is never reassigned (Tier 6).** `slideIn()`: `targetScreen()` →
 `orderOut(nil)` + completion. `targetScreen()`: screen under the mouse, else
 `NSScreen.main`. `resignKey()` → `super` + `onResignKey?()`.
 
-### `Sources/Yank/UI/PanelViewModel.swift`
+### `Sources/Cliphoard/UI/PanelViewModel.swift`
 `@MainActor final class PanelViewModel: ObservableObject`. `@Published`: `query`,
 `activeKind: ClipKind?`, `pinnedOnly: Bool`, `selection: Int = 0`,
 `presentToken: Int = 0`. `let store: ClipStore`. Callbacks `onPaste`, `onClose`.
@@ -407,13 +407,13 @@ and `rootView` is never reassigned (Tier 6).** `slideIn()`: `targetScreen()` →
 count), `commitSelection`, `deleteSelection` (delete + clamp selection),
 `pinSelection`, `quickSelect(n)` (paste `results[n-1]`).
 
-### `Sources/Yank/UI/ContentView.swift`
+### `Sources/Cliphoard/UI/ContentView.swift`
 `struct ContentView: View` with `@ObservedObject var model` and
 `@ObservedObject var store`. `body`: `VStack(spacing:0){ toolbar; Divider; cards;
 footer }` over `VisualEffectBackground(material: .hudWindow, blending:
 .behindWindow)`, `clipShape(RoundedRectangle(cornerRadius:16))`, 1-pt
 `Color.primary.opacity(0.12)` border, 8-pt horizontal/top padding.
-- `toolbar`: "Yank" title + `categoryChips` + search `TextField($model.query)`
+- `toolbar`: "Cliphoard" title + `categoryChips` + search `TextField($model.query)`
   (width 180; `onChange(query)` → `resetSelection`).
 - `categoryChips`: "All", "Pinned", then `ForEach(ClipKind.allCases)` rendering a
   chip **only if `counts[kind] > 0`**.
@@ -430,7 +430,7 @@ footer }` over `VisualEffectBackground(material: .hudWindow, blending:
 - `footer`: key-hint chips (`←→`, `↩`, `⌘1–9`, `⌘P`, **`⌫`** — the in-app footer
   label uses bare `⌫`, though the code requires `⌘⌫`) + `"N item(s)"`.
 
-### `Sources/Yank/UI/ClipCardView.swift`
+### `Sources/Cliphoard/UI/ClipCardView.swift`
 `struct ClipCardView`. Inputs: `item`, `index`, `selected`, `storeDir`,
 `onActivate`/`onPin`/`onDelete`; `@State hovering`. Frame
 `Theme.cardWidth × Theme.cardHeight` = **220×250**. Background
@@ -444,29 +444,29 @@ time. Selection ring (`Theme.accent`, 2.5 pt) + `scaleEffect(1.0)`; else
 0.18/0.08 1-pt border + `scaleEffect(0.97)` + spring; `onHover`; double-click →
 `onActivate`; context menu Paste / Pin-Unpin / Delete; `.help(item.preview)`.
 
-### `Sources/Yank/UI/Theme.swift`
+### `Sources/Cliphoard/UI/Theme.swift`
 `enum Theme`: `cardWidth = 220`, `cardHeight = 250`, `accent =
 Color.accentColor`, `color(fromHex:)` (handles 3/6/8-digit hex → `Color`).
 `struct VisualEffectBackground: NSViewRepresentable` wrapping
 `NSVisualEffectView` (`material` default `.hudWindow`; `state = .active`).
 
-### `Sources/Yank/Support/Feedback.swift`
+### `Sources/Cliphoard/Support/Feedback.swift`
 `@MainActor enum Feedback`: `soundEnabled` (UD `"soundEnabled"`, default true),
 `soundName` (UD `"soundName"`, default **`"Tink"`**), `availableSounds` (**14**:
 Tink, Pop, Glass, Morse, Ping, Bottle, Frog, Funk, Hero, Purr, Submarine, Sosumi,
 Blow, Basso), `play(named:)` (`NSSound`, volume 0.4, falls back to
 `NSSound.beep()`), `playCapture()` (guarded by `soundEnabled`).
 `enum DebugLog`: `enabled` (UD `"debugLog"`, default false), append-only writer to
-`…/Yank/debug.log` with ISO-8601 timestamps (a fresh `ISO8601DateFormatter()` is
+`…/Cliphoard/debug.log` with ISO-8601 timestamps (a fresh `ISO8601DateFormatter()` is
 allocated per write).
 
 ### Bundle / build
 `Resources/Info.plist`: `CFBundleIdentifier = ai.axiotic.ditto`, version `1.0.0`,
 `LSUIElement = true`, `LSMinimumSystemVersion = 13.0`,
 `NSAppleEventsUsageDescription`, `NSHighResolutionCapable`,
-`CFBundleIconFile = Yank`, `NSHumanReadableCopyright`.
+`CFBundleIconFile = Cliphoard`, `NSHumanReadableCopyright`.
 `Scripts/build-app.sh <config=release>`: `swift build -c`, assembles
-`build/Yank.app`, copies binary + Info.plist, renders icon via
+`build/Cliphoard.app`, copies binary + Info.plist, renders icon via
 `Scripts/make-icon.swift` (gradient `#5C6BF5`→`#8C4DEB` rounded rect + white
 `doc.on.clipboard.fill` SF Symbol → 10 PNG sizes → `.iconset` → `iconutil`
 `.icns`), then **ad-hoc `codesign --force --deep --sign -`**.
@@ -477,7 +477,7 @@ allocated per write).
 
 `Scripts/make-icon.swift`: gradient (indigo→purple) clipboard glyph.
 `Makefile`: `build` (`swift build`) · `app` (`build-app.sh`, release default) ·
-`run` (`app` + `open`) · `install` (`rm -rf /Applications/Yank.app` then copy) ·
+`run` (`app` + `open`) · `install` (`rm -rf /Applications/Cliphoard.app` then copy) ·
 `clean` (`swift package clean` + `rm -rf build .build`).
 
 ---
@@ -487,7 +487,7 @@ allocated per write).
 | Area | Status | Evidence (re-verified 2026-06-17) |
 | --- | --- | --- |
 | Compiles (debug + release) | ✅ | `Package.swift` valid; prior `swift build` / `build-app.sh` clean |
-| App bundle + icon + launch | ✅ | `/Applications/Yank.app` running (one process via `pgrep -fl Yank`) |
+| App bundle + icon + launch | ✅ | `/Applications/Cliphoard.app` running (one process via `pgrep -fl Cliphoard`) |
 | Accessory launch + status item | ✅ | `.accessory` + `LSUIElement`; status-item code present |
 | Capture text/link/color/image/file | ✅ | live `history.json` holds **27 items**; `debug.log` shows `→ captured text/…` |
 | Capture while bar closed / backgrounded | ✅ | App-Nap assertion present; `debug.log` captured a Chrome HTML copy (`change #70`) while bar closed |
@@ -497,7 +497,7 @@ allocated per write).
 | Persistence | ✅ | `history.json` present (**119143 bytes**), `load()`/`save()` exercised |
 | Global hotkey `⌃⌥⌘V` + Darwin toggle | ✅ | registered; toggle observer present |
 | Capture sound + 14-sound picker | ✅ | live `soundName=Frog`, `soundEnabled=1` |
-| Debug log | ✅ | **`…/Yank/debug.log` exists (1569 bytes), populated**; live `debugLog=1` |
+| Debug log | ✅ | **`…/Cliphoard/debug.log` exists (1569 bytes), populated**; live `debugLog=1` |
 | **Bar live/refresh on copy & reopen** | ❌ | **primary open defect — Tier 6** |
 | Auto-paste (`⌘V`) | ⚠️ | works only if Accessibility granted |
 | **Visual QA of the panel UI** | ⚠️ | **never performed** — dev session was headless; nobody has watched the bar render |
@@ -512,7 +512,7 @@ hands-on debugging session of the refresh defect.
 > **Evidence-provenance note (correcting the verifiers):** Verification Report 2
 > claimed there is *no* `debug.log` on disk and that the cited log lines are
 > unverifiable narrative. That is **wrong** — `~/Library/Application
-> Support/Yank/debug.log` exists and contains exactly the cited markers
+> Support/Cliphoard/debug.log` exists and contains exactly the cited markers
 > (`→ captured`, `→ skipped (our own paste)`). The capture/suppression behavior is
 > therefore directly evidenced. **However**, neither the log nor any on-disk
 > artifact *proves a render failure occurs* — the refresh defect itself is a
@@ -604,8 +604,8 @@ Decide product behavior: document copy-then-summon, or add a "pin open / no
 auto-dismiss" mode.
 
 **H5 (cheap to rule out) — Stale duplicate instance** (an old login-item build)
-masking fixes during manual testing. *Currently ruled out:* `pgrep -fl Yank`
-shows exactly one process from `/Applications/Yank.app`.
+masking fixes during manual testing. *Currently ruled out:* `pgrep -fl Cliphoard`
+shows exactly one process from `/Applications/Cliphoard.app`.
 
 ### 6.3 Secondary / related issues found while reading source
 
@@ -646,7 +646,7 @@ shows exactly one process from `/Applications/Yank.app`.
    value), then live-while-open.
 5. **Decide live-while-open product behavior (H4).** Either document copy-then-
    summon, or add a pin-open / no-auto-dismiss mode.
-6. **Rule out H5** (`pgrep -fl Yank`; one installed instance).
+6. **Rule out H5** (`pgrep -fl Cliphoard`; one installed instance).
 
 ### 6.5 Acceptance criteria for "refresh fixed"
 
@@ -685,7 +685,7 @@ menu item. **Durable fix: a stable self-signed identity** — must be user-appro
 
 **P1 — Permission durability & distribution**
 4. **Stable code signing** so the AX grant survives rebuilds. Add a user-run,
-   one-time `Scripts/setup-signing.sh` creating a self-signed "Yank Local
+   one-time `Scripts/setup-signing.sh` creating a self-signed "Cliphoard Local
    Signing" identity; have `build-app.sh` prefer it over ad-hoc; fix the
    misleading "stable identity" comment in `build-app.sh`. (Must be user-approved
    — modifies login keychain.)
@@ -726,9 +726,9 @@ menu item. **Durable fix: a stable self-signed identity** — must be user-appro
 ### 8.1 Build / run commands
 ```
 make build      # swift build (debug)
-make app        # Scripts/build-app.sh → build/Yank.app (release default)
-make run        # app + open build/Yank.app
-make install    # rm -rf /Applications/Yank.app then copy build/Yank.app there
+make app        # Scripts/build-app.sh → build/Cliphoard.app (release default)
+make run        # app + open build/Cliphoard.app
+make install    # rm -rf /Applications/Cliphoard.app then copy build/Cliphoard.app there
 make clean      # swift package clean + rm -rf build .build
 
 swift build [-c release]                 # direct SwiftPM build
@@ -738,7 +738,7 @@ Scriptable toggle (no hotkey needed): post the Darwin notification
 `ai.axiotic.ditto.toggle` (CFNotificationCenter Darwin name, `.deliverImmediately`)
 that `AppDelegate.setupRemoteToggle` listens for.
 
-### 8.2 File map (`Sources/Yank/`)
+### 8.2 File map (`Sources/Cliphoard/`)
 ```
 App/
   Main.swift            @main struct Main; .accessory; objc_setAssociatedObject retain
@@ -791,7 +791,7 @@ Sounds (14)          Tink, Pop, Glass, Morse, Ping, Bottle, Frog, Funk, Hero, Pu
                      Submarine, Sosumi, Blow, Basso (NSSound volume 0.4; fallback beep)
 UserDefaults keys    historyLimit (200) · soundEnabled (true) · soundName ("Tink") · debugLog (false)
 Live UserDefaults    historyLimit=0 · soundEnabled=1 · soundName=Frog · debugLog=1
-Bundle id            ai.axiotic.ditto · version 1.0.0 · CFBundleIconFile Yank
+Bundle id            ai.axiotic.ditto · version 1.0.0 · CFBundleIconFile Cliphoard
 ```
 
 ### 8.5 Decisions log
@@ -823,12 +823,12 @@ Bundle id            ai.axiotic.ditto · version 1.0.0 · CFBundleIconFile Yank
   render** — capture verification is via `history.json` + `debug.log`, and the
   render-bug hypotheses, while consistent with the code, are not provable from
   static source. Any agent with a real display should watch the bar first.
-- Exactly one `Yank` process currently runs, from `/Applications/Yank.app`.
+- Exactly one `Cliphoard` process currently runs, from `/Applications/Cliphoard.app`.
 
 ---
 
 ### One-paragraph handoff
-Yank reliably **captures** every copy (text/link/color/image/file) into a
+Cliphoard reliably **captures** every copy (text/link/color/image/file) into a
 persistent, unlimited, pinnable, searchable history (live: 27 items,
 `historyLimit=0`, sound `Frog`, debug on), suppresses its own paste-backs
 (proven in `debug.log`), and summons a Paste-style slide-up `NSPanel` on `⌃⌥⌘V`.

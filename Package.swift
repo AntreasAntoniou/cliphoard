@@ -2,14 +2,14 @@
 import PackageDescription
 
 let package = Package(
-    name: "Yank",
+    name: "Cliphoard",
     platforms: [
         .macOS(.v13)
     ],
     targets: [
         .executableTarget(
-            name: "Yank",
-            path: "Sources/Yank",
+            name: "Cliphoard",
+            path: "Sources/Cliphoard",
             linkerSettings: [
                 .linkedFramework("AppKit"),
                 .linkedFramework("SwiftUI"),
@@ -19,9 +19,9 @@ let package = Package(
             ]
         ),
         .testTarget(
-            name: "YankTests",
-            dependencies: ["Yank"],
-            path: "Tests/YankTests",
+            name: "CliphoardTests",
+            dependencies: ["Cliphoard"],
+            path: "Tests/CliphoardTests",
             resources: [.copy("Fixtures")]
         )
     ]

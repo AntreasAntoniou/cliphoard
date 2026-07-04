@@ -3,9 +3,9 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleName</key>
-    <string>Yank</string>
+    <string>Cliphoard</string>
     <key>CFBundleDisplayName</key>
-    <string>Yank</string>
+    <string>Cliphoard</string>
     <key>CFBundleIdentifier</key>
     <string>ai.axiotic.ditto</string>
     <key>CFBundleVersion</key>
@@ -15,9 +15,9 @@
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleExecutable</key>
-    <string>Yank</string>
+    <string>Cliphoard</string>
     <key>CFBundleIconFile</key>
-    <string>Yank</string>
+    <string>Cliphoard</string>
     <key>LSMinimumSystemVersion</key>
     <string>13.0</string>
     <key>LSUIElement</key>
@@ -25,7 +25,7 @@
     <key>NSHumanReadableCopyright</key>
     <string>© 2026 Antreas Antoniou. MIT Licensed.</string>
     <key>NSAppleEventsUsageDescription</key>
-    <string>Yank pastes saved clips into the app you were using.</string>
+    <string>Cliphoard pastes saved clips into the app you were using.</string>
     <key>NSHighResolutionCapable</key>
     <true/>
 </dict>

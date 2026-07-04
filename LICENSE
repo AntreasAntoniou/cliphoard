@@ -22,7 +22,7 @@ SOFTWARE.
 
 ---
 
-This MIT License applies to the Yank source code. Yank bundles third-party
+This MIT License applies to the Cliphoard source code. Cliphoard bundles third-party
 components — the on-device embedding models — under their own, separate licenses;
 see THIRD-PARTY-NOTICES.md. In particular the bundled ogma models are CC-BY-NC-4.0
 (non-commercial), and the grants above (including to sell) do not extend to them.

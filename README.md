@@ -1,6 +1,6 @@
-<h1 align="center">Yank</h1>
+<h1 align="center"><img src="docs/img/logo.png" alt="Cliphoard" width="380"></h1>
 
-<p align="center"><b>Copy anything. Yank it back.</b><br>
+<p align="center"><b>Copy anything. Hoard everything.</b><br>
 A fast, private, open-source clipboard manager for macOS — searchable by <i>meaning</i>, entirely on your Mac.</p>
 
 <p align="center">
@@ -11,24 +11,26 @@ A fast, private, open-source clipboard manager for macOS — searchable by <i>me
   <img src="https://img.shields.io/badge/cloud-none-22a06b">
 </p>
 
-<p align="center"><img src="docs/img/bar-oneDark.png" alt="The Yank clipboard bar" width="900"></p>
+<p align="center"><img src="docs/img/bar-oneDark.png" alt="The Cliphoard clipboard bar" width="900"></p>
 
 Press **⌃⌥⌘V** anywhere and your clipboard history slides up from the bottom of the
 screen as a strip of cards. Pick one and it pastes straight back into whatever app
-you were in. Named after Vim's word for *copy* — `yank`.
+you were in. A clipboard that **hoards** everything you copy — and hands it back the
+instant you need it (clip + hoard).
 
 Built with Swift, AppKit and SwiftUI. **No Electron, no telemetry, no account, no
 cloud.** Everything you copy stays on your Mac.
 
-## Why Yank
+## Why Cliphoard
 
 - **🔎 Smart search, on-device.** The default **Smart** mode shows your exact matches
   first, then the semantically closest clips — find "that database query" by meaning
   *and* still get the literal token you typed. Switch modes (Smart / Exact / Tag)
   right from the pill next to the search field. No network, no account.
-- **🔒 Private, and provably so.** Nothing ever leaves your Mac. Clipboard content is
-  **encrypted at rest** with a key bound to the **Secure Enclave** (where available),
-  password managers are skipped, and being open source you can read the source and
+- **🔒 Private, and provably so.** Nothing ever leaves your Mac. Every clip is
+  **encrypted at rest** with a key bound to the **Secure Enclave** (where available) —
+  text, rich text and metadata in the database, and image clips and their thumbnails on
+  disk. Password managers are skipped, and being open source you can read the source and
   confirm there are zero network calls. ([Why no sync →](PRIVACY.md))
 - **🎨 17 themes, 3 layouts.** A clean Swiss greyscale, One Dark, Dracula, Tokyo Night,
   Catppuccin and more — follows your macOS Light/Dark appearance. Card strip, compact
@@ -48,7 +50,7 @@ cloud.** Everything you copy stays on your Mac.
 
 | Shortcut | Action |
 | --- | --- |
-| `⌃⌥⌘V` | Show / hide the Yank bar |
+| `⌃⌥⌘V` | Show / hide the Cliphoard bar |
 | `← →` / `↑ ↓` | Move selection |
 | `↩` | Paste selected clip |
 | `⌘C` / `⌃C` | Copy selected clip (no paste) |
@@ -63,10 +65,10 @@ right inside the bar (theme, layout, search mode, sound, history limit, permissi
 
 ## Install
 
-Download the latest DMG from [**Releases**](https://github.com/AntreasAntoniou/yank/releases/latest),
-drag **Yank** to Applications, and press **⌃⌥⌘V**. Or build from source (below).
+Download the latest DMG from [**Releases**](https://github.com/AntreasAntoniou/cliphoard/releases/latest),
+drag **Cliphoard** to Applications, and press **⌃⌥⌘V**. Or build from source (below).
 
-On first launch macOS asks for **Accessibility** access — Yank needs it to send the
+On first launch macOS asks for **Accessibility** access — Cliphoard needs it to send the
 ⌘V keystroke that pastes into the focused app (*System Settings → Privacy & Security →
 Accessibility*). Until granted, selecting a clip still copies it; you paste manually.
 
@@ -75,23 +77,24 @@ Accessibility*). Until granted, selecting a clip still copies it; you paste manu
 Requires macOS 13+ and the Swift toolchain (Xcode 15+).
 
 ```bash
-git clone https://github.com/AntreasAntoniou/yank.git
-cd yank
-make run          # builds Yank.app and launches it
+git clone https://github.com/AntreasAntoniou/cliphoard.git
+cd cliphoard
+make run          # builds Cliphoard.app and launches it
 ```
 
-Other targets: `make app` (build `build/Yank.app`) · `make install` (copy to /Applications) · `make build` (debug binary) · `make clean`.
+Other targets: `make app` (build `build/Cliphoard.app`) · `make install` (copy to /Applications) · `make build` (debug binary) · `make clean`.
 
 ## Privacy
 
-Everything is stored **locally** and **encrypted at rest**; Yank makes no network
-requests and has no telemetry, analytics, or account. Password managers (transient /
-concealed / auto-generated pasteboards) are skipped, and you can exclude any app. See
+Everything is stored **locally** and **encrypted at rest** — text clips in the database
+and image clips (plus their thumbnails) on disk (see PRIVACY.md). Cliphoard makes no network requests and has no
+telemetry, analytics, or account. Password managers (transient / concealed /
+auto-generated pasteboards) are skipped, and you can exclude any app. See
 [PRIVACY.md](PRIVACY.md) — including **why there is, and will be, no cloud sync**.
 
 ## Deep search (on-device embeddings)
 
-Beyond exact substring, Yank searches **semantically**, fully on-device:
+Beyond exact substring, Cliphoard searches **semantically**, fully on-device:
 
 - **Smart search (default)** — exact substring matches first, then the semantically
   closest remaining clips (full vector cosine). You always get the obvious hit, plus
@@ -115,11 +118,11 @@ reimplemented in Swift). To produce/bundle the models, see [`tools/`](tools/READ
 
 | Piece | File |
 | --- | --- |
-| Pasteboard polling + type detection | `Sources/Yank/Clipboard/ClipboardMonitor.swift` |
-| History model, dedup, incremental index, trimming | `Sources/Yank/Clipboard/ClipStore.swift` |
-| Encrypted SQLite store (Float16 vector BLOBs, WAL) | `Sources/Yank/Clipboard/Database.swift`, `Crypto.swift` |
-| Global hotkey (Carbon) + slide-up panel | `Sources/Yank/App/HotKey.swift`, `UI/FloatingPanel.swift` |
-| Bar, cards, themes, layouts (SwiftUI) | `Sources/Yank/UI/ContentView.swift`, `ClipCardView.swift`, `Theme.swift` |
+| Pasteboard polling + type detection | `Sources/Cliphoard/Clipboard/ClipboardMonitor.swift` |
+| History model, dedup, incremental index, trimming | `Sources/Cliphoard/Clipboard/ClipStore.swift` |
+| Encrypted SQLite store (Float16 vector BLOBs, WAL) | `Sources/Cliphoard/Clipboard/Database.swift`, `Crypto.swift` |
+| Global hotkey (Carbon) + slide-up panel | `Sources/Cliphoard/App/HotKey.swift`, `UI/FloatingPanel.swift` |
+| Bar, cards, themes, layouts (SwiftUI) | `Sources/Cliphoard/UI/ContentView.swift`, `ClipCardView.swift`, `Theme.swift` |
 
 ## Roadmap
 

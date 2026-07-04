@@ -3,11 +3,18 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Yank — a clipboard manager for macOS</title>
-<meta name="description" content="Yank is a fast, private, open-source clipboard manager for macOS. Press ⌃⌥⌘V and your history slides up — with on-device semantic search, themes, and zero telemetry.">
-<meta property="og:title" content="Yank — a clipboard manager for macOS">
+<title>Cliphoard — a clipboard manager for macOS</title>
+<link rel="icon" type="image/png" href="img/icon.png">
+<link rel="apple-touch-icon" href="img/icon@512.png">
+<meta name="description" content="Cliphoard is a fast, private, open-source clipboard manager for macOS. Press ⌃⌥⌘V and your history slides up — with on-device semantic search, themes, and zero telemetry.">
+<meta property="og:title" content="Cliphoard — a clipboard manager for macOS">
 <meta property="og:description" content="Fast, private, open-source clipboard history with on-device semantic search.">
-<meta property="og:image" content="img/bar-oneDark.png">
+<meta property="og:image" content="https://raw.githubusercontent.com/AntreasAntoniou/cliphoard/main/docs/img/logo.png">
+<meta property="og:url" content="https://antreas.io/cliphoard/">
+<link rel="canonical" href="https://antreas.io/cliphoard/">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://raw.githubusercontent.com/AntreasAntoniou/cliphoard/main/docs/img/logo.png">
 <meta name="theme-color" content="#0d1117">
 <style>
   :root{
@@ -97,32 +104,34 @@
 </head>
 <body>
 
-<nav>
-  <a class="brand" href="#"><span class="glyph">Y</span> Yank</a>
+<nav id="top">
+  <a class="brand" href="#top"><img src="img/icon.png" alt="" width="28" height="28" style="border-radius:7px;display:block"> Cliphoard</a>
   <div class="navlinks">
     <a href="#features">Features</a>
     <a href="#compare">Compare</a>
     <a href="#themes">Themes</a>
-    <a href="https://github.com/AntreasAntoniou/yank/blob/main/PRIVACY.md">Privacy</a>
-    <a href="https://github.com/AntreasAntoniou/yank">GitHub ↗</a>
+    <a href="https://github.com/AntreasAntoniou/cliphoard/blob/main/PRIVACY.md">Privacy</a>
+    <a href="https://github.com/AntreasAntoniou/cliphoard">GitHub ↗</a>
   </div>
 </nav>
 
 <header class="hero wrap">
+  <img src="img/icon.png" alt="Cliphoard — a smiling hoard-bag mascot" width="100" height="100" style="border-radius:22px;margin-bottom:20px;box-shadow:0 20px 50px -20px rgba(0,0,0,.8)">
+  <br>
   <span class="pill">Open source · On-device · No telemetry</span>
-  <h1>Copy anything.<br><span class="grad">Yank it back.</span></h1>
-  <p class="sub">Yank is a fast, private clipboard manager for macOS. Press <b>⌃⌥⌘V</b> and your
+  <h1>Copy anything.<br><span class="grad">Hoard everything.</span></h1>
+  <p class="sub">Cliphoard is a fast, private clipboard manager for macOS. Press <b>⌃⌥⌘V</b> and your
     history slides up from the bottom — searchable by <i>meaning</i>, not just exact text, entirely on your Mac.</p>
   <div class="cta">
-    <a class="btn primary" href="https://github.com/AntreasAntoniou/yank/releases/latest">↓ Download for macOS</a>
-    <a class="btn ghost" href="https://github.com/AntreasAntoniou/yank">View source</a>
+    <a class="btn primary" href="https://github.com/AntreasAntoniou/cliphoard/releases/latest">↓ Download for macOS</a>
+    <a class="btn ghost" href="https://github.com/AntreasAntoniou/cliphoard">View source</a>
   </div>
   <div class="req">Free &amp; open source · macOS 13+ · Apple Silicon &amp; Intel</div>
-  <div class="shot"><img src="img/bar-oneDark.png" alt="The Yank clipboard bar showing recent clips" loading="lazy"></div>
+  <div class="shot"><img src="img/bar-oneDark.png" alt="The Cliphoard clipboard bar showing recent clips" loading="lazy"></div>
 </header>
 
 <section id="features" class="wrap">
-  <div class="eyebrow">Why Yank</div>
+  <div class="eyebrow">Why Cliphoard</div>
   <h2>Everything a clipboard manager should do — nothing it phones home about.</h2>
   <p class="lead">A native Swift app — no Electron, no account, no cloud. Just a fast bar for everything you copy.</p>
   <div class="grid">
@@ -131,29 +140,29 @@
     <div class="card"><div class="ic">🔒</div><h3>Private by design</h3><p>Everything stays on your Mac. No network calls, no telemetry, no account. Password managers are skipped automatically.</p></div>
     <div class="card"><div class="ic">🎨</div><h3>17 themes</h3><p>From a clean Swiss greyscale to One Dark, Dracula, Tokyo Night, Catppuccin and more — plus light themes. Follows your system appearance.</p></div>
     <div class="card"><div class="ic">🧱</div><h3>Three layouts</h3><p>A horizontal card strip, a dense compact list, or a Spotlight-style palette with a live preview. Your call.</p></div>
-    <div class="card"><div class="ic">🖼️</div><h3>Text, links, colors, images</h3><p>Yank recognises what you copy — rich text, URLs, hex colors, files and images — and keeps thumbnails for fast browsing.</p></div>
+    <div class="card"><div class="ic">🖼️</div><h3>Text, links, colors, images</h3><p>Cliphoard recognises what you copy — rich text, URLs, hex colors, files and images — and keeps thumbnails for fast browsing.</p></div>
   </div>
 </section>
 
 <section id="compare" class="wrap">
   <div class="eyebrow">How it compares</div>
-  <h2>Yank vs. the field.</h2>
-  <p class="lead">Clipboard managers are a well-loved category. Yank is the one that's free, open-source, fully on-device, <i>and</i> searches by meaning.</p>
+  <h2>Cliphoard vs. the field.</h2>
+  <p class="lead">Clipboard managers are a well-loved category. Cliphoard is the one that's free, open-source, fully on-device, <i>and</i> searches by meaning.</p>
   <table class="cmp">
     <thead>
-      <tr><th>&nbsp;</th><th class="me">Yank</th><th>Typical free manager</th><th>Typical paid manager</th></tr>
+      <tr><th>&nbsp;</th><th class="me">Cliphoard</th><th>Typical free manager</th><th>Typical paid manager</th></tr>
     </thead>
     <tbody>
       <tr><td>Price</td><td class="me"><b>Free</b></td><td>Free</td><td>Subscription / paid</td></tr>
       <tr><td>Open source</td><td class="me y">✓ MIT</td><td class="p">sometimes</td><td class="n">—</td></tr>
       <tr><td>On-device semantic search<small>find clips by meaning, not exact text</small></td><td class="me y">✓</td><td class="n">—</td><td class="p">rare / cloud</td></tr>
-      <tr><td>Encrypted at rest</td><td class="me y">✓</td><td class="n">—</td><td class="p">in the cloud</td></tr>
+      <tr><td>Encrypted at rest<small>text and images, on-device</small></td><td class="me y">✓</td><td class="n">—</td><td class="p">in the cloud</td></tr>
       <tr><td>Stays on your Mac<small>no cloud, no account, no telemetry</small></td><td class="me y">✓</td><td class="y">usually</td><td class="n">cloud sync</td></tr>
       <tr><td>Themes &amp; layouts</td><td class="me y">17 + 3</td><td class="p">minimal</td><td class="p">polished</td></tr>
       <tr><td>Text, links, colors, images</td><td class="me y">✓</td><td class="y">✓</td><td class="y">✓</td></tr>
     </tbody>
   </table>
-  <p class="lead" style="margin-top:22px;font-size:13px">No cross-device sync — <a href="https://github.com/AntreasAntoniou/yank/blob/main/PRIVACY.md" style="color:var(--accent)">on purpose</a>. Your clipboard holds passwords and tokens; it should never touch a network.</p>
+  <p class="lead" style="margin-top:22px;font-size:13px">No cross-device sync — <a href="https://github.com/AntreasAntoniou/cliphoard/blob/main/PRIVACY.md" style="color:var(--accent)">on purpose</a>. Your clipboard holds passwords and tokens; it should never touch a network.</p>
 </section>
 
 <section id="themes" class="wrap">
@@ -173,23 +182,23 @@
     <div class="eyebrow">Get started</div>
     <h2>Ready in ten seconds.</h2>
     <p class="lead">Download, drag to Applications, grant one permission, and press ⌃⌥⌘V.</p>
-    <div class="cta"><a class="btn primary" href="https://github.com/AntreasAntoniou/yank/releases/latest">↓ Download for macOS</a>
-      <a class="btn ghost" href="https://github.com/AntreasAntoniou/yank">Star on GitHub ★</a></div>
+    <div class="cta"><a class="btn primary" href="https://github.com/AntreasAntoniou/cliphoard/releases/latest">↓ Download for macOS</a>
+      <a class="btn ghost" href="https://github.com/AntreasAntoniou/cliphoard">Star on GitHub ★</a></div>
     <div style="height:26px"></div>
     <div class="specs">
       <span>macOS 13 Ventura +</span><span>Universal (Apple Silicon &amp; Intel)</span>
-      <span>~21 MB</span><span>MIT licensed</span><span>No telemetry</span>
+      <span>~21 MB download</span><span>MIT licensed</span><span>No telemetry</span>
     </div>
   </div>
 </section>
 
 <footer>
   <div class="wrap">
-    <div><span class="brand" style="font-size:15px"><span class="glyph" style="width:20px;height:20px;font-size:12px">Y</span> Yank</span> — © 2026 Antreas Antoniou. MIT licensed.</div>
+    <div><span class="brand" style="font-size:15px"><span class="glyph" style="width:20px;height:20px;font-size:12px">Y</span> Cliphoard</span> — © 2026 Antreas Antoniou. MIT licensed.</div>
     <div style="display:flex;gap:18px">
-      <a href="https://github.com/AntreasAntoniou/yank">GitHub</a>
-      <a href="https://github.com/AntreasAntoniou/yank/blob/main/PRIVACY.md">Privacy</a>
-      <a href="https://github.com/AntreasAntoniou/yank/blob/main/THIRD-PARTY-NOTICES.md">Licenses</a>
+      <a href="https://github.com/AntreasAntoniou/cliphoard">GitHub</a>
+      <a href="https://github.com/AntreasAntoniou/cliphoard/blob/main/PRIVACY.md">Privacy</a>
+      <a href="https://github.com/AntreasAntoniou/cliphoard/blob/main/THIRD-PARTY-NOTICES.md">Licenses</a>
     </div>
   </div>
 </footer>

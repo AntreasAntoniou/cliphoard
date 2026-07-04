@@ -10,13 +10,13 @@ app:
 
 # Build and launch the app.
 run: app
-	@open build/Yank.app
+	@open build/Cliphoard.app
 
 # Copy the app into /Applications.
 install: app
-	@rm -rf /Applications/Yank.app
-	@cp -R build/Yank.app /Applications/Yank.app
-	@echo "✓ Installed to /Applications/Yank.app"
+	@rm -rf /Applications/Cliphoard.app
+	@cp -R build/Cliphoard.app /Applications/Cliphoard.app
+	@echo "✓ Installed to /Applications/Cliphoard.app"
 
 clean:
 	swift package clean

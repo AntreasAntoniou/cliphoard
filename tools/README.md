@@ -14,7 +14,8 @@ CoreML for on-device deep search. Both ogma models convert with **exact parity**
 License: ogma models are CC-BY-NC-4.0 (attribution to Jina AI teacher model).
 
 ## Requirements
-`pip install torch transformers coremltools sentencepiece huggingface_hub`
+`pip install -r requirements.txt` (torch, transformers, coremltools, sentencepiece,
+safetensors, huggingface_hub)
 Python 3.10 needs the `_compat.py` StrEnum shim (ogma's remote code uses 3.11's
 `enum.StrEnum`). If HF downloads hit a brotli decode error, use `_dl.py` which
 disables brotli content-encoding.

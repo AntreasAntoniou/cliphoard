@@ -12,8 +12,12 @@ name: Release
 #   APPLE_TEAM_ID         your 10-char Team ID
 #   APPLE_APP_PASSWORD    an app-specific password from appleid.apple.com
 #
-# NOTE: the bundled ogma CoreML models are gitignored. For CI to build a working
-# app, commit them via Git LFS (recommended) or have a prior step restore them.
+# NOTE: the bundled ogma CoreML models are gitignored (.mlpackage files are large
+# binaries produced locally). For CI to build a working app, the "Restore on-device
+# models" step below downloads the public ogma PyTorch weights from HuggingFace and
+# converts them to CoreML via tools/restore-models.sh — BEFORE Scripts/release.sh
+# runs — so the released app keeps its on-device semantic-search feature instead of
+# silently falling back to the weak HashingEmbedder.
 
 on:
   push:
@@ -27,13 +31,36 @@ jobs:
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
+
+      - name: Set up Python (for CoreML conversion)
+        uses: actions/setup-python@v5
         with:
-          lfs: true   # bundled models live in Git LFS (see NOTE above)
+          python-version: '3.11'
+
+      # Cache the restored/converted models keyed on the conversion inputs, so we
+      # only re-download from HuggingFace + re-convert when the tooling changes.
+      - name: Cache on-device models
+        uses: actions/cache@v4
+        with:
+          path: tools/models
+          key: ogma-models-${{ hashFiles('tools/convert_ogma.py', 'tools/_dl.py', 'tools/restore-models.sh', 'tools/_compat.py', 'tools/requirements.txt') }}
+          restore-keys: |
+            ogma-models-
+
+      - name: Restore on-device models
+        env:
+          HF_HUB_DISABLE_TELEMETRY: '1'
+        run: |
+          python3 -m pip install --upgrade pip
+          # Conversion stack centralized in tools/requirements.txt (also exercised
+          # cert-free by .github/workflows/models.yml).
+          python3 -m pip install -r tools/requirements.txt
+          bash tools/restore-models.sh
 
       - name: Verify bundled models are present
         run: |
           if ! ls tools/models/*.mlpackage >/dev/null 2>&1; then
-            echo "::error::No models in tools/models/*.mlpackage. Commit them via Git LFS before tagging a release."
+            echo "::error::No models in tools/models/*.mlpackage after restore. See tools/restore-models.sh."
             exit 1
           fi
 
@@ -58,19 +85,19 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
         run: |
-          xcrun notarytool store-credentials yank-notary \
+          xcrun notarytool store-credentials cliphoard-notary \
             --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_PASSWORD"
 
       - name: Build, sign, notarize, package DMG
         env:
           DEVID: ${{ secrets.MACOS_DEVID }}
-          NOTARY_PROFILE: yank-notary
+          NOTARY_PROFILE: cliphoard-notary
         run: bash Scripts/release.sh
 
       - name: Compute DMG checksum
         id: dmg
         run: |
-          FILE=$(ls build/Yank-*.dmg)
+          FILE=$(ls build/Cliphoard-*.dmg)
           echo "path=$FILE" >> "$GITHUB_OUTPUT"
           echo "sha256=$(shasum -a 256 "$FILE" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
 
@@ -80,11 +107,11 @@ jobs:
           files: ${{ steps.dmg.outputs.path }}
           generate_release_notes: true
           body: |
-            ### Yank ${{ github.ref_name }}
+            ### Cliphoard ${{ github.ref_name }}
             A fast, private, open-source clipboard manager for macOS.
 
             - macOS 13 Ventura or later · Universal (Apple Silicon & Intel) · notarized
             - **SHA-256:** `${{ steps.dmg.outputs.sha256 }}`
 
-            Install: download the DMG, drag Yank to Applications, and press ⌃⌥⌘V.
-            Or via Homebrew once the cask is published: `brew install --cask yank`.
+            Install: download the DMG, drag Cliphoard to Applications, and press ⌃⌥⌘V.
+            Or via Homebrew once the cask is published: `brew install --cask cliphoard`.

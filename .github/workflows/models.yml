@@ -1,0 +1,56 @@
+# Proves the auto-download-and-convert path end to end, WITHOUT needing the
+# Apple signing cert. Run it from the Actions tab (Run workflow) any time, and
+# it runs automatically when the conversion tooling changes. This is the
+# cert-free guarantee that a release build will get working on-device models
+# rather than silently falling back to the weak hashing embedder.
+name: Models (restore + convert)
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'tools/**'
+      - '.github/workflows/models.yml'
+
+jobs:
+  restore-convert:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Cache on-device models
+        uses: actions/cache@v4
+        with:
+          path: tools/models
+          key: ogma-models-${{ hashFiles('tools/convert_ogma.py', 'tools/_dl.py', 'tools/restore-models.sh', 'tools/_compat.py', 'tools/requirements.txt') }}
+          restore-keys: |
+            ogma-models-
+
+      - name: Install conversion deps
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install -r tools/requirements.txt
+
+      - name: Restore + convert ogma models (downloads from HuggingFace)
+        env:
+          HF_HUB_DISABLE_TELEMETRY: '1'
+        run: bash tools/restore-models.sh
+
+      - name: Verify artifacts + tokenizers
+        run: |
+          fail=0
+          for n in ogma-micro ogma-small; do
+            if [ ! -d "tools/models/$n.mlpackage" ]; then
+              echo "::error::missing tools/models/$n.mlpackage after restore"; fail=1
+            fi
+            if [ ! -f "tools/models/$n/tokenizer.json" ]; then
+              echo "::error::missing tools/models/$n/tokenizer.json (build-app.sh needs it)"; fail=1
+            fi
+          done
+          [ "$fail" -eq 0 ] && echo "✓ both ogma models restored, converted, and tokenized"
+          exit $fail
