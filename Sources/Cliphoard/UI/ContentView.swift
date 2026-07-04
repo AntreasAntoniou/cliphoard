@@ -138,8 +138,8 @@ struct ContentView: View {
         if let icon = brandIconImage {
             Image(nsImage: icon)
                 .resizable().interpolation(.high)
-                .frame(width: 28, height: 28)
-                .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                .frame(width: 40, height: 40)
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                 .accessibilityHidden(true)
         } else {
             Image(systemName: "command").font(.system(size: 20)).foregroundStyle(Theme.accent)
@@ -151,7 +151,7 @@ struct ContentView: View {
             HStack(spacing: 6) {
                 brandMark
                 Text(model.showSettings ? "Settings" : "Cliphoard")
-                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                    .font(.system(size: 16, weight: .bold, design: .rounded))
             }
 
             if !model.showSettings { categoryChips }
