@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 /// The bar content: search + category filters on top, a horizontal strip of
 /// clip cards, and a keyboard-hint footer.
@@ -126,10 +127,29 @@ struct ContentView: View {
 
     // MARK: Toolbar
 
+    /// The app's own hoard-bag icon for the top-left corner. Loaded from the
+    /// bundled `Cliphoard.icns` (present in the built `.app`), with `NSApp`'s icon
+    /// then the ⌘ glyph as fallbacks (e.g. a bare `swift run` with no bundled icon).
+    private var brandIconImage: NSImage? {
+        Bundle.main.image(forResource: "Cliphoard") ?? NSApp.applicationIconImage
+    }
+
+    @ViewBuilder private var brandMark: some View {
+        if let icon = brandIconImage {
+            Image(nsImage: icon)
+                .resizable().interpolation(.high)
+                .frame(width: 18, height: 18)
+                .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+                .accessibilityHidden(true)
+        } else {
+            Image(systemName: "command").foregroundStyle(Theme.accent)
+        }
+    }
+
     private var toolbar: some View {
         HStack(spacing: 12) {
             HStack(spacing: 6) {
-                Image(systemName: "command").foregroundStyle(Theme.accent)
+                brandMark
                 Text(model.showSettings ? "Settings" : "Cliphoard")
                     .font(.system(size: 14, weight: .bold, design: .rounded))
             }
