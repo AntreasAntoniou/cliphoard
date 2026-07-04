@@ -41,11 +41,25 @@ struct OnboardingView: View {
     @State private var trusted = AXIsProcessTrusted()
     private let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
+    /// The app's own hoard-bag icon (the white filled bag), matching the panel
+    /// toolbar; falls back to the ⌘ glyph if the bundle icon can't load.
+    @ViewBuilder private var brandIcon: some View {
+        if let icon = Bundle.main.image(forResource: "Cliphoard") ?? NSApp.applicationIconImage {
+            Image(nsImage: icon)
+                .resizable().interpolation(.high)
+                .frame(width: 84, height: 84)
+                .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                .accessibilityHidden(true)
+        } else {
+            Image(systemName: "command")
+                .font(.system(size: 44)).foregroundStyle(Theme.accent)
+        }
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             VStack(spacing: 10) {
-                Image(systemName: "command")
-                    .font(.system(size: 44)).foregroundStyle(Theme.accent)
+                brandIcon
                 Text("Welcome to Cliphoard").font(.system(size: 24, weight: .bold))
                 Text("Your clipboard history, one keystroke away.")
                     .font(.system(size: 13)).foregroundStyle(.secondary)

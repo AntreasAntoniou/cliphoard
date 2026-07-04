@@ -64,7 +64,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             guard let observer else { return }
             let me = Unmanaged<AppDelegate>.fromOpaque(observer).takeUnretainedValue()
             DispatchQueue.main.async { me.toggle() }
-        }, "ai.axiotic.ditto.toggle" as CFString, nil, .deliverImmediately)
+        }, "io.antreas.cliphoard.toggle" as CFString, nil, .deliverImmediately)
         #if DEBUG
         // Embed self-test: logs the active embedder's vector for a fixed string
         // so it can be diffed against the Python reference. Debug-only: any
@@ -73,13 +73,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             guard let observer else { return }
             let me = Unmanaged<AppDelegate>.fromOpaque(observer).takeUnretainedValue()
             DispatchQueue.main.async { me.embedSelfTest() }
-        }, "ai.axiotic.ditto.embedtest" as CFString, nil, .deliverImmediately)
+        }, "io.antreas.cliphoard.embedtest" as CFString, nil, .deliverImmediately)
         // Open straight into Settings (for screenshot/testing). Debug-only.
         CFNotificationCenterAddObserver(center, ctx, { _, observer, _, _, _ in
             guard let observer else { return }
             let me = Unmanaged<AppDelegate>.fromOpaque(observer).takeUnretainedValue()
             DispatchQueue.main.async { if !me.isVisible { me.show() }; me.model.showSettings = true }
-        }, "ai.axiotic.ditto.opensettings" as CFString, nil, .deliverImmediately)
+        }, "io.antreas.cliphoard.opensettings" as CFString, nil, .deliverImmediately)
         #endif
     }
 
