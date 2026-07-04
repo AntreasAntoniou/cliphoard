@@ -65,7 +65,7 @@ right inside the bar (theme, layout, search mode, sound, history limit, permissi
 
 ## Install
 
-Download the latest DMG from [**Releases**](https://github.com/AntreasAntoniou/yank/releases/latest),
+Download the latest DMG from [**Releases**](https://github.com/AntreasAntoniou/cliphoard/releases/latest),
 drag **Cliphoard** to Applications, and press **⌃⌥⌘V**. Or build from source (below).
 
 On first launch macOS asks for **Accessibility** access — Cliphoard needs it to send the
@@ -77,8 +77,8 @@ Accessibility*). Until granted, selecting a clip still copies it; you paste manu
 Requires macOS 13+ and the Swift toolchain (Xcode 15+).
 
 ```bash
-git clone https://github.com/AntreasAntoniou/yank.git
-cd yank
+git clone https://github.com/AntreasAntoniou/cliphoard.git
+cd cliphoard
 make run          # builds Cliphoard.app and launches it
 ```
 

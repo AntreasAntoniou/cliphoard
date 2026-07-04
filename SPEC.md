@@ -10,7 +10,7 @@
 > adversarial verification reports and re-checked against live source + on-disk
 > state at `/Users/antreas/Projects/ditto` on **2026-06-17**. Every contested fact
 > below was re-read from the code or the running system; code-verified facts win
-> over any draft claim. Remote: `https://github.com/AntreasAntoniou/yank`.
+> over any draft claim. Remote: `https://github.com/AntreasAntoniou/cliphoard`.
 > Target: macOS 13+ (`Package.swift` → `.macOS(.v13)`; `Info.plist
 > LSMinimumSystemVersion 13.0`); built/run on macOS 26 / Darwin 25.6 / arm64,
 > Swift 5.9 tools.

@@ -54,11 +54,7 @@ signed+notarized DMG — none of which an automated agent can produce. See the
    the cask lives only in-repo (`Casks/cliphoard.rb`) until then.
 3. **Fill the real DMG `sha256`** into `Casks/cliphoard.rb` (currently an all-zero
    placeholder, correctly guarded) — computable only from the actual signed+notarized DMG.
-4. **Decide the GitHub repo slug.** The git remote is still `AntreasAntoniou/yank`, so the
-   README/cask/docs download URLs are correct *today*. Renaming the repo to `cliphoard` is
-   a decision; once made, the `/yank` URLs (README download/clone, `docs/index.html`
-   og:url, cask `url`/`homepage`) get a mechanical update. Until then, leave them.
-5. **VoiceOver hardware pass** + final rendered **WCAG AA** contrast sign-off across the 16
+4. **VoiceOver hardware pass** + final rendered **WCAG AA** contrast sign-off across the 16
    themes — cannot be verified from source.
 
 ## 🟡 Deferred agent-fixable (not blocking; larger-risk, left for a dedicated pass)

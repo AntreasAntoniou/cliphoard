@@ -29,11 +29,11 @@ cask "cliphoard" do
          "released DMG's sha256 (see Scripts/release.sh / release.yml) before publishing."
   end
 
-  url "https://github.com/AntreasAntoniou/yank/releases/download/v#{version}/Cliphoard-#{version}.dmg",
-      verified: "github.com/AntreasAntoniou/yank/"
+  url "https://github.com/AntreasAntoniou/cliphoard/releases/download/v#{version}/Cliphoard-#{version}.dmg",
+      verified: "github.com/AntreasAntoniou/cliphoard/"
   name "Cliphoard"
   desc "Fast, private clipboard manager with on-device semantic search"
-  homepage "https://github.com/AntreasAntoniou/yank"
+  homepage "https://github.com/AntreasAntoniou/cliphoard"
 
   depends_on macos: ">= :ventura"
 
