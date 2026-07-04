@@ -39,10 +39,10 @@ cask "cliphoard" do
 
   app "Cliphoard.app"
 
-  uninstall quit: "ai.axiotic.ditto"
+  uninstall quit: "io.antreas.cliphoard"
 
   zap trash: [
     "~/Library/Application Support/Ditto",
-    "~/Library/Preferences/ai.axiotic.ditto.plist",
+    "~/Library/Preferences/io.antreas.cliphoard.plist",
   ]
 end

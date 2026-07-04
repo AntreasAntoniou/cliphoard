@@ -7,7 +7,7 @@
     <key>CFBundleDisplayName</key>
     <string>Cliphoard</string>
     <key>CFBundleIdentifier</key>
-    <string>ai.axiotic.ditto</string>
+    <string>io.antreas.cliphoard</string>
     <key>CFBundleVersion</key>
     <string>1.0.0</string>
     <key>CFBundleShortVersionString</key>
