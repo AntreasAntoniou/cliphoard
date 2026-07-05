@@ -74,6 +74,14 @@
   .card h3{font-size:16px;margin-bottom:6px}
   .card p{color:var(--mut);font-size:13.5px}
 
+  .secgrid{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:8px}
+  .secitem{display:flex;gap:14px;background:linear-gradient(180deg,var(--bg2),var(--panel));border:1px solid var(--line);border-radius:14px;padding:20px 22px}
+  .secitem .ic{font-size:22px;line-height:1;flex:none;margin-top:2px}
+  .secitem h3{font-size:15px;margin-bottom:5px}
+  .secitem p{color:var(--mut);font-size:13.5px}
+  .secitem a{color:var(--accent)}
+  code{font-family:ui-monospace,"SF Mono",Menlo,monospace;font-size:.9em;background:var(--panel);border:1px solid var(--line);border-radius:5px;padding:1px 5px}
+
   .themes{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:8px}
   .theme{border:1px solid var(--line);border-radius:14px;overflow:hidden;background:var(--panel)}
   .theme img{display:block;width:100%}
@@ -102,7 +110,7 @@
   footer .wrap{display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px;align-items:center}
   footer a{color:var(--mut)} footer a:hover{color:var(--fg)}
 
-  @media(max-width:760px){.grid{grid-template-columns:1fr}.themes{grid-template-columns:1fr}}
+  @media(max-width:760px){.grid{grid-template-columns:1fr}.themes{grid-template-columns:1fr}.secgrid{grid-template-columns:1fr}}
   @media(max-width:640px){.navlinks{display:none}}
 </style>
 </head>
@@ -113,6 +121,7 @@
   <div class="navlinks">
     <a href="#features">Features</a>
     <a href="#search">Search</a>
+    <a href="#security">Security</a>
     <a href="#compare">Compare</a>
     <a href="#themes">Themes</a>
     <a href="https://github.com/AntreasAntoniou/cliphoard/blob/main/PRIVACY.md">Privacy</a>
@@ -178,6 +187,20 @@
     </tbody>
   </table>
   <p class="lead" style="margin-top:22px;font-size:13px">No cross-device sync — <a href="https://github.com/AntreasAntoniou/cliphoard/blob/main/PRIVACY.md" style="color:var(--accent)">on purpose</a>. Your clipboard holds passwords and tokens; it should never touch a network.</p>
+</section>
+
+<section id="security" class="wrap">
+  <div class="eyebrow">Built to hold secrets</div>
+  <h2>Your clipboard holds passwords. We treat it that way.</h2>
+  <p class="lead">Everything you copy is encrypted on disk, the key never leaves your Mac, and nothing ever touches a network. Not marketing — it's how the code works.</p>
+  <div class="secgrid">
+    <div class="secitem"><div class="ic">🔐</div><div><h3>Encrypted at rest</h3><p>Every clip — text, rich text, file paths, colors, images <i>and</i> the semantic search index — is sealed with authenticated <b>AES-GCM</b> before it's written to disk. Run <code>strings</code> on the database and you get nothing.</p></div></div>
+    <div class="secitem"><div class="ic">🔒</div><div><h3>Key sealed in the Secure Enclave</h3><p>The key is derived from a P-256 key generated <i>inside</i> your Mac's Secure Enclave — its material can't be extracted. Copy the database to another machine and it's undecryptable; only this Mac can re-derive the key. No Touch ID prompt.</p></div></div>
+    <div class="secitem"><div class="ic">🙈</div><div><h3>Secrets skipped at capture</h3><p>Copies from password managers, and pasteboards marked transient or concealed, are never stored in the first place — and you can add your own apps to the skip list.</p></div></div>
+    <div class="secitem"><div class="ic">📵</div><div><h3>No network. Ever.</h3><p>There is no networking code in Cliphoard — no telemetry, no account, no cloud, no phone-home. It can't leak your clipboard because nothing is able to send it.</p></div></div>
+    <div class="secitem"><div class="ic">🗝️</div><div><h3>Owner-only on disk</h3><p>The store lives in your Application Support folder with <code>0700</code>/<code>0600</code> permissions — other user accounts on the Mac can't read it.</p></div></div>
+    <div class="secitem"><div class="ic">🔎</div><div><h3>Open source, auditable</h3><p>MIT-licensed. Don't take our word for it — <a href="https://github.com/AntreasAntoniou/cliphoard/blob/main/Sources/Cliphoard/Clipboard/Crypto.swift">read <code>Crypto.swift</code></a> yourself.</p></div></div>
+  </div>
 </section>
 
 <section id="themes" class="wrap">
