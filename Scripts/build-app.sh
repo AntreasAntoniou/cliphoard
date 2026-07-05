@@ -7,9 +7,11 @@ ROOT="$(pwd)"
 CONFIG="${1:-release}"
 APP="$ROOT/build/Cliphoard.app"
 
-echo "▸ Building ($CONFIG)…"
-swift build -c "$CONFIG" 2>/dev/null
-BIN="$(swift build -c "$CONFIG" --show-bin-path 2>/dev/null)/Cliphoard"
+echo "▸ Building ($CONFIG, universal arm64 + x86_64)…"
+# Build a UNIVERSAL binary so the app runs natively on both Apple Silicon and Intel
+# (an arm64-only build will not launch on Intel at all — Rosetta only runs x86 on ARM).
+swift build -c "$CONFIG" --arch arm64 --arch x86_64 2>/dev/null
+BIN="$(swift build -c "$CONFIG" --arch arm64 --arch x86_64 --show-bin-path 2>/dev/null)/Cliphoard"
 
 echo "▸ Assembling bundle…"
 rm -rf "$APP"

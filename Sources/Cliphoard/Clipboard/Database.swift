@@ -233,26 +233,30 @@ extension Database {
         return Data(bytes: p, count: Int(sqlite3_column_bytes(stmt, i)))
     }
 
-    /// [Float] → Float16 BLOB (model already runs in Float16; halves storage).
+    /// [Float] → Float32 BLOB (4 bytes/value). Float32, NOT Float16: `Float16` is
+    /// unavailable on x86_64 macOS, so using it prevents a universal (Apple Silicon +
+    /// Intel) build. Old Float16 blobs from earlier versions read back as a
+    /// wrong-length vector and are transparently re-indexed by `ClipIndexer.isStale`,
+    /// so no explicit migration is needed. (Embedding storage isn't shipped — the DMG
+    /// carries an empty database — so the extra 2 bytes/value cost nothing to download.)
     static func blob(fromVector v: [Float]) -> Data {
-        let halves = v.map { Float16($0) }
-        return halves.withUnsafeBytes { Data($0) }
+        v.withUnsafeBytes { Data($0) }
     }
 
-    /// Float16 BLOB → [Float]. Accepts already-decrypted `Data` so callers can
+    /// Float32 BLOB → [Float]. Accepts already-decrypted `Data` so callers can
     /// `Crypto.open` the column before parsing.
     static func vectorFromBlob(_ data: Data?) -> [Float] {
         guard let data else { return [] }
-        let stride = MemoryLayout<Float16>.stride
+        let stride = MemoryLayout<Float>.stride
         guard data.count % stride == 0 else {   // malformed blob → treat as no vector
             NSLog("Cliphoard db: embedding blob length \(data.count) not a multiple of \(stride)")
             return []
         }
         let count = data.count / stride
-        // loadUnaligned: a Data buffer is not guaranteed 2-byte aligned, so a
-        // bound Float16 pointer would be undefined behavior.
+        // loadUnaligned: a Data buffer is not guaranteed 4-byte aligned, so a
+        // bound Float pointer would be undefined behavior.
         return data.withUnsafeBytes { raw in
-            (0..<count).map { Float(raw.loadUnaligned(fromByteOffset: $0 * stride, as: Float16.self)) }
+            (0..<count).map { raw.loadUnaligned(fromByteOffset: $0 * stride, as: Float.self) }
         }
     }
 
