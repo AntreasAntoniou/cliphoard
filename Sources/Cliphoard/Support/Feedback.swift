@@ -10,7 +10,7 @@ enum Feedback {
 
     /// Name of the chosen capture sound (a built-in macOS system sound).
     static var soundName: String {
-        get { UserDefaults.standard.string(forKey: "soundName") ?? "Tink" }
+        get { UserDefaults.standard.string(forKey: "soundName") ?? "Frog" }
         set { UserDefaults.standard.set(newValue, forKey: "soundName") }
     }
 
