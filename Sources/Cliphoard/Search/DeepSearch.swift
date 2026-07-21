@@ -273,7 +273,9 @@ enum TagSpace {
         return v
     }
 
-    /// Top-K nearest tag ids for an entry vector.
+    /// Top-K nearest tag ids for an entry vector, over the WHOLE tag pool. Used
+    /// by flat baskets at ingest and by the query side of tag/smart search
+    /// ("what categories is this query nearest?").
     static func classify(_ vector: [Float], embedder: TextEmbedder, topK: Int = 5) -> [Int] {
         guard !vector.isEmpty else { return [] }
         let tagVecs = vectors(using: embedder)
@@ -284,6 +286,68 @@ enum TagSpace {
     /// Nearest single tag id for a query (used by tag search).
     static func nearestTag(toQuery query: String, embedder: TextEmbedder) -> Int? {
         classify(embedder.embed(query, query: true), embedder: embedder, topK: 1).first
+    }
+
+    // MARK: - Dimensional (facet-cube) support
+
+    /// True when the active basket is a facet cube (classify along every axis).
+    static var isDimensional: Bool { TagBaskets.active.isDimensional }
+
+    /// The active basket's dimensions, in order (empty for a flat basket).
+    static var dimensions: [TagDimension] { TagBaskets.active.dimensions }
+
+    static var dimensionCount: Int { dimensions.count }
+
+    /// Half-open tag-id range owned by dimension `d`. Ranges are cumulative over
+    /// each dimension's actual size, so cubes with uneven axes still map cleanly.
+    static func range(ofDimension d: Int) -> Range<Int> {
+        let dims = dimensions
+        guard dims.indices.contains(d) else { return 0..<0 }
+        var start = 0
+        for i in 0..<d { start += dims[i].tags.count }
+        return start..<(start + dims[d].tags.count)
+    }
+
+    /// Which dimension owns tag-id `tag` (or nil for a flat basket / out-of-range).
+    static func dimension(ofTag tag: Int) -> Int? {
+        guard isDimensional else { return nil }
+        var start = 0
+        for (d, dim) in dimensions.enumerated() {
+            let end = start + dim.tags.count
+            if tag >= start && tag < end { return d }
+            start = end
+        }
+        return nil
+    }
+
+    /// Classify a vector along EVERY dimension: the argmax tag within each
+    /// dimension's slice. Returns one tag-id per dimension, in dimension order —
+    /// so a clip is described by a value on every axis. Empty for a flat basket
+    /// (callers use `classify(topK:)` there instead).
+    static func classifyDimensions(_ vector: [Float], embedder: TextEmbedder) -> [Int] {
+        guard !vector.isEmpty, isDimensional else { return [] }
+        let tagVecs = vectors(using: embedder)
+        return (0..<dimensionCount).compactMap { d in
+            let r = range(ofDimension: d)
+            guard !r.isEmpty else { return nil }
+            var best = r.lowerBound
+            var bestScore = SemanticRanker.cosine(vector, tagVecs[r.lowerBound])
+            for i in r.dropFirst() {
+                let s = SemanticRanker.cosine(vector, tagVecs[i])
+                if s > bestScore { bestScore = s; best = i }
+            }
+            return best
+        }
+    }
+
+    /// The facet labels for a set of tag ids ("Content type: code", …), in
+    /// dimension order. For display of a clip's cube coordinates.
+    static func facetLabels(for tagIDs: [Int]) -> [(dimension: String, value: String)] {
+        let names = self.names
+        return tagIDs.sorted().compactMap { id in
+            guard names.indices.contains(id), let d = dimension(ofTag: id) else { return nil }
+            return (dimensions[d].name, names[id])
+        }
     }
 }
 
@@ -299,8 +363,16 @@ enum ClipIndexer {
         // Don't cache a failed/degenerate embedding — leave the clip stale so it's
         // retried, rather than poisoning its tags/search permanently.
         guard isUsable(vec, dimension: embedder.dimension) else { return }
-        let tags = TagSpace.classify(vec, embedder: embedder, topK: 5)
-        item.embeddings[embedder.signature] = ModelEmbedding(vector: vec, tags: tags)
+        item.embeddings[embedder.signature] = ModelEmbedding(vector: vec, tags: tags(for: vec, embedder: embedder))
+    }
+
+    /// A clip's tag ids for the active basket: one value per dimension for a
+    /// facet cube, or the nearest five for a flat pool. Both feed the same
+    /// `tagIndex`, so the store's O(1) lookup is agnostic to which shape is used.
+    static func tags(for vector: [Float], embedder: TextEmbedder) -> [Int] {
+        TagSpace.isDimensional
+            ? TagSpace.classifyDimensions(vector, embedder: embedder)
+            : TagSpace.classify(vector, embedder: embedder, topK: 5)
     }
 
     /// A vector is usable if it's the right length and not all-zeros.

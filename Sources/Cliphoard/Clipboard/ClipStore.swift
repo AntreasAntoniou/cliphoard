@@ -214,6 +214,32 @@ final class ClipStore: ObservableObject {
     /// Entries pre-classified under a preset tag — O(1) lookup, no dot products.
     func items(taggedWith tagID: Int) -> [ClipItem] { tagIndex[tagID] ?? [] }
 
+    /// Entries matching a facet-cube constraint set, in `items` order. Standard
+    /// facet semantics: values within the same dimension are OR'd, and different
+    /// dimensions are AND'd — e.g. {code, python} means "Content type is code AND
+    /// Language is python", while {python, javascript} means "python OR javascript".
+    /// Resolved from the tag index (union the buckets per dimension, intersect
+    /// across dimensions), so it stays O(selected buckets) — no dot products.
+    func items(matchingFacets facets: Set<Int>) -> [ClipItem] {
+        guard !facets.isEmpty else { return items }
+        // Group the selected tag ids by the dimension they belong to. A flat
+        // basket (no dimensions) puts every selection in one group → pure OR.
+        var byDimension: [Int: Set<Int>] = [:]
+        for tag in facets {
+            let d = TagSpace.dimension(ofTag: tag) ?? -1
+            byDimension[d, default: []].insert(tag)
+        }
+        var matched: Set<UUID>?
+        for (_, selected) in byDimension {
+            var union: Set<UUID> = []
+            for tag in selected { for it in (tagIndex[tag] ?? []) { union.insert(it.id) } }
+            matched = matched.map { $0.intersection(union) } ?? union
+            if matched?.isEmpty == true { return [] }
+        }
+        let keep = matched ?? []
+        return items.filter { keep.contains($0.id) }
+    }
+
     private func rebuildTagIndex() {
         let sig = EmbedderProvider.active.signature
         var index: [Int: [ClipItem]] = [:]
@@ -352,7 +378,7 @@ final class ClipStore: ObservableObject {
             for item in targets {
                 if Task.isCancelled { break }
                 if var emb = item.embeddings[sig] {
-                    emb.tags = TagSpace.classify(emb.vector, embedder: EmbedderProvider.active, topK: 5)
+                    emb.tags = ClipIndexer.tags(for: emb.vector, embedder: EmbedderProvider.active)
                     item.embeddings[sig] = emb
                     db?.upsertEmbedding(clipID: item.id, model: sig, embedding: emb)
                 }
@@ -406,10 +432,16 @@ final class ClipStore: ObservableObject {
 
     // MARK: Querying
 
-    func filtered(kind: ClipKind?, query: String, pinnedOnly: Bool) -> [ClipItem] {
+    func filtered(kind: ClipKind?, query: String, pinnedOnly: Bool,
+                  facets: Set<Int> = [], time: TimeFilter = .any) -> [ClipItem] {
         var result = items
         if pinnedOnly { result = result.filter { $0.pinned } }
         if let kind { result = result.filter { $0.kind == kind } }
+        if time.isActive { result = result.filter { time.contains($0.createdAt) } }
+        if !facets.isEmpty {
+            let keep = Set(items(matchingFacets: facets).map { $0.id })
+            result = result.filter { keep.contains($0.id) }
+        }
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         if !q.isEmpty {
             result = result.filter {

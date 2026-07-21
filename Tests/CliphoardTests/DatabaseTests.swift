@@ -54,10 +54,12 @@ final class DatabaseTests: XCTestCase {
 
     private func text(_ s: String) -> ClipItem { ClipItem(kind: .text, text: s) }
 
-    func testFloat16BlobRoundTripWithinTolerance() {
+    func testEmbeddingBlobRoundTripsExactly() {
         let v: [Float] = [0.0, 1.0, -0.5, 0.040161, 0.25, -0.999]
         let blob = Database.blob(fromVector: v)
-        XCTAssertEqual(blob.count, v.count * 2, "Float16 = 2 bytes/element")
+        XCTAssertEqual(blob.count, v.count * 4, "Float32 = 4 bytes/element (portable; universal build)")
+        // Float32 storage → exact round-trip (Float16 was unavailable on x86_64 macOS).
+        XCTAssertEqual(Database.vectorFromBlob(blob), v)
     }
 
     func testInsertThenLoadAllReturnsEquivalentClip() {

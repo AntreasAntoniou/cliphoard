@@ -8,6 +8,12 @@ final class PanelViewModel: ObservableObject {
     @Published var query: String = ""
     @Published var activeKind: ClipKind? = nil
     @Published var pinnedOnly: Bool = false
+    /// Time window over `createdAt` (chip selection). A `when:` token typed in the
+    /// query overrides this for that search.
+    @Published var timeFilter: TimeFilter = .any
+    /// Selected facet-cube constraints (tag ids). Within a dimension OR'd, across
+    /// dimensions AND'd — see `ClipStore.items(matchingFacets:)`.
+    @Published var activeFacets: Set<Int> = []
     @Published var selection: Int = 0
     /// Bumped each time the bar is presented so the UI can reset scroll/state.
     @Published var presentToken: Int = 0
@@ -60,6 +66,8 @@ final class PanelViewModel: ObservableObject {
         let query: String
         let activeKind: ClipKind?
         let pinnedOnly: Bool
+        let timeFilter: TimeFilter
+        let facets: Set<Int>
         let mode: SearchMode
         let itemCount: Int
         let lastAddedID: UUID?
@@ -74,6 +82,8 @@ final class PanelViewModel: ObservableObject {
             query: q,
             activeKind: activeKind,
             pinnedOnly: pinnedOnly,
+            timeFilter: timeFilter,
+            facets: activeFacets,
             mode: DeepSearch.mode,
             itemCount: store.items.count,
             lastAddedID: store.lastAddedID
@@ -86,15 +96,23 @@ final class PanelViewModel: ObservableObject {
         return value
     }
 
-    /// Pure computation behind `results` — same outputs as the previous inline
-    /// implementation. `q` is the already-trimmed query.
-    private func computeResults(query q: String) -> [ClipItem] {
-        // Exact (or empty query) → substring filter as before.
+    /// Pure computation behind `results`. `q` is the already-trimmed query. A
+    /// `when:` token in the query is parsed out and applied as the effective time
+    /// window (overriding the chip); the remaining text drives the match. The
+    /// time + facet-cube scope applies in every mode.
+    private func computeResults(query raw: String) -> [ClipItem] {
+        let parsed = WhenToken.parse(raw)
+        let time = parsed.filter ?? timeFilter
+        let q = parsed.rest.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // Exact (or empty query) → substring filter, scoped by kind/pin/time/facets.
         if DeepSearch.mode == .exact || q.isEmpty {
-            return store.filtered(kind: activeKind, query: q, pinnedOnly: pinnedOnly)
+            return store.filtered(kind: activeKind, query: q, pinnedOnly: pinnedOnly,
+                                  facets: activeFacets, time: time)
         }
-        // Kind/pinned scope first (no substring), then semantic search.
-        let scoped = store.filtered(kind: activeKind, query: "", pinnedOnly: pinnedOnly)
+        // Kind/pinned/time/facet scope first (no substring), then semantic search.
+        let scoped = store.filtered(kind: activeKind, query: "", pinnedOnly: pinnedOnly,
+                                    facets: activeFacets, time: time)
         let embedder = EmbedderProvider.active
         switch DeepSearch.mode {
         case .exact:
