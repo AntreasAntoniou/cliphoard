@@ -16,6 +16,10 @@ struct ContentView: View {
     @FocusState private var searchFocused: Bool
     /// Transient: shows a check briefly after a successful paste fires.
     @State private var showPasteConfirm = false
+    /// Custom time-range popover state.
+    @State private var showCustomDate = false
+    @State private var customFrom = Date()
+    @State private var customTo = Date()
 
     init(model: PanelViewModel, store: ClipStore, pasteStatus: PasteStatus) {
         self.model = model
@@ -160,6 +164,8 @@ struct ContentView: View {
 
             if !model.showSettings {
                 HStack(spacing: 8) {
+                    timeMenu
+                    if TagSpace.isDimensional { filtersMenu }
                     searchModePicker
                     HStack(spacing: 6) {
                         Image(systemName: "magnifyingglass")
@@ -254,6 +260,112 @@ struct ContentView: View {
         }
         .help("Search mode — Smart, Exact, or Tag")
         .accessibilityLabel("Search mode: \(settings.searchMode.title)")
+    }
+
+    /// Time filter — pick when a clip was copied with plain words, or a custom
+    /// date range. Mirrors the `when:` query tokens. Filters on `createdAt`.
+    private var timeMenu: some View {
+        Menu {
+            let presets: [(String, TimeFilter)] = [
+                ("Any time", .any), ("Today", .today), ("Yesterday", .yesterday),
+                ("This week", .thisWeek), ("This month", .thisMonth),
+                ("Last 7 days", .last7), ("Last 30 days", .last30)
+            ]
+            ForEach(presets, id: \.0) { title, filter in
+                Button {
+                    model.timeFilter = filter; model.resetSelection()
+                } label: {
+                    if model.timeFilter == filter { Label(title, systemImage: "checkmark") }
+                    else { Text(title) }
+                }
+            }
+            Divider()
+            Button("Custom range…") {
+                if case .range(let a, let b) = model.timeFilter { customFrom = a; customTo = b }
+                showCustomDate = true
+            }
+        } label: {
+            filterChipLabel(icon: "clock",
+                            text: model.timeFilter.isActive ? model.timeFilter.label : "Time",
+                            active: model.timeFilter.isActive)
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("Filter by when the clip was copied")
+        .popover(isPresented: $showCustomDate, arrowEdge: .bottom) { customDatePopover }
+    }
+
+    private var customDatePopover: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Custom range").font(.system(size: 12, weight: .semibold))
+            DatePicker("From", selection: $customFrom, displayedComponents: .date)
+            DatePicker("To", selection: $customTo, displayedComponents: .date)
+            HStack {
+                Spacer()
+                Button("Clear") { model.timeFilter = .any; model.resetSelection(); showCustomDate = false }
+                Button("Apply") {
+                    model.timeFilter = .range(customFrom, customTo)
+                    model.resetSelection(); showCustomDate = false
+                }
+                .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(14)
+        .frame(width: 240)
+    }
+
+    /// Facet-cube filters — one submenu per dimension, toggling a value on/off.
+    /// Values within a dimension OR; across dimensions AND (facet semantics).
+    private var filtersMenu: some View {
+        Menu {
+            if !model.activeFacets.isEmpty {
+                Button("Clear \(model.activeFacets.count) filter\(model.activeFacets.count == 1 ? "" : "s")") {
+                    model.activeFacets = []; model.resetSelection()
+                }
+                Divider()
+            }
+            ForEach(Array(TagSpace.dimensions.enumerated()), id: \.offset) { d, dim in
+                Menu(dim.name) {
+                    ForEach(Array(dim.tags.enumerated()), id: \.offset) { i, tagName in
+                        let id = TagSpace.range(ofDimension: d).lowerBound + i
+                        Button {
+                            toggleFacet(id)
+                        } label: {
+                            if model.activeFacets.contains(id) { Label(tagName, systemImage: "checkmark") }
+                            else { Text(tagName) }
+                        }
+                    }
+                }
+            }
+        } label: {
+            filterChipLabel(icon: "line.3.horizontal.decrease.circle",
+                            text: model.activeFacets.isEmpty ? "Filters" : "Filters (\(model.activeFacets.count))",
+                            active: !model.activeFacets.isEmpty)
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("Filter by dimension (content type, sensitivity, intent…)")
+    }
+
+    /// Chip-styled label shared by the time and filter menus, matching the
+    /// category chips' look so the toolbar reads as one control family.
+    private func filterChipLabel(icon: String, text: String, active: Bool) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: icon).font(.system(size: 10))
+            Text(text).font(.system(size: 11, weight: .medium))
+        }
+        .padding(.horizontal, 9)
+        .padding(.vertical, 5)
+        .background(active ? Theme.accent : Color.primary.opacity(0.07), in: Capsule())
+        .foregroundStyle(active ? Color.white : Color.primary)
+    }
+
+    private func toggleFacet(_ id: Int) {
+        if model.activeFacets.contains(id) { model.activeFacets.remove(id) }
+        else { model.activeFacets.insert(id) }
+        model.resetSelection()
     }
 
     // MARK: Cards

@@ -179,26 +179,40 @@ struct SettingsView: View {
                         }
                         .labelsHidden().frame(width: 170)
                     }
-                    Text("\(TagBaskets.active.tags.count) tags — clips are classified into their nearest few.")
+                    Text(TagBaskets.active.isDimensional
+                         ? "\(TagBaskets.active.dimensions.count) dimensions × 10 — every clip is classified along all of them (one value per dimension)."
+                         : "\(TagBaskets.active.tags.count) tags — clips are classified into their nearest few.")
                         .font(.system(size: 11)).foregroundStyle(.secondary)
 
                     // The active basket's tags, in a bounded, clipped, scrollable
                     // box (a lazy grid does NOT clip, so it must live in a ScrollView
-                    // with a fixed height or it overflows onto other sections).
+                    // with a fixed height or it overflows onto other sections). A
+                    // dimensional basket groups its tags under each dimension header;
+                    // a flat basket shows one flowing pool.
                     ScrollView(.vertical, showsIndicators: true) {
-                        FlowLayout(spacing: 5) {
-                            ForEach(TagBaskets.active.tags, id: \.self) { tag in
-                                Text(tag)
-                                    .font(.system(size: 11)).lineLimit(1).fixedSize()
-                                    .padding(.horizontal, 8).padding(.vertical, 3)
-                                    .background(Theme.accent.opacity(0.12), in: Capsule())
-                                    .foregroundStyle(Theme.accent)
+                        if TagBaskets.active.isDimensional {
+                            VStack(alignment: .leading, spacing: 8) {
+                                ForEach(Array(TagBaskets.active.dimensions.enumerated()), id: \.offset) { _, dim in
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text(dim.name.uppercased())
+                                            .font(.system(size: 9, weight: .semibold)).foregroundStyle(.secondary)
+                                        FlowLayout(spacing: 5) {
+                                            ForEach(dim.tags, id: \.self) { tag in tagPill(tag) }
+                                        }
+                                    }
+                                }
                             }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(8)
+                        } else {
+                            FlowLayout(spacing: 5) {
+                                ForEach(TagBaskets.active.tags, id: \.self) { tag in tagPill(tag) }
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(8)
                         }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(8)
                     }
-                    .frame(height: 130)
+                    .frame(height: 160)
                     .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 8))
                     .clipShape(RoundedRectangle(cornerRadius: 8))
 
@@ -297,6 +311,16 @@ struct SettingsView: View {
                 .foregroundStyle(isFallback ? Color.secondary : Color.green)
         }
         .font(.system(size: 11))
+    }
+
+    /// A single accent-tinted tag capsule, shared by the flat and dimensional
+    /// taxonomy displays.
+    private func tagPill(_ tag: String) -> some View {
+        Text(tag)
+            .font(.system(size: 11)).lineLimit(1).fixedSize()
+            .padding(.horizontal, 8).padding(.vertical, 3)
+            .background(Theme.accent.opacity(0.12), in: Capsule())
+            .foregroundStyle(Theme.accent)
     }
 
     @ViewBuilder

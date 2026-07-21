@@ -86,7 +86,8 @@ final class IngestIndexingTests: XCTestCase {
         store.add(item)
         let sig = EmbedderProvider.active.signature
         XCTAssertNotNil(item.embeddings[sig]?.vector)
-        XCTAssertEqual(item.embeddings[sig]?.tags.count, 5)
+        // General is a facet cube → one tag per dimension (not a flat top-5).
+        XCTAssertEqual(item.embeddings[sig]?.tags.count, TagSpace.dimensionCount)
     }
 
     func testTagIndexLookupIsPopulated() {
@@ -150,7 +151,7 @@ final class IngestIndexingTests: XCTestCase {
         let reloaded = ClipStore(directory: dir)
         let sig = EmbedderProvider.active.signature
         XCTAssertNotNil(reloaded.items.first?.embeddings[sig]?.vector)
-        XCTAssertEqual(reloaded.items.first?.embeddings[sig]?.tags.count, 5)
+        XCTAssertEqual(reloaded.items.first?.embeddings[sig]?.tags.count, TagSpace.dimensionCount)
         XCTAssertFalse(ClipIndexer.isStale(reloaded.items.first!), "reload shouldn't need reprocessing")
     }
 }
