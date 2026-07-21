@@ -124,12 +124,24 @@ enum TagBaskets {
     /// User-editable flat basket, persisted in UserDefaults (defaults to the
     /// cube's flat tag view). Editing it as a free-form list makes it flat, not a
     /// cube — dimensional features only apply to dimensional baskets.
+    ///
+    /// Memoized: the getter is on hot paths (toolbar body, TagSpace lookups) and
+    /// decoding a 100-string array out of UserDefaults on every access showed up
+    /// as summon latency. All mutations go through this setter (main actor), so
+    /// the cache can't go stale.
+    private static var cachedCustom: TagBasket?
     static var custom: TagBasket {
         get {
+            if let c = cachedCustom { return c }
             let tags = (UserDefaults.standard.array(forKey: "customTags") as? [String]) ?? general.tags
-            return TagBasket(id: "custom", name: "Custom", tags: tags)
+            let basket = TagBasket(id: "custom", name: "Custom", tags: tags)
+            cachedCustom = basket
+            return basket
         }
-        set { UserDefaults.standard.set(newValue.tags, forKey: "customTags") }
+        set {
+            UserDefaults.standard.set(newValue.tags, forKey: "customTags")
+            cachedCustom = TagBasket(id: "custom", name: "Custom", tags: newValue.tags)
+        }
     }
 
     static var all: [TagBasket] { builtIn + [custom] }

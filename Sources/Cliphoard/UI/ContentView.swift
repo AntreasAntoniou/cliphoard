@@ -20,6 +20,8 @@ struct ContentView: View {
     @State private var showCustomDate = false
     @State private var customFrom = Date()
     @State private var customTo = Date()
+    /// Builds the facet NSMenu on click (kept out of the summon-critical layout).
+    @State private var facetMenu = FacetMenuController()
 
     init(model: PanelViewModel, store: ClipStore, pasteStatus: PasteStatus) {
         self.model = model
@@ -317,34 +319,21 @@ struct ContentView: View {
 
     /// Facet-cube filters — one submenu per dimension, toggling a value on/off.
     /// Values within a dimension OR; across dimensions AND (facet semantics).
+    ///
+    /// Deliberately NOT a SwiftUI `Menu`: the panel rebuilds its hosting view
+    /// synchronously on every summon (FloatingPanel.refresh), and a Menu's ~110
+    /// items (10 dimensions × 10 values) were materialized eagerly inside that
+    /// layout — a measurable summon delay. A plain chip that builds an NSMenu on
+    /// click keeps the summon path O(1); the menu's cost is paid only when opened.
     private var filtersMenu: some View {
-        Menu {
-            if !model.activeFacets.isEmpty {
-                Button("Clear \(model.activeFacets.count) filter\(model.activeFacets.count == 1 ? "" : "s")") {
-                    model.activeFacets = []; model.resetSelection()
-                }
-                Divider()
-            }
-            ForEach(Array(TagSpace.dimensions.enumerated()), id: \.offset) { d, dim in
-                Menu(dim.name) {
-                    ForEach(Array(dim.tags.enumerated()), id: \.offset) { i, tagName in
-                        let id = TagSpace.range(ofDimension: d).lowerBound + i
-                        Button {
-                            toggleFacet(id)
-                        } label: {
-                            if model.activeFacets.contains(id) { Label(tagName, systemImage: "checkmark") }
-                            else { Text(tagName) }
-                        }
-                    }
-                }
-            }
+        Button {
+            facetMenu.present(model: model)
         } label: {
             filterChipLabel(icon: "line.3.horizontal.decrease.circle",
                             text: model.activeFacets.isEmpty ? "Filters" : "Filters (\(model.activeFacets.count))",
                             active: !model.activeFacets.isEmpty)
         }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
+        .buttonStyle(.plain)
         .fixedSize()
         .help("Filter by dimension (content type, sensitivity, intent…)")
     }
@@ -360,12 +349,6 @@ struct ContentView: View {
         .padding(.vertical, 5)
         .background(active ? Theme.accent : Color.primary.opacity(0.07), in: Capsule())
         .foregroundStyle(active ? Color.white : Color.primary)
-    }
-
-    private func toggleFacet(_ id: Int) {
-        if model.activeFacets.contains(id) { model.activeFacets.remove(id) }
-        else { model.activeFacets.insert(id) }
-        model.resetSelection()
     }
 
     // MARK: Cards
@@ -712,5 +695,56 @@ private extension View {
             .onChange(of: model.activeKind) { _ in top() }
             .onChange(of: model.pinnedOnly) { _ in top() }
             .onChange(of: model.query) { _ in top() }
+    }
+}
+
+/// Presents the facet-cube filter menu as a native NSMenu built ON CLICK — one
+/// submenu per dimension, checkmarked values toggling on/off. Kept out of the
+/// SwiftUI tree so the panel's synchronous per-summon rebuild never pays for the
+/// ~110 items; they exist only while the menu is open.
+@MainActor
+final class FacetMenuController: NSObject {
+    private weak var model: PanelViewModel?
+
+    func present(model: PanelViewModel) {
+        self.model = model
+        let menu = NSMenu()
+        if !model.activeFacets.isEmpty {
+            let n = model.activeFacets.count
+            let clear = NSMenuItem(title: "Clear \(n) filter\(n == 1 ? "" : "s")",
+                                   action: #selector(clearAll), keyEquivalent: "")
+            clear.target = self
+            menu.addItem(clear)
+            menu.addItem(.separator())
+        }
+        for (d, dim) in TagSpace.dimensions.enumerated() {
+            let sub = NSMenu()
+            let base = TagSpace.range(ofDimension: d).lowerBound
+            for (i, tagName) in dim.tags.enumerated() {
+                let item = NSMenuItem(title: tagName, action: #selector(toggle(_:)), keyEquivalent: "")
+                item.target = self
+                item.tag = base + i
+                item.state = model.activeFacets.contains(base + i) ? .on : .off
+                sub.addItem(item)
+            }
+            let parent = NSMenuItem(title: dim.name, action: nil, keyEquivalent: "")
+            parent.submenu = sub
+            menu.addItem(parent)
+        }
+        // Pop at the cursor (which is on the chip that was just clicked). Screen
+        // coordinates; `in: nil` interprets the point that way.
+        menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
+    }
+
+    @objc private func toggle(_ sender: NSMenuItem) {
+        guard let model else { return }
+        if model.activeFacets.contains(sender.tag) { model.activeFacets.remove(sender.tag) }
+        else { model.activeFacets.insert(sender.tag) }
+        model.resetSelection()
+    }
+
+    @objc private func clearAll() {
+        model?.activeFacets = []
+        model?.resetSelection()
     }
 }
