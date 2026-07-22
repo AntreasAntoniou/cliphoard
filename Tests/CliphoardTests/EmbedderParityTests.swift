@@ -17,13 +17,13 @@ import CoreML
 ///      sibling `<name>/` tokenizer folder (the exact layout produced by
 ///      `tools/restore-models.sh`), OR a directory that is itself a `.mlpackage`
 ///      with a sibling tokenizer folder.
-///   2. `<repo>/tools/models/ogma-small.mlpackage` + `<repo>/tools/models/ogma-small/`.
+///   2. `<repo>/tools/models/open-ogma-small.mlpackage` + `<repo>/tools/models/open-ogma-small/`.
 /// If neither resolves, `XCTSkip` is thrown with a clear message.
 ///
 /// REGENERATING THE GOLDENS (from the real PyTorch model — single source of truth):
-///   # 1. Restore + convert the model (writes tools/models/ogma-small.mlpackage,
+///   # 1. Restore + convert the model (writes tools/models/open-ogma-small.mlpackage,
 ///   #    prints parity_cosine vs the CoreML output — see tools/convert_ogma.py):
-///   MODELS="ogma-small" tools/restore-models.sh
+///   MODELS="open-ogma-small" tools/restore-models.sh
 ///   # 2. Recompute the PyTorch reference goldens (writes tools/reference.json):
 ///   cd tools && python3 reference.py
 ///   # 3. Copy the "the quick brown fox" / task "doc" entry's `ids` and `vec_head`
@@ -38,14 +38,14 @@ final class EmbedderParityTests: XCTestCase {
     private let probe = "the quick brown fox"
 
     /// Golden tokenizer ids for `probe` (task=doc), from tools/reference.json[0].ids.
-    private let goldenIds: [Int32] = [9, 21, 2238, 893, 2392, 10]
+    private let goldenIds: [Int32] = [2, 264, 2963, 2442, 14556, 3]
 
     /// Golden leading embedding components for `probe` (task=doc), from
     /// tools/reference.json[0].vec_head (first 6 dims of the L2-normalised vector).
-    private let goldenHead: [Float] = [-0.04022, 0.07244, -0.05472, -0.03748, 0.02262, 0.11393]
+    private let goldenHead: [Float] = [-0.07704, -0.0528, 0.00029, -0.00834, 0.04225, -0.0167]
 
     /// Per-component tolerance: PyTorch reference vs CoreML Float16 inference. The
-    /// converter's parity_cosine (tools/convert_ogma.py) confirms agreement at the
+    /// converter's parity_cosine (tools/convert_ogma_libre.py) confirms agreement at the
     /// vector level; ~1e-3 absorbs Float16 rounding on individual components.
     private let tolerance: Float = 1e-3
 
@@ -59,8 +59,8 @@ final class EmbedderParityTests: XCTestCase {
     }
 
     /// Default model used when `$CLIPHOARD_OGMA_MODEL_DIR` is unset. The checked-in
-    /// goldens were produced from ogma-small (256-dim) — see tools/reference.py.
-    private let defaultModelName = "ogma-small"
+    /// goldens were produced from open-ogma-small (384-dim head) — see tools/reference.py.
+    private let defaultModelName = "open-ogma-small"
 
     /// `<repo>/tools/models` relative to this source file (…/Tests/CliphoardTests/…).
     private var defaultModelsDir: URL {
@@ -86,7 +86,7 @@ final class EmbedderParityTests: XCTestCase {
             if let m = firstModel(in: url) { return m }
         }
 
-        // 2. Default: <repo>/tools/models/ogma-small.mlpackage (+ tokenizer folder),
+        // 2. Default: <repo>/tools/models/open-ogma-small.mlpackage (+ tokenizer folder),
         //    falling back to any other .mlpackage with a matching tokenizer folder.
         let preferred = defaultModelsDir.appendingPathComponent("\(defaultModelName).mlpackage")
         if let m = model(at: preferred) { return m }
@@ -158,7 +158,7 @@ final class EmbedderParityTests: XCTestCase {
                        "tokenizer ids for \"\(probe)\" diverged from tools/reference.json")
 
         // Construct the embedder exactly as EmbedderProvider.configure does. The
-        // goldens were produced from ogma-small (256-dim); the embedder only checks
+        // goldens were produced from open-ogma-small (384-dim head); the embedder only checks
         // the vector length matches `dimension`, so use that model's dimension.
         let embedder = OgmaEmbedder(modelName: resolved.name, model: model,
                                     tokenizer: tokenizer, dimension: DeepSearchLevel.normal.dimension)

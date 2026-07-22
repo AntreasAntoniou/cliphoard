@@ -14,32 +14,34 @@ enum DeepSearchLevel: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .off:    return "Off"
-        case .low:    return "Low (ogma-micro)"
-        case .normal: return "Normal (ogma-small)"
+        case .low:    return "Low (open-ogma-micro)"
+        case .normal: return "Normal (open-ogma-small)"
         case .high:   return "High (EmbeddingGemma)"
         }
     }
 
     /// Bundled CoreML model name (`<name>.mlmodelc`) for this tier.
     /// high also drives image search (via OCR text).
-    /// - low → axiotic/ogma-micro (2.3M, 128-dim)
-    /// - normal → axiotic/ogma-small (8.6M, 256-dim)
+    /// - low → axiotic/open-ogma-micro (MIT; 128-d trunk → 384-d bge-small head)
+    /// - normal → axiotic/open-ogma-small (MIT; 256-d trunk → 384-d bge-small head)
     /// - high → google/embeddinggemma-300m (768-dim)
     var modelName: String? {
         switch self {
         case .off:    return nil
-        case .low:    return "ogma-micro"
-        case .normal: return "ogma-small"
+        case .low:    return "open-ogma-micro"
+        case .normal: return "open-ogma-small"
         case .high:   return "embeddinggemma-300m"
         }
     }
 
-    /// Output embedding dimension for each tier's model.
+    /// Output embedding dimension for each tier's model. Both open-ogma tiers
+    /// emit through the 384-d proj_small head (distilled from bge-small-en-v1.5),
+    /// the repos' default and their strongest per-dim output.
     var dimension: Int {
         switch self {
         case .off:    return 256
-        case .low:    return 128
-        case .normal: return 256
+        case .low:    return 384
+        case .normal: return 384
         case .high:   return 768
         }
     }
@@ -227,8 +229,9 @@ enum EmbedderProvider {
     static func configure(level: DeepSearchLevel) -> Bool {
         let before = active.signature
         // OgmaTokenizer implements ONLY ogma's tokenizer (metaspace + offset); it
-        // would mis-tokenize a non-ogma model (e.g. EmbeddingGemma). Gate to ogma.
-        if let name = level.modelName, name.hasPrefix("ogma"),
+        // would mis-tokenize a non-ogma model (e.g. EmbeddingGemma). Gate to the
+        // ogma family — "ogma-*" legacy and "open-ogma-*" libre names both match.
+        if let name = level.modelName, name.contains("ogma"),
            let modelURL = Bundle.main.url(forResource: name, withExtension: "mlmodelc"),
            let tokFolder = Bundle.main.url(forResource: "\(name)-tokenizer", withExtension: nil),
            let model = try? MLModel(contentsOf: modelURL),

@@ -24,18 +24,20 @@
 #
 # Usage:
 #   tools/restore-models.sh                      # restore the default set
-#   MODELS="ogma-micro" tools/restore-models.sh  # restore a subset
+#   MODELS="open-ogma-micro" tools/restore-models.sh  # restore a subset
 #   HF_REPO_PREFIX=axiotic tools/restore-models.sh
 #
-# NOTE: the ogma models are CC-BY-NC-4.0 (attribution to Jina AI teacher model).
+# NOTE: the open-ogma (ogma-libre) models are MIT-licensed, distilled from
+# BAAI/bge-small-en-v1.5 and bge-large-en-v1.5 (both MIT).
 set -euo pipefail
 
 cd "$(dirname "$0")"            # operate from tools/, like the README examples
 ROOT="$(cd .. && pwd)"
 
 # Default set of models to restore. Keep in sync with Scripts/build-app.sh /
-# Sources/Cliphoard/Search/DeepSearch.swift (low → ogma-micro, normal → ogma-small).
-MODELS="${MODELS:-ogma-micro ogma-small}"
+# Sources/Cliphoard/Search/DeepSearch.swift (low → open-ogma-micro,
+# normal → open-ogma-small).
+MODELS="${MODELS:-open-ogma-micro open-ogma-small}"
 HF_REPO_PREFIX="${HF_REPO_PREFIX:-axiotic}"
 
 mkdir -p models
@@ -53,7 +55,10 @@ for name in $MODELS; do
     python3 _dl.py "$repo"
 
     echo "▸ Converting $name → CoreML …"
-    python3 convert_ogma.py "models/$name"
+    case "$name" in
+        open-ogma-*) python3 convert_ogma_libre.py "models/$name" ;;  # self-contained ogma-libre repos
+        *)           python3 convert_ogma.py "models/$name" ;;        # legacy HF trust_remote_code repos
+    esac
 
     if [ ! -d "$pkg" ]; then
         echo "::error::conversion produced no $pkg" >&2

@@ -2,25 +2,19 @@
 
 Cliphoard itself is released under the [MIT License](LICENSE). It bundles and builds
 on the following third-party components, each under its own license. **Note the
-non-commercial model licenses below** — they govern the model weights shipped
+model licenses below** — they govern the model weights shipped
 inside the distributed `.app`, not Cliphoard's own source code.
 
 ## On-device embedding models
 
-### ogma-micro, ogma-small (Axiotic)
-- **License:** Creative Commons Attribution-NonCommercial 4.0 (CC-BY-NC-4.0):
-  https://creativecommons.org/licenses/by-nc/4.0/
-- **Required attribution (must be included in all uses, per CC-BY-NC-4.0 §3.a):**
-
-  > This model was trained via knowledge distillation from
-  > `jina-embeddings-v5-text-small` (https://huggingface.co/jinaai/jina-embeddings-v5-text-small)
-  > by Jina AI, licensed under CC-BY-NC-4.0.
-
-- **Implication:** The CoreML conversions of these models are bundled inside the
-  distributed Cliphoard binary. Under CC-BY-NC-4.0 the **weights may not be used for
-  commercial purposes**. Cliphoard's own code is MIT and unaffected; this restriction
-  applies to the bundled weights. Axiotic owns these models and may grant other
-  terms for its own products — contact the maintainer if you need commercial use.
+### open-ogma-micro, open-ogma-small (Axiotic, "ogma-libre")
+- **Repos:** https://huggingface.co/axiotic/open-ogma-micro ·
+  https://huggingface.co/axiotic/open-ogma-small
+- **License:** MIT.
+- **Provenance:** distilled from `BAAI/bge-small-en-v1.5` (384-d head, the one
+  bundled) and `BAAI/bge-large-en-v1.5` — both MIT-licensed — so the entire
+  supply chain of the bundled weights is permissive. The CoreML conversions are
+  bundled inside the distributed Cliphoard binary and may be used commercially.
 
 ### EmbeddingGemma (Google) — optional, not bundled by default
 - **License:** [Gemma Terms of Use](https://ai.google.dev/gemma/terms).
