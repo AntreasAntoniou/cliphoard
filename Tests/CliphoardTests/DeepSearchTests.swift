@@ -155,3 +155,43 @@ final class IngestIndexingTests: XCTestCase {
         XCTAssertFalse(ClipIndexer.isStale(reloaded.items.first!), "reload shouldn't need reprocessing")
     }
 }
+
+final class LengthConfidenceTests: XCTestCase {
+    private let e = HashingEmbedder()
+
+    func testRampsToFullTrustAtTwelveChars() {
+        XCTAssertEqual(SemanticRanker.lengthConfidence(ClipItem(kind: .text, text: "c")),
+                       1.0 / 12.0, accuracy: 0.001)
+        XCTAssertEqual(SemanticRanker.lengthConfidence(ClipItem(kind: .text, text: "styled")),
+                       0.5, accuracy: 0.001)
+        XCTAssertEqual(SemanticRanker.lengthConfidence(ClipItem(kind: .text, text: "a dozen chars or more")),
+                       1.0, accuracy: 0.001)
+    }
+
+    /// The "fun" bug: a hub-like short clip whose stored vector happens to sit
+    /// near the query must NOT clear the neural floor, while a longer clip with
+    /// the same cosine must. Vectors are pinned to the query's own embedding
+    /// (cosine 1.0) to isolate the confidence weighting.
+    func testShortHubClipIsSuppressedInNeural() {
+        let qv = e.embed("fun", query: true)
+        let hub = ClipItem(kind: .text, text: "c")
+        let real = ClipItem(kind: .text, text: "board game night with friends")
+        for item in [hub, real] {
+            item.embeddings[e.signature] = ModelEmbedding(vector: qv, tags: [])
+        }
+        let ranked = SemanticRanker.neural(query: "fun", items: [hub, real], embedder: e)
+        // real: cos 1.0 × conf 1.0 = 1.0 ≥ floor → kept, and ranks first.
+        // hub:  cos 1.0 × conf 1/12 ≈ 0.083 < floor → only reachable via fallback.
+        XCTAssertEqual(ranked.first?.text, "board game night with friends")
+        XCTAssertEqual(ranked.count, 1, "suppressed hub must not pad a list that has a real hit")
+    }
+
+    /// When nothing clears the floor, the top-K fallback still surfaces the
+    /// closest clips — a short TRUE hit is shown rather than an empty strip.
+    func testFallbackStillShowsShortClipsWhenNothingElseMatches() {
+        let hub = ClipItem(kind: .text, text: "c")
+        hub.embeddings[e.signature] = ModelEmbedding(vector: e.embed("fun", query: true), tags: [])
+        let ranked = SemanticRanker.neural(query: "fun", items: [hub], embedder: e)
+        XCTAssertEqual(ranked.count, 1, "top-K fallback keeps the strip populated")
+    }
+}
