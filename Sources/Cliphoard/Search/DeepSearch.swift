@@ -1,6 +1,7 @@
 import Foundation
 import CoreML
 import Accelerate
+import Tokenizers
 
 // MARK: - Levels & modes
 
@@ -8,7 +9,7 @@ import Accelerate
 /// Until a CoreML model is bundled for a tier, the engine falls back to the
 /// dependency-free `HashingEmbedder` so everything still works.
 enum DeepSearchLevel: String, CaseIterable, Identifiable {
-    case off, low, normal, high
+    case off, low, normal, high, max
     var id: String { rawValue }
 
     var title: String {
@@ -16,33 +17,50 @@ enum DeepSearchLevel: String, CaseIterable, Identifiable {
         case .off:    return "Off"
         case .low:    return "Low (open-ogma-micro)"
         case .normal: return "Normal (open-ogma-small)"
-        case .high:   return "High (EmbeddingGemma)"
+        case .high:   return "High (MiniLM)"
+        case .max:    return "Max (EmbeddingGemma)"
         }
     }
 
     /// Bundled CoreML model name (`<name>.mlmodelc`) for this tier.
-    /// high also drives image search (via OCR text).
-    /// - low → axiotic/open-ogma-micro (MIT; 128-d trunk → 384-d bge-small head)
-    /// - normal → axiotic/open-ogma-small (MIT; 256-d trunk → 384-d bge-small head)
-    /// - high → google/embeddinggemma-300m (768-dim)
+    /// - low → axiotic/open-ogma-micro (MIT, 2.5M)
+    /// - normal → axiotic/open-ogma-small (MIT, 8.9M)
+    /// - high → sentence-transformers/all-MiniLM-L6-v2 (Apache-2.0, 22.7M)
+    /// - max → google/embeddinggemma-300m (Gemma ToU, 308M, 8-bit weights)
     var modelName: String? {
         switch self {
         case .off:    return nil
         case .low:    return "open-ogma-micro"
         case .normal: return "open-ogma-small"
-        case .high:   return "embeddinggemma-300m"
+        case .high:   return "all-MiniLM-L6-v2"
+        case .max:    return "embeddinggemma-300m"
         }
     }
 
     /// Output embedding dimension for each tier's model. The ogma tiers follow
-    /// the selected `VectorDetail` head (1024-d proj_large by default).
+    /// the selected `VectorDetail` head (1024-d proj_large by default); the HF
+    /// tiers have fixed heads.
     var dimension: Int {
         switch self {
         case .off:    return 256
         case .low, .normal: return DeepSearch.detail.dimension
-        case .high:   return 768
+        case .high:   return 384
+        case .max:    return 768
         }
     }
+
+    /// True for tiers served by an ogma model (task tokens, OgmaTokenizer,
+    /// VectorDetail head selection). The HF tiers use HFEmbedder + prompts.
+    var isOgma: Bool { self == .low || self == .normal }
+
+    /// Fixed task prompts for asymmetric HF models (EmbeddingGemma's ST config);
+    /// empty for symmetric MiniLM.
+    var queryPrefix: String { self == .max ? "task: search result | query: " : "" }
+    var docPrefix: String { self == .max ? "title: none | text: " : "" }
+
+    /// Calibrated relevance floor for the HF tiers (noise p95 measured on the
+    /// local validation set: 0.169 MiniLM, 0.256 Gemma — see tools/BENCHMARKS.md).
+    var hfRelevanceFloor: Float { self == .max ? 0.30 : 0.20 }
 }
 
 /// Which projection head of the open-ogma models drives search. The converted
@@ -275,16 +293,25 @@ final class OgmaEmbedder: TextEmbedder {
 enum EmbedderProvider {
     private(set) static var active: TextEmbedder = HashingEmbedder()
 
-    /// Load the embedder for `level` (CoreML model + hand-rolled tokenizer, both
-    /// synchronous). Falls back to the HashingEmbedder when the tier has no model
-    /// bundled or loading fails.
+    /// Monotonic token: bumping it invalidates any in-flight async model load,
+    /// so a rapid tier flip can't have a stale load overwrite the newer one.
+    private static var loadToken = 0
+
+    /// Load the embedder for `level`. The ogma tiers load synchronously (small
+    /// models, hand-rolled tokenizer). The HF tiers (MiniLM/Gemma) load ASYNC —
+    /// `active` falls back to hashing immediately and swaps to the real model
+    /// when ready (Gemma alone is ~300MB of weights) — then `onSwap` fires so
+    /// the store can re-index into the new space. Falls back to the
+    /// HashingEmbedder when a tier has no bundled model or loading fails.
     @discardableResult
-    static func configure(level: DeepSearchLevel) -> Bool {
+    static func configure(level: DeepSearchLevel, onSwap: (() -> Void)? = nil) -> Bool {
         let before = active.signature
+        loadToken &+= 1
+        let token = loadToken
         // OgmaTokenizer implements ONLY ogma's tokenizer (metaspace + offset); it
-        // would mis-tokenize a non-ogma model (e.g. EmbeddingGemma). Gate to the
-        // ogma family — "ogma-*" legacy and "open-ogma-*" libre names both match.
-        if let name = level.modelName, name.contains("ogma"),
+        // would mis-tokenize the HF models. Gate to the ogma family — "ogma-*"
+        // legacy and "open-ogma-*" libre names both match.
+        if let name = level.modelName, level.isOgma, name.contains("ogma"),
            let modelURL = Bundle.main.url(forResource: name, withExtension: "mlmodelc"),
            let tokFolder = Bundle.main.url(forResource: "\(name)-tokenizer", withExtension: nil),
            let model = try? MLModel(contentsOf: modelURL),
@@ -294,6 +321,27 @@ enum EmbedderProvider {
                                   dimension: detail.dimension,
                                   outputName: detail.outputName,
                                   relevanceFloor: detail.relevanceFloor)
+        } else if let name = level.modelName, !level.isOgma,
+                  let modelURL = Bundle.main.url(forResource: name, withExtension: "mlmodelc"),
+                  let tokFolder = Bundle.main.url(forResource: "\(name)-tokenizer", withExtension: nil) {
+            // Serve hashing while the heavyweight model + tokenizer load off the
+            // blocking path; swap in place if this tier is still the wanted one.
+            active = HashingEmbedder()
+            Task { @MainActor in
+                do {
+                    let tokenizer = try await AutoTokenizer.from(modelFolder: tokFolder)
+                    let model = try await MLModel.load(contentsOf: modelURL, configuration: MLModelConfiguration())
+                    guard token == loadToken else { return }   // superseded by a newer configure
+                    active = HFEmbedder(modelName: name, model: model, tokenizer: tokenizer,
+                                        dimension: level.dimension,
+                                        queryPrefix: level.queryPrefix,
+                                        docPrefix: level.docPrefix,
+                                        relevanceFloor: level.hfRelevanceFloor)
+                    onSwap?()
+                } catch {
+                    NSLog("Cliphoard: \(name) load failed (\(error)) — staying on fallback")
+                }
+            }
         } else {
             if level != .off { NSLog("Cliphoard: embedder unavailable for \(level.rawValue) — using fallback") }
             active = HashingEmbedder()
@@ -304,8 +352,9 @@ enum EmbedderProvider {
     /// Configure for `level`, then reprocess only the entries not already in the
     /// active model's space. Skipped entirely for the `off` tier, whose substring
     /// search doesn't use vectors — so we don't churn embeddings needlessly.
+    /// For the async HF tiers, the re-index re-runs once the real model swaps in.
     static func configureAndReindex(level: DeepSearchLevel, store: ClipStore) {
-        configure(level: level)
+        configure(level: level) { [weak store] in store?.refreshForActiveModel() }
         if level != .off { store.refreshForActiveModel() }
     }
 }

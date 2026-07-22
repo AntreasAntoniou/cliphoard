@@ -167,11 +167,11 @@ struct SettingsView: View {
                         Text("Embedding model")
                         Spacer()
                         Picker("", selection: $settings.deepSearchLevel) {
-                            // .high (EmbeddingGemma) has no bundled/converted model and
-                            // always falls back, so it's not offered (audit BL-17).
-                            ForEach(DeepSearchLevel.allCases.filter { $0 != .high }) { Text($0.title).tag($0) }
+                            // All four tiers ship bundled models: ogma micro/small
+                            // (MIT), MiniLM (Apache-2.0), EmbeddingGemma (8-bit).
+                            ForEach(DeepSearchLevel.allCases) { Text($0.title).tag($0) }
                         }
-                        .labelsHidden().frame(width: 180)
+                        .labelsHidden().frame(width: 200)
                         .disabled(settings.searchMode == .exact)
                     }
                     HStack {
@@ -181,9 +181,11 @@ struct SettingsView: View {
                             ForEach(VectorDetail.allCases) { Text($0.title).tag($0) }
                         }
                         .labelsHidden().frame(width: 180)
-                        .disabled(settings.searchMode == .exact || settings.deepSearchLevel == .off)
+                        // Head selection exists only on the ogma models; the HF
+                        // tiers (MiniLM/Gemma) have fixed output heads.
+                        .disabled(settings.searchMode == .exact || !settings.deepSearchLevel.isOgma)
                     }
-                    Text("Full uses the models' 1024-d head (distilled from bge-large) — strongest search. Compact stores 2.7× smaller vectors. Switching re-indexes in the background.")
+                    Text("Vector detail (ogma tiers): Full uses the 1024-d bge-large-distilled head — strongest search; Compact stores 2.7× smaller vectors. High/Max run MiniLM (fast, excellent) and EmbeddingGemma (best, ~35× larger). Switching re-indexes in the background.")
                         .font(.system(size: 11)).foregroundStyle(.secondary)
                     embedderStatus
                     Text("Smart = clips containing exactly what you typed first, then the closest in meaning · Exact = only clips containing the typed text, ignoring case · Tag = clips in the auto category (of 100) closest to your query. You can also switch modes from the pill next to the search field. Models run on-device (CoreML).")

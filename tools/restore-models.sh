@@ -37,7 +37,7 @@ ROOT="$(cd .. && pwd)"
 # Default set of models to restore. Keep in sync with Scripts/build-app.sh /
 # Sources/Cliphoard/Search/DeepSearch.swift (low → open-ogma-micro,
 # normal → open-ogma-small).
-MODELS="${MODELS:-open-ogma-micro open-ogma-small}"
+MODELS="${MODELS:-open-ogma-micro open-ogma-small all-MiniLM-L6-v2 embeddinggemma-300m}"
 HF_REPO_PREFIX="${HF_REPO_PREFIX:-axiotic}"
 
 mkdir -p models
@@ -50,14 +50,22 @@ for name in $MODELS; do
         continue
     fi
 
-    repo="$HF_REPO_PREFIX/$name"
-    echo "▸ Downloading $repo (PyTorch source) …"
-    python3 _dl.py "$repo"
-
     echo "▸ Converting $name → CoreML …"
     case "$name" in
-        open-ogma-*) python3 convert_ogma_libre.py "models/$name" ;;  # self-contained ogma-libre repos
-        *)           python3 convert_ogma.py "models/$name" ;;        # legacy HF trust_remote_code repos
+        open-ogma-*)
+            repo="$HF_REPO_PREFIX/$name"
+            echo "▸ Downloading $repo (PyTorch source) …"
+            python3 _dl.py "$repo"
+            python3 convert_ogma_libre.py "models/$name" ;;   # self-contained ogma-libre repos
+        all-MiniLM-L6-v2)
+            python3 convert_minilm.py ;;                      # pulls from HF cache itself
+        embeddinggemma-300m)
+            python3 convert_gemma.py ;;                       # gated: needs HF login w/ access
+        *)
+            repo="$HF_REPO_PREFIX/$name"
+            echo "▸ Downloading $repo (PyTorch source) …"
+            python3 _dl.py "$repo"
+            python3 convert_ogma.py "models/$name" ;;         # legacy HF trust_remote_code repos
     esac
 
     if [ ! -d "$pkg" ]; then

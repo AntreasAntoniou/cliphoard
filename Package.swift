@@ -6,9 +6,15 @@ let package = Package(
     platforms: [
         .macOS(.v13)
     ],
+    dependencies: [
+        // Tokenizers for the High/Max tiers (MiniLM WordPiece, Gemma SentencePiece).
+        // The ogma models keep the hand-rolled OgmaTokenizer (custom pipeline).
+        .package(url: "https://github.com/huggingface/swift-transformers.git", from: "0.1.0")
+    ],
     targets: [
         .executableTarget(
             name: "Cliphoard",
+            dependencies: [.product(name: "Transformers", package: "swift-transformers")],
             path: "Sources/Cliphoard",
             linkerSettings: [
                 .linkedFramework("AppKit"),

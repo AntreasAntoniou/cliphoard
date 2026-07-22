@@ -60,9 +60,15 @@ if ls "$ROOT"/tools/models/*.mlpackage >/dev/null 2>&1; then
             [ -f "$src/tokenizer_config.json" ] && cp "$src/tokenizer_config.json" "$dst/"
             # swift-transformers' AutoTokenizer.from(modelFolder:) also reads config.json
             [ -f "$src/config.json" ] && cp "$src/config.json" "$dst/"
-            # Remap the custom tokenizer_class to T5Tokenizer — swift-transformers'
-            # Unigram implementation, which matches ogma's Unigram tokenizer.json.
-            python3 -c "import json; p='$dst/tokenizer_config.json'; d=json.load(open(p)); d['tokenizer_class']='T5Tokenizer'; json.dump(d, open(p,'w'))" 2>/dev/null || true
+            [ -f "$src/special_tokens_map.json" ] && cp "$src/special_tokens_map.json" "$dst/"
+            case "$name" in
+                *ogma*)
+                    # Remap the custom tokenizer_class to T5Tokenizer — matches ogma's
+                    # Unigram tokenizer.json. MUST NOT touch the HF tiers (MiniLM's
+                    # BertTokenizer / Gemma's, which swift-transformers reads as-is).
+                    python3 -c "import json; p='$dst/tokenizer_config.json'; d=json.load(open(p)); d['tokenizer_class']='T5Tokenizer'; json.dump(d, open(p,'w'))" 2>/dev/null || true
+                    ;;
+            esac
         fi
     done
 fi
