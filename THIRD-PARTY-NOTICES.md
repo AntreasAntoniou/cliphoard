@@ -16,9 +16,20 @@ inside the distributed `.app`, not Cliphoard's own source code.
   supply chain of the bundled weights is permissive. The CoreML conversions are
   bundled inside the distributed Cliphoard binary and may be used commercially.
 
-### EmbeddingGemma (Google) — optional, not bundled by default
-- **License:** [Gemma Terms of Use](https://ai.google.dev/gemma/terms).
-- Only relevant if the optional high tier is ever bundled.
+### all-MiniLM-L6-v2 (sentence-transformers) — High tier
+- **Repo:** https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2
+- **License:** Apache-2.0. Bundled as a CoreML conversion.
+
+### EmbeddingGemma (Google) — Max tier
+- **Repo:** https://huggingface.co/google/embeddinggemma-300m
+- **License:** [Gemma Terms of Use](https://ai.google.dev/gemma/terms). Bundled
+  as an 8-bit-palettized CoreML conversion; use of the weights is subject to
+  Google's Gemma terms and the [Gemma prohibited use policy](https://ai.google.dev/gemma/prohibited_use_policy).
+
+### Tokenizers (swift-transformers)
+- **Repo:** https://github.com/huggingface/swift-transformers — Apache-2.0.
+  Used for the MiniLM/Gemma tokenizers; the ogma tokenizer remains an original
+  implementation in this repo.
 
 ## System libraries
 
