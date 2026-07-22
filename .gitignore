@@ -10,3 +10,4 @@ DerivedData/
 tools/models/
 *.mlpackage
 *.mlmodelc
+__pycache__/
