@@ -14,7 +14,7 @@ import CoreML
 ///   CLIPHOARD_OGMA_MODEL_DIR="$PWD/tools/models" swift test --filter OgmaRealDataTests
 final class OgmaRealDataTests: XCTestCase {
 
-    // MARK: Model resolution (tools/models/ogma-small.mlpackage + sibling tokenizer)
+    // MARK: Model resolution (tools/models/open-ogma-small.mlpackage + sibling tokenizer)
 
     private var modelsDir: URL {
         if let d = ProcessInfo.processInfo.environment["CLIPHOARD_OGMA_MODEL_DIR"], !d.isEmpty {
@@ -27,8 +27,8 @@ final class OgmaRealDataTests: XCTestCase {
 
     private func resolve() -> (mlpackage: URL, tokenizer: URL)? {
         let fm = FileManager.default
-        let pkg = modelsDir.appendingPathComponent("ogma-small.mlpackage")
-        let tok = modelsDir.appendingPathComponent("ogma-small")
+        let pkg = modelsDir.appendingPathComponent("open-ogma-small.mlpackage")
+        let tok = modelsDir.appendingPathComponent("open-ogma-small")
         guard fm.fileExists(atPath: pkg.path),
               fm.fileExists(atPath: tok.appendingPathComponent("tokenizer.json").path) else { return nil }
         return (pkg, tok)
@@ -68,16 +68,16 @@ final class OgmaRealDataTests: XCTestCase {
     @MainActor
     func testOgmaSemanticRetrievalOnRealData() throws {
         guard let r = resolve() else {
-            throw XCTSkip("ogma-small model not present — restore via tools/restore-models.sh")
+            throw XCTSkip("open-ogma-small model not present — restore via tools/restore-models.sh")
         }
         let model = try load(r.mlpackage)
         let tokenizer = try XCTUnwrap(OgmaTokenizer(folder: r.tokenizer))
-        let embedder = OgmaEmbedder(modelName: "ogma-small", model: model,
-                                    tokenizer: tokenizer, dimension: 256)
+        let embedder = OgmaEmbedder(modelName: "open-ogma-small", model: model,
+                                    tokenizer: tokenizer, dimension: 384)
 
         let items = corpus.map { makeItem($0.0, $0.1, embedder) }
-        XCTAssertTrue(items.allSatisfy { ($0.embeddings[embedder.signature]?.vector.count ?? 0) == 256 },
-                      "every clip embedded to a 256-dim ogma vector")
+        XCTAssertTrue(items.allSatisfy { ($0.embeddings[embedder.signature]?.vector.count ?? 0) == 384 },
+                      "every clip embedded to a 384-dim ogma vector")
 
         // Each query's wording shares little/no vocabulary with its target clip, so
         // a correct top rank can only come from MEANING, not substring overlap.
@@ -98,7 +98,7 @@ final class OgmaRealDataTests: XCTestCase {
         // model can't recover "teal" from opaque digits, which is exactly why the
         // app keeps exact/tag modes and a dedicated color kind alongside neural.
 
-        print("\n────────── ogma-small · NEURAL semantic retrieval on real data ──────────")
+        print("\n────────── open-ogma-small · NEURAL semantic retrieval on real data ──────────")
         var top1 = 0, top3 = 0
         for c in cases {
             let ranked = SemanticRanker.neural(query: c.query, items: items, embedder: embedder)

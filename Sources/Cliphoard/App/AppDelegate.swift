@@ -372,7 +372,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         NSApp.activate(ignoringOtherApps: true)
         let alert = NSAlert()
         alert.messageText = "Cliphoard"
-        alert.informativeText = "A floating clipboard manager for macOS.\n\nPress ⌃⌥⌘V anywhere to summon your clipboard history.\n\nOn-device models: ogma-micro and ogma-small (axiotic) are licensed CC-BY-NC-4.0, derived with attribution to Jina AI. EmbeddingGemma, if bundled, is subject to Google's Gemma terms."
+        alert.informativeText = "A floating clipboard manager for macOS.\n\nPress ⌃⌥⌘V anywhere to summon your clipboard history.\n\nOn-device models: open-ogma-micro and open-ogma-small (axiotic) are MIT-licensed, distilled from BAAI bge-small/large-en-v1.5 (MIT). EmbeddingGemma, if bundled, is subject to Google's Gemma terms."
         alert.alertStyle = .informational
         alert.runModal()
     }

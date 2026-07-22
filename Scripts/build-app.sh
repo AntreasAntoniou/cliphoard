@@ -67,9 +67,9 @@ if ls "$ROOT"/tools/models/*.mlpackage >/dev/null 2>&1; then
     done
 fi
 
-# License + attribution. The bundled ogma CoreML models are CC-BY-NC and legally
-# require their license + attribution to travel with every redistribution, so the
-# files must live inside the app bundle itself.
+# License + attribution. The bundled open-ogma CoreML models are MIT (distilled
+# from MIT-licensed BGE teachers); ship the license + notices with the bundle so
+# attribution travels with every redistribution.
 echo "▸ Bundling license + attribution…"
 cp "$ROOT/LICENSE" "$APP/Contents/Resources/"
 cp "$ROOT/THIRD-PARTY-NOTICES.md" "$APP/Contents/Resources/"

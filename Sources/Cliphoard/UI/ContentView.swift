@@ -594,7 +594,7 @@ struct ContentView: View {
         // entirely on the HashingEmbedder fallback: without a real semantic model
         // its classifications are unreliable and were showing misleading pills.
         guard DeepSearch.level != .off,
-              EmbedderProvider.active.signature.hasPrefix("ogma"),
+              EmbedderProvider.active.signature.contains("ogma"),
               let ids = item.embeddings[EmbedderProvider.active.signature]?.tags else { return [] }
         // Return all assigned tags; the card shows a couple whole tags + "+N".
         return ids.compactMap { TagSpace.names.indices.contains($0) ? TagSpace.names[$0] : nil }

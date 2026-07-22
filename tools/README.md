@@ -5,13 +5,16 @@ CoreML for on-device deep search. Both ogma models convert with **exact parity**
 (CoreML vs PyTorch cosine = 1.00000).
 
 ## Models (HuggingFace)
-| Tier   | Repo                  | Params | Dim | Tokenizer            |
-|--------|-----------------------|--------|-----|----------------------|
-| low    | `axiotic/ogma-micro`  | 2.3M   | 128 | Unigram/SP, 30k vocab |
-| normal | `axiotic/ogma-small`  | 8.6M   | 256 | Unigram/SP, 30k vocab |
-| high   | `google/embeddinggemma-300m` (gated) | 300M | 768 | — |
+| Tier   | Repo                        | Trunk | Out | Tokenizer            |
+|--------|-----------------------------|-------|-----|----------------------|
+| low    | `axiotic/open-ogma-micro`   | 128-d | 384 | raw SP, 30k + byte fallback |
+| normal | `axiotic/open-ogma-small`   | 256-d | 384 | raw SP, 30k + byte fallback |
+| high   | `google/embeddinggemma-300m` (gated) | — | 768 | — |
 
-License: ogma models are CC-BY-NC-4.0 (attribution to Jina AI teacher model).
+Both open-ogma tiers ship the 384-d `proj_small` head (distilled from
+`BAAI/bge-small-en-v1.5`). License: MIT end-to-end (models AND teachers).
+Legacy `axiotic/ogma-*` (CC-BY-NC, Jina teacher) still convert via
+`convert_ogma.py` but are no longer bundled.
 
 ## Requirements
 `pip install -r requirements.txt` (torch, transformers, coremltools, sentencepiece,
