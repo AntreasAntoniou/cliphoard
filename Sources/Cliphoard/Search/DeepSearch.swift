@@ -34,17 +34,49 @@ enum DeepSearchLevel: String, CaseIterable, Identifiable {
         }
     }
 
-    /// Output embedding dimension for each tier's model. Both open-ogma tiers
-    /// emit through the 384-d proj_small head (distilled from bge-small-en-v1.5),
-    /// the repos' default and their strongest per-dim output.
+    /// Output embedding dimension for each tier's model. The ogma tiers follow
+    /// the selected `VectorDetail` head (1024-d proj_large by default).
     var dimension: Int {
         switch self {
         case .off:    return 256
-        case .low:    return 384
-        case .normal: return 384
+        case .low, .normal: return DeepSearch.detail.dimension
         case .high:   return 768
         }
     }
+}
+
+/// Which projection head of the open-ogma models drives search. The converted
+/// CoreML packages emit BOTH heads on every prediction (the trunk dominates the
+/// cost), so switching is just reading a different output — but vectors cached
+/// under one head aren't comparable to the other, so a switch re-indexes (the
+/// per-model cache keeps a round-trip free).
+enum VectorDetail: String, CaseIterable, Identifiable {
+    /// 1024-d proj_large head (distilled from bge-large-en-v1.5). The default:
+    /// best retrieval quality AND the better-calibrated cosine space (validated
+    /// noise-floor p95 ≈ 0.40 vs 0.56 for the 384 head — see tools/validate_models.py).
+    case full1024
+    /// 384-d proj_small head (distilled from bge-small-en-v1.5): ~2.7× smaller
+    /// stored vectors, slightly weaker ranking.
+    case compact384
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .full1024:   return "Full (1024-d, best)"
+        case .compact384: return "Compact (384-d, lighter)"
+        }
+    }
+
+    var dimension: Int { self == .full1024 ? 1024 : 384 }
+
+    /// CoreML output name in the converted open-ogma packages.
+    var outputName: String { self == .full1024 ? "embedding_large" : "embedding" }
+
+    /// Minimum query·clip cosine the thresholded modes treat as "related", per
+    /// head — the two heads live in differently-calibrated spaces (measured on
+    /// the local validation set: gold-vs-noise separation).
+    var relevanceFloor: Float { self == .full1024 ? 0.40 : 0.58 }
 }
 
 /// How the bar searches. Ordered simplest → smartest; `smart` is the default.
@@ -99,15 +131,24 @@ enum DeepSearch {
         get { SearchMode(rawValue: UserDefaults.standard.string(forKey: "searchMode") ?? "smart") ?? .smart }
         set { UserDefaults.standard.set(newValue.rawValue, forKey: "searchMode") }
     }
+    static var detail: VectorDetail {
+        // Default to the full 1024-d head — strongest retrieval, best-separated space.
+        get { VectorDetail(rawValue: UserDefaults.standard.string(forKey: "vectorDetail") ?? "full1024") ?? .full1024 }
+        set { UserDefaults.standard.set(newValue.rawValue, forKey: "vectorDetail") }
+    }
 }
 
 // MARK: - Embedding
 
 protocol TextEmbedder {
     var dimension: Int { get }
-    /// Stable identity of this embedder ("hashing-256", "ogma-small-256", …).
-    /// Stored vectors / tag vectors are only comparable within one signature.
+    /// Stable identity of this embedder ("hashing-256", "open-ogma-small-1024-v1",
+    /// …). Stored vectors / tag vectors are only comparable within one signature.
     var signature: String { get }
+    /// Minimum query·clip cosine the thresholded search modes treat as related.
+    /// Embedding spaces calibrate differently (the open-ogma heads sit far apart),
+    /// so the floor travels with the embedder instead of being a global constant.
+    var relevanceFloor: Float { get }
     /// Embed a document/symmetric text.
     func embed(_ text: String) -> [Float]
     /// Embed, distinguishing a query from a document (asymmetric models use the
@@ -117,6 +158,8 @@ protocol TextEmbedder {
 
 extension TextEmbedder {
     func embed(_ text: String, query: Bool) -> [Float] { embed(text) }
+    /// Historical default, matching the hashing space's calibration.
+    var relevanceFloor: Float { 0.20 }
 }
 
 /// Real, dependency-free embedder: hashed character tri-grams + word tokens,
@@ -162,16 +205,23 @@ struct HashingEmbedder: TextEmbedder {
 final class OgmaEmbedder: TextEmbedder {
     let dimension: Int
     let signature: String
+    let relevanceFloor: Float
     private let model: MLModel
     private let tokenizer: OgmaTokenizer
+    /// Which CoreML output carries the selected head ("embedding_large" for the
+    /// 1024-d proj_large, "embedding" for the 384-d proj_small).
+    private let outputName: String
     private let maxLen = 256
 
     private enum Task: Int32 { case qry = 4, doc = 5, sym = 6 }
 
-    init(modelName: String, model: MLModel, tokenizer: OgmaTokenizer, dimension: Int) {
+    init(modelName: String, model: MLModel, tokenizer: OgmaTokenizer, dimension: Int,
+         outputName: String = "embedding", relevanceFloor: Float = 0.20) {
         self.model = model
         self.tokenizer = tokenizer
         self.dimension = dimension
+        self.outputName = outputName
+        self.relevanceFloor = relevanceFloor
         self.signature = "\(modelName)-\(dimension)-v1"
     }
 
@@ -202,8 +252,11 @@ final class OgmaEmbedder: TextEmbedder {
             NSLog("Cliphoard OgmaEmbedder: prediction failed (ids=\(ids.prefix(8))): \(error)")
             return []
         }
-        guard let emb = out.featureValue(for: "embedding")?.multiArrayValue else {
-            NSLog("Cliphoard OgmaEmbedder: no 'embedding' output; features=\(out.featureNames)")
+        // Prefer the selected head; fall back to the classic single "embedding"
+        // output so an older single-head package still works.
+        guard let emb = (out.featureValue(for: outputName)
+                         ?? out.featureValue(for: "embedding"))?.multiArrayValue else {
+            NSLog("Cliphoard OgmaEmbedder: no '\(outputName)' output; features=\(out.featureNames)")
             return []
         }
         var v = [Float](repeating: 0, count: emb.count)
@@ -236,8 +289,11 @@ enum EmbedderProvider {
            let tokFolder = Bundle.main.url(forResource: "\(name)-tokenizer", withExtension: nil),
            let model = try? MLModel(contentsOf: modelURL),
            let tokenizer = OgmaTokenizer(folder: tokFolder) {
+            let detail = DeepSearch.detail
             active = OgmaEmbedder(modelName: name, model: model, tokenizer: tokenizer,
-                                  dimension: level.dimension)
+                                  dimension: detail.dimension,
+                                  outputName: detail.outputName,
+                                  relevanceFloor: detail.relevanceFloor)
         } else {
             if level != .off { NSLog("Cliphoard: embedder unavailable for \(level.rawValue) — using fallback") }
             active = HashingEmbedder()
@@ -438,7 +494,7 @@ enum SemanticRanker {
             let vec = item.embeddings[embedder.signature]?.vector ?? embedder.embed(searchText(item))
             return (item, cosine(qv, vec))
         }
-        let kept = scored.filter { $0.1 >= 0.20 }.sorted { $0.1 > $1.1 }
+        let kept = scored.filter { $0.1 >= embedder.relevanceFloor }.sorted { $0.1 > $1.1 }
         if kept.isEmpty {
             return scored.sorted { $0.1 > $1.1 }.prefix(min(items.count, 8)).map { $0.0 }
         }
@@ -476,9 +532,10 @@ enum SemanticRanker {
             return (item, score, exact)
         }
         // Keep every exact hit; keep the rest only when meaning OR shared topic
-        // clears the bar, so the list stays relevant instead of padded with noise.
+        // clears the embedder's calibrated floor (tagBoost can lift a same-topic
+        // clip over it), so the list stays relevant instead of padded with noise.
         return scored
-            .filter { $0.exact || $0.score >= 0.18 }
+            .filter { $0.exact || $0.score >= embedder.relevanceFloor - 0.02 }
             .sorted { $0.score > $1.score }
             .map { $0.item }
     }
