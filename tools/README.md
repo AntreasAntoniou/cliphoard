@@ -11,8 +11,11 @@ CoreML for on-device deep search. Both ogma models convert with **exact parity**
 | normal | `axiotic/open-ogma-small`   | 256-d | 384 | raw SP, 30k + byte fallback |
 | high   | `google/embeddinggemma-300m` (gated) | — | 768 | — |
 
-Both open-ogma tiers ship the 384-d `proj_small` head (distilled from
-`BAAI/bge-small-en-v1.5`). License: MIT end-to-end (models AND teachers).
+Both open-ogma packages emit BOTH heads per prediction: `embedding` (384-d
+proj_small, distilled from `BAAI/bge-small-en-v1.5`) and `embedding_large`
+(1024-d proj_large, from `bge-large-en-v1.5`) — the app selects via Settings →
+Vector detail (default: Full 1024-d). `validate_models.py` benchmarks legacy vs
+open heads on a local retrieval set. License: MIT end-to-end (models AND teachers).
 Legacy `axiotic/ogma-*` (CC-BY-NC, Jina teacher) still convert via
 `convert_ogma.py` but are no longer bundled.
 

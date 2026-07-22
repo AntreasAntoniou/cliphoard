@@ -33,15 +33,23 @@ model = OgmaLibre.from_repo(str(P), device="cpu")
 
 
 class Wrap(nn.Module):
-    """base trunk → proj_small head → L2 normalize, app-shaped inputs."""
+    """base trunk → BOTH projection heads, each L2-normalized, app-shaped inputs.
+
+    One trunk pass feeds two outputs: `embedding` (384-d proj_small, distilled
+    from bge-small) and `embedding_large` (1024-d proj_large, distilled from
+    bge-large — the highest-fidelity head). The app picks an output by name
+    (Settings → Vector detail); computing the unused head is two spare matmuls.
+    """
     def __init__(s, m):
         super().__init__()
         s.base = m.base
-        s.proj = m.proj_small
+        s.proj_small = m.proj_small
+        s.proj_large = m.proj_large
 
     def forward(s, input_ids, attention_mask, task_token_ids):
         v = s.base(input_ids, attention_mask, task_token_ids)
-        return F.normalize(s.proj(v), p=2, dim=1)
+        return (F.normalize(s.proj_small(v), p=2, dim=1),
+                F.normalize(s.proj_large(v), p=2, dim=1))
 
 
 wrap = Wrap(model).eval()
@@ -50,7 +58,7 @@ ids = torch.from_numpy(enc["input_ids"].astype("int64"))
 mask = torch.from_numpy(enc["attention_mask"].astype("int64"))
 task = torch.tensor([5], dtype=torch.long)  # DOC
 with torch.no_grad():
-    ref = wrap(ids, mask, task).numpy()
+    ref_small, ref_large = (t.numpy() for t in wrap(ids, mask, task))
 
 # torch.export instead of jit.trace: the trunk's SDPA/RoPE shape math traces
 # aten::Int nodes that coremltools' TorchScript frontend rejects; the export
@@ -66,7 +74,8 @@ ml = ct.convert(
     inputs=[ct.TensorType(name="input_ids", shape=(1, sl), dtype=np.int32),
             ct.TensorType(name="attention_mask", shape=(1, sl), dtype=np.int32),
             ct.TensorType(name="task_token_ids", shape=(1,), dtype=np.int32)],
-    outputs=[ct.TensorType(name="embedding")],
+    outputs=[ct.TensorType(name="embedding"),          # 384-d proj_small head
+             ct.TensorType(name="embedding_large")],   # 1024-d proj_large head
     minimum_deployment_target=ct.target.macOS13,
     compute_units=ct.ComputeUnit.ALL)
 ml.save(f"models/{name}.mlpackage")
@@ -74,9 +83,10 @@ ml.save(f"models/{name}.mlpackage")
 pred = ml.predict({"input_ids": ids.numpy().astype(np.int32),
                    "attention_mask": mask.numpy().astype(np.int32),
                    "task_token_ids": task.numpy().astype(np.int32)})
-cl = np.asarray(pred["embedding"]).reshape(-1)
-cos = float(np.dot(ref.reshape(-1), cl) / (np.linalg.norm(ref) * np.linalg.norm(cl)))
-print(f"{name}: dim={cl.shape[0]} parity_cosine={cos:.5f}")
+for out_name, ref in (("embedding", ref_small), ("embedding_large", ref_large)):
+    cl = np.asarray(pred[out_name]).reshape(-1)
+    cos = float(np.dot(ref.reshape(-1), cl) / (np.linalg.norm(ref) * np.linalg.norm(cl)))
+    print(f"{name}/{out_name}: dim={cl.shape[0]} parity_cosine={cos:.5f}")
 
 # ── tokenizer folder for the app bundle ──────────────────────────────────────
 # Dump the sp Unigram pieces into the tokenizer.json shape the Swift tokenizer

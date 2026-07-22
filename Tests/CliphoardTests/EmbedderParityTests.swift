@@ -42,7 +42,7 @@ final class EmbedderParityTests: XCTestCase {
 
     /// Golden leading embedding components for `probe` (task=doc), from
     /// tools/reference.json[0].vec_head (first 6 dims of the L2-normalised vector).
-    private let goldenHead: [Float] = [-0.07704, -0.0528, 0.00029, -0.00834, 0.04225, -0.0167]
+    private let goldenHead: [Float] = [-0.00076, -0.00118, 0.02593, -0.02741, -0.05632, -0.01341]
 
     /// Per-component tolerance: PyTorch reference vs CoreML Float16 inference. The
     /// converter's parity_cosine (tools/convert_ogma_libre.py) confirms agreement at the
@@ -59,7 +59,7 @@ final class EmbedderParityTests: XCTestCase {
     }
 
     /// Default model used when `$CLIPHOARD_OGMA_MODEL_DIR` is unset. The checked-in
-    /// goldens were produced from open-ogma-small (384-dim head) — see tools/reference.py.
+    /// goldens were produced from open-ogma-small (1024-d proj_large head, the default) — see tools/reference.py.
     private let defaultModelName = "open-ogma-small"
 
     /// `<repo>/tools/models` relative to this source file (…/Tests/CliphoardTests/…).
@@ -158,10 +158,11 @@ final class EmbedderParityTests: XCTestCase {
                        "tokenizer ids for \"\(probe)\" diverged from tools/reference.json")
 
         // Construct the embedder exactly as EmbedderProvider.configure does. The
-        // goldens were produced from open-ogma-small (384-dim head); the embedder only checks
+        // goldens were produced from open-ogma-small (1024-d proj_large head, the default); the embedder only checks
         // the vector length matches `dimension`, so use that model's dimension.
         let embedder = OgmaEmbedder(modelName: resolved.name, model: model,
-                                    tokenizer: tokenizer, dimension: DeepSearchLevel.normal.dimension)
+                                    tokenizer: tokenizer, dimension: VectorDetail.full1024.dimension,
+                                    outputName: VectorDetail.full1024.outputName)
         let vec = embedder.embed(probe)   // doc task — same as embedSelfTest / reference.py
 
         XCTAssertFalse(vec.isEmpty, "embedder returned an empty vector (prediction failed)")

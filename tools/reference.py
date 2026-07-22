@@ -2,7 +2,7 @@
 values EmbedderParityTests checks the Swift pipeline against.
 
 Now targets open-ogma-small (ogma-libre): ids are bos=2 + (sp + 7) + eos=3, and
-the vector is the 384-d proj_small head, L2-normalised — exactly what the
+the vector is the 1024-d proj_large head (the app default), L2-normalised — exactly what the
 converted CoreML model emits and the app computes.
 """
 import json
@@ -29,7 +29,7 @@ for text, task in samples:
     t_mask = torch.ones_like(t_ids)
     t_task = torch.tensor([TASK[task]], dtype=torch.long)
     with torch.no_grad():
-        v = F.normalize(model.proj_small(model.base(t_ids, t_mask, t_task)), p=2, dim=1)
+        v = F.normalize(model.proj_large(model.base(t_ids, t_mask, t_task)), p=2, dim=1)
     v = v[0].numpy().reshape(-1)
     out.append({"text": text, "task": task, "ids": ids,
                 "vec_head": [round(float(x), 5) for x in v[:6]],

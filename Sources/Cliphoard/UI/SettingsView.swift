@@ -30,6 +30,14 @@ final class AppSettings: ObservableObject {
             EmbedderProvider.configureAndReindex(level: deepSearchLevel, store: store)
         }
     }
+    @Published var vectorDetail: VectorDetail {
+        didSet {
+            DeepSearch.detail = vectorDetail
+            // A head switch changes the embedder signature (different vector
+            // space), so reconfigure + re-embed exactly like a model change.
+            EmbedderProvider.configureAndReindex(level: deepSearchLevel, store: store)
+        }
+    }
     @Published var activeBasket: String {
         didSet {
             TagBaskets.activeID = activeBasket
@@ -60,6 +68,7 @@ final class AppSettings: ObservableObject {
         layoutMode = Theme.layout
         searchMode = DeepSearch.mode
         deepSearchLevel = DeepSearch.level
+        vectorDetail = DeepSearch.detail
         activeBasket = TagBaskets.activeID
         customTagsText = TagBaskets.custom.tags.joined(separator: "\n")
     }
@@ -165,6 +174,17 @@ struct SettingsView: View {
                         .labelsHidden().frame(width: 180)
                         .disabled(settings.searchMode == .exact)
                     }
+                    HStack {
+                        Text("Vector detail")
+                        Spacer()
+                        Picker("", selection: $settings.vectorDetail) {
+                            ForEach(VectorDetail.allCases) { Text($0.title).tag($0) }
+                        }
+                        .labelsHidden().frame(width: 180)
+                        .disabled(settings.searchMode == .exact || settings.deepSearchLevel == .off)
+                    }
+                    Text("Full uses the models' 1024-d head (distilled from bge-large) — strongest search. Compact stores 2.7× smaller vectors. Switching re-indexes in the background.")
+                        .font(.system(size: 11)).foregroundStyle(.secondary)
                     embedderStatus
                     Text("Smart = clips containing exactly what you typed first, then the closest in meaning · Exact = only clips containing the typed text, ignoring case · Tag = clips in the auto category (of 100) closest to your query. You can also switch modes from the pill next to the search field. Models run on-device (CoreML).")
                         .font(.system(size: 11)).foregroundStyle(.secondary)

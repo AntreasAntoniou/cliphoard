@@ -73,11 +73,12 @@ final class OgmaRealDataTests: XCTestCase {
         let model = try load(r.mlpackage)
         let tokenizer = try XCTUnwrap(OgmaTokenizer(folder: r.tokenizer))
         let embedder = OgmaEmbedder(modelName: "open-ogma-small", model: model,
-                                    tokenizer: tokenizer, dimension: 384)
+                                    tokenizer: tokenizer, dimension: 1024,
+                                    outputName: "embedding_large")
 
         let items = corpus.map { makeItem($0.0, $0.1, embedder) }
-        XCTAssertTrue(items.allSatisfy { ($0.embeddings[embedder.signature]?.vector.count ?? 0) == 384 },
-                      "every clip embedded to a 384-dim ogma vector")
+        XCTAssertTrue(items.allSatisfy { ($0.embeddings[embedder.signature]?.vector.count ?? 0) == 1024 },
+                      "every clip embedded to a 1024-dim ogma vector")
 
         // Each query's wording shares little/no vocabulary with its target clip, so
         // a correct top rank can only come from MEANING, not substring overlap.
