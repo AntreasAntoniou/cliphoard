@@ -469,6 +469,18 @@ enum SemanticRanker {
         return dot // inputs L2-normalised → dot == cosine
     }
 
+    /// How much to trust a clip's cosine, from its text length. Ultra-short
+    /// clips ("c", "ok", "styled") mean-pool over almost no content tokens, so
+    /// their vectors collapse toward the space's generic center and sit ~0.43
+    /// from EVERYTHING (measured: "fun" vs 1-char junk ≈ 0.41–0.54, vs real
+    /// unrelated docs ≈ 0.13–0.30) — classic hubness. Shrinking their cosines
+    /// keeps them out of the thresholded modes unless nothing better exists
+    /// (the top-K fallback still shows them for genuinely short-hit searches).
+    /// Ramps linearly to full trust at 12 chars; query side is never discounted.
+    static func lengthConfidence(_ item: ClipItem) -> Float {
+        min(1, Float(searchText(item).count) / 12)
+    }
+
     /// Essence search: full query·item cosine, best-first, thresholded.
     static func essence(query: String, items: [ClipItem], embedder: TextEmbedder) -> [ClipItem] {
         let qv = embedder.embed(query, query: true)
@@ -492,7 +504,9 @@ enum SemanticRanker {
         let qv = embedder.embed(query, query: true)
         let scored = items.map { item -> (ClipItem, Float) in
             let vec = item.embeddings[embedder.signature]?.vector ?? embedder.embed(searchText(item))
-            return (item, cosine(qv, vec))
+            // Confidence-weighted: hub vectors from ultra-short clips must not
+            // clear the floor on their unreliable ~0.4 ambient cosine.
+            return (item, cosine(qv, vec) * lengthConfidence(item))
         }
         let kept = scored.filter { $0.1 >= embedder.relevanceFloor }.sorted { $0.1 > $1.1 }
         if kept.isEmpty {
@@ -525,9 +539,14 @@ enum SemanticRanker {
             let emb = item.embeddings[embedder.signature]
             let vec = emb?.vector ?? embedder.embed(searchText(item))
             let exact = searchText(item).lowercased().contains(q)
-            let neural = cosine(qv, vec)
+            // Confidence-weighted neural leg (see lengthConfidence): an
+            // ultra-short clip's cosine AND its vector-derived tags are both
+            // unreliable, so the whole semantic contribution is shrunk. Exact
+            // substring hits are untouched — they don't rely on the vector.
+            let confidence = lengthConfidence(item)
+            let neural = cosine(qv, vec) * confidence
             let shared = emb.map { Set($0.tags).intersection(queryTags).count } ?? 0
-            let tagBoost = Float(min(shared, 2)) * 0.10          // up to +0.20 for topic agreement
+            let tagBoost = Float(min(shared, 2)) * 0.10 * confidence  // up to +0.20 for topic agreement
             let score = (exact ? 10 : 0) + neural + tagBoost
             return (item, score, exact)
         }
