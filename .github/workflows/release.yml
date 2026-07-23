@@ -55,14 +55,18 @@ jobs:
           # Conversion stack centralized in tools/requirements.txt (also exercised
           # cert-free by .github/workflows/models.yml).
           python3 -m pip install -r tools/requirements.txt
-          bash tools/restore-models.sh
+          # Lean release set — EmbeddingGemma is gated on HF and auto-downloads
+          # in-app from the models-v1 release instead of shipping in the DMG.
+          MODELS="open-ogma-micro open-ogma-small all-MiniLM-L6-v2" bash tools/restore-models.sh
 
       - name: Verify bundled models are present
         run: |
-          if ! ls tools/models/*.mlpackage >/dev/null 2>&1; then
-            echo "::error::No models in tools/models/*.mlpackage after restore. See tools/restore-models.sh."
-            exit 1
-          fi
+          for m in open-ogma-micro open-ogma-small all-MiniLM-L6-v2; do
+            if [ ! -d "tools/models/$m.mlpackage" ]; then
+              echo "::error::missing model $m after restore. See tools/restore-models.sh."
+              exit 1
+            fi
+          done
 
       - name: Set up signing keychain
         env:
