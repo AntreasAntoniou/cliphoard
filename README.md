@@ -26,7 +26,7 @@ cloud.** Everything you copy stays on your Mac.
 - **🔎 Smart search, on-device.** The default **Smart** mode shows your exact matches
   first, then the semantically closest clips — find "that database query" by meaning
   *and* still get the literal token you typed. Switch modes (Smart / Exact / Tag)
-  right from the pill next to the search field. No network, no account.
+  right from the pill next to the search field. Four model tiers (ogma micro/small, MiniLM, EmbeddingGemma) — heavier tiers auto-download on first selection. No account; your clips never touch a network.
 - **🔒 Private, and provably so.** Nothing ever leaves your Mac. Every clip is
   **encrypted at rest** with a key bound to the **Secure Enclave** (where available) —
   text, rich text and metadata in the database, and image clips and their thumbnails on
@@ -87,7 +87,7 @@ Other targets: `make app` (build `build/Cliphoard.app`) · `make install` (copy 
 ## Privacy
 
 Everything is stored **locally** and **encrypted at rest** — text clips in the database
-and image clips (plus their thumbnails) on disk (see PRIVACY.md). Cliphoard makes no network requests and has no
+and image clips (plus their thumbnails) on disk (see PRIVACY.md). Cliphoard sends no data anywhere — its only outbound call is the optional one-time model download — and has no
 telemetry, analytics, or account. Password managers (transient / concealed /
 auto-generated pasteboards) are skipped, and you can exclude any app. See
 [PRIVACY.md](PRIVACY.md) — including **why there is, and will be, no cloud sync**.

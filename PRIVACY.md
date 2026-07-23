@@ -42,8 +42,11 @@ folder as sensitive and use the exclusion list for apps where you copy secrets.
 
 ## What Cliphoard does NOT do
 
-- ❌ No network requests. Cliphoard makes no outbound connections for its core
-  functionality and sends your data to no server — ours or anyone else's.
+- ❌ No network requests carrying your data. Cliphoard sends your clips to no
+  server — ours or anyone else's. Its single outbound call is an *optional*,
+  user-initiated, download-only fetch of a search model from GitHub Releases
+  when you select a tier that isn't bundled (nothing about you or your
+  clipboard is sent; just an HTTPS file download).
 - ❌ No telemetry, analytics, crash reporting, or usage tracking.
 - ❌ No account, sign-in, or cloud sync.
 - ❌ No advertising or third-party SDKs.
@@ -88,8 +91,10 @@ clipboard history is, in effect, a concentrated archive of your secrets.
 Given that, the most important property by far is: **it must be impossible to
 exfiltrate.** If the data never leaves the device, there is no sync server to
 breach, no vendor who can read it, no cloud copy to subpoena, no account to phish,
-and no network path for malware to abuse. "It physically cannot leave your Mac" is
-a stronger, simpler promise than any amount of policy.
+and no network path that carries clip data. "Your clips physically cannot leave
+your Mac" is a stronger, simpler promise than any amount of policy. (The only
+outbound request the app can make at all is the optional model download above —
+download-only, carries nothing.)
 
 **But what about end-to-end-encrypted sync?** E2E is genuinely better than
 plaintext cloud — but it still weakens the core guarantee. It requires an account

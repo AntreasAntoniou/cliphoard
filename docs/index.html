@@ -150,11 +150,12 @@
   <p class="lead">A native Swift app — no Electron, no account, no cloud. Just a fast bar for everything you copy.</p>
   <div class="grid">
     <div class="card"><div class="ic">⌨️</div><h3>Summon from anywhere</h3><p>A global ⌃⌥⌘V hotkey brings the bar up over any app. Pick a clip and it pastes straight back where you were.</p></div>
-    <div class="card"><div class="ic">✨</div><h3>Semantic search</h3><p>On-device AI (CoreML) finds clips by what they mean. Search "that database query" and get it — no exact words needed.</p></div>
+    <div class="card"><div class="ic">✨</div><h3>Semantic search</h3><p>On-device AI (CoreML) finds clips by what they mean — four swappable model tiers, up to EmbeddingGemma. Search "that database query" and get it — no exact words needed.</p></div>
     <div class="card"><div class="ic">🔒</div><h3>Private by design</h3><p>Everything stays on your Mac. No network calls, no telemetry, no account. Password managers are skipped automatically.</p></div>
     <div class="card"><div class="ic">🎨</div><h3>17 themes</h3><p>From a clean Swiss greyscale to One Dark, Dracula, Tokyo Night, Catppuccin and more — plus light themes. Follows your system appearance.</p></div>
     <div class="card"><div class="ic">🧱</div><h3>Three layouts</h3><p>A horizontal card strip, a dense compact list, or a Spotlight-style palette with a live preview. Your call.</p></div>
     <div class="card"><div class="ic">🖼️</div><h3>Text, links, colors, images</h3><p>Cliphoard recognises what you copy — rich text, URLs, hex colors, files and images — and keeps thumbnails for fast browsing.</p></div>
+    <div class="card"><div class="ic">🧭</div><h3>Filter by dimension &amp; time</h3><p>Every clip is auto-classified along 10 meaning dimensions. Combine filters like <i>credential</i> + <i>terminal</i>, then narrow to <i>yesterday</i> — or type <code>when:today</code> in the bar.</p></div>
   </div>
 </section>
 
@@ -166,6 +167,23 @@
     <div class="theme"><img src="img/search-neural.png" alt="Neural search: the query 'revert my last commit' returns 'git reset --soft HEAD~1'" loading="lazy"><div class="cap"><b>Neural</b><span>“revert my last commit” → <code>git reset --soft HEAD~1</code></span></div></div>
     <div class="theme"><img src="img/search-smart.png" alt="Smart search: the query 'catchy' returns the tagline 'Copy anything. Hoard everything.'" loading="lazy"><div class="cap"><b>Smart</b><span>“catchy” → “Copy anything. Hoard everything.”</span></div></div>
   </div>
+  <div style="height:34px"></div>
+  <h2 style="font-size:28px">Four model tiers. You pick the trade-off.</h2>
+  <p class="lead">From a 2.5M-parameter featherweight to EmbeddingGemma — all on-device, all swappable in Settings. Heavier tiers install themselves the moment you pick them; nothing to download by hand. Benchmarked on a clipboard-realistic retrieval set (<a href="https://github.com/AntreasAntoniou/cliphoard/blob/main/tools/BENCHMARKS.md" style="color:var(--accent)">methodology</a>).</p>
+  <table class="cmp">
+    <thead>
+      <tr><th>Tier</th><th>Model</th><th>Params</th><th>Retrieval (top-1)</th><th>License</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Low</td><td>open-ogma-micro</td><td>2.5M</td><td>13/21</td><td>MIT</td></tr>
+      <tr><td><b>Normal</b> <small>default</small></td><td>open-ogma-small <small>1024-d head, distilled from bge-large</small></td><td>8.9M</td><td>15/21</td><td>MIT</td></tr>
+      <tr><td>High</td><td>all-MiniLM-L6-v2</td><td>22.7M</td><td>19/21</td><td>Apache-2.0</td></tr>
+      <tr><td>Max</td><td>EmbeddingGemma-300m <small>8-bit, auto-downloads on first use</small></td><td>308M</td><td>20/21</td><td>Gemma ToU</td></tr>
+    </tbody>
+  </table>
+  <div style="height:34px"></div>
+  <h2 style="font-size:28px">Slice your hoard by meaning — and by time.</h2>
+  <p class="lead">Every clip is classified along <b>10 dimensions</b> (content type, domain, intent, sensitivity, source…) with 10 values each — filter any combination instantly. And time reads like you think: <i>Today</i>, <i>Yesterday</i>, <i>This week</i>, a custom range, or just type <code>when:yesterday</code> or <code>when:2026-07-01..2026-07-15</code> straight into the search bar.</p>
 </section>
 
 <section id="compare" class="wrap">
@@ -192,12 +210,12 @@
 <section id="security" class="wrap">
   <div class="eyebrow">Built to hold secrets</div>
   <h2>Your clipboard holds passwords. We treat it that way.</h2>
-  <p class="lead">Everything you copy is encrypted on disk, the key never leaves your Mac, and nothing ever touches a network. Not marketing — it's how the code works.</p>
+  <p class="lead">Everything you copy is encrypted on disk, the key never leaves your Mac, and your clips never touch a network. Not marketing — it's how the code works.</p>
   <div class="secgrid">
     <div class="secitem"><div class="ic">🔐</div><div><h3>Encrypted at rest</h3><p>Every clip — text, rich text, file paths, colors, images <i>and</i> the semantic search index — is sealed with authenticated <b>AES-GCM</b> before it's written to disk. Run <code>strings</code> on the database and you get nothing.</p></div></div>
     <div class="secitem"><div class="ic">🔒</div><div><h3>Key sealed in the Secure Enclave</h3><p>The key is derived from a P-256 key generated <i>inside</i> your Mac's Secure Enclave — its material can't be extracted. Copy the database to another machine and it's undecryptable; only this Mac can re-derive the key. No Touch ID prompt.</p></div></div>
     <div class="secitem"><div class="ic">🙈</div><div><h3>Secrets skipped at capture</h3><p>Copies from password managers, and pasteboards marked transient or concealed, are never stored in the first place — and you can add your own apps to the skip list.</p></div></div>
-    <div class="secitem"><div class="ic">📵</div><div><h3>No network. Ever.</h3><p>There is no networking code in Cliphoard — no telemetry, no account, no cloud, no phone-home. It can't leak your clipboard because nothing is able to send it.</p></div></div>
+    <div class="secitem"><div class="ic">📵</div><div><h3>Your clips never touch a network</h3><p>No telemetry, no account, no cloud, no phone-home. The app's only network call is fetching an <i>optional</i> search model from GitHub when you pick a heavier tier — a one-time, download-only request that carries none of your data.</p></div></div>
     <div class="secitem"><div class="ic">🗝️</div><div><h3>Owner-only on disk</h3><p>The store lives in your Application Support folder with <code>0700</code>/<code>0600</code> permissions — other user accounts on the Mac can't read it.</p></div></div>
     <div class="secitem"><div class="ic">🔎</div><div><h3>Open source, auditable</h3><p>MIT-licensed. Don't take our word for it — <a href="https://github.com/AntreasAntoniou/cliphoard/blob/main/Sources/Cliphoard/Clipboard/Crypto.swift">read <code>Crypto.swift</code></a> yourself.</p></div></div>
   </div>
@@ -225,7 +243,7 @@
     <div style="height:26px"></div>
     <div class="specs">
       <span>macOS 13 Ventura +</span><span>Universal (Apple Silicon &amp; Intel)</span>
-      <span>~23 MB download</span><span>MIT licensed</span><span>No telemetry</span>
+      <span>~80 MB download</span><span>MIT licensed</span><span>No telemetry</span>
     </div>
   </div>
 </section>
