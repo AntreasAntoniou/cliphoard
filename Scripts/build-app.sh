@@ -44,10 +44,19 @@ fi
 # Deep-search models (best effort). Compile any converted CoreML packages in
 # tools/models to .mlmodelc and bundle them + their tokenizer so on-device
 # embedding works. Absent → the app falls back to the built-in HashingEmbedder.
+# BUNDLE_MODELS: space-separated tier models to bundle (default: all present).
+# Release builds set a lean list — the app AUTO-DOWNLOADS any selected tier
+# whose model isn't bundled (ModelAssets.ensure, GitHub release models-v1).
 if ls "$ROOT"/tools/models/*.mlpackage >/dev/null 2>&1; then
     echo "▸ Bundling embedding models…"
     for pkg in "$ROOT"/tools/models/*.mlpackage; do
         name="$(basename "$pkg" .mlpackage)"
+        if [ -n "${BUNDLE_MODELS:-}" ]; then
+            case " $BUNDLE_MODELS " in
+                *" $name "*) ;;
+                *) echo "  · $name skipped (not in BUNDLE_MODELS — auto-downloads on demand)"; continue ;;
+            esac
+        fi
         xcrun coremlcompiler compile "$pkg" "$APP/Contents/Resources" 2>/dev/null \
             && echo "  • $name.mlmodelc"
         # bundle the tokenizer as a folder <name>-tokenizer/ with the two files

@@ -53,9 +53,17 @@ ENTITLEMENTS="Scripts/Cliphoard.entitlements"
 DEVID="${DEVID:-}"                 # Developer ID Application identity (empty = local/self-signed)
 NOTARY_PROFILE="${NOTARY_PROFILE:-}"   # notarytool keychain profile (empty = skip notarization)
 
-# 1. Build the .app (build-app.sh bundles models + tokenizers and does a base sign).
+# 1. Ensure the DEFAULT-tier models exist (restore if missing), then build a
+# LEAN app: ogma micro/small + MiniLM bundled (~65MB of models); EmbeddingGemma
+# (294MB) auto-downloads on demand from the models-v1 release. A release without
+# the default models would ship "basic matching only" — hard-fail instead.
+say "Restoring default-tier models…"
+MODELS="open-ogma-micro open-ogma-small all-MiniLM-L6-v2" bash tools/restore-models.sh
+for m in open-ogma-micro open-ogma-small all-MiniLM-L6-v2; do
+    [ -d "tools/models/$m.mlpackage" ] || { echo "::error::missing model $m — release aborted" >&2; exit 1; }
+done
 say "Building Cliphoard.app…"
-bash Scripts/build-app.sh release
+BUNDLE_MODELS="open-ogma-micro open-ogma-small all-MiniLM-L6-v2" bash Scripts/build-app.sh release
 VERSION="$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$APP/Contents/Info.plist")"
 say "Version $VERSION"
 

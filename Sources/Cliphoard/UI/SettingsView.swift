@@ -88,6 +88,9 @@ final class AppSettings: ObservableObject {
 struct SettingsView: View {
     @ObservedObject var settings: AppSettings
     @ObservedObject var store: ClipStore
+    /// Embedder lifecycle (ready / downloading N% / installing / failed) for the
+    /// live status line — auto-install progress renders here.
+    @ObservedObject private var embedderState = EmbedderState.shared
     /// Live, observable Accessibility-trust state (polled).
     private var axTrusted: Bool { settings.axTrusted }
     private let axTimer = Timer.publish(every: 1.2, on: .main, in: .common).autoconnect()
@@ -319,18 +322,39 @@ struct SettingsView: View {
 
     // MARK: Building blocks
 
-    /// Live status line for the active embedder. The hashing fallback means no
-    /// converted semantic model is loaded; anything else is a real on-device model.
+    /// Live embedder lifecycle line. Distinguishes downloading / installing /
+    /// loading from a real absence — models auto-install when a tier is picked,
+    /// so "not installed" is only ever a transient or an error, never a task
+    /// for the user.
     @ViewBuilder
     private var embedderStatus: some View {
-        let signature = EmbedderProvider.active.signature
-        let isFallback = signature.hasPrefix("hashing")
         HStack(spacing: 6) {
-            Image(systemName: isFallback ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
-                .foregroundStyle(isFallback ? .orange : .green)
-            Text(isFallback ? "Semantic models not installed — using basic matching"
-                            : "Semantic model active: \(signature)")
-                .foregroundStyle(isFallback ? Color.secondary : Color.green)
+            switch embedderState.state {
+            case .ready(let signature):
+                Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                Text("Semantic model active: \(signature)").foregroundStyle(Color.green)
+            case .downloading(let name, let progress):
+                ProgressView().controlSize(.small)
+                Text("Downloading \(name)… \(Int(progress * 100))%")
+                    .foregroundStyle(.secondary)
+            case .installing(let name):
+                ProgressView().controlSize(.small)
+                Text("Installing \(name)… (one-time)").foregroundStyle(.secondary)
+            case .loading(let name):
+                ProgressView().controlSize(.small)
+                Text("Loading \(name)…").foregroundStyle(.secondary)
+            case .failed(let name, let message):
+                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                Text("\(name) install failed: \(message)").foregroundStyle(.secondary)
+                Button("Retry") {
+                    EmbedderProvider.configureAndReindex(level: settings.deepSearchLevel, store: store)
+                }
+                .controlSize(.small)
+            case .fallback:
+                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                Text("Basic matching only — pick a model tier above to auto-install one")
+                    .foregroundStyle(.secondary)
+            }
         }
         .font(.system(size: 11))
     }

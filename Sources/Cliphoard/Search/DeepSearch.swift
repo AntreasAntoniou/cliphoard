@@ -297,54 +297,74 @@ enum EmbedderProvider {
     /// so a rapid tier flip can't have a stale load overwrite the newer one.
     private static var loadToken = 0
 
-    /// Load the embedder for `level`. The ogma tiers load synchronously (small
-    /// models, hand-rolled tokenizer). The HF tiers (MiniLM/Gemma) load ASYNC —
-    /// `active` falls back to hashing immediately and swaps to the real model
-    /// when ready (Gemma alone is ~300MB of weights) — then `onSwap` fires so
-    /// the store can re-index into the new space. Falls back to the
-    /// HashingEmbedder when a tier has no bundled model or loading fails.
+    /// Load the embedder for `level`. Resolution is bundle → local store →
+    /// AUTO-DOWNLOAD (ModelAssets.ensure): selecting a tier IS the install —
+    /// the user never fetches models by hand. A bundled/stored ogma model loads
+    /// synchronously (small files); everything else loads async — `active`
+    /// serves hashing meanwhile and swaps when ready, then `onSwap` fires so the
+    /// store can re-index into the new space. Lifecycle (loading / downloading
+    /// N% / installing / failed) is published via EmbedderState for Settings.
     @discardableResult
     static func configure(level: DeepSearchLevel, onSwap: (() -> Void)? = nil) -> Bool {
         let before = active.signature
         loadToken &+= 1
         let token = loadToken
-        // OgmaTokenizer implements ONLY ogma's tokenizer (metaspace + offset); it
-        // would mis-tokenize the HF models. Gate to the ogma family — "ogma-*"
-        // legacy and "open-ogma-*" libre names both match.
-        if let name = level.modelName, level.isOgma, name.contains("ogma"),
-           let modelURL = Bundle.main.url(forResource: name, withExtension: "mlmodelc"),
-           let tokFolder = Bundle.main.url(forResource: "\(name)-tokenizer", withExtension: nil),
-           let model = try? MLModel(contentsOf: modelURL),
-           let tokenizer = OgmaTokenizer(folder: tokFolder) {
+        guard let name = level.modelName else {          // .off
+            active = HashingEmbedder()
+            EmbedderState.shared.set(.fallback)
+            return active.signature != before
+        }
+        // Fast path: an ogma model already on disk loads synchronously.
+        // OgmaTokenizer implements ONLY ogma's tokenizer (metaspace + offset);
+        // the HF tiers go through swift-transformers below.
+        if level.isOgma, name.contains("ogma"), let found = ModelAssets.locate(name),
+           let model = try? MLModel(contentsOf: found.compiledModel),
+           let tokenizer = OgmaTokenizer(folder: found.tokenizerFolder) {
             let detail = DeepSearch.detail
             active = OgmaEmbedder(modelName: name, model: model, tokenizer: tokenizer,
                                   dimension: detail.dimension,
                                   outputName: detail.outputName,
                                   relevanceFloor: detail.relevanceFloor)
-        } else if let name = level.modelName, !level.isOgma,
-                  let modelURL = Bundle.main.url(forResource: name, withExtension: "mlmodelc"),
-                  let tokFolder = Bundle.main.url(forResource: "\(name)-tokenizer", withExtension: nil) {
-            // Serve hashing while the heavyweight model + tokenizer load off the
-            // blocking path; swap in place if this tier is still the wanted one.
-            active = HashingEmbedder()
-            Task { @MainActor in
-                do {
-                    let tokenizer = try await AutoTokenizer.from(modelFolder: tokFolder)
-                    let model = try await MLModel.load(contentsOf: modelURL, configuration: MLModelConfiguration())
-                    guard token == loadToken else { return }   // superseded by a newer configure
+            EmbedderState.shared.set(.ready(signature: active.signature))
+            return active.signature != before
+        }
+        // Async path: HF tiers, and any tier whose model needs downloading.
+        active = HashingEmbedder()
+        EmbedderState.shared.set(.loading(name))
+        Task { @MainActor in
+            do {
+                let found = try await ModelAssets.ensure(name)   // may download+compile
+                guard token == loadToken else { return }         // superseded
+                EmbedderState.shared.set(.loading(name))
+                let model = try await MLModel.load(contentsOf: found.compiledModel,
+                                                   configuration: MLModelConfiguration())
+                guard token == loadToken else { return }
+                if level.isOgma {
+                    guard let tokenizer = OgmaTokenizer(folder: found.tokenizerFolder) else {
+                        throw CocoaError(.fileReadCorruptFile, userInfo: [
+                            NSLocalizedDescriptionKey: "tokenizer unreadable (\(name))"])
+                    }
+                    let detail = DeepSearch.detail
+                    active = OgmaEmbedder(modelName: name, model: model, tokenizer: tokenizer,
+                                          dimension: detail.dimension,
+                                          outputName: detail.outputName,
+                                          relevanceFloor: detail.relevanceFloor)
+                } else {
+                    let tokenizer = try await AutoTokenizer.from(modelFolder: found.tokenizerFolder)
+                    guard token == loadToken else { return }
                     active = HFEmbedder(modelName: name, model: model, tokenizer: tokenizer,
                                         dimension: level.dimension,
                                         queryPrefix: level.queryPrefix,
                                         docPrefix: level.docPrefix,
                                         relevanceFloor: level.hfRelevanceFloor)
-                    onSwap?()
-                } catch {
-                    NSLog("Cliphoard: \(name) load failed (\(error)) — staying on fallback")
                 }
+                EmbedderState.shared.set(.ready(signature: active.signature))
+                onSwap?()
+            } catch {
+                NSLog("Cliphoard: \(name) unavailable (\(error)) — staying on fallback")
+                guard token == loadToken else { return }
+                EmbedderState.shared.set(.failed(name, message: error.localizedDescription))
             }
-        } else {
-            if level != .off { NSLog("Cliphoard: embedder unavailable for \(level.rawValue) — using fallback") }
-            active = HashingEmbedder()
         }
         return active.signature != before
     }
