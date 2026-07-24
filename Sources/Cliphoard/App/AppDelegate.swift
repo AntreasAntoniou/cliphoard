@@ -299,8 +299,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             model.moveSelection(1); return nil
         case kVK_Return, kVK_ANSI_KeypadEnter:
             model.commitSelection(plain: plain); return nil
+        // Standard text-editing keys: a menu-bar-less agent app has no Edit
+        // menu, so ⌘A/⌘V/⌘X never resolve to a key equivalent and just beep.
+        // Route them straight to the focused field editor (the search field).
+        case kVK_ANSI_A where cmd:
+            // Select the whole query — for a quick delete or copy.
+            if let editor = panel.firstResponder as? NSTextView {
+                editor.selectAll(nil); return nil
+            }
+            return event
+        case kVK_ANSI_V where cmd:
+            if let editor = panel.firstResponder as? NSTextView {
+                editor.paste(nil); return nil
+            }
+            return event
+        case kVK_ANSI_X where cmd:
+            if let editor = panel.firstResponder as? NSTextView,
+               editor.selectedRange().length > 0 {
+                editor.cut(nil); return nil
+            }
+            return event
         case kVK_ANSI_C where cmd || control:
-            // Copy the selected clip onto the system clipboard without pasting.
+            // With text selected in the search field, ⌘C copies THAT (standard
+            // field behavior — pairs with ⌘A); otherwise it copies the selected
+            // clip onto the system clipboard without pasting. ⌃C always means
+            // the clip.
+            if cmd, let editor = panel.firstResponder as? NSTextView,
+               editor.selectedRange().length > 0 {
+                editor.copy(nil); return nil
+            }
             model.copySelection(); return nil
         case kVK_Delete where cmd:
             model.deleteSelection(); return nil
