@@ -100,8 +100,10 @@ Beyond exact substring, Cliphoard searches **semantically**, fully on-device:
   closest remaining clips (full vector cosine). You always get the obvious hit, plus
   meaning-based suggestions below it.
 - **Exact** — literal case-insensitive substring only.
-- **Tag search** — every clip is classified at ingest into its top-5 of **100 preset
-  tags**; a query maps to its nearest tag then an O(1) inverted-index lookup.
+- **Tag search** — every clip is classified at ingest across four stable semantic axes
+  (content type, intent, time horizon, and sensitivity) plus a curated topical pool.
+  Low-confidence labels are omitted, and a query maps to the matching facet or topical
+  tag for an O(1) inverted-index lookup. You can also add your own encrypted user tags.
 
 Models run locally via **CoreML**:
 
@@ -110,7 +112,9 @@ Models run locally via **CoreML**:
 | Low | [`axiotic/ogma-micro`](https://huggingface.co/axiotic/ogma-micro) | 128 |
 | Normal (default) | [`axiotic/ogma-small`](https://huggingface.co/axiotic/ogma-small) | 256 |
 
-The tag taxonomy is configurable in **Settings → Tags** (curated baskets or your own).
+The tag taxonomy and confidence threshold are configurable in **Settings → Tags**
+(curated baskets or your own). Open a clip's detail card to inspect automatic labels
+or add and remove personal tags.
 Token ids and embeddings match the PyTorch reference exactly (the tokenizer is
 reimplemented in Swift). To produce/bundle the models, see [`tools/`](tools/README.md).
 

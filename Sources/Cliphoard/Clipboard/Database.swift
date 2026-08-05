@@ -27,8 +27,10 @@ final class Database {
             id TEXT PRIMARY KEY, kind TEXT NOT NULL, text TEXT NOT NULL,
             rtf BLOB, payload_file TEXT, file_path TEXT, color_hex TEXT,
             created_at REAL NOT NULL, last_used_at REAL NOT NULL,
-            pinned INTEGER NOT NULL, source_app TEXT, use_count INTEGER NOT NULL);
+            pinned INTEGER NOT NULL, source_app TEXT, use_count INTEGER NOT NULL,
+            user_tags TEXT);
         """)
+        ensureColumn("user_tags", definition: "TEXT", in: "clips")
         exec("""
         CREATE TABLE IF NOT EXISTS embeddings (
             clip_id TEXT NOT NULL, model TEXT NOT NULL,
@@ -66,7 +68,7 @@ final class Database {
         var result: [ClipItem] = []
         prepareEach("""
             SELECT id, kind, text, rtf, payload_file, file_path, color_hex,
-                   created_at, last_used_at, pinned, source_app, use_count
+                   created_at, last_used_at, pinned, source_app, use_count, user_tags
             FROM clips ORDER BY pinned DESC, last_used_at DESC;
             """) { stmt in
             let idStr = column(stmt, 0)
@@ -84,7 +86,8 @@ final class Database {
                 lastUsedAt: Date(timeIntervalSinceReferenceDate: sqlite3_column_double(stmt, 8)),
                 pinned: sqlite3_column_int(stmt, 9) != 0,
                 sourceApp: columnOpt(stmt, 10),
-                useCount: Int(sqlite3_column_int(stmt, 11)))
+                useCount: Int(sqlite3_column_int(stmt, 11)),
+                userTags: Self.userTags(fromText: columnOpt(stmt, 12).map(Crypto.open) ?? ""))
             item.embeddings = embByClip[idStr] ?? [:]
             result.append(item)
         }
@@ -98,25 +101,57 @@ final class Database {
         let sql = """
             INSERT OR REPLACE INTO clips
             (id, kind, text, rtf, payload_file, file_path, color_hex,
-             created_at, last_used_at, pinned, source_app, use_count)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?);
+             created_at, last_used_at, pinned, source_app, use_count, user_tags)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?);
             """
+        // Encrypt the actual clipboard CONTENT at rest (text, rich text, file
+        // path, color). Metadata (id, kind, timestamps, source app) stays clear.
+        // Fail CLOSED: if any content column can't be sealed we refuse the whole
+        // insert rather than let plaintext reach disk. `sealStrict` returns nil
+        // only if AES-GCM seal genuinely fails (effectively never) — a backstop.
+        guard let encText = Crypto.sealStrict(item.text) else {
+            NSLog("Cliphoard db: content seal failed — refusing insert (text)"); return false
+        }
+        var encRTF: Data? = nil
+        if let rtf = item.rtf {
+            guard let s = Crypto.sealStrict(rtf) else {
+                NSLog("Cliphoard db: content seal failed — refusing insert (rtf)"); return false
+            }
+            encRTF = s
+        }
+        var encPath: String? = nil
+        if let path = item.filePath {
+            guard let s = Crypto.sealStrict(path) else {
+                NSLog("Cliphoard db: content seal failed — refusing insert (path)"); return false
+            }
+            encPath = s
+        }
+        var encColor: String? = nil
+        if let color = item.colorHex {
+            guard let s = Crypto.sealStrict(color) else {
+                NSLog("Cliphoard db: content seal failed — refusing insert (color)"); return false
+            }
+            encColor = s
+        }
+        let normalizedTags = ClipItem.normalizedUserTags(item.userTags)
+        guard let encUserTags = Crypto.sealStrict(normalizedTags.joined(separator: "\n")) else {
+            NSLog("Cliphoard db: user-tag seal failed — refusing insert"); return false
+        }
         var ok = false
         prepare(sql) { stmt in
             bindText(stmt, 1, item.id.uuidString)
             bindText(stmt, 2, item.kind.rawValue)
-            // Encrypt the actual clipboard CONTENT at rest (text, rich text, file
-            // path, color). Metadata (id, kind, timestamps, source app) stays clear.
-            bindText(stmt, 3, Crypto.seal(item.text))
-            bindBlob(stmt, 4, Crypto.seal(item.rtf))
+            bindText(stmt, 3, encText)
+            bindBlob(stmt, 4, encRTF)
             bindText(stmt, 5, item.payloadFile)
-            bindText(stmt, 6, item.filePath.map(Crypto.seal))
-            bindText(stmt, 7, item.colorHex.map(Crypto.seal))
+            bindText(stmt, 6, encPath)
+            bindText(stmt, 7, encColor)
             sqlite3_bind_double(stmt, 8, item.createdAt.timeIntervalSinceReferenceDate)
             sqlite3_bind_double(stmt, 9, item.lastUsedAt.timeIntervalSinceReferenceDate)
             sqlite3_bind_int(stmt, 10, item.pinned ? 1 : 0)
             bindText(stmt, 11, item.sourceApp)
             sqlite3_bind_int(stmt, 12, Int32(item.useCount))
+            bindText(stmt, 13, encUserTags)
             ok = step(stmt)
         }
         for (model, emb) in item.embeddings { upsertEmbedding(clipID: item.id, model: model, embedding: emb) }
@@ -138,15 +173,40 @@ final class Database {
         return ok
     }
 
+    /// Persist only user-owned tags. Sealing happens before SQLite is touched;
+    /// a crypto failure leaves the previous value intact.
+    @discardableResult
+    func updateUserTags(_ item: ClipItem) -> Bool {
+        let normalized = ClipItem.normalizedUserTags(item.userTags)
+        guard let sealed = Crypto.sealStrict(normalized.joined(separator: "\n")) else {
+            NSLog("Cliphoard db: user-tag seal failed — refusing update")
+            return false
+        }
+        var ok = false
+        prepare("UPDATE clips SET user_tags=? WHERE id=?;") { stmt in
+            bindText(stmt, 1, sealed)
+            bindText(stmt, 2, item.id.uuidString)
+            ok = step(stmt)
+        }
+        return ok
+    }
+
     @discardableResult
     func upsertEmbedding(clipID: UUID, model: String, embedding: ModelEmbedding) -> Bool {
+        // Fail CLOSED: the vector and tags are content-derived, so never persist
+        // them unsealed. If sealing fails, skip this embedding — the clip itself is
+        // already stored sealed by `insert`, and degraded search beats a leak.
+        guard let encVec = Crypto.sealStrict(Self.blob(fromVector: embedding.vector)),
+              let encTags = Crypto.sealStrict(embedding.tags.map(String.init).joined(separator: ",")) else {
+            NSLog("Cliphoard db: embedding seal failed — skipping upsert")
+            return false
+        }
         var ok = false
         prepare("INSERT OR REPLACE INTO embeddings (clip_id, model, vector, tags) VALUES (?,?,?,?);") { stmt in
             bindText(stmt, 1, clipID.uuidString)
             bindText(stmt, 2, model)
-            // Encrypt the embedding vector + tags at rest.
-            bindBlob(stmt, 3, Crypto.seal(Self.blob(fromVector: embedding.vector)))
-            bindText(stmt, 4, Crypto.seal(embedding.tags.map(String.init).joined(separator: ",")))
+            bindBlob(stmt, 3, encVec)
+            bindText(stmt, 4, encTags)
             ok = step(stmt)
         }
         return ok
@@ -207,13 +267,21 @@ final class Database {
         prepare(sql) { stmt in while sqlite3_step(stmt) == SQLITE_ROW { row(stmt) } }
     }
 
+    private func ensureColumn(_ name: String, definition: String, in table: String) {
+        var exists = false
+        prepareEach("PRAGMA table_info(\(table));") { stmt in
+            if column(stmt, 1) == name { exists = true }
+        }
+        if !exists { exec("ALTER TABLE \(table) ADD COLUMN \(name) \(definition);") }
+    }
+
     private func bindText(_ stmt: OpaquePointer?, _ i: Int32, _ s: String?) {
         if let s { sqlite3_bind_text(stmt, i, s, -1, Self.transient) } else { sqlite3_bind_null(stmt, i) }
     }
 
     private func bindBlob(_ stmt: OpaquePointer?, _ i: Int32, _ d: Data?) {
         guard let d, !d.isEmpty else { sqlite3_bind_null(stmt, i); return }
-        d.withUnsafeBytes { sqlite3_bind_blob(stmt, i, $0.baseAddress, Int32(d.count), Self.transient) }
+        _ = d.withUnsafeBytes { sqlite3_bind_blob(stmt, i, $0.baseAddress, Int32(d.count), Self.transient) }
     }
 }
 
@@ -262,5 +330,9 @@ extension Database {
 
     static func tags(fromText s: String) -> [Int] {
         s.isEmpty ? [] : s.split(separator: ",").compactMap { Int($0) }
+    }
+
+    static func userTags(fromText s: String) -> [String] {
+        ClipItem.normalizedUserTags(s.split(separator: "\n").map(String.init))
     }
 }

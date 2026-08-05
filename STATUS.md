@@ -1,6 +1,6 @@
 # Cliphoard — Release Readiness Status
 
-**Last updated:** 2026-07-02 · **Branch:** `rename/cliphoard`
+**Last updated:** 2026-08-05 · **Branch:** `rename/cliphoard`
 **Verdict: NOT-READY for wide distribution — but gated only by human-only steps.**
 
 The codebase is release-quality. What stands between here and a public v1.0 is **not
@@ -15,7 +15,8 @@ signed+notarized DMG — none of which an automated agent can produce. See the
 
 ## Test + build state
 
-- `swift build` clean; `swift test` → **123 tests, 0 failures** on `rename/cliphoard`.
+- `swift build` clean; `swift test` → **174 tests, 0 failures** on `rename/cliphoard`
+  (verified 2026-08-05 release-candidate pass, including real-model parity/retrieval).
 - On-device model path (ogma CoreML) proven cert-free in CI (`.github/workflows/models.yml`),
   conversion stack pinned (`torch==2.7.1`, `coremltools==9.0`, `numpy<2`).
 
@@ -40,6 +41,11 @@ signed+notarized DMG — none of which an automated agent can produce. See the
   tag index, Float16 `loadUnaligned`, vDSP cosine; **tokenizer Viterbi now bounded**
   (O(n·maxPieceChars), input capped) so a large/whitespace-free clip no longer hangs the
   main thread; **DB transactions roll back** on a failed step.
+- **Hybrid tagging + clip supercard.** Automatic classification now combines four
+  confidence-gated semantic axes with topical labels instead of forcing a fixed top-5.
+  Per-clip user tags are normalized, indexed, searchable, filterable, and sealed at
+  rest. The detail supercard exposes content, metadata, automatic facets, and user-tag
+  editing without sending clip data off-device.
 - **Rebrand + legal.** Product surface fully Cliphoard; CC-BY-NC ogma attribution
   consistent across `LICENSE`, `THIRD-PARTY-NOTICES.md`, in-app About. Bundle id
   `ai.axiotic.ditto` and the `yank.db.v2` KDF salt are deliberately unchanged (Keychain
@@ -63,5 +69,19 @@ signed+notarized DMG — none of which an automated agent can produce. See the
   re-embed) — an architectural refactor deliberately not done right before release.
 - Full a11y: honor Reduce Motion / Reduce Transparency, tune per-theme contrast tokens,
   make the VoiceOver cursor follow keyboard selection, adopt Dynamic Type.
-- Minor: encrypt-at-rest hardening (`seal` should refuse to fail-open), batch the one-time
-  re-key insert loop, cosmetic `design/icons/manifest.json` rebrand.
+- Minor: batch the one-time re-key insert loop, cosmetic `design/icons/manifest.json`
+  rebrand.
+
+## ✅ Resolved in the 2026-07-24 launch-QA pass
+
+- **Encrypt-at-rest is now fail-CLOSED.** Added `Crypto.sealStrict` (sealed-or-nil,
+  never plaintext). All content-write paths use it: `Database.insert` refuses the whole
+  row if any content column can't be sealed; `upsertEmbedding` skips rather than store an
+  unsealed vector/tags; the legacy-history archive (`history.migrated.json` /
+  `history.corrupt.json`) only writes — and only deletes the plaintext original — once a
+  sealed copy exists. Regression tests: `CryptoTests.testSealStrictIsAlwaysSealedNeverPlaintext`,
+  `DatabaseTests.testClipContentColumnsAreSealedAtRest`.
+- **Model downloads are now checksum-pinned.** `ModelAssets` verifies each downloaded
+  `<name>.zip` against a pinned SHA-256 (GitHub's server-computed asset digests) before
+  unpacking/compiling; a mismatch deletes the temp and refuses to install. Defense-in-depth
+  over GitHub-TLS. Update `ModelAssets.expectedSHA256` when adding a model to the release.

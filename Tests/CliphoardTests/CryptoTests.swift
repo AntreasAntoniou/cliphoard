@@ -34,4 +34,21 @@ final class CryptoTests: XCTestCase {
         let secret = "TOTP-9183-secret-token"
         XCTAssertFalse(Crypto.seal(secret).contains(secret))
     }
+
+    /// `sealStrict` is the fail-CLOSED variant used for content at rest: its
+    /// output is always `enc1:`-marked, never the plaintext, and round-trips.
+    /// (The nil failure path is unreachable for valid input — AES-GCM seal does
+    /// not fail — but the contract is sealed-or-nil, never plaintext.)
+    func testSealStrictIsAlwaysSealedNeverPlaintext() {
+        for s in ["", "hello", "aws_secret=AKIA-TOP-SECRET", String(repeating: "z", count: 4096)] {
+            guard let sealed = Crypto.sealStrict(s) else { return XCTFail("sealStrict returned nil for valid input") }
+            XCTAssertTrue(sealed.hasPrefix("enc1:"), "sealStrict output is always marked")
+            XCTAssertFalse(sealed.contains(s.isEmpty ? "\u{0}IMPOSSIBLE" : s), "plaintext never present")
+            XCTAssertEqual(Crypto.open(sealed), s, "round-trips back to the original")
+        }
+        let blob = Data((0..<300).map { UInt8($0 % 256) })
+        guard let sealedBlob = Crypto.sealStrict(blob) else { return XCTFail("sealStrict(Data) returned nil") }
+        XCTAssertTrue(Crypto.isSealed(sealedBlob), "sealStrict(Data) output is marked")
+        XCTAssertEqual(Crypto.open(sealedBlob), blob)
+    }
 }

@@ -65,6 +65,9 @@ final class ClipItem: Codable, Identifiable {
     /// Bundle id / name of the app the clip was copied from.
     var sourceApp: String?
     var useCount: Int
+    /// User-owned labels. They are independent of model-generated embeddings so
+    /// a model or vocabulary switch can never erase them.
+    var userTags: [String] = []
     /// Per-model cache: embedder signature → {vector, tags}. Keeping one entry
     /// per model means switching to a model the clip was already embedded by is
     /// free (no recompute) — only genuinely unprocessed (model, clip) pairs run.
@@ -92,11 +95,12 @@ final class ClipItem: Codable, Identifiable {
     /// Full initializer used to reconstruct a clip from a database row.
     init(id: UUID, kind: ClipKind, text: String, rtf: Data?, payloadFile: String?,
          filePath: String?, colorHex: String?, createdAt: Date, lastUsedAt: Date,
-         pinned: Bool, sourceApp: String?, useCount: Int) {
+         pinned: Bool, sourceApp: String?, useCount: Int, userTags: [String] = []) {
         self.id = id; self.kind = kind; self.text = text; self.rtf = rtf
         self.payloadFile = payloadFile; self.filePath = filePath; self.colorHex = colorHex
         self.createdAt = createdAt; self.lastUsedAt = lastUsedAt; self.pinned = pinned
         self.sourceApp = sourceApp; self.useCount = useCount
+        self.userTags = Self.normalizedUserTags(userTags)
     }
 
     // MARK: Codable
@@ -104,6 +108,7 @@ final class ClipItem: Codable, Identifiable {
     private enum CodingKeys: String, CodingKey {
         case id, kind, text, rtf, payloadFile, imageHash, filePath, colorHex
         case createdAt, lastUsedAt, pinned, sourceApp, useCount
+        case userTags
         case embeddings, vector, tagIDs, vectorModel
     }
 
@@ -126,6 +131,8 @@ final class ClipItem: Codable, Identifiable {
         pinned = try c.decodeIfPresent(Bool.self, forKey: .pinned) ?? false
         sourceApp = try c.decodeIfPresent(String.self, forKey: .sourceApp)
         useCount = try c.decodeIfPresent(Int.self, forKey: .useCount) ?? 0
+        userTags = Self.normalizedUserTags(
+            try c.decodeIfPresent([String].self, forKey: .userTags) ?? [])
         embeddings = try c.decodeIfPresent([String: ModelEmbedding].self, forKey: .embeddings) ?? [:]
         vector = try c.decodeIfPresent([Float].self, forKey: .vector)
         tagIDs = try c.decodeIfPresent([Int].self, forKey: .tagIDs)
@@ -133,6 +140,15 @@ final class ClipItem: Codable, Identifiable {
     }
 
     // MARK: Derived
+
+    static func normalizedUserTags(_ tags: [String]) -> [String] {
+        var seen: Set<String> = []
+        return tags.compactMap { raw in
+            let tag = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            guard !tag.isEmpty, seen.insert(tag).inserted else { return nil }
+            return tag
+        }
+    }
 
     /// A short preview string used in the card header / accessibility.
     var preview: String {

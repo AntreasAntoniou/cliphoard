@@ -1,7 +1,7 @@
 import XCTest
 @testable import Cliphoard
 
-// MARK: - The facet cube (10 dimensions × 10 tags)
+// MARK: - The hybrid facet basket (4 dimensions × 8 tags + topical pool)
 
 @MainActor
 final class DimensionalTagTests: XCTestCase {
@@ -9,48 +9,75 @@ final class DimensionalTagTests: XCTestCase {
 
     override func setUp() { super.setUp(); TagBaskets.activeID = "general" }
 
-    func testGeneralBasketIsA10x10Cube() {
+    func testGeneralBasketHasFourEightWideAxes() {
         XCTAssertTrue(TagSpace.isDimensional)
-        XCTAssertEqual(TagSpace.dimensionCount, 10)
-        XCTAssertEqual(TagSpace.count, 100)
-        XCTAssertTrue(TagSpace.dimensions.allSatisfy { $0.tags.count == 10 })
+        XCTAssertEqual(TagSpace.dimensionCount, 4)
+        XCTAssertEqual(TagSpace.count, 48)
+        XCTAssertTrue(TagSpace.dimensions.allSatisfy { $0.tags.count == 8 })
     }
 
-    func testDimensionRangesAreContiguousDeciles() {
-        for d in 0..<10 {
-            XCTAssertEqual(TagSpace.range(ofDimension: d), (d * 10)..<(d * 10 + 10))
+    func testDimensionRangesAreContiguousEightWideSlices() {
+        for d in 0..<4 {
+            XCTAssertEqual(TagSpace.range(ofDimension: d), (d * 8)..<(d * 8 + 8))
         }
     }
 
     func testDimensionOfTag() {
         XCTAssertEqual(TagSpace.dimension(ofTag: 0), 0)
-        XCTAssertEqual(TagSpace.dimension(ofTag: 9), 0)
-        XCTAssertEqual(TagSpace.dimension(ofTag: 10), 1)
-        XCTAssertEqual(TagSpace.dimension(ofTag: 55), 5)
-        XCTAssertEqual(TagSpace.dimension(ofTag: 99), 9)
+        XCTAssertEqual(TagSpace.dimension(ofTag: 7), 0)
+        XCTAssertEqual(TagSpace.dimension(ofTag: 8), 1)
+        XCTAssertEqual(TagSpace.dimension(ofTag: 31), 3)
+        XCTAssertNil(TagSpace.dimension(ofTag: 32), "topical tags do not belong to an axis")
     }
 
     func testClassifyDimensionsGivesOnePerDimensionInOrder() {
         let v = e.embed("def foo(): return 1   # some python code")
         let dims = TagSpace.classifyDimensions(v, embedder: e)
-        XCTAssertEqual(dims.count, TagSpace.dimensionCount, "a value on every axis")
-        for (d, id) in dims.enumerated() {
-            XCTAssertTrue(TagSpace.range(ofDimension: d).contains(id),
-                          "dimension \(d) must pick a tag from its own decile, got \(id)")
+        XCTAssertLessThanOrEqual(dims.count, TagSpace.dimensionCount,
+                                 "confidence gating may intentionally leave axes blank")
+        for id in dims {
+            guard let owner = TagSpace.dimension(ofTag: id) else {
+                return XCTFail("axis classification returned topical id \(id)")
+            }
+            XCTAssertTrue(TagSpace.range(ofDimension: owner).contains(id))
         }
     }
 
     func testIndexerTagsAreDimensionalForCube() {
         let v = e.embed("select * from users")
-        XCTAssertEqual(ClipIndexer.tags(for: v, embedder: e).count, TagSpace.dimensionCount)
+        XCTAssertLessThanOrEqual(ClipIndexer.tags(for: v, embedder: e).count, 7,
+                                 "at most four axes plus three topical tags")
     }
 
     func testFacetLabelsPairDimensionWithValue() {
-        // ids 1 (Content type slice) and 13 (Sensitivity slice) → labelled by axis.
-        let labels = TagSpace.facetLabels(for: [1, 13])
+        // ids 1 (Content type slice) and 13 (Domain slice) → labelled by axis.
+        let labels = TagSpace.facetLabels(for: [1, 13, 33])
         XCTAssertEqual(labels.count, 2)
         XCTAssertEqual(labels[0].dimension, TagSpace.dimensions[0].name)
         XCTAssertEqual(labels[1].dimension, TagSpace.dimensions[1].name)
+    }
+
+    func testWeakSimilarityAssignsNoAutomaticTags() {
+        struct PerpendicularEmbedder: TextEmbedder {
+            let dimension = 2
+            let signature = "perpendicular-tags-v1"
+            func embed(_ text: String) -> [Float] { [0, 1] }
+        }
+        let weak: [Float] = [1, 0]
+        let embedder = PerpendicularEmbedder()
+        XCTAssertTrue(TagSpace.classifyDimensions(weak, embedder: embedder).isEmpty,
+                      "weak axis matches must leave the axes blank")
+        XCTAssertTrue(TagSpace.classify(weak, embedder: embedder, topK: 3).isEmpty,
+                      "weak topical matches must not manufacture tags")
+    }
+
+    func testEveryBuiltInBasketUsesTheHybridShape() {
+        XCTAssertEqual(TagBaskets.builtIn.count, 11)
+        for basket in TagBaskets.builtIn {
+            XCTAssertEqual(basket.dimensions.count, 4, basket.name)
+            XCTAssertTrue(basket.dimensions.allSatisfy { $0.tags.count == 8 }, basket.name)
+            XCTAssertEqual(basket.tags.count, 48, basket.name)
+        }
     }
 }
 
@@ -116,6 +143,17 @@ final class FacetFilterTests: XCTestCase {
         // A facet that no clip carries → empty.
         XCTAssertTrue(store.filtered(kind: nil, query: "", pinnedOnly: false,
                                      facets: [5]).isEmpty)
+    }
+
+    func testUserTagFacetsIntersectAutoAxes() {
+        let store = tempStore()
+        let matching = clip("matching", tags: [1, 8]); matching.userTags = ["client-acme"]
+        let wrongAxis = clip("wrong axis", tags: [2, 8]); wrongAxis.userTags = ["client-acme"]
+        let wrongUserTag = clip("wrong user", tags: [1, 8]); wrongUserTag.userTags = ["client-beta"]
+        store.add(matching); store.add(wrongAxis); store.add(wrongUserTag)
+
+        XCTAssertEqual(store.items(matchingFacets: [1], userTags: ["client-acme"]).map(\.text),
+                       ["matching"], "user-tag group ANDs with the selected auto-tag axes")
     }
 }
 

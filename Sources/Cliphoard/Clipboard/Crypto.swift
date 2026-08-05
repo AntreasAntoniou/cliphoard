@@ -40,6 +40,25 @@ enum Crypto {
         return marker + combined.base64EncodedString()
     }
 
+    /// Fail-CLOSED seal: returns the `enc1:`-marked ciphertext, or `nil` if
+    /// encryption did not actually produce sealed output. Unlike `seal(_:)`
+    /// (which returns the plaintext unchanged on failure, to avoid history loss),
+    /// this NEVER returns plaintext — callers persisting content at rest use it so
+    /// a seal failure aborts the write instead of leaking cleartext to disk.
+    /// AES-GCM seal effectively never fails on valid input; this is a safety
+    /// backstop, not an expected path.
+    static func sealStrict(_ plain: String) -> String? {
+        let out = seal(plain)
+        return out.hasPrefix(marker) ? out : nil
+    }
+
+    /// Fail-CLOSED seal for blob content (RTF / vectors). `nil` on seal failure;
+    /// never returns the plaintext bytes. See `sealStrict(_:String)`.
+    static func sealStrict(_ plain: Data) -> Data? {
+        guard let out = seal(plain), out.starts(with: markerData) else { return nil }
+        return out
+    }
+
     static func open(_ stored: String) -> String {
         guard stored.hasPrefix(marker) else { return stored }
         guard let data = Data(base64Encoded: String(stored.dropFirst(marker.count))) else { return stored }

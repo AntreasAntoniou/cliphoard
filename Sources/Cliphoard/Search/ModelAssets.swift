@@ -1,5 +1,6 @@
 import Foundation
 import CoreML
+import CryptoKit
 
 /// Locates — and when necessary AUTO-INSTALLS — the on-device embedding models.
 ///
@@ -19,6 +20,31 @@ enum ModelAssets {
     /// Release that hosts the downloadable model zips.
     static let releaseBase = URL(string:
         "https://github.com/AntreasAntoniou/cliphoard/releases/download/models-v1/")!
+
+    /// Pinned SHA-256 of each hosted `<name>.zip` on the `models-v1` release.
+    /// GitHub-over-TLS authenticates the transport; this rejects a corrupted or
+    /// tampered zip before it is unpacked and compiled on-device (defense-in-depth).
+    /// Values are GitHub's server-computed asset digests. A tier not listed here
+    /// skips the check (logged) rather than failing — add its digest when you add
+    /// a new model to the release.
+    static let expectedSHA256: [String: String] = [
+        "all-MiniLM-L6-v2":    "ff202030f35c740193335a2136db6b15df8ef592da92e7dd07e51457dcf81def",
+        "embeddinggemma-300m": "8c37b74be2e0abed5c2a1be2c7ebd07d1d328e52cfc255c40d506a2c19e13804",
+        "open-ogma-micro":     "020bc39bb9783cbc298809cdc89ad09be84a2cae6db4cee5e65b15fc58a80cf8",
+        "open-ogma-small":     "e06756de8a41a10dc9722f9e8794e57740957569e9c4d0ae57d4cf70b08d4c26",
+    ]
+
+    /// Streaming SHA-256 of a file (1 MiB chunks) so a ~300 MB model zip is never
+    /// loaded into memory whole. Lowercase hex, matching GitHub's digest format.
+    static func sha256Hex(ofFileAt url: URL) -> String? {
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
+        defer { try? handle.close() }
+        var hasher = SHA256()
+        while case let chunk = handle.readData(ofLength: 1 << 20), !chunk.isEmpty {
+            hasher.update(data: chunk)
+        }
+        return hasher.finalize().map { String(format: "%02x", $0) }.joined()
+    }
 
     struct Located {
         let compiledModel: URL      // .mlmodelc, ready for MLModel(contentsOf:)
@@ -61,6 +87,19 @@ enum ModelAssets {
         guard (response as? HTTPURLResponse)?.statusCode == 200 else {
             throw CocoaError(.fileNoSuchFile, userInfo: [
                 NSLocalizedDescriptionKey: "model download failed (\(url.lastPathComponent))"])
+        }
+
+        // 1b. Verify the download against the pinned SHA-256 before unpacking or
+        // compiling it. Rejects a corrupted or tampered zip at rest; unknown tiers
+        // (not yet pinned) are logged and allowed through.
+        if let want = expectedSHA256[name] {
+            guard let got = sha256Hex(ofFileAt: tmp), got == want else {
+                try? fm.removeItem(at: tmp)
+                throw CocoaError(.fileReadCorruptFile, userInfo: [
+                    NSLocalizedDescriptionKey: "model checksum mismatch (\(name)) — refusing to install"])
+            }
+        } else {
+            NSLog("Cliphoard ModelAssets: no pinned checksum for \(name) — skipping verification")
         }
 
         // 2. Unpack next to the store (ditto preserves the package structure).

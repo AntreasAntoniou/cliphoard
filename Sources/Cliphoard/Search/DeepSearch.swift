@@ -389,6 +389,16 @@ enum TagSpace {
 
     static var count: Int { names.count }
 
+    /// Minimum tag-name cosine required for automatic assignment. Persisted so
+    /// users can calibrate it against their own clipboard distribution.
+    static var assignmentThreshold: Float {
+        get {
+            guard UserDefaults.standard.object(forKey: "tagAssignmentThreshold") != nil else { return 0.28 }
+            return Float(UserDefaults.standard.double(forKey: "tagAssignmentThreshold"))
+        }
+        set { UserDefaults.standard.set(Double(newValue), forKey: "tagAssignmentThreshold") }
+    }
+
     /// Tag vectors in the active embedder's space, cached per (embedder, basket)
     /// — two models can share a dimension, and the basket can change the tags.
     private static var cache: (String, [[Float]])?
@@ -408,7 +418,11 @@ enum TagSpace {
         guard !vector.isEmpty else { return [] }
         let tagVecs = vectors(using: embedder)
         let scored = tagVecs.enumerated().map { ($0.offset, SemanticRanker.cosine(vector, $0.element)) }
-        return scored.sorted { $0.1 > $1.1 }.prefix(topK).map { $0.0 }
+        return scored
+            .filter { $0.1 >= assignmentThreshold }
+            .sorted { $0.1 > $1.1 }
+            .prefix(topK)
+            .map { $0.0 }
     }
 
     /// Nearest single tag id for a query (used by tag search).
@@ -425,6 +439,9 @@ enum TagSpace {
     static var dimensions: [TagDimension] { TagBaskets.active.dimensions }
 
     static var dimensionCount: Int { dimensions.count }
+
+    /// Topical tail of the active hybrid basket. Axis ranges end before this.
+    static var topicalRange: Range<Int> { TagBaskets.active.topicalRange }
 
     /// Half-open tag-id range owned by dimension `d`. Ranges are cumulative over
     /// each dimension's actual size, so cubes with uneven axes still map cleanly.
@@ -464,8 +481,21 @@ enum TagSpace {
                 let s = SemanticRanker.cosine(vector, tagVecs[i])
                 if s > bestScore { bestScore = s; best = i }
             }
-            return best
+            return bestScore >= assignmentThreshold ? best : nil
         }
+    }
+
+    /// Nearest topical ids only, excluding axis words. Hybrid ingest uses this
+    /// alongside confidence-gated per-axis classification.
+    static func classifyTopical(_ vector: [Float], embedder: TextEmbedder, topK: Int = 3) -> [Int] {
+        guard !vector.isEmpty, !topicalRange.isEmpty else { return [] }
+        let tagVecs = vectors(using: embedder)
+        return topicalRange
+            .map { ($0, SemanticRanker.cosine(vector, tagVecs[$0])) }
+            .filter { $0.1 >= assignmentThreshold }
+            .sorted { $0.1 > $1.1 }
+            .prefix(topK)
+            .map { $0.0 }
     }
 
     /// The facet labels for a set of tag ids ("Content type: code", …), in
@@ -498,9 +528,11 @@ enum ClipIndexer {
     /// facet cube, or the nearest five for a flat pool. Both feed the same
     /// `tagIndex`, so the store's O(1) lookup is agnostic to which shape is used.
     static func tags(for vector: [Float], embedder: TextEmbedder) -> [Int] {
-        TagSpace.isDimensional
-            ? TagSpace.classifyDimensions(vector, embedder: embedder)
-            : TagSpace.classify(vector, embedder: embedder, topK: 5)
+        if TagSpace.isDimensional {
+            return TagSpace.classifyDimensions(vector, embedder: embedder)
+                + TagSpace.classifyTopical(vector, embedder: embedder, topK: 3)
+        }
+        return TagSpace.classify(vector, embedder: embedder, topK: 5)
     }
 
     /// A vector is usable if it's the right length and not all-zeros.
@@ -599,10 +631,13 @@ enum SemanticRanker {
     /// only ever called from the main-actor view model, like the `tag` mode.
     @MainActor
     static func smart(query: String, items: [ClipItem], embedder: TextEmbedder) -> [ClipItem] {
-        let q = query.lowercased()
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         let qv = embedder.embed(query, query: true)
         // The query's nearest preset categories — the "tag" leg of the hybrid.
         let queryTags = Set(TagSpace.classify(qv, embedder: embedder, topK: 3))
+        let queryTagNames = Set(queryTags.compactMap {
+            TagSpace.names.indices.contains($0) ? TagSpace.names[$0] : nil
+        })
 
         let scored = items.map { item -> (item: ClipItem, score: Float, exact: Bool) in
             let emb = item.embeddings[embedder.signature]
@@ -616,7 +651,9 @@ enum SemanticRanker {
             let neural = cosine(qv, vec) * confidence
             let shared = emb.map { Set($0.tags).intersection(queryTags).count } ?? 0
             let tagBoost = Float(min(shared, 2)) * 0.10 * confidence  // up to +0.20 for topic agreement
-            let score = (exact ? 10 : 0) + neural + tagBoost
+            let userTagMatch = item.userTags.contains { $0 == q || queryTagNames.contains($0) }
+            let userTagBoost: Float = userTagMatch ? 3.0 : 0
+            let score = (exact ? 10 : 0) + neural + tagBoost + userTagBoost
             return (item, score, exact)
         }
         // Keep every exact hit; keep the rest only when meaning OR shared topic

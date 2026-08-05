@@ -14,6 +14,9 @@ final class ClipStore: ObservableObject {
     /// Inverted index tag-id → entries, for O(1) "tag search" retrieval without
     /// any query-time embedding or per-item dot products.
     private(set) var tagIndex: [Int: [ClipItem]] = [:]
+    /// Normalized user-tag → entries. Kept separate from model tag ids because
+    /// these labels survive basket and model changes.
+    private(set) var userTagIndex: [String: [ClipItem]] = [:]
 
     /// Live progress of a background (re)indexing pass, or nil when idle.
     @Published private(set) var indexing: IndexingProgress?
@@ -70,6 +73,7 @@ final class ClipStore: ObservableObject {
         encryptImagePayloadsIfNeeded()
         sortStable()
         rebuildTagIndex()
+        rebuildUserTagIndex()
         sweepOrphanPayloads()
     }
 
@@ -182,6 +186,7 @@ final class ClipStore: ObservableObject {
     // MARK: Mutations
 
     func add(_ item: ClipItem) {
+        item.userTags = ClipItem.normalizedUserTags(item.userTags)
         // Drop a consecutive duplicate, but bump it to the front instead.
         if let existing = items.first(where: { $0.signature == item.signature }) {
             existing.lastUsedAt = Date()
@@ -206,6 +211,8 @@ final class ClipStore: ObservableObject {
         // index stays in sync with `items`.
         pruneTagIndexToItems()
         addToTagIndex(item)
+        pruneUserTagIndexToItems()
+        addToUserTagIndex(item)
         lastAddedID = item.id
         db?.insert(item)
         Feedback.playCapture()
@@ -214,14 +221,38 @@ final class ClipStore: ObservableObject {
     /// Entries pre-classified under a preset tag — O(1) lookup, no dot products.
     func items(taggedWith tagID: Int) -> [ClipItem] { tagIndex[tagID] ?? [] }
 
+    func items(withUserTag tag: String) -> [ClipItem] {
+        guard let normalized = ClipItem.normalizedUserTags([tag]).first else { return [] }
+        return userTagIndex[normalized] ?? []
+    }
+
+    var distinctUserTags: [String] { userTagIndex.keys.sorted() }
+
+    /// Replace a clip's user labels and update storage/index atomically from the
+    /// caller's perspective. A failed sealed DB write restores the prior labels.
+    @discardableResult
+    func updateUserTags(_ item: ClipItem, to tags: [String]) -> Bool {
+        let old = item.userTags
+        removeFromUserTagIndex(item)
+        item.userTags = ClipItem.normalizedUserTags(tags)
+        guard db?.updateUserTags(item) ?? false else {
+            item.userTags = old
+            addToUserTagIndex(item)
+            return false
+        }
+        addToUserTagIndex(item)
+        objectWillChange.send()
+        return true
+    }
+
     /// Entries matching a facet-cube constraint set, in `items` order. Standard
     /// facet semantics: values within the same dimension are OR'd, and different
     /// dimensions are AND'd — e.g. {code, python} means "Content type is code AND
     /// Language is python", while {python, javascript} means "python OR javascript".
     /// Resolved from the tag index (union the buckets per dimension, intersect
     /// across dimensions), so it stays O(selected buckets) — no dot products.
-    func items(matchingFacets facets: Set<Int>) -> [ClipItem] {
-        guard !facets.isEmpty else { return items }
+    func items(matchingFacets facets: Set<Int>, userTags: Set<String> = []) -> [ClipItem] {
+        guard !facets.isEmpty || !userTags.isEmpty else { return items }
         // Group the selected tag ids by the dimension they belong to. A flat
         // basket (no dimensions) puts every selection in one group → pure OR.
         var byDimension: [Int: Set<Int>] = [:]
@@ -236,6 +267,15 @@ final class ClipStore: ObservableObject {
             matched = matched.map { $0.intersection(union) } ?? union
             if matched?.isEmpty == true { return [] }
         }
+        let normalizedUserTags = ClipItem.normalizedUserTags(Array(userTags))
+        if !normalizedUserTags.isEmpty {
+            var union: Set<UUID> = []
+            for tag in normalizedUserTags {
+                for item in userTagIndex[tag] ?? [] { union.insert(item.id) }
+            }
+            matched = matched.map { $0.intersection(union) } ?? union
+            if matched?.isEmpty == true { return [] }
+        }
         let keep = matched ?? []
         return items.filter { keep.contains($0.id) }
     }
@@ -247,6 +287,42 @@ final class ClipStore: ObservableObject {
             for tag in item.embeddings[sig]?.tags ?? [] { index[tag, default: []].append(item) }
         }
         tagIndex = index
+    }
+
+    private func rebuildUserTagIndex() {
+        var index: [String: [ClipItem]] = [:]
+        for item in items {
+            item.userTags = ClipItem.normalizedUserTags(item.userTags)
+            for tag in item.userTags { index[tag, default: []].append(item) }
+        }
+        userTagIndex = index
+    }
+
+    private func addToUserTagIndex(_ item: ClipItem) {
+        var order: [UUID: Int] = [:]
+        for (index, candidate) in items.enumerated() { order[candidate.id] = index }
+        guard order[item.id] != nil else { return }
+        for tag in item.userTags {
+            var bucket = userTagIndex[tag] ?? []
+            if !bucket.contains(where: { $0.id == item.id }) { bucket.append(item) }
+            bucket.sort { (order[$0.id] ?? .max) < (order[$1.id] ?? .max) }
+            userTagIndex[tag] = bucket
+        }
+    }
+
+    private func removeFromUserTagIndex(_ item: ClipItem) {
+        for (tag, bucket) in userTagIndex {
+            let pruned = bucket.filter { $0.id != item.id }
+            if pruned.isEmpty { userTagIndex[tag] = nil } else { userTagIndex[tag] = pruned }
+        }
+    }
+
+    private func pruneUserTagIndexToItems() {
+        let live = Set(items.map(\.id))
+        for (tag, bucket) in userTagIndex {
+            let pruned = bucket.filter { live.contains($0.id) }
+            if pruned.isEmpty { userTagIndex[tag] = nil } else { userTagIndex[tag] = pruned }
+        }
     }
 
     /// The active-model tag ids attached to a clip, or an empty list.
@@ -404,6 +480,7 @@ final class ClipStore: ObservableObject {
         // items keep their relative order, so repositioning just this item's
         // buckets keeps tagIndex identical to a full rebuild (BL-08 correctness).
         repositionInTagIndex(item)
+        rebuildUserTagIndex()
         db?.updateMeta(item)
     }
 
@@ -411,6 +488,7 @@ final class ClipStore: ObservableObject {
         items.removeAll { $0.id == item.id }
         removePayload(item)
         removeFromTagIndex(item)
+        removeFromUserTagIndex(item)
         db?.delete(id: item.id)
     }
 
@@ -420,6 +498,7 @@ final class ClipStore: ObservableObject {
         items.removeAll { !$0.pinned }
         removed.forEach(removePayload)
         rebuildTagIndex()
+        rebuildUserTagIndex()
         db?.deleteUnpinned()
     }
 
@@ -427,19 +506,21 @@ final class ClipStore: ObservableObject {
         item.lastUsedAt = Date()
         item.useCount += 1
         move(item, toFront: true)
+        rebuildUserTagIndex()
         db?.updateMeta(item)
     }
 
     // MARK: Querying
 
     func filtered(kind: ClipKind?, query: String, pinnedOnly: Bool,
-                  facets: Set<Int> = [], time: TimeFilter = .any) -> [ClipItem] {
+                  facets: Set<Int> = [], userTags: Set<String> = [],
+                  time: TimeFilter = .any) -> [ClipItem] {
         var result = items
         if pinnedOnly { result = result.filter { $0.pinned } }
         if let kind { result = result.filter { $0.kind == kind } }
         if time.isActive { result = result.filter { time.contains($0.createdAt) } }
-        if !facets.isEmpty {
-            let keep = Set(items(matchingFacets: facets).map { $0.id })
+        if !facets.isEmpty || !userTags.isEmpty {
+            let keep = Set(items(matchingFacets: facets, userTags: userTags).map { $0.id })
             result = result.filter { keep.contains($0.id) }
         }
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -448,6 +529,7 @@ final class ClipStore: ObservableObject {
                 $0.text.lowercased().contains(q)
                 || ($0.filePath?.lowercased().contains(q) ?? false)
                 || ($0.colorHex?.lowercased().contains(q) ?? false)
+                || $0.userTags.contains { $0.contains(q) }
             }
         }
         return result
@@ -495,6 +577,7 @@ final class ClipStore: ObservableObject {
         let removeIDs = Set(toRemove.map { $0.id })
         items.removeAll { removeIDs.contains($0.id) }
         db?.delete(ids: toRemove.map { $0.id })
+        pruneUserTagIndexToItems()
     }
 
     // MARK: Migration
@@ -510,8 +593,9 @@ final class ClipStore: ObservableObject {
             NSLog("Cliphoard: legacy history decode failed: \(error) — keeping history.corrupt.json (sealed)")
             // Never leave plaintext clip history on disk. Seal the bytes (enc1:
             // marker) before archiving so at-rest recovery is possible without
-            // exposing passwords/tokens the legacy file may contain.
-            if let sealed = Crypto.seal(data) {
+            // exposing passwords/tokens the legacy file may contain. Fail CLOSED:
+            // if sealing fails we skip the archive rather than write plaintext.
+            if let sealed = Crypto.sealStrict(data) {
                 try? sealed.write(to: dir.appendingPathComponent("history.corrupt.json"), options: .atomic)
                 try? FileManager.default.setAttributes(
                     [.posixPermissions: 0o600],
@@ -532,7 +616,9 @@ final class ClipStore: ObservableObject {
         // never as plaintext: this is exactly the upgrade audience at-rest
         // encryption is meant to protect. Seal the bytes (enc1: marker) into
         // history.migrated.json, then remove the original plaintext history.json.
-        if let sealed = Crypto.seal(data) {
+        // Fail CLOSED: only delete the plaintext original once a SEALED archive is
+        // safely written — never write a plaintext archive, never delete without one.
+        if let sealed = Crypto.sealStrict(data) {
             let archiveURL = dir.appendingPathComponent("history.migrated.json")
             try? sealed.write(to: archiveURL, options: .atomic)
             try? FileManager.default.setAttributes(

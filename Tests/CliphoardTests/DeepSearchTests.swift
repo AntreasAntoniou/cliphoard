@@ -37,21 +37,30 @@ final class EmbeddingTests: XCTestCase {
 final class TagSpaceTests: XCTestCase {
     private let e = HashingEmbedder()
 
-    func testHasOneHundredTags() {
-        XCTAssertEqual(TagSpace.count, 100)
-        XCTAssertEqual(TagSpace.names.count, 100)
+    func testGeneralHybridHasFortyEightTags() {
+        XCTAssertEqual(TagSpace.count, 48)
+        XCTAssertEqual(TagSpace.names.count, 48)
     }
 
     func testClassifyReturnsFiveValidTags() {
         let v = e.embed("def foo(): return 1   # some python code")
         let tags = TagSpace.classify(v, embedder: e, topK: 5)
-        XCTAssertEqual(tags.count, 5)
-        XCTAssertTrue(tags.allSatisfy { (0..<100).contains($0) })
-        XCTAssertEqual(Set(tags).count, 5, "tags should be distinct")
+        XCTAssertLessThanOrEqual(tags.count, 5)
+        XCTAssertTrue(tags.allSatisfy { (0..<48).contains($0) })
+        XCTAssertEqual(Set(tags).count, tags.count, "tags should be distinct")
     }
 
     func testNearestTagForQuery() {
-        XCTAssertNotNil(TagSpace.nearestTag(toQuery: "https://example.com/page", embedder: e))
+        struct URLAlignedEmbedder: TextEmbedder {
+            let dimension = 2
+            let signature = "url-aligned-v1"
+            func embed(_ text: String) -> [Float] {
+                text == "url" || text.contains("example.com") ? [1, 0] : [0, 1]
+            }
+        }
+        let embedder = URLAlignedEmbedder()
+        let id = TagSpace.nearestTag(toQuery: "https://example.com/page", embedder: embedder)
+        XCTAssertEqual(id.map { TagSpace.names[$0] }, "url")
     }
 }
 
@@ -86,16 +95,19 @@ final class IngestIndexingTests: XCTestCase {
         store.add(item)
         let sig = EmbedderProvider.active.signature
         XCTAssertNotNil(item.embeddings[sig]?.vector)
-        // General is a facet cube → one tag per dimension (not a flat top-5).
-        XCTAssertEqual(item.embeddings[sig]?.tags.count, TagSpace.dimensionCount)
+        // General is hybrid → 0–4 axis tags plus at most 3 topical tags.
+        XCTAssertLessThanOrEqual(item.embeddings[sig]?.tags.count ?? .max, 7)
     }
 
     func testTagIndexLookupIsPopulated() {
         let store = tempStore()
         let item = ClipItem(kind: .text, text: "git commit -m fix the parser bug")
+        var vector = [Float](repeating: 0, count: EmbedderProvider.active.dimension)
+        vector[0] = 1
+        item.embeddings[EmbedderProvider.active.signature] =
+            ModelEmbedding(vector: vector, tags: [0])
         store.add(item)
-        let tag = try! XCTUnwrap(item.embeddings[EmbedderProvider.active.signature]?.tags.first)
-        XCTAssertTrue(store.items(taggedWith: tag).contains { $0.id == item.id })
+        XCTAssertTrue(store.items(taggedWith: 0).contains { $0.id == item.id })
     }
 
     func testAddCachesForActiveModelAndIsNotStale() {
@@ -151,8 +163,46 @@ final class IngestIndexingTests: XCTestCase {
         let reloaded = ClipStore(directory: dir)
         let sig = EmbedderProvider.active.signature
         XCTAssertNotNil(reloaded.items.first?.embeddings[sig]?.vector)
-        XCTAssertEqual(reloaded.items.first?.embeddings[sig]?.tags.count, TagSpace.dimensionCount)
+        XCTAssertLessThanOrEqual(reloaded.items.first?.embeddings[sig]?.tags.count ?? .max, 7)
         XCTAssertFalse(ClipIndexer.isStale(reloaded.items.first!), "reload shouldn't need reprocessing")
+    }
+}
+
+@MainActor
+final class UserTagModeTests: XCTestCase {
+    func testTagModeResolvesExactUserTagBeforeAutomaticCategories() {
+        let oldMode = DeepSearch.mode
+        let oldLevel = DeepSearch.level
+        defer { DeepSearch.mode = oldMode; DeepSearch.level = oldLevel }
+        DeepSearch.mode = .tag
+        DeepSearch.level = .off
+        Feedback.soundEnabled = false
+
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("DittoTests-user-tag-mode-\(UUID().uuidString)")
+        let store = ClipStore(directory: dir)
+        let item = ClipItem(kind: .text, text: "customer follow-up")
+        item.userTags = ["client-acme"]
+        store.add(item)
+        let model = PanelViewModel(store: store)
+        model.query = "CLIENT-ACME"
+
+        XCTAssertEqual(model.results.map(\.id), [item.id])
+    }
+
+    func testInspectorIntentTracksClipAndTagFocus() {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("DittoTests-inspector-\(UUID().uuidString)")
+        let store = ClipStore(directory: dir)
+        let item = ClipItem(kind: .text, text: "inspect me")
+        store.add(item)
+        let model = PanelViewModel(store: store)
+
+        model.inspect(item, focusTags: true)
+        XCTAssertEqual(model.inspectedItem?.id, item.id)
+        XCTAssertTrue(model.inspectorFocusTags)
+        model.closeInspector()
+        XCTAssertNil(model.inspectedItem)
     }
 }
 

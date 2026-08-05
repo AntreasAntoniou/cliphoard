@@ -202,6 +202,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         model.query = ""
         model.activeKind = nil
         model.pinnedOnly = false
+        model.activeUserTags = []
         model.showSettings = false
         model.resetSelection()
         model.presentToken &+= 1
@@ -298,6 +299,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         case kVK_RightArrow, kVK_DownArrow:
             model.moveSelection(1); return nil
         case kVK_Return, kVK_ANSI_KeypadEnter:
+            if cmd { model.inspectSelection(); return nil }
             model.commitSelection(plain: plain); return nil
         // Standard text-editing keys: a menu-bar-less agent app has no Edit
         // menu, so ⌘A/⌘V/⌘X never resolve to a key equivalent and just beep.

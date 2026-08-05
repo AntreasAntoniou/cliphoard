@@ -44,6 +44,12 @@ final class AppSettings: ObservableObject {
             store.reclassifyAllTags()   // cheap: re-tags from cached vectors
         }
     }
+    @Published var assignmentThreshold: Double {
+        didSet {
+            TagSpace.assignmentThreshold = Float(assignmentThreshold)
+            store.reclassifyAllTags()
+        }
+    }
     /// Custom-basket tags, one per line, for editing.
     @Published var customTagsText: String
 
@@ -70,6 +76,7 @@ final class AppSettings: ObservableObject {
         deepSearchLevel = DeepSearch.level
         vectorDetail = DeepSearch.detail
         activeBasket = TagBaskets.activeID
+        assignmentThreshold = Double(TagSpace.assignmentThreshold)
         customTagsText = TagBaskets.custom.tags.joined(separator: "\n")
     }
 
@@ -205,8 +212,17 @@ struct SettingsView: View {
                         .labelsHidden().frame(width: 170)
                     }
                     Text(TagBaskets.active.isDimensional
-                         ? "\(TagBaskets.active.dimensions.count) dimensions × 10 — every clip is classified along all of them (one value per dimension)."
+                         ? "\(TagBaskets.active.dimensions.count) axes × 8 + \(TagBaskets.active.topical.count) topical tags — weak matches stay blank."
                          : "\(TagBaskets.active.tags.count) tags — clips are classified into their nearest few.")
+                        .font(.system(size: 11)).foregroundStyle(.secondary)
+
+                    HStack {
+                        Text("Confidence floor")
+                        Slider(value: $settings.assignmentThreshold, in: 0...0.8, step: 0.01)
+                        Text(settings.assignmentThreshold, format: .number.precision(.fractionLength(2)))
+                            .font(.system(size: 11, design: .monospaced)).frame(width: 36)
+                    }
+                    Text("Average automatic tags per clip: \(averageAutomaticTags, specifier: "%.1f")")
                         .font(.system(size: 11)).foregroundStyle(.secondary)
 
                     // The active basket's tags, in a bounded, clipped, scrollable
@@ -223,6 +239,15 @@ struct SettingsView: View {
                                             .font(.system(size: 9, weight: .semibold)).foregroundStyle(.secondary)
                                         FlowLayout(spacing: 5) {
                                             ForEach(dim.tags, id: \.self) { tag in tagPill(tag) }
+                                        }
+                                    }
+                                }
+                                if !TagBaskets.active.topical.isEmpty {
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text("TOPICAL")
+                                            .font(.system(size: 9, weight: .semibold)).foregroundStyle(.secondary)
+                                        FlowLayout(spacing: 5) {
+                                            ForEach(TagBaskets.active.topical, id: \.self) { tag in tagPill(tag) }
                                         }
                                     }
                                 }
@@ -367,6 +392,13 @@ struct SettingsView: View {
             .padding(.horizontal, 8).padding(.vertical, 3)
             .background(Theme.accent.opacity(0.12), in: Capsule())
             .foregroundStyle(Theme.accent)
+    }
+
+    private var averageAutomaticTags: Double {
+        let signature = EmbedderProvider.active.signature
+        let counts = store.items.compactMap { $0.embeddings[signature]?.tags.count }
+        guard !counts.isEmpty else { return 0 }
+        return Double(counts.reduce(0, +)) / Double(counts.count)
     }
 
     @ViewBuilder

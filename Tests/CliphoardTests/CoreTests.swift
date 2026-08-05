@@ -87,6 +87,19 @@ final class CodableResilienceTests: XCTestCase {
         let back = try JSONDecoder().decode([ClipItem].self, from: data)
         XCTAssertEqual(back.first?.embeddings["ogma-small-256"]?.tags, [3, 7])
     }
+
+    func testUserTagsDecodeNormalisedAndRoundTrip() throws {
+        let json = """
+        {"id":"\(UUID().uuidString)","kind":"text","text":"tagged",
+         "userTags":["  Client-Acme ","client-acme","Research Notes"],
+         "createdAt":1,"lastUsedAt":1,"pinned":false,"useCount":0}
+        """.data(using: .utf8)!
+        let item = try JSONDecoder().decode(ClipItem.self, from: json)
+        let encoded = try JSONEncoder().encode(item)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        XCTAssertEqual(object["userTags"] as? [String], ["client-acme", "research notes"],
+                       "user tags are trimmed, lowercased and de-duplicated in first-seen order")
+    }
 }
 
 // MARK: - Hex colour parsing
@@ -217,6 +230,34 @@ final class ClipStoreTests: XCTestCase {
         XCTAssertEqual(store.filtered(kind: .link, query: "", pinnedOnly: false).count, 1)
         store.togglePin(link)
         XCTAssertEqual(store.filtered(kind: nil, query: "", pinnedOnly: true).count, 1)
+    }
+
+    func testUserTagIndexTracksAddEditDeleteAndPersists() {
+        var store: ClipStore? = newStore()
+        let item = text("customer follow-up")
+        item.userTags = [" Client-Acme ", "client-acme"]
+        store?.add(item)
+        XCTAssertEqual(store?.items(withUserTag: "CLIENT-ACME").map(\.id), [item.id])
+
+        XCTAssertTrue(store?.updateUserTags(item, to: ["Research Notes", "research notes"]) ?? false)
+        XCTAssertTrue(store?.items(withUserTag: "client-acme").isEmpty ?? false)
+        XCTAssertEqual(store?.distinctUserTags, ["research notes"])
+        store = nil
+
+        let reloaded = newStore()
+        let persisted = try? XCTUnwrap(reloaded.items.first)
+        XCTAssertEqual(persisted?.userTags, ["research notes"])
+        XCTAssertEqual(reloaded.items(withUserTag: "research notes").first?.id, item.id)
+        if let persisted { reloaded.delete(persisted) }
+        XCTAssertTrue(reloaded.items(withUserTag: "research notes").isEmpty)
+    }
+
+    func testExactFilteringSearchesUserTags() {
+        let store = newStore()
+        let item = text("customer follow-up")
+        item.userTags = ["client-acme"]
+        store.add(item)
+        XCTAssertEqual(store.filtered(kind: nil, query: "CLIENT-ACME", pinnedOnly: false).map(\.id), [item.id])
     }
 
     func testClearUnpinned() {

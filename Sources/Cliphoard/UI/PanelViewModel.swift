@@ -14,6 +14,7 @@ final class PanelViewModel: ObservableObject {
     /// Selected facet-cube constraints (tag ids). Within a dimension OR'd, across
     /// dimensions AND'd — see `ClipStore.items(matchingFacets:)`.
     @Published var activeFacets: Set<Int> = []
+    @Published var activeUserTags: Set<String> = []
     @Published var selection: Int = 0
     /// Bumped each time the bar is presented so the UI can reset scroll/state.
     @Published var presentToken: Int = 0
@@ -23,6 +24,10 @@ final class PanelViewModel: ObservableObject {
     @Published var scrollRequest: Int = 0
     /// When true the bar shows the settings surface instead of the card strip.
     @Published var showSettings: Bool = false
+    /// Clip currently expanded into the detail supercard.
+    @Published var inspectedItem: ClipItem?
+    /// Whether the inspector should scroll directly to its tag editor.
+    @Published var inspectorFocusTags: Bool = false
 
     let store: ClipStore
 
@@ -68,6 +73,7 @@ final class PanelViewModel: ObservableObject {
         let pinnedOnly: Bool
         let timeFilter: TimeFilter
         let facets: Set<Int>
+        let userTags: Set<String>
         let mode: SearchMode
         let itemCount: Int
         let lastAddedID: UUID?
@@ -84,6 +90,7 @@ final class PanelViewModel: ObservableObject {
             pinnedOnly: pinnedOnly,
             timeFilter: timeFilter,
             facets: activeFacets,
+            userTags: activeUserTags,
             mode: DeepSearch.mode,
             itemCount: store.items.count,
             lastAddedID: store.lastAddedID
@@ -108,18 +115,24 @@ final class PanelViewModel: ObservableObject {
         // Exact (or empty query) → substring filter, scoped by kind/pin/time/facets.
         if DeepSearch.mode == .exact || q.isEmpty {
             return store.filtered(kind: activeKind, query: q, pinnedOnly: pinnedOnly,
-                                  facets: activeFacets, time: time)
+                                  facets: activeFacets, userTags: activeUserTags, time: time)
         }
         // Kind/pinned/time/facet scope first (no substring), then semantic search.
         let scoped = store.filtered(kind: activeKind, query: "", pinnedOnly: pinnedOnly,
-                                    facets: activeFacets, time: time)
+                                    facets: activeFacets, userTags: activeUserTags, time: time)
         let embedder = EmbedderProvider.active
         switch DeepSearch.mode {
         case .exact:
             return scoped
         case .tag:
-            // O(1) tag lookup: map the query to its nearest preset tag (100
-            // comparisons), then intersect the pre-tagged entries with the scope.
+            // Explicit user labels win over inferred automatic categories.
+            let userTagged = store.items(withUserTag: q)
+            if !userTagged.isEmpty {
+                let ids = Set(userTagged.map(\.id))
+                return scoped.filter { ids.contains($0.id) }
+            }
+            // Otherwise map the query to its nearest preset tag and intersect
+            // the pre-tagged entries with the current scope.
             guard let tag = TagSpace.nearestTag(toQuery: q, embedder: embedder) else { return [] }
             let ids = Set(store.items(taggedWith: tag).map { $0.id })
             return scoped.filter { ids.contains($0.id) }
@@ -177,6 +190,22 @@ final class PanelViewModel: ObservableObject {
         let r = results
         guard r.indices.contains(selection) else { return }
         store.togglePin(r[selection])
+    }
+
+    func inspect(_ item: ClipItem, focusTags: Bool = false) {
+        inspectorFocusTags = focusTags
+        inspectedItem = item
+    }
+
+    func inspectSelection(focusTags: Bool = false) {
+        let results = results
+        guard results.indices.contains(selection) else { return }
+        inspect(results[selection], focusTags: focusTags)
+    }
+
+    func closeInspector() {
+        inspectedItem = nil
+        inspectorFocusTags = false
     }
 
     /// Number 1…9 quick-select.

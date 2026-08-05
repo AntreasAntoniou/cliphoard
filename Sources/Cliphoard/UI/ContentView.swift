@@ -83,6 +83,16 @@ struct ContentView: View {
                 withAnimation(.easeIn(duration: 0.25)) { showPasteConfirm = false }
             }
         }
+        .sheet(item: $model.inspectedItem, onDismiss: { model.closeInspector() }) { item in
+            ClipDetailView(
+                item: item,
+                store: store,
+                focusTags: model.inspectorFocusTags,
+                onPaste: { model.onPaste?(item, false) },
+                onCopy: { model.onCopy?(item) },
+                onClose: { model.closeInspector() }
+            )
+        }
     }
 
     // MARK: Paste status
@@ -326,12 +336,13 @@ struct ContentView: View {
     /// layout — a measurable summon delay. A plain chip that builds an NSMenu on
     /// click keeps the summon path O(1); the menu's cost is paid only when opened.
     private var filtersMenu: some View {
-        Button {
+        let filterCount = model.activeFacets.count + model.activeUserTags.count
+        return Button {
             facetMenu.present(model: model)
         } label: {
             filterChipLabel(icon: "line.3.horizontal.decrease.circle",
-                            text: model.activeFacets.isEmpty ? "Filters" : "Filters (\(model.activeFacets.count))",
-                            active: !model.activeFacets.isEmpty)
+                            text: filterCount == 0 ? "Filters" : "Filters (\(filterCount))",
+                            active: filterCount > 0)
         }
         .buttonStyle(.plain)
         .fixedSize()
@@ -372,6 +383,8 @@ struct ContentView: View {
                                 storeDir: store.storeDirectory,
                                 tags: tagNames(for: item),
                                 onActivate: { model.onPaste?(item, false) },
+                                onInspect: { model.inspect(item) },
+                                onInspectTags: { model.inspect(item, focusTags: true) },
                                 onPin: { store.togglePin(item) },
                                 onDelete: { store.delete(item) }
                             )
@@ -504,6 +517,12 @@ struct ContentView: View {
         )
         .contentShape(Rectangle())
         .onTapGesture { model.click(idx) }
+        .contextMenu {
+            Button("Paste") { model.onPaste?(item, false) }
+            Button("Inspect") { model.inspect(item) }
+            Button(item.pinned ? "Unpin" : "Pin") { store.togglePin(item) }
+            Button("Delete", role: .destructive) { store.delete(item) }
+        }
     }
 
     /// A single-line textual summary of a clip for the dense rows.
@@ -593,11 +612,17 @@ struct ContentView: View {
         // freshly captured clip and an old one are always consistent. Suppress tags
         // entirely on the HashingEmbedder fallback: without a real semantic model
         // its classifications are unreliable and were showing misleading pills.
-        guard DeepSearch.level != .off,
-              EmbedderProvider.active.signature.contains("ogma"),
-              let ids = item.embeddings[EmbedderProvider.active.signature]?.tags else { return [] }
-        // Return all assigned tags; the card shows a couple whole tags + "+N".
-        return ids.compactMap { TagSpace.names.indices.contains($0) ? TagSpace.names[$0] : nil }
+        let auto: [String]
+        if DeepSearch.level != .off,
+           let ids = item.embeddings[EmbedderProvider.active.signature]?.tags {
+            auto = ids.compactMap { TagSpace.names.indices.contains($0) ? TagSpace.names[$0] : nil }
+        } else {
+            auto = []
+        }
+        // Explicit user tags lead because they are intentional; automatic tags
+        // follow. Preserve first occurrence when vocabularies overlap.
+        var seen: Set<String> = []
+        return (item.userTags + auto).filter { seen.insert($0).inserted }
     }
 
     private func indexingBar(_ p: ClipStore.IndexingProgress) -> some View {
@@ -709,8 +734,8 @@ final class FacetMenuController: NSObject {
     func present(model: PanelViewModel) {
         self.model = model
         let menu = NSMenu()
-        if !model.activeFacets.isEmpty {
-            let n = model.activeFacets.count
+        if !model.activeFacets.isEmpty || !model.activeUserTags.isEmpty {
+            let n = model.activeFacets.count + model.activeUserTags.count
             let clear = NSMenuItem(title: "Clear \(n) filter\(n == 1 ? "" : "s")",
                                    action: #selector(clearAll), keyEquivalent: "")
             clear.target = self
@@ -731,6 +756,20 @@ final class FacetMenuController: NSObject {
             parent.submenu = sub
             menu.addItem(parent)
         }
+        let userTags = model.store.distinctUserTags
+        if !userTags.isEmpty {
+            let sub = NSMenu()
+            for tag in userTags {
+                let item = NSMenuItem(title: tag, action: #selector(toggleUserTag(_:)), keyEquivalent: "")
+                item.target = self
+                item.representedObject = tag
+                item.state = model.activeUserTags.contains(tag) ? .on : .off
+                sub.addItem(item)
+            }
+            let parent = NSMenuItem(title: "Your tags", action: nil, keyEquivalent: "")
+            parent.submenu = sub
+            menu.addItem(parent)
+        }
         // Pop at the cursor (which is on the chip that was just clicked). Screen
         // coordinates; `in: nil` interprets the point that way.
         menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
@@ -745,6 +784,14 @@ final class FacetMenuController: NSObject {
 
     @objc private func clearAll() {
         model?.activeFacets = []
+        model?.activeUserTags = []
         model?.resetSelection()
+    }
+
+    @objc private func toggleUserTag(_ sender: NSMenuItem) {
+        guard let model, let tag = sender.representedObject as? String else { return }
+        if model.activeUserTags.contains(tag) { model.activeUserTags.remove(tag) }
+        else { model.activeUserTags.insert(tag) }
+        model.resetSelection()
     }
 }

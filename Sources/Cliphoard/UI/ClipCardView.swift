@@ -9,6 +9,8 @@ struct ClipCardView: View {
     /// A few of this clip's auto-assigned tags, so users see how it's classified.
     var tags: [String] = []
     var onActivate: () -> Void
+    var onInspect: () -> Void
+    var onInspectTags: () -> Void
     var onPin: () -> Void
     var onDelete: () -> Void
 
@@ -61,6 +63,7 @@ struct ClipCardView: View {
         .onHover { hovering = $0 }
         .contextMenu {
             Button("Paste") { onActivate() }
+            Button("Inspect") { onInspect() }
             Button(item.pinned ? "Unpin" : "Pin") { onPin() }
             Divider()
             Button("Delete", role: .destructive) { onDelete() }
@@ -94,6 +97,15 @@ struct ClipCardView: View {
                 Image(systemName: "pin.fill")
                     .font(.system(size: 10))
                     .foregroundStyle(Theme.pin)
+            }
+            if hovering || selected {
+                Button(action: onInspect) {
+                    Image(systemName: "arrow.up.left.and.arrow.down.right")
+                        .font(.system(size: 9, weight: .semibold))
+                }
+                .buttonStyle(.plain)
+                .help("Inspect clip (Command-Return)")
+                .accessibilityLabel("Inspect clip")
             }
             if index < 9 {
                 Text("⌘\(index + 1)")
@@ -174,7 +186,11 @@ struct ClipCardView: View {
         if !tags.isEmpty, item.kind != .image, item.kind != .color {
             HStack(spacing: 4) {
                 ForEach(tags.prefix(2), id: \.self) { tag in tagChip(tag) }
-                if tags.count > 2 { tagChip("+\(tags.count - 2)") }
+                if tags.count > 2 {
+                    Button(action: onInspectTags) { tagChip("+\(tags.count - 2)") }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Show all tags")
+                }
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 10)

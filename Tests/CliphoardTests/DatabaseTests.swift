@@ -46,7 +46,7 @@ final class DatabaseTests: XCTestCase {
         sqlite3_bind_text(stmt, 1, clipID.uuidString, -1, Self.transient)
         sqlite3_bind_text(stmt, 2, "legacy", -1, Self.transient)
         let blob = Database.blob(fromVector: vector)   // plaintext Float16 blob
-        blob.withUnsafeBytes { sqlite3_bind_blob(stmt, 3, $0.baseAddress, Int32(blob.count), Self.transient) }
+        _ = blob.withUnsafeBytes { sqlite3_bind_blob(stmt, 3, $0.baseAddress, Int32(blob.count), Self.transient) }
         let tagsText = tags.map(String.init).joined(separator: ",")
         sqlite3_bind_text(stmt, 4, tagsText, -1, Self.transient)
         _ = sqlite3_step(stmt)
@@ -54,12 +54,78 @@ final class DatabaseTests: XCTestCase {
 
     private func text(_ s: String) -> ClipItem { ClipItem(kind: .text, text: s) }
 
+    private func rawUserTags(path: String, id: UUID) -> String? {
+        var raw: OpaquePointer?
+        guard sqlite3_open_v2(path, &raw, SQLITE_OPEN_READONLY, nil) == SQLITE_OK else { return nil }
+        defer { sqlite3_close_v2(raw) }
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+        guard sqlite3_prepare_v2(raw, "SELECT user_tags FROM clips WHERE id=?;", -1, &stmt, nil) == SQLITE_OK else {
+            return nil
+        }
+        sqlite3_bind_text(stmt, 1, id.uuidString, -1, Self.transient)
+        guard sqlite3_step(stmt) == SQLITE_ROW, let c = sqlite3_column_text(stmt, 0) else { return nil }
+        return String(cString: c)
+    }
+
+    private func taggedItem(_ tags: [String]) throws -> ClipItem {
+        let data = try JSONSerialization.data(withJSONObject: [
+            "id": UUID().uuidString, "kind": "text", "text": "tagged clip",
+            "createdAt": 1, "lastUsedAt": 1, "pinned": false, "useCount": 0,
+            "userTags": tags,
+        ])
+        return try JSONDecoder().decode(ClipItem.self, from: data)
+    }
+
     func testEmbeddingBlobRoundTripsExactly() {
         let v: [Float] = [0.0, 1.0, -0.5, 0.040161, 0.25, -0.999]
         let blob = Database.blob(fromVector: v)
         XCTAssertEqual(blob.count, v.count * 4, "Float32 = 4 bytes/element (portable; universal build)")
         // Float32 storage → exact round-trip (Float16 was unavailable on x86_64 macOS).
         XCTAssertEqual(Database.vectorFromBlob(blob), v)
+    }
+
+    func testOpeningLegacyDatabaseAddsUserTagsColumn() {
+        let path = tempPath()
+        var raw: OpaquePointer?
+        XCTAssertEqual(sqlite3_open_v2(path, &raw, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, nil), SQLITE_OK)
+        XCTAssertEqual(sqlite3_exec(raw, """
+            CREATE TABLE clips (
+                id TEXT PRIMARY KEY, kind TEXT NOT NULL, text TEXT NOT NULL,
+                rtf BLOB, payload_file TEXT, file_path TEXT, color_hex TEXT,
+                created_at REAL NOT NULL, last_used_at REAL NOT NULL,
+                pinned INTEGER NOT NULL, source_app TEXT, use_count INTEGER NOT NULL);
+            """, nil, nil, nil), SQLITE_OK)
+        sqlite3_close_v2(raw)
+
+        _ = Database(path: path)
+        var reopened: OpaquePointer?
+        sqlite3_open_v2(path, &reopened, SQLITE_OPEN_READONLY, nil)
+        defer { sqlite3_close_v2(reopened) }
+        var stmt: OpaquePointer?
+        sqlite3_prepare_v2(reopened, "PRAGMA table_info(clips);", -1, &stmt, nil)
+        defer { sqlite3_finalize(stmt) }
+        var columns: [String] = []
+        while sqlite3_step(stmt) == SQLITE_ROW, let c = sqlite3_column_text(stmt, 1) {
+            columns.append(String(cString: c))
+        }
+        XCTAssertTrue(columns.contains("user_tags"), "additive migration must preserve old databases")
+    }
+
+    func testUserTagsAreSealedAtRestAndRoundTrip() throws {
+        let path = tempPath()
+        let db = Database(path: path)!
+        let item = try taggedItem([" Client-Acme ", "research notes"])
+        XCTAssertTrue(db.insert(item))
+
+        let raw = rawUserTags(path: path, id: item.id)
+        XCTAssertTrue(raw?.hasPrefix("enc1:") ?? false, "on-disk user tags must be sealed")
+        XCTAssertFalse(raw?.contains("client-acme") ?? true, "plaintext user tag must not appear on disk")
+
+        let loaded = try XCTUnwrap(db.loadAll().first)
+        let encoded = try JSONEncoder().encode(loaded)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        XCTAssertEqual(object["userTags"] as? [String], ["client-acme", "research notes"])
     }
 
     func testInsertThenLoadAllReturnsEquivalentClip() {
@@ -142,6 +208,52 @@ final class DatabaseTests: XCTestCase {
         XCTAssertEqual(emb?.vector.count, 3)
         XCTAssertEqual(emb?.vector[0] ?? 0, 0.5, accuracy: 0.01)
         XCTAssertEqual(emb?.vector[2] ?? 0, 1.0, accuracy: 0.01)
+    }
+
+    /// Read the raw (undecrypted) content columns of a clip row by id via an
+    /// independent connection — verifies what is actually on disk.
+    private func rawClip(path: String, id: UUID)
+        -> (text: String?, rtf: Data?, filePath: String?, colorHex: String?) {
+        var raw: OpaquePointer?
+        guard sqlite3_open_v2(path, &raw, SQLITE_OPEN_READONLY, nil) == SQLITE_OK else { return (nil, nil, nil, nil) }
+        defer { sqlite3_close_v2(raw) }
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+        guard sqlite3_prepare_v2(raw, "SELECT text, rtf, file_path, color_hex FROM clips WHERE id=?;",
+                                 -1, &stmt, nil) == SQLITE_OK else { return (nil, nil, nil, nil) }
+        sqlite3_bind_text(stmt, 1, id.uuidString, -1, Self.transient)
+        guard sqlite3_step(stmt) == SQLITE_ROW else { return (nil, nil, nil, nil) }
+        var t: String?; if let c = sqlite3_column_text(stmt, 0) { t = String(cString: c) }
+        var rtf: Data?; if let p = sqlite3_column_blob(stmt, 1) { rtf = Data(bytes: p, count: Int(sqlite3_column_bytes(stmt, 1))) }
+        var fp: String?; if let c = sqlite3_column_text(stmt, 2) { fp = String(cString: c) }
+        var ch: String?; if let c = sqlite3_column_text(stmt, 3) { ch = String(cString: c) }
+        return (t, rtf, fp, ch)
+    }
+
+    /// Content columns (text/rtf/file_path/color_hex) are sealed at rest and the
+    /// plaintext never survives in the raw row — the fail-CLOSED insert contract.
+    func testClipContentColumnsAreSealedAtRest() {
+        let path = tempPath()
+        let db = Database(path: path)!
+        let secret = "aws_secret_key=AKIA-XXXX-TOP-SECRET"
+        let item = ClipItem(kind: .text, text: secret)
+        item.rtf = Data("{\\rtf1 \(secret)}".utf8)
+        item.filePath = "/Users/me/\(secret).txt"
+        item.colorHex = "#ABCDEF"
+        XCTAssertTrue(db.insert(item))
+
+        let raw = rawClip(path: path, id: item.id)
+        XCTAssertTrue(raw.text?.hasPrefix("enc1:") ?? false, "on-disk text must be sealed")
+        XCTAssertFalse(raw.text?.contains(secret) ?? true, "plaintext text must not appear on disk")
+        XCTAssertTrue(Crypto.isSealed(raw.rtf), "on-disk rtf must be sealed")
+        XCTAssertTrue(raw.filePath?.hasPrefix("enc1:") ?? false, "on-disk file path must be sealed")
+        XCTAssertFalse(raw.filePath?.contains(secret) ?? true, "plaintext path must not appear on disk")
+        XCTAssertTrue(raw.colorHex?.hasPrefix("enc1:") ?? false, "on-disk color must be sealed")
+        // …and it all round-trips back through load.
+        let loaded = db.loadAll().first
+        XCTAssertEqual(loaded?.text, secret)
+        XCTAssertEqual(loaded?.filePath, "/Users/me/\(secret).txt")
+        XCTAssertEqual(loaded?.colorHex, "#ABCDEF")
     }
 
     func testLegacyPlaintextEmbeddingStillLoads() {

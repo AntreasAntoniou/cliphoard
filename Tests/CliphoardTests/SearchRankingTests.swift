@@ -101,4 +101,18 @@ final class SearchRankingTests: XCTestCase {
         XCTAssertFalse(ranked.contains { $0.text == "quarterly tax ledger" },
                        "an unrelated clip is dropped")
     }
+
+    @MainActor
+    func testSmartUserTagMatchOutranksNeuralOnlyMatch() {
+        let query = "client-acme"
+        let qv = e.embed(query, query: true)
+        let tagged = text("unrelated words but deliberately labelled")
+        tagged.userTags = [query]
+        tagged.embeddings[e.signature] = ModelEmbedding(vector: e.embed("distant prose"), tags: [])
+        let neuralOnly = text("semantically perfect but unlabelled")
+        neuralOnly.embeddings[e.signature] = ModelEmbedding(vector: qv, tags: [])
+
+        let ranked = SemanticRanker.smart(query: query, items: [neuralOnly, tagged], embedder: e)
+        XCTAssertEqual(ranked.first?.id, tagged.id, "an explicit user label is a stronger signal than cosine alone")
+    }
 }
