@@ -21,6 +21,13 @@ struct TagDimension: Codable, Equatable {
 /// Switching basket re-tags clips from their cached vectors — no re-embedding —
 /// so it's cheap.
 struct TagBasket: Identifiable, Codable, Equatable {
+    /// Fixed axis width. EVERY dimension of EVERY curated basket holds exactly
+    /// this many tags, so tag-ids map onto contiguous, predictable slices
+    /// (dimension `d` owns `d*dimensionSize ..< (d+1)*dimensionSize`) and two
+    /// baskets can be concatenated (see `TagBaskets.composed`) without
+    /// renumbering anything but the topical tail.
+    static let dimensionSize = 8
+
     var id: String
     var name: String
     /// The cube's axes, in order. Empty for a flat basket.
@@ -39,9 +46,13 @@ struct TagBasket: Identifiable, Codable, Equatable {
         dimensions.isEmpty ? flatTags : dimensions.flatMap { $0.tags } + topical
     }
 
-    /// Tag-id range owned by the topical tail. Empty for a flat basket.
+    /// Tag-id range owned by the topical tail: `dimensions.count * dimensionSize
+    /// ..< tags.count` whenever the fixed-width invariant holds. Summed from the
+    /// real axis widths rather than multiplied so a hand-built uneven basket
+    /// (tests, a future migration) still partitions correctly. Empty
+    /// (`0..<0`-shaped) for a flat basket.
     var topicalRange: Range<Int> {
-        guard !dimensions.isEmpty else { return tags.count..<tags.count }
+        guard !dimensions.isEmpty else { return 0..<0 }
         let start = dimensions.reduce(0) { $0 + $1.tags.count }
         return start..<(start + topical.count)
     }
@@ -67,7 +78,10 @@ struct TagBasket: Identifiable, Codable, Equatable {
         self.flatTags = tags
     }
 
-    /// Stable fingerprint of the tag set, for caching tag vectors.
+    /// Stable fingerprint of the tag set, for caching tag vectors. `tags` is the
+    /// axes *plus* the topical tail, so editing either side (or composing an
+    /// overlay onto General) changes the fingerprint and invalidates the cached
+    /// tag vectors — no separate topical term is needed.
     var fingerprint: String { "\(id):\(tags.count):\(HashingEmbedder.fnv1a(tags.joined(separator: "|")))" }
 
     // MARK: Codable (resilient: old baskets persisted before `dimensions` existed
@@ -215,5 +229,74 @@ enum TagBaskets {
         set { UserDefaults.standard.set(newValue, forKey: "activeBasket") }
     }
 
-    static var active: TagBasket { all.first { $0.id == activeID } ?? general }
+    // MARK: - Composition (General + one optional specialist overlay)
+
+    /// The specialist basket layered on top of General, by id (nil = General
+    /// alone). Persisted so the choice survives relaunch. Setting it drops the
+    /// memoized `composed` basket; every read of `composed` re-checks the stored
+    /// id anyway, so an out-of-band write can't leave a stale cube behind.
+    static var overlayID: String? {
+        get {
+            guard let raw = UserDefaults.standard.string(forKey: "overlayBasket"),
+                  !raw.isEmpty else { return nil }
+            return raw
+        }
+        set {
+            if let newValue, !newValue.isEmpty {
+                UserDefaults.standard.set(newValue, forKey: "overlayBasket")
+            } else {
+                UserDefaults.standard.removeObject(forKey: "overlayBasket")
+            }
+            cachedComposed = nil
+        }
+    }
+
+    /// The overlay basket itself, resolved from `overlayID`. Nil when no overlay
+    /// is selected, when the stored id no longer exists (a basket was renamed or
+    /// dropped between versions), or when it points at General itself — General
+    /// is always the base, never its own overlay.
+    static var overlay: TagBasket? {
+        guard let oid = overlayID, oid != general.id else { return nil }
+        return all.first { $0.id == oid }
+    }
+
+    /// Memoized derived basket, keyed by the overlay id it was built from.
+    private static var cachedComposed: (String, TagBasket)?
+
+    /// The basket the app actually classifies with: General on its own, or
+    /// General MERGED with a specialist overlay. The merge is deduplicated, not a
+    /// raw concatenation: many specialists redefine a shared axis (Intent,
+    /// Sensitivity, Domain) or reuse a topical term (url, path, email). A plain
+    /// concatenation would then produce two same-named axes and duplicate topical
+    /// tags — duplicate tag-name vectors that corrupt classification. Instead:
+    ///  - Axes keep General's ordering; where the overlay redefines an axis of the
+    ///    same name, the overlay's more-specific vocabulary WINS; the overlay's
+    ///    genuinely new axes are appended after General's.
+    ///  - Topical is the union, General first, later duplicates dropped.
+    /// All curated axes are `dimensionSize`-wide, so the merged basket still tiles
+    /// cleanly (axes first, one contiguous topical tail).
+    ///
+    /// Derived, not stored: no clip is re-embedded when the overlay changes, the
+    /// tags are simply recomputed from the cached vectors.
+    static var composed: TagBasket {
+        guard let overlay else { return general }
+        if let (key, basket) = cachedComposed, key == overlay.id { return basket }
+        let overlayByName = Dictionary(overlay.dimensions.map { ($0.name, $0) },
+                                       uniquingKeysWith: { first, _ in first })
+        let generalNames = Set(general.dimensions.map { $0.name })
+        let mergedDimensions = general.dimensions.map { overlayByName[$0.name] ?? $0 }
+            + overlay.dimensions.filter { !generalNames.contains($0.name) }
+        var seenTopical = Set<String>()
+        let mergedTopical = (general.topical + overlay.topical).filter { seenTopical.insert($0).inserted }
+        let basket = TagBasket(id: "composed:\(overlay.id)",
+                               name: "\(general.name) + \(overlay.name)",
+                               dimensions: mergedDimensions,
+                               topical: mergedTopical)
+        cachedComposed = (overlay.id, basket)
+        return basket
+    }
+
+    /// Kept for every existing caller (`TagSpace`, Settings): the basket in force
+    /// right now, which under the hybrid model is the composed one.
+    static var active: TagBasket { composed }
 }
