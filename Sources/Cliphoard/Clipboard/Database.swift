@@ -38,7 +38,29 @@ final class Database {
             PRIMARY KEY (clip_id, model),
             FOREIGN KEY (clip_id) REFERENCES clips(id) ON DELETE CASCADE);
         """)
+        // Suggested user tags the user has explicitly dismissed for a clip, so the
+        // suggestion loop (spec §5.1) never re-offers them. `tag` holds the SEALED
+        // tag (user content, same at-rest guarantee as `clips.user_tags`); the
+        // composite key therefore only catches byte-identical ciphertext, so the
+        // write path de-duplicates by decrypting the clip's existing rows.
+        exec("""
+        CREATE TABLE IF NOT EXISTS user_tag_dismissals (
+            tag TEXT NOT NULL, clip_id TEXT NOT NULL,
+            PRIMARY KEY (tag, clip_id));
+        """)
+        // Deliberately NO foreign key to clips: `insert` uses INSERT OR REPLACE,
+        // which deletes+reinserts a clip row on every re-save, and an ON DELETE
+        // CASCADE would silently wipe that clip's dismissals each time. Dismissals
+        // are instead pruned explicitly when a clip is genuinely deleted (see
+        // `delete(id:)` / `deleteUnpinned`).
+        exec("CREATE INDEX IF NOT EXISTS idx_dismissals_clip ON user_tag_dismissals(clip_id);")
         exec("CREATE INDEX IF NOT EXISTS idx_clips_order ON clips(pinned, last_used_at);")
+    }
+
+    /// One dismissed `(tag, clip)` suggestion pair.
+    struct UserTagDismissal: Hashable {
+        let tag: String
+        let clipID: UUID
     }
 
     deinit { sqlite3_close_v2(db) }   // v2 tolerates outstanding statements
@@ -191,6 +213,77 @@ final class Database {
         return ok
     }
 
+    // MARK: User-tag suggestion dismissals
+
+    /// Every dismissed `(tag, clipID)` pair, decrypted. Legacy/plaintext values
+    /// pass through `Crypto.open` unchanged, exactly like `user_tags`.
+    func userTagDismissals() -> Set<UserTagDismissal> {
+        var result: Set<UserTagDismissal> = []
+        prepareEach("SELECT tag, clip_id FROM user_tag_dismissals;") { stmt in
+            guard let clipID = UUID(uuidString: column(stmt, 1)),
+                  let tag = ClipItem.normalizedUserTags([Crypto.open(column(stmt, 0))]).first
+            else { return }
+            result.insert(UserTagDismissal(tag: tag, clipID: clipID))
+        }
+        return result
+    }
+
+    /// Tags dismissed for one clip — the O(rows-for-clip) lookup the suggestion
+    /// loop needs before offering a tag.
+    func dismissedUserTags(forClip clipID: UUID) -> Set<String> {
+        Set(dismissalRows(forClip: clipID).map(\.tag))
+    }
+
+    /// Record a dismissal. Fail CLOSED: if the tag can't be sealed we refuse to
+    /// persist it rather than let a plaintext label reach disk.
+    @discardableResult
+    func addUserTagDismissal(tag: String, clipID: UUID) -> Bool {
+        guard let normalized = ClipItem.normalizedUserTags([tag]).first else { return false }
+        // Sealing is nondeterministic (fresh AES-GCM nonce per call), so the
+        // composite primary key can't dedupe for us — check first.
+        if dismissedUserTags(forClip: clipID).contains(normalized) { return true }
+        guard let sealed = Crypto.sealStrict(normalized) else {
+            NSLog("Cliphoard db: dismissal seal failed — refusing insert"); return false
+        }
+        var ok = false
+        prepare("INSERT OR REPLACE INTO user_tag_dismissals (tag, clip_id) VALUES (?,?);") { stmt in
+            bindText(stmt, 1, sealed)
+            bindText(stmt, 2, clipID.uuidString)
+            ok = step(stmt)
+        }
+        return ok
+    }
+
+    /// Undo a dismissal (the tag becomes suggestable again for that clip).
+    @discardableResult
+    func removeUserTagDismissal(tag: String, clipID: UUID) -> Bool {
+        guard let normalized = ClipItem.normalizedUserTags([tag]).first else { return false }
+        let victims = dismissalRows(forClip: clipID).filter { $0.tag == normalized }.map(\.rowID)
+        guard !victims.isEmpty else { return true }   // already absent
+        var ok = true
+        for rowID in victims {
+            prepare("DELETE FROM user_tag_dismissals WHERE rowid=?;") { stmt in
+                sqlite3_bind_int64(stmt, 1, rowID)
+                ok = step(stmt) && ok
+            }
+        }
+        return ok
+    }
+
+    /// rowid + decrypted tag for one clip's dismissal rows.
+    private func dismissalRows(forClip clipID: UUID) -> [(rowID: Int64, tag: String)] {
+        var rows: [(Int64, String)] = []
+        prepare("SELECT rowid, tag FROM user_tag_dismissals WHERE clip_id=?;") { stmt in
+            bindText(stmt, 1, clipID.uuidString)
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                guard let tag = ClipItem.normalizedUserTags([Crypto.open(column(stmt, 1))]).first
+                else { continue }
+                rows.append((sqlite3_column_int64(stmt, 0), tag))
+            }
+        }
+        return rows
+    }
+
     @discardableResult
     func upsertEmbedding(clipID: UUID, model: String, embedding: ModelEmbedding) -> Bool {
         // Fail CLOSED: the vector and tags are content-derived, so never persist
@@ -218,10 +311,17 @@ final class Database {
         prepare("DELETE FROM clips WHERE id=?;") { stmt in
             bindText(stmt, 1, id.uuidString); ok = step(stmt)
         }
+        // No FK cascade on dismissals (see the table definition) — prune here.
+        prepare("DELETE FROM user_tag_dismissals WHERE clip_id=?;") { stmt in
+            bindText(stmt, 1, id.uuidString); _ = step(stmt)
+        }
         return ok
     }
 
-    func deleteUnpinned() { exec("DELETE FROM clips WHERE pinned=0;") }
+    func deleteUnpinned() {
+        exec("DELETE FROM clips WHERE pinned=0;")
+        exec("DELETE FROM user_tag_dismissals WHERE clip_id NOT IN (SELECT id FROM clips);")
+    }
 
     /// Rewrite the database file, purging free pages. Used after the encryption
     /// migration so stale plaintext can't linger in the file at rest.

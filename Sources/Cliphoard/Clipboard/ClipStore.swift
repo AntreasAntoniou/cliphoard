@@ -226,7 +226,39 @@ final class ClipStore: ObservableObject {
         return userTagIndex[normalized] ?? []
     }
 
-    var distinctUserTags: [String] { userTagIndex.keys.sorted() }
+    var distinctUserTags: [String] { allUserTags() }
+
+    /// Every distinct user tag currently in use, sorted — the autocomplete source.
+    /// Read straight off the index, so it never scans `items`.
+    func allUserTags() -> [String] { userTagIndex.keys.sorted() }
+
+    /// Add one user tag to a clip (no-op if already present). Writes through the
+    /// sealed DB column first; a refused write leaves both clip and index untouched.
+    @discardableResult
+    func addUserTag(_ tag: String, to item: ClipItem) -> Bool {
+        guard let normalized = ClipItem.normalizedUserTags([tag]).first else { return false }
+        guard !item.userTags.contains(normalized) else { return true }
+        return updateUserTags(item, to: item.userTags + [normalized])
+    }
+
+    /// Remove one user tag from a clip (no-op if absent).
+    @discardableResult
+    func removeUserTag(_ tag: String, from item: ClipItem) -> Bool {
+        guard let normalized = ClipItem.normalizedUserTags([tag]).first else { return false }
+        guard item.userTags.contains(normalized) else { return true }
+        return updateUserTags(item, to: item.userTags.filter { $0 != normalized })
+    }
+
+    /// Suggestion dismissals (spec §5.1) — persisted sealed, so a dismissed tag is
+    /// never re-offered for that clip.
+    @discardableResult
+    func dismissSuggestedUserTag(_ tag: String, for item: ClipItem) -> Bool {
+        db?.addUserTagDismissal(tag: tag, clipID: item.id) ?? false
+    }
+
+    func dismissedUserTags(for item: ClipItem) -> Set<String> {
+        db?.dismissedUserTags(forClip: item.id) ?? []
+    }
 
     /// Replace a clip's user labels and update storage/index atomically from the
     /// caller's perspective. A failed sealed DB write restores the prior labels.
