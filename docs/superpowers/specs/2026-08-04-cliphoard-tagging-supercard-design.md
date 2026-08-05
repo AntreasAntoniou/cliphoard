@@ -31,9 +31,11 @@ Recover baskets' relevance without losing the cube's structure, and add user age
    metadata, the full tag set, and a custom-tag editor.
 5. **On-point search** — custom tags rank strongly; auto-tags contribute meaningfully.
 
-Non-goals (YAGNI): adaptive/learning vocabulary; per-dimension thresholds (start global);
-a separate detail *window* (use an inspector); re-embedding on vocabulary change (re-tag
-from cached vectors instead).
+Non-goals (YAGNI): *learned axis/topical vocabulary* (the shipped axes never self-modify);
+per-dimension thresholds (start global); a separate detail *window* (use an inspector);
+re-embedding on vocabulary change (re-tag from cached vectors instead). **In scope** and
+distinct from the above: an opt-in, suggestion-only **custom-tag learning** loop (§5.1) —
+it suggests *your* tags, it never edits the axis vocabulary.
 
 ## 3. The three-layer tag model
 
@@ -76,12 +78,32 @@ The hybrid needs both in one basket. Extension:
   triggers a cheap re-tag from cached vectors — no re-embedding (per the code's own note
   at `TagBaskets.swift:23`).
 
+### 3.3 Basket composition — General baseline + specialized overlay
+
+A clip is never tagged by a single specialized basket in isolation. **General is always
+on** and supplies the baseline axes; the user optionally selects **one specialized
+overlay** (Developer, Finance, …) that layers its axes + topical on top.
+
+- Implemented as a derived **composed basket** built on the fly:
+  `composed.tags = General.tags + overlay.tags` — General's axis ids first, then General
+  topical, then the overlay's axes, then overlay topical: one contiguous id space. With
+  no overlay selected, the composed basket **is** General.
+- Thresholded `classifyDimensions` runs over *all* axis slices from both baskets; the
+  thresholded topical classifier runs over *both* topical ranges, merged.
+- `ModelEmbedding.tags` stays a single `[Int]` indexing the composed flat view. The
+  composition is deterministic from `(generalID, overlayID)` and its `fingerprint` folds
+  in both, so switching the overlay changes the fingerprint → cheap re-tag from cached
+  vectors (no re-embed).
+- **State:** `TagBaskets.overlayID: String?` replaces the single `activeID` (General is
+  implicit, always present); `TagBaskets.composed` returns the derived basket.
+
 ## 4. The basket library
 
 `TagBaskets.builtIn` grows from `[general]` to **`[general] + the 10 specialized baskets`**;
-the editable flat `custom` basket stays. All ship in-app; the picker lets the user **add**
-any built-in basket to their roster and set the **active** one (`activeID` unchanged).
-Switching re-tags from cached vectors (fast).
+the editable flat `custom` basket stays. **General is always on** as the baseline; the
+picker lets the user add specialized baskets to a roster and choose **one optional overlay**
+(`overlayID`, or none) from it — see §3.3. Switching the overlay re-tags from cached
+vectors (fast).
 
 All axis vocabularies are 8 tags (id-slice width). Topical pools are ~16 words.
 
@@ -194,6 +216,24 @@ regenerate the per-model `embeddings` rows). So they live on the clip, not the e
   alongside the existing `tagIndex`, kept in sync on insert/update/delete, powering O(1)
   filter-by-user-tag and autocomplete (distinct-tag enumeration).
 
+### 5.1 Custom-tag learning (opt-in suggestions)
+
+Your tags never auto-apply — but once you've used one enough, Cliphoard **suggests** it on
+similar future clips (accept/dismiss), so your vocabulary grows from use. This is the
+light, opt-in form of the adaptive idea; the axis vocabulary stays fixed.
+
+- **Signal (no model training, no new persisted vectors for v1):** for each user tag
+  applied to ≥ `minApplies` clips (default **4**), compute a **centroid** = mean of the
+  active-model vectors of the clips carrying it (all available from `userTagIndex` + the
+  `embeddings` cache).
+- **Suggest:** on a given clip, for each eligible tag not already on it, if
+  `cosine(clip.vector, centroid) ≥ σ_suggest` (default **0.45**, separate from τ), surface
+  it in the supercard's **Suggested** row. Rank by cosine, cap at 3.
+- **Accept** → a normal `userTags` write (§5). **Dismiss** → persist a `(tag, clipID)`
+  pair in a small **`user_tag_dismissals`** table so it isn't re-suggested for that clip.
+- **Settings:** a global toggle (**default on**). Entirely mechanical — a handful of
+  cosines per opened clip; centroids recompute incrementally as tags are applied.
+
 ## 6. Search & ranking
 
 - **`smart`** (`DeepSearch.swift:601`, default) gains a **user-tag term**:
@@ -226,7 +266,9 @@ A new SwiftUI view, `ClipDetailView`, presented as a **right-side inspector / sh
      Shows the *full* thresholded set, not the card's 2 + "+N".
   4. **Custom-tag editor** — add/remove chips; input with **autocomplete** from the
      distinct existing user tags; Enter commits, ⌫ on empty removes the last.
-  5. **Actions** — Paste, Pin/Unpin, Delete, Copy (and copy-variant if applicable).
+  5. **Suggested tags** (when any) — accept/dismiss chips from the learning loop (§5.1);
+     accept adds the tag, dismiss hides it for this clip. Hidden when the toggle is off.
+  6. **Actions** — Paste, Pin/Unpin, Delete, Copy (and copy-variant if applicable).
 - The inspector observes the same `PanelViewModel`; edits to user tags write through the
   store (§5) and update the index immediately so search/filter reflect them without a
   re-summon.
@@ -265,19 +307,29 @@ before going per-dimension.
 - **Migration:** opening a pre-column DB adds `user_tags`, existing rows read `[]`.
 - **Search:** a user-tag match outranks a neural-only match; thresholding reduces the
   shared-auto-tag set vs the old always-10 behavior.
+- **Composition:** the composed basket's id space = General ⊕ overlay with no gaps or
+  overlaps; switching the overlay changes the fingerprint; with no overlay, `composed`
+  equals General exactly.
+- **Suggestions:** a tag applied ≥ `minApplies` is suggested on a clip within `σ_suggest`
+  and not otherwise; accept adds it; a dismissal persists and suppresses re-suggestion for
+  that clip; suggestions never auto-apply and vanish when the toggle is off.
 - **Indexes:** `userTagIndex` stays consistent across insert/update/delete.
 
 ## 11. Affected files (map)
 
-- `Search/TagBaskets.swift` — add `topical`; curate `general`; add 10 baskets; `builtIn`.
+- `Search/TagBaskets.swift` — add `topical`; curate `general`; add 10 baskets;
+  `overlayID` + `composed` (§3.3).
 - `Search/DeepSearch.swift` — τ threshold in `classify` / `classifyDimensions`;
-  `topicalRange`; merge in `ClipIndexer.tags`; `userTagBoost` in `smart`; `nearestTag`.
+  `topicalRange`; composition-aware merge in `ClipIndexer.tags`; `userTagBoost` in `smart`;
+  `nearestTag`; the suggestion centroid/cosine helper (§5.1).
 - `Clipboard/ClipItem.swift` — `userTags` field.
-- `Clipboard/Database.swift` — `user_tags` column, migration, sealed read/write.
+- `Clipboard/Database.swift` — `user_tags` column + `user_tag_dismissals` table;
+  migration; sealed read/write.
 - `Clipboard/ClipStore.swift` — `userTagIndex`, `items(withUserTag:)`, facet union,
-  distinct-tags enumeration.
+  distinct-tags enumeration; dismissal read/write; centroid inputs.
 - `UI/ClipCardView.swift` — expand chevron; "+N" chip opens inspector.
-- `UI/ClipDetailView.swift` — **new** supercard inspector.
+- `UI/ClipDetailView.swift` — **new** supercard inspector (incl. Suggested-tags row).
 - `UI/ContentView.swift` / `UI/PanelViewModel.swift` — inspector presentation & wiring;
   "Your tags" facet group.
-- `UI/SettingsView.swift` — τ control + avg-tags readout; basket roster/add UI.
+- `UI/SettingsView.swift` — τ control + avg-tags readout; **overlay picker + basket
+  roster**; suggestions on/off toggle.
