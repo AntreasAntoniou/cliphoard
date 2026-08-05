@@ -40,7 +40,9 @@ final class AppSettings: ObservableObject {
     }
     @Published var activeBasket: String {
         didSet {
-            TagBaskets.activeID = activeBasket
+            // "general" = base only (no overlay); "custom" = the flat editable
+            // pool; anything else = that specialist layered on General.
+            TagBaskets.overlayID = (activeBasket == "general") ? nil : activeBasket
             store.reclassifyAllTags()   // cheap: re-tags from cached vectors
         }
     }
@@ -75,7 +77,7 @@ final class AppSettings: ObservableObject {
         searchMode = DeepSearch.mode
         deepSearchLevel = DeepSearch.level
         vectorDetail = DeepSearch.detail
-        activeBasket = TagBaskets.activeID
+        activeBasket = TagBaskets.overlayID ?? "general"
         assignmentThreshold = Double(TagSpace.assignmentThreshold)
         customTagsText = TagBaskets.custom.tags.joined(separator: "\n")
     }

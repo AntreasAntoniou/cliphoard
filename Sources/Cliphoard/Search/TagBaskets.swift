@@ -256,8 +256,10 @@ enum TagBaskets {
     /// dropped between versions), or when it points at General itself — General
     /// is always the base, never its own overlay.
     static var overlay: TagBasket? {
-        guard let oid = overlayID, oid != general.id else { return nil }
-        return all.first { $0.id == oid }
+        // General is the base (never its own overlay); "custom" is the flat pool,
+        // selected as a whole basket via `active`, not composed onto General.
+        guard let oid = overlayID, oid != general.id, oid != "custom" else { return nil }
+        return all.first { $0.id == oid && $0.isDimensional }
     }
 
     /// Memoized derived basket, keyed by the overlay id it was built from.
@@ -298,5 +300,9 @@ enum TagBaskets {
 
     /// Kept for every existing caller (`TagSpace`, Settings): the basket in force
     /// right now, which under the hybrid model is the composed one.
-    static var active: TagBasket { composed }
+    static var active: TagBasket {
+        // Selecting the flat Custom pool classifies with it directly; otherwise
+        // the app runs General with an optional specialist overlay.
+        overlayID == "custom" ? custom : composed
+    }
 }
