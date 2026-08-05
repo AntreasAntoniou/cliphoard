@@ -164,6 +164,8 @@ struct ClipDetailView: View {
                         Button("Add", action: commitTag).disabled(newTag.trimmingCharacters(in: .whitespaces).isEmpty)
                     }
                 }
+
+                suggestedRow
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -188,6 +190,50 @@ struct ClipDetailView: View {
         let q = newTag.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !q.isEmpty else { return Array(store.distinctUserTags.prefix(6)) }
         return store.distinctUserTags.filter { $0.contains(q) && !item.userTags.contains($0) }.prefix(6).map { $0 }
+    }
+
+    /// Opt-in light-learning (spec §5.1): tags whose member-centroid is near this
+    /// clip, surfaced to accept or dismiss. Distinct from the text autocomplete
+    /// above — these come from what you've actually tagged, not what you're typing.
+    private var suggestionsEnabled: Bool {
+        UserDefaults.standard.object(forKey: "userTagSuggestionsEnabled") == nil
+            ? true : UserDefaults.standard.bool(forKey: "userTagSuggestionsEnabled")
+    }
+
+    private var learningSuggestions: [String] {
+        let dismissed = Set(store.dismissedUserTags(for: item).map {
+            SemanticRanker.dismissalKey(tag: $0, clipID: item.id)
+        })
+        return SemanticRanker.suggestedUserTags(
+            for: item, userTagIndex: store.userTagIndex,
+            dismissed: dismissed, embedderSignature: EmbedderProvider.active.signature)
+    }
+
+    @ViewBuilder private var suggestedRow: some View {
+        let learned = suggestionsEnabled ? learningSuggestions : []
+        if !learned.isEmpty {
+            VStack(alignment: .leading, spacing: 7) {
+                Text("SUGGESTED").font(.caption2.bold()).foregroundStyle(.secondary)
+                FlowLayout(spacing: 6) {
+                    ForEach(learned, id: \.self) { tag in
+                        HStack(spacing: 5) {
+                            Button { _ = store.updateUserTags(item, to: item.userTags + [tag]) } label: {
+                                Text("+ #\(tag)")
+                            }
+                            .buttonStyle(.plain).accessibilityLabel("Add suggested tag \(tag)")
+                            Button { _ = store.dismissSuggestedUserTag(tag, for: item) } label: {
+                                Image(systemName: "xmark")
+                            }
+                            .buttonStyle(.plain).foregroundStyle(.secondary).accessibilityLabel("Dismiss suggestion \(tag)")
+                        }
+                        .font(.caption)
+                        .padding(.horizontal, 8).padding(.vertical, 4)
+                        .background(Theme.accent.opacity(0.08), in: Capsule())
+                        .overlay(Capsule().strokeBorder(Theme.accent.opacity(0.3)))
+                    }
+                }
+            }
+        }
     }
 
     private func commitTag() {
