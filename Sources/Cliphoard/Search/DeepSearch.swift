@@ -399,6 +399,17 @@ enum TagSpace {
         set { UserDefaults.standard.set(Double(newValue), forKey: "tagAssignmentThreshold") }
     }
 
+    // The confidence floor τ for automatic tag assignment (spec §5) IS
+    // `assignmentThreshold` above — already tunable and already wired to the
+    // Settings "Confidence floor" slider. Assignment and query classification
+    // share that one knob; there is deliberately no second `tagTau` config.
+
+    /// The cosine floor a classification call should actually use. An explicit
+    /// positive `tau` (the clip-assignment path) wins; `tau == 0` — every legacy
+    /// caller, including the query side — keeps the historical
+    /// `assignmentThreshold` behaviour unchanged.
+    private static func confidenceFloor(_ tau: Float) -> Float { tau > 0 ? tau : assignmentThreshold }
+
     /// Tag vectors in the active embedder's space, cached per (embedder, basket)
     /// — two models can share a dimension, and the basket can change the tags.
     private static var cache: (String, [[Float]])?
@@ -414,12 +425,17 @@ enum TagSpace {
     /// Top-K nearest tag ids for an entry vector, over the WHOLE tag pool. Used
     /// by flat baskets at ingest and by the query side of tag/smart search
     /// ("what categories is this query nearest?").
-    static func classify(_ vector: [Float], embedder: TextEmbedder, topK: Int = 5) -> [Int] {
+    ///
+    /// `tau > 0` (the clip-assignment path) gates on that confidence floor; the
+    /// default 0 leaves every existing caller on the historical threshold.
+    static func classify(_ vector: [Float], embedder: TextEmbedder,
+                         topK: Int = 5, tau: Float = 0) -> [Int] {
         guard !vector.isEmpty else { return [] }
+        let bar = confidenceFloor(tau)
         let tagVecs = vectors(using: embedder)
         let scored = tagVecs.enumerated().map { ($0.offset, SemanticRanker.cosine(vector, $0.element)) }
         return scored
-            .filter { $0.1 >= assignmentThreshold }
+            .filter { $0.1 >= bar }
             .sorted { $0.1 > $1.1 }
             .prefix(topK)
             .map { $0.0 }
@@ -469,8 +485,13 @@ enum TagSpace {
     /// dimension's slice. Returns one tag-id per dimension, in dimension order —
     /// so a clip is described by a value on every axis. Empty for a flat basket
     /// (callers use `classify(topK:)` there instead).
-    static func classifyDimensions(_ vector: [Float], embedder: TextEmbedder) -> [Int] {
+    ///
+    /// Confidence-gated: an axis whose own argmax sits below `tau` contributes NO
+    /// tag, so a clip is only placed on the axes it actually has an opinion about.
+    static func classifyDimensions(_ vector: [Float], embedder: TextEmbedder,
+                                   tau: Float = 0) -> [Int] {
         guard !vector.isEmpty, isDimensional else { return [] }
+        let bar = confidenceFloor(tau)
         let tagVecs = vectors(using: embedder)
         return (0..<dimensionCount).compactMap { d in
             let r = range(ofDimension: d)
@@ -481,18 +502,23 @@ enum TagSpace {
                 let s = SemanticRanker.cosine(vector, tagVecs[i])
                 if s > bestScore { bestScore = s; best = i }
             }
-            return bestScore >= assignmentThreshold ? best : nil
+            return bestScore >= bar ? best : nil
         }
     }
 
-    /// Nearest topical ids only, excluding axis words. Hybrid ingest uses this
-    /// alongside confidence-gated per-axis classification.
-    static func classifyTopical(_ vector: [Float], embedder: TextEmbedder, topK: Int = 3) -> [Int] {
+    /// Nearest topical ids only, excluding axis words — cosine is computed over
+    /// the active basket's `topicalRange` alone, so axis vocabulary can never win
+    /// a topical slot. Hybrid ingest uses this alongside confidence-gated
+    /// per-axis classification: a clip carries thresholded axis tags PLUS a
+    /// thresholded nearest-few from the topical tail.
+    static func classifyTopical(_ vector: [Float], embedder: TextEmbedder,
+                                topK: Int = 3, tau: Float = 0) -> [Int] {
         guard !vector.isEmpty, !topicalRange.isEmpty else { return [] }
+        let bar = confidenceFloor(tau)
         let tagVecs = vectors(using: embedder)
         return topicalRange
             .map { ($0, SemanticRanker.cosine(vector, tagVecs[$0])) }
-            .filter { $0.1 >= assignmentThreshold }
+            .filter { $0.1 >= bar }
             .sorted { $0.1 > $1.1 }
             .prefix(topK)
             .map { $0.0 }
@@ -524,9 +550,15 @@ enum ClipIndexer {
         item.embeddings[embedder.signature] = ModelEmbedding(vector: vec, tags: tags(for: vec, embedder: embedder))
     }
 
-    /// A clip's tag ids for the active basket: one value per dimension for a
-    /// facet cube, or the nearest five for a flat pool. Both feed the same
-    /// `tagIndex`, so the store's O(1) lookup is agnostic to which shape is used.
+    /// A clip's tag ids for the active basket: for a facet cube, the confident
+    /// value on each axis PLUS a thresholded nearest-few from the topical tail;
+    /// for a flat pool, the nearest five. Both feed the same `tagIndex`, so the
+    /// store's O(1) lookup is agnostic to which shape is used.
+    ///
+    /// This is the ASSIGNMENT path; the default (`tau == 0`) calls gate on the
+    /// tunable `TagSpace.assignmentThreshold` confidence floor, so a clip that
+    /// matches nothing confidently ends up with no tags rather than the
+    /// least-bad argmax.
     static func tags(for vector: [Float], embedder: TextEmbedder) -> [Int] {
         if TagSpace.isDimensional {
             return TagSpace.classifyDimensions(vector, embedder: embedder)
@@ -663,5 +695,67 @@ enum SemanticRanker {
             .filter { $0.exact || $0.score >= embedder.relevanceFloor - 0.02 }
             .sorted { $0.score > $1.score }
             .map { $0.item }
+    }
+
+    // MARK: - Light-learning user-tag suggestions (spec §5.1)
+
+    /// Stable key for one dismissed `(tag, clip)` suggestion pair. A dismissal is
+    /// per-pair, not per-tag: saying "no, this clip isn't `invoices`" must not
+    /// stop `invoices` being suggested for a different clip.
+    static func dismissalKey(tag: String, clipID: UUID) -> String {
+        tag + "\u{1}" + clipID.uuidString
+    }
+
+    /// Which of the user's OWN tags this clip probably belongs to.
+    ///
+    /// The "light learning" of spec §5.1: no model is trained: once a user tag
+    /// has been applied by hand enough times (`minApplies`), its members' vectors
+    /// define a centroid — the empirical meaning of that label in this user's
+    /// head — and any clip sitting within `sigma` of that centroid is a
+    /// candidate. Suggestions are surfaced, never auto-applied.
+    ///
+    /// Deliberately PURE and store-free: the index and the dismissal set are
+    /// passed in, so it is trivially unit-testable and has no `ClipStore`,
+    /// database or main-actor dependency.
+    ///
+    /// - Parameters:
+    ///   - userTagIndex: tag → the clips that already carry it (`ClipStore.userTagIndex`).
+    ///   - dismissed: `dismissalKey(tag:clipID:)` values the user has rejected.
+    ///   - embedderSignature: only vectors from this space are comparable.
+    /// - Returns: at most three tags, strongest cosine first.
+    static func suggestedUserTags(for clip: ClipItem,
+                                  userTagIndex: [String: [ClipItem]],
+                                  dismissed: Set<String>,
+                                  embedderSignature: String,
+                                  minApplies: Int = 4,
+                                  sigma: Float = 0.45) -> [String] {
+        guard let clipVector = clip.embeddings[embedderSignature]?.vector,
+              !clipVector.isEmpty else { return [] }
+        let carried = Set(clip.userTags)
+
+        var candidates: [(tag: String, score: Float)] = []
+        for (tag, members) in userTagIndex {
+            // Not enough evidence yet, already on the clip, or explicitly rejected.
+            guard members.count >= minApplies,
+                  !carried.contains(tag),
+                  !dismissed.contains(dismissalKey(tag: tag, clipID: clip.id)) else { continue }
+            // Members embedded in another space (or not yet embedded) simply
+            // don't vote — they can't be compared to this clip's vector.
+            let vectors = members.compactMap { $0.embeddings[embedderSignature]?.vector }
+                .filter { $0.count == clipVector.count }
+            guard !vectors.isEmpty else { continue }
+
+            var centroid = [Float](repeating: 0, count: clipVector.count)
+            for v in vectors {
+                for i in 0..<centroid.count { centroid[i] += v[i] }
+            }
+            let n = Float(vectors.count)
+            for i in 0..<centroid.count { centroid[i] /= n }
+            // The mean of unit vectors isn't itself a unit vector, and `cosine` is
+            // a bare dot product — re-normalise so the comparison is a real cosine.
+            let score = cosine(clipVector, HashingEmbedder.normalize(centroid))
+            if score >= sigma { candidates.append((tag, score)) }
+        }
+        return candidates.sorted { $0.score > $1.score }.prefix(3).map { $0.tag }
     }
 }
