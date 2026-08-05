@@ -173,6 +173,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         model.onCopy = { [weak self] item in self?.copyToClipboard(item) }
         panel.onResignKey = { [weak self] in
             guard let self, self.isVisible, !self.isClosing else { return }
+            // The supercard is presented as a .sheet — a separate key window — so
+            // opening it makes this panel resign key. That is NOT "clicked away":
+            // keep the panel up while the inspector is open (dismissing the sheet
+            // returns key focus here, and normal hide-on-resign resumes).
+            if self.model.inspectedItem != nil { return }
             self.hide(paste: false)
         }
         pasteStatus.onOpenAccessibility = { [weak self] in self?.openAccessibilitySettings() }
