@@ -18,6 +18,19 @@ final class ClipStore: ObservableObject {
     /// these labels survive basket and model changes.
     private(set) var userTagIndex: [String: [ClipItem]] = [:]
 
+    /// True when the app could not read its own existing data at launch.
+    ///
+    /// In safe mode NO migration, re-seal, re-index or bulk rewrite runs — the
+    /// history is frozen exactly as found. Adding new clips stays allowed (it is
+    /// purely additive and cannot harm existing rows), so the app remains usable
+    /// while the user decides what to do. The UI surfaces this; failing silently
+    /// is what let a key-loss event compound into permanent damage.
+    @Published private(set) var safeMode = false
+
+    /// How many stored clips could not be decrypted at launch. Shown to the user
+    /// alongside `safeMode` so the message is specific rather than alarming.
+    @Published private(set) var unreadableClipCount = 0
+
     /// Live progress of a background (re)indexing pass, or nil when idle.
     @Published private(set) var indexing: IndexingProgress?
 
@@ -65,9 +78,28 @@ final class ClipStore: ObservableObject {
         // Owner-only (0600) for the DB file itself, best-effort.
         try? FileManager.default.setAttributes(
             [.posixPermissions: 0o600], ofItemAtPath: dbPath)
+        // CANARY FIRST, before anything can rewrite a row. If this process cannot
+        // decrypt what a previous run wrote, every migration below is capable of
+        // re-sealing unreadable bytes and making the damage permanent — which is
+        // exactly how 202 clips were lost. Safe mode freezes history instead.
+        Crypto.verifyCanary()
         migrateLegacyJSONIfNeeded()
         items = db?.loadAll() ?? []
         repairKinds()
+        // Second, independent check: even with a healthy canary, if a large share
+        // of existing rows will not open, something is wrong that the canary did
+        // not model. Refuse to run migrations rather than guess.
+        let unreadable = items.filter { Crypto.isSealed($0.text) }.count
+        unreadableClipCount = unreadable
+        safeMode = !Crypto.decryptionHealthy || (items.count >= 10 && unreadable * 2 > items.count)
+        if safeMode {
+            NSLog("Cliphoard: SAFE MODE — \(unreadable)/\(items.count) clips unreadable. "
+                  + "No migration, re-seal or re-index will run; nothing will be deleted.")
+            sortStable()
+            rebuildTagIndex()
+            rebuildUserTagIndex()
+            return
+        }
         // Ordered BEFORE the index builds below: a clip that turns out to be a
         // secret must have its vectors dropped before anything can put it back
         // into a tag bucket.

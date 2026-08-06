@@ -87,8 +87,36 @@ struct ContentView: View {
         _settings = StateObject(wrappedValue: AppSettings(store: store))
     }
 
+    /// Shown when the store could not read its own data at launch.
+    ///
+    /// Deliberately states what has NOT happened ("nothing has been deleted or
+    /// changed") as prominently as the problem: the failure mode we are guarding
+    /// against is a user seeing garbled clips, assuming the app ate their history,
+    /// and clearing it — destroying data that was still recoverable.
+    @ViewBuilder private var safeModeBanner: some View {
+        if store.safeMode {
+            HStack(spacing: 8) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Cliphoard can’t read \(store.unreadableClipCount) of \(store.items.count) clips")
+                        .font(.system(size: 11, weight: .semibold))
+                    Text("Nothing has been deleted or changed. History is frozen until this is resolved.")
+                        .font(.system(size: 10)).foregroundStyle(.secondary)
+                }
+                Spacer()
+            }
+            .padding(.horizontal, 12).padding(.vertical, 7)
+            .background(Color.orange.opacity(0.14))
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Warning: Cliphoard cannot read \(store.unreadableClipCount) of \(store.items.count) clips. "
+                                + "Nothing has been deleted or changed. History is frozen until this is resolved.")
+        }
+    }
+
     var body: some View {
         VStack(spacing: 0) {
+            safeModeBanner
             toolbar
             Divider().opacity(0.5)
             if let message = pasteStatus.blockedMessage { pasteBlockedBanner(message) }

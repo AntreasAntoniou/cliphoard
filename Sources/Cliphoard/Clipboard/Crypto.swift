@@ -77,9 +77,10 @@ enum Crypto {
             guard current.hasPrefix(marker),
                   let data = Data(base64Encoded: String(current.dropFirst(marker.count)))
             else { return current }
-            if let s = decryptString(data, with: key) { current = s }
-            else if let lk = legacyKey, let s = decryptString(data, with: lk) { current = s } // pre-rekey rows
+            // Try EVERY key on the ring, not just the current one — see `keyring`.
+            guard let s = keyring.lazy.compactMap({ decryptString(data, with: $0) }).first
             else { return current }
+            current = s
         }
         return current
     }
@@ -105,9 +106,14 @@ enum Crypto {
             guard let data = Data(base64Encoded: String(current.dropFirst(marker.count))) else {
                 return (steps + ["round \(round): not valid base64"]).joined(separator: " -> ")
             }
-            if let s = decryptString(data, with: key) { current = s; steps.append("round \(round): opened with CURRENT key") }
-            else if let lk = legacyKey, let s = decryptString(data, with: lk) { current = s; steps.append("round \(round): opened with LEGACY key") }
-            else { return (steps + ["round \(round): FAILED with both keys"]).joined(separator: " -> ") }
+            var opened: String?
+            for (i, k) in keyring.enumerated() where opened == nil {
+                if let s = decryptString(data, with: k) { opened = s; steps.append("round \(round): opened with keyring[\(i)]") }
+            }
+            guard let s = opened else {
+                return (steps + ["round \(round): FAILED with all \(keyring.count) keyring key(s)"]).joined(separator: " -> ")
+            }
+            current = s
         }
         return steps.joined(separator: " -> ")
     }
@@ -133,9 +139,9 @@ enum Crypto {
         for _ in 0..<maxUnsealRounds {
             guard current.starts(with: markerData) else { return current }
             let body = current.dropFirst(markerData.count)
-            if let d = decryptData(body, with: key) { current = d }
-            else if let lk = legacyKey, let d = decryptData(body, with: lk) { current = d }
+            guard let d = keyring.lazy.compactMap({ decryptData(body, with: $0) }).first
             else { return current }
+            current = d
         }
         return current
     }
@@ -150,9 +156,115 @@ enum Crypto {
     /// produced by `seal(_:Data?)` and must be `open`-ed before use. Read-only:
     /// lets callers (the image-encryption migration) skip already-sealed payloads
     /// without round-tripping through `open`. Does not affect seal/open semantics.
+    /// True when `text` STILL carries the seal marker after `open` — i.e. it could
+    /// not be decrypted by any key on the ring. This is the "unreadable row"
+    /// predicate the safe-mode gate counts.
+    static func isSealed(_ text: String) -> Bool { text.hasPrefix(marker) }
+
     static func isSealed(_ data: Data?) -> Bool {
         guard let data else { return false }
         return data.starts(with: markerData)
+    }
+
+    // MARK: - The keyring (append-only)
+
+    /// EVERY key this Mac has ever sealed with, newest first.
+    ///
+    /// The rule that makes catastrophic loss structurally impossible: keys are
+    /// **append-only**. `open` tries all of them, so rotating, re-keying, or
+    /// failing to restore a key can never orphan data — it only ever adds a
+    /// candidate. This exists because the opposite (a key path that could
+    /// delete-then-add) silently destroyed 202 clips: the key that sealed them
+    /// was replaced, and with one key there was nothing else to try.
+    ///
+    /// Order matters only for speed, never for correctness — the newest key opens
+    /// the newest rows, so it is tried first.
+    private static let keyring: [SymmetricKey] = {
+        var ring: [SymmetricKey] = [key]
+        for archived in archivedKeys() where !ring.contains(where: { sameKey($0, archived) }) {
+            ring.append(archived)
+        }
+        if let lk = legacyKey, !ring.contains(where: { sameKey($0, lk) }) { ring.append(lk) }
+        return ring
+    }()
+
+    private static func sameKey(_ a: SymmetricKey, _ b: SymmetricKey) -> Bool {
+        a.withUnsafeBytes { ab in b.withUnsafeBytes { bb in ab.elementsEqual(bb) } }
+    }
+
+    /// Every previously-archived symmetric key, read from `db-archived-key-*`
+    /// entries. An archived key is never deleted, only added to.
+    private static func archivedKeys() -> [SymmetricKey] {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecMatchLimit as String: kSecMatchLimitAll,
+            kSecReturnAttributes as String: true,
+            kSecReturnData as String: true,
+        ]
+        var out: CFTypeRef?
+        guard SecItemCopyMatching(query as CFDictionary, &out) == errSecSuccess,
+              let rows = out as? [[String: Any]] else { return [] }
+        return rows.compactMap { row in
+            guard let account = row[kSecAttrAccount as String] as? String,
+                  account.hasPrefix(archivedPrefix),
+                  let data = row[kSecValueData as String] as? Data, data.count == 32
+            else { return nil }
+            return SymmetricKey(data: data)
+        }
+    }
+
+    /// Archive a symmetric key so it is retained forever and keeps opening old
+    /// rows. Idempotent, and NEVER deletes anything.
+    static func archiveKey(_ k: SymmetricKey, label: String) {
+        let raw = k.withUnsafeBytes { Data($0) }
+        let account = archivedPrefix + label
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+            kSecValueData as String: raw,
+            kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
+        ]
+        SecItemAdd(query as CFDictionary, nil)   // errSecDuplicateItem is fine: already archived
+    }
+
+    private static let archivedPrefix = "db-archived-key-"
+
+    // MARK: - Canary (can we still read our own data?)
+
+    private static let canaryAccount = "db-canary-v1"
+    private static let canaryPlaintext = "cliphoard-canary-v1"
+
+    /// False when a canary sealed by a PREVIOUS run no longer opens — i.e. this
+    /// process cannot read data it previously wrote. The app must then enter safe
+    /// mode: no migrations, no re-sealing, nothing that could compound the damage.
+    ///
+    /// The canary is what turns silent, total loss into a loud, contained fault.
+    /// Without it the app cheerfully ran re-sealing migrations while 87% of rows
+    /// were failing to decrypt.
+    private(set) static var decryptionHealthy = true
+
+    /// Verify (or, on first run, establish) the canary. Call once at startup,
+    /// BEFORE any migration.
+    @discardableResult
+    static func verifyCanary() -> Bool {
+        guard let stored = readBlob(account: canaryAccount),
+              let sealedText = String(data: stored, encoding: .utf8) else {
+            // First run (or canary lost): establish one under the current key.
+            if let sealed = sealStrict(canaryPlaintext),
+               let data = sealed.data(using: .utf8) {
+                storeBlob(data, account: canaryAccount)
+            }
+            decryptionHealthy = true
+            return true
+        }
+        decryptionHealthy = (open(sealedText) == canaryPlaintext)
+        if !decryptionHealthy {
+            NSLog("Cliphoard Crypto: CANARY FAILED — this process cannot decrypt data it previously "
+                  + "wrote. Entering safe mode; no migration or re-seal will run.")
+        }
+        return decryptionHealthy
     }
 
     // MARK: Key resolution
@@ -160,12 +272,16 @@ enum Crypto {
     private static func resolveKey() -> SymmetricKey {
         if SecureEnclave.isAvailable, let k = secureEnclaveKey() {
             usesSecureEnclave = true
+            // Archive every derived key the moment it is used, so it stays on the
+            // ring forever and can always reopen whatever it sealed.
+            archiveKey(k, label: "se-v2")
             return k
         }
         // No Secure Enclave: keep using the random Keychain key (unchanged).
         if let existing = readRandomKey(account: randomAccount) { return existing }
         let fresh = SymmetricKey(size: .bits256)
         storeRandomKey(fresh, account: randomAccount)
+        archiveKey(fresh, label: "random-v1")
         return fresh
     }
 
