@@ -49,6 +49,17 @@ final class Database {
             PRIMARY KEY (clip_id, model),
             FOREIGN KEY (clip_id) REFERENCES clips(id) ON DELETE CASCADE);
         """)
+        // REVERT SHIM. The `tags` column is retired by the derived-tag-ids change that
+        // follows this commit. If a build carrying THIS line ever opens a database
+        // written by that change — a revert, a downgrade, a store shared between
+        // builds — this re-adds the column so the four-column SELECT and INSERT still
+        // prepare. It lands in its own, EARLIER commit on purpose: shipping it inside
+        // the change it protects would mean a revert removed the shim too.
+        //
+        // NOT NULL requires a DEFAULT — SQLite cannot ADD a NOT NULL column without
+        // one. The empty default reads back as "no ids", which is the correct state:
+        // the reverted code recomputes them from the cached vectors.
+        ensureColumn("tags", definition: "TEXT NOT NULL DEFAULT ''", in: "embeddings")
         // Suggested user tags the user has explicitly dismissed for a clip, so the
         // suggestion loop (spec §5.1) never re-offers them. `tag` holds the SEALED
         // tag (user content, same at-rest guarantee as `clips.user_tags`); the
