@@ -72,6 +72,38 @@ final class ClipItem: Codable, Identifiable {
     /// per model means switching to a model the clip was already embedded by is
     /// free (no recompute) — only genuinely unprocessed (model, clip) pairs run.
     var embeddings: [String: ModelEmbedding] = [:]
+    /// The Tier-1 detector verdict (design §5), computed once synchronously at
+    /// capture and persisted as a plain INTEGER column so chips render with no
+    /// recompute and filtering never needs to re-scan content.
+    ///
+    /// Empty is the common case and means *nothing fired* — it is emphatically
+    /// **not** a claim that the clip is safe (`ClipFlags` has no positive label
+    /// by construction). Unknown bits written by a newer build are carried
+    /// through untouched: the raw value is never masked down to the bits this
+    /// build happens to know.
+    var flags: ClipFlags = []
+    /// The §3.4 structural shape ("url", "json", "path", …) or `nil` for prose.
+    /// Cosmetic and non-content — a short enum-like token, never clip text — so
+    /// it is stored in the clear alongside `flags`.
+    var shape: String? = nil
+
+    /// Whether the detector verdict forbids embedding/indexing this clip.
+    ///
+    /// `.secret` is a Tier-1 zero-false-positive credential hit and `.quarantined`
+    /// is an exact-match sensitive origin; design §5 requires that such a clip
+    /// never reaches the model ("never send a secret through the model") and is
+    /// "excluded from the CoreML index entirely". It is still stored (sealed) and
+    /// still appears in history — it simply has no vector.
+    ///
+    /// Deliberately does **not** include `.secretEntropy`: that bit is the
+    /// low-confidence Tier-2 heuristic, which §3.1 forbids from driving a
+    /// destructive action until it clears an FP audit.
+    static let indexVetoFlags: ClipFlags = [.secret, .quarantined]
+
+    /// Fail-closed gate consulted by every path that would embed this clip —
+    /// ingest *and* any later background re-index/reclassify pass, so a
+    /// housekeeping loop can never quietly undo the veto.
+    var isIndexVetoed: Bool { !flags.isDisjoint(with: Self.indexVetoFlags) }
 
     // Legacy single-vector fields (pre per-model cache). Decoded only to migrate
     // old data into `embeddings`, then cleared. Not written for new clips.
@@ -95,12 +127,14 @@ final class ClipItem: Codable, Identifiable {
     /// Full initializer used to reconstruct a clip from a database row.
     init(id: UUID, kind: ClipKind, text: String, rtf: Data?, payloadFile: String?,
          filePath: String?, colorHex: String?, createdAt: Date, lastUsedAt: Date,
-         pinned: Bool, sourceApp: String?, useCount: Int, userTags: [String] = []) {
+         pinned: Bool, sourceApp: String?, useCount: Int, userTags: [String] = [],
+         flags: ClipFlags = [], shape: String? = nil) {
         self.id = id; self.kind = kind; self.text = text; self.rtf = rtf
         self.payloadFile = payloadFile; self.filePath = filePath; self.colorHex = colorHex
         self.createdAt = createdAt; self.lastUsedAt = lastUsedAt; self.pinned = pinned
         self.sourceApp = sourceApp; self.useCount = useCount
         self.userTags = Self.normalizedUserTags(userTags)
+        self.flags = flags; self.shape = shape
     }
 
     // MARK: Codable
@@ -109,6 +143,7 @@ final class ClipItem: Codable, Identifiable {
         case id, kind, text, rtf, payloadFile, imageHash, filePath, colorHex
         case createdAt, lastUsedAt, pinned, sourceApp, useCount
         case userTags
+        case flags, shape
         case embeddings, vector, tagIDs, vectorModel
     }
 
@@ -133,6 +168,11 @@ final class ClipItem: Codable, Identifiable {
         useCount = try c.decodeIfPresent(Int.self, forKey: .useCount) ?? 0
         userTags = Self.normalizedUserTags(
             try c.decodeIfPresent([String].self, forKey: .userTags) ?? [])
+        // `decodeIfPresent` with an empty default, so a `history.json` written
+        // before the detector existed still loads — and loads as "nothing fired",
+        // never as "safe".
+        flags = try c.decodeIfPresent(ClipFlags.self, forKey: .flags) ?? []
+        shape = try c.decodeIfPresent(String.self, forKey: .shape)
         embeddings = try c.decodeIfPresent([String: ModelEmbedding].self, forKey: .embeddings) ?? [:]
         vector = try c.decodeIfPresent([Float].self, forKey: .vector)
         tagIDs = try c.decodeIfPresent([Int].self, forKey: .tagIDs)

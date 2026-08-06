@@ -619,7 +619,10 @@ enum SemanticRanker {
         let qv = embedder.embed(query, query: true)
         let q = query.lowercased()
         let scored = items.map { item -> (ClipItem, Float) in
-            let vec = item.embeddings[embedder.signature]?.vector ?? embedder.embed(searchText(item))
+            // Never embed a vetoed clip at query time — see `smart` above:
+            // the fallback would push a secret through the model on every search.
+            let vec = item.embeddings[embedder.signature]?.vector
+                ?? (item.isIndexVetoed ? [] : embedder.embed(searchText(item)))
             let substring = searchText(item).lowercased().contains(q)
             return (item, (substring ? 1 : 0) + cosine(qv, vec))
         }
@@ -636,7 +639,10 @@ enum SemanticRanker {
     static func neural(query: String, items: [ClipItem], embedder: TextEmbedder) -> [ClipItem] {
         let qv = embedder.embed(query, query: true)
         let scored = items.map { item -> (ClipItem, Float) in
-            let vec = item.embeddings[embedder.signature]?.vector ?? embedder.embed(searchText(item))
+            // Never embed a vetoed clip at query time — see `smart` above:
+            // the fallback would push a secret through the model on every search.
+            let vec = item.embeddings[embedder.signature]?.vector
+                ?? (item.isIndexVetoed ? [] : embedder.embed(searchText(item)))
             // Confidence-weighted: hub vectors from ultra-short clips must not
             // clear the floor on their unreliable ~0.4 ambient cosine.
             return (item, cosine(qv, vec) * lengthConfidence(item))
@@ -673,7 +679,13 @@ enum SemanticRanker {
 
         let scored = items.map { item -> (item: ClipItem, score: Float, exact: Bool) in
             let emb = item.embeddings[embedder.signature]
-            let vec = emb?.vector ?? embedder.embed(searchText(item))
+            // A vetoed clip (secret / quarantined) has NO vector by design, and
+            // must never acquire one here. The old `?? embedder.embed(...)`
+            // fallback inverted the whole veto: instead of a secret going through
+            // the model once at capture, it went through on EVERY query. Vetoed
+            // clips still match by exact substring; they just cannot rank
+            // semantically. See ClipItem.isIndexVetoed.
+            let vec = emb?.vector ?? (item.isIndexVetoed ? [] : embedder.embed(searchText(item)))
             let exact = searchText(item).lowercased().contains(q)
             // Confidence-weighted neural leg (see lengthConfidence): an
             // ultra-short clip's cosine AND its vector-derived tags are both
@@ -706,44 +718,163 @@ enum SemanticRanker {
         tag + "\u{1}" + clipID.uuidString
     }
 
+    /// Default separation a suggested tag must hold over the next-best candidate.
+    ///
+    /// WHY a margin at all: the real-clip audit (spec §1) measured absolute
+    /// cosines clustering around ~0.35–0.42 for *every* axis, and scaling the
+    /// model 34× (8.9M → 300M) left the top1−top2 margins **equal or worse**.
+    /// An absolute floor alone therefore cannot separate "this really is
+    /// `invoices`" from "this is equally close to `invoices` and `receipts`" —
+    /// it just reproduces the coin flip in a new mechanism. The margin is the
+    /// scale-free part of the signal: it survives re-calibration of the space,
+    /// which the absolute floor does not. It is the primary gate; sigma is the
+    /// secondary one.
+    static let suggestionMargin: Float = 0.05
+
+    /// Where the suggestion floor sits between a space's measured noise floor
+    /// and a perfect 1.0. Chosen so the hashing space (`relevanceFloor` 0.20)
+    /// lands on 0.44 — reproducing the historical hard-coded 0.45 — while the
+    /// far stricter ogma 384 head (0.58) is pulled up to ~0.71 instead of
+    /// inheriting a floor it would clear on pure ambient similarity.
+    static let suggestionFloorFraction: Float = 0.30
+
+    /// Suggestion floor derived from a space's search relevance floor.
+    ///
+    /// WHY not a constant: a cosine is only meaningful relative to the space it
+    /// was measured in. `VectorDetail` already records that the ogma heads
+    /// calibrate very differently (noise p95 ≈ 0.40 for 1024-d vs ≈ 0.58 for
+    /// 384-d), and the HF tiers differ again (0.169 MiniLM, 0.256 Gemma). A
+    /// fixed 0.45 is simultaneously too strict for the 1024-d head, roughly
+    /// right for hashing, and *below the noise floor* for the 384-d head —
+    /// i.e. in that space it would suggest tags on pure noise. Suggesting a
+    /// durable label is a stronger claim than showing a search hit, so the
+    /// floor sits well above the space's own relevance floor rather than at it.
+    static func suggestionFloor(relevanceFloor: Float) -> Float {
+        let base = min(max(relevanceFloor, 0), 0.99)
+        return base + (1 - base) * suggestionFloorFraction
+    }
+
+    /// Best-effort calibration for an embedding space we only know by signature.
+    ///
+    /// The pure suggestion API is handed an `embedderSignature`, not a live
+    /// embedder, so this recovers the space's relevance floor from the stable
+    /// signature shape the embedders mint (`"\(modelName)-\(dimension)-v1"`,
+    /// plus `"hashing-256"`), reusing `DeepSearchLevel`/`VectorDetail` as the
+    /// single source of truth instead of duplicating constants. An unknown
+    /// signature falls back to the hashing calibration — the historical
+    /// behaviour — because guessing a *higher* floor for a space we cannot
+    /// identify would silently switch suggestions off; the margin check is what
+    /// keeps an uncalibrated space honest, and callers that hold a live
+    /// embedder should pass `embedderRelevanceFloor` and skip the sniffing.
+    static func calibratedRelevanceFloor(forSignature signature: String) -> Float {
+        let hashingFloor: Float = 0.20
+        guard let level = DeepSearchLevel.allCases.first(where: {
+            guard let name = $0.modelName else { return false }
+            return signature.hasPrefix(name + "-")
+        }) else { return hashingFloor }
+        guard level.isOgma else { return level.hfRelevanceFloor }
+        // Ogma tiers emit whichever projection head VectorDetail selected; the
+        // dimension in the signature is what says which space these vectors live in.
+        let dimension = signature.split(separator: "-").compactMap { Int($0) }.last
+        return dimension == VectorDetail.compact384.dimension
+            ? VectorDetail.compact384.relevanceFloor
+            : VectorDetail.full1024.relevanceFloor
+    }
+
     /// Which of the user's OWN tags this clip probably belongs to.
     ///
-    /// The "light learning" of spec §5.1: no model is trained: once a user tag
-    /// has been applied by hand enough times (`minApplies`), its members' vectors
-    /// define a centroid — the empirical meaning of that label in this user's
-    /// head — and any clip sitting within `sigma` of that centroid is a
-    /// candidate. Suggestions are surfaced, never auto-applied.
+    /// The "light learning" of spec §3.10/§5.1: no model is trained: once a user
+    /// tag has been applied by hand enough times (`minApplies`), its members'
+    /// vectors define a centroid — the empirical meaning of that label in this
+    /// user's head — and a clip near that centroid is a candidate. Suggestions
+    /// are surfaced, never auto-applied.
     ///
-    /// Deliberately PURE and store-free: the index and the dismissal set are
-    /// passed in, so it is trivially unit-testable and has no `ClipStore`,
-    /// database or main-actor dependency.
+    /// A tag ships only if it clears **both** gates:
+    ///  1. **Floor** — centroid cosine ≥ `sigma`, defaulting to a floor derived
+    ///     from the space's own calibration (see `suggestionFloor`), not a
+    ///     hard-coded constant.
+    ///  2. **Margin** — it beats the NEXT-BEST candidate that also cleared the
+    ///     floor by ≥ `margin`. Candidates are ranked and walked top-down; the
+    ///     first pair that sits inside the margin is a confusable cluster, so
+    ///     that tag *and everything below it* are dropped (fail closed: when we
+    ///     cannot tell `invoices` from `receipts`, blank is the honest answer,
+    ///     and nothing ranked below a confusable pair is more trustworthy than
+    ///     the pair itself).
+    ///
+    /// DECISION — a lone candidate is still suggested. The bottom-ranked
+    /// candidate has no next-best to be confused with, so it passes the margin
+    /// gate by definition; in particular, if exactly one tag clears the floor it
+    /// is suggested on the floor alone. This is deliberate: the margin measures
+    /// *confusability between competing labels*, and with one label there is no
+    /// competition — the user's own hand-applied evidence is the only hypothesis
+    /// on the table. Note the comparison set is candidates that cleared the
+    /// floor: a tag sitting just under sigma does not veto the winner, because
+    /// it already failed the evidence bar on its own terms.
+    ///
+    /// Deliberately PURE and store-free: the index, the dismissal set and the
+    /// calibration are passed in, so it is trivially unit-testable and has no
+    /// `ClipStore`, `EmbedderProvider`, database or main-actor dependency.
     ///
     /// - Parameters:
     ///   - userTagIndex: tag → the clips that already carry it (`ClipStore.userTagIndex`).
     ///   - dismissed: `dismissalKey(tag:clipID:)` values the user has rejected.
     ///   - embedderSignature: only vectors from this space are comparable.
+    ///   - minApplies: hand-applies required before a tag may form a centroid.
+    ///   - embedderRelevanceFloor: the active embedder's `relevanceFloor`, when the
+    ///     caller has one; otherwise it is recovered from `embedderSignature`.
+    ///   - sigma: explicit absolute-cosine floor, overriding the calibration.
+    ///   - margin: required separation over the next-best candidate.
     /// - Returns: at most three tags, strongest cosine first.
     static func suggestedUserTags(for clip: ClipItem,
                                   userTagIndex: [String: [ClipItem]],
                                   dismissed: Set<String>,
                                   embedderSignature: String,
                                   minApplies: Int = 4,
-                                  sigma: Float = 0.45) -> [String] {
+                                  embedderRelevanceFloor: Float? = nil,
+                                  sigma: Float? = nil,
+                                  margin: Float = suggestionMargin) -> [String] {
         guard let clipVector = clip.embeddings[embedderSignature]?.vector,
               !clipVector.isEmpty else { return [] }
         let carried = Set(clip.userTags)
+        // Fail closed on nonsense knobs: a caller passing 0 applies, or a zero /
+        // negative margin, must not end up with a *weaker* gate than the defaults
+        // imply. A non-positive margin is precisely the absolute-floor-only gate
+        // the audit condemned, so it falls back to the default rather than
+        // switching the confusability check off.
+        let requiredApplies = max(1, minApplies)
+        let requiredMargin = margin > 0 ? margin : suggestionMargin
+        let floor = sigma ?? suggestionFloor(
+            relevanceFloor: embedderRelevanceFloor
+                ?? calibratedRelevanceFloor(forSignature: embedderSignature))
 
         var candidates: [(tag: String, score: Float)] = []
         for (tag, members) in userTagIndex {
-            // Not enough evidence yet, already on the clip, or explicitly rejected.
-            guard members.count >= minApplies,
-                  !carried.contains(tag),
-                  !dismissed.contains(dismissalKey(tag: tag, clipID: clip.id)) else { continue }
+            // Evidence gate FIRST, before any vector work: a 1–2 sample tag must
+            // never even form a centroid. A centroid over one clip is just that
+            // clip, so it would score ~1.0 against its own neighbourhood and
+            // sail past every downstream check — the cheapest way to poison the
+            // suggestion list is to let a single accidental hand-apply become a
+            // "learned" label.
+            // DISMISSED tags are deliberately still SCORED (and filtered only at
+            // the offering step below): excluding them at candidacy let a
+            // confusable twin be promoted the instant its partner was dismissed —
+            // "no, not `invoices`" would quietly become "how about `receipts`?".
+            // A dismissal is a judgement about the CONCEPT, so it must still be
+            // able to veto its near-twin.
+            //
+            // CARRIED tags are excluded outright: the user has already resolved
+            // that label for this clip, so a second, related label is additional
+            // information rather than confusion — and counting it would suppress
+            // almost every suggestion on any clip that already has a strong tag.
+            guard members.count >= requiredApplies, !carried.contains(tag) else { continue }
             // Members embedded in another space (or not yet embedded) simply
             // don't vote — they can't be compared to this clip's vector.
             let vectors = members.compactMap { $0.embeddings[embedderSignature]?.vector }
                 .filter { $0.count == clipVector.count }
-            guard !vectors.isEmpty else { continue }
+            // …and the same evidence bar applies to the votes that actually
+            // count: 4 applies of which only 1 is comparable here is 1 sample of
+            // evidence in THIS space, not 4. Still before the centroid is built.
+            guard vectors.count >= requiredApplies else { continue }
 
             var centroid = [Float](repeating: 0, count: clipVector.count)
             for v in vectors {
@@ -754,8 +885,31 @@ enum SemanticRanker {
             // The mean of unit vectors isn't itself a unit vector, and `cosine` is
             // a bare dot product — re-normalise so the comparison is a real cosine.
             let score = cosine(clipVector, HashingEmbedder.normalize(centroid))
-            if score >= sigma { candidates.append((tag, score)) }
+            // Keep EVERY scored tag, including those under the floor. Filtering
+            // by the floor here would let a sub-floor runner-up vanish before it
+            // could veto a near-tied winner — reproducing the absolute-floor-only
+            // gate the audit condemned. The floor is applied at acceptance.
+            candidates.append((tag, score))
         }
-        return candidates.sorted { $0.score > $1.score }.prefix(3).map { $0.tag }
+        // Tag name breaks exact ties so the output is deterministic — dictionary
+        // iteration order must never decide which label the user is shown.
+        candidates.sort { $0.score == $1.score ? $0.tag < $1.tag : $0.score > $1.score }
+
+        var accepted: [String] = []
+        for (i, candidate) in candidates.enumerated() {
+            // Confusability is measured against the true next-best tag, whether or
+            // not that tag is itself offerable or above the floor.
+            if i + 1 < candidates.count,
+               candidate.score - candidates[i + 1].score < requiredMargin {
+                break   // confusable with the next tag → this one and the rest are out
+            }
+            // Acceptance gates, applied only now: the absolute floor, and the
+            // offerability filters (already on the clip / previously dismissed).
+            guard candidate.score >= floor else { break }   // sorted: nothing below can pass
+            guard !dismissed.contains(dismissalKey(tag: candidate.tag, clipID: clip.id)) else { continue }
+            accepted.append(candidate.tag)
+            if accepted.count == 3 { break }
+        }
+        return accepted
     }
 }

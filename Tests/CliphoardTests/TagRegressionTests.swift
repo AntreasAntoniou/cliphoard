@@ -75,6 +75,43 @@ final class TagRegressionTests: XCTestCase {
         }
     }
 
+    // MARK: The veto must hold at SEARCH time, not just at capture
+
+    /// Wave-2's worst defect: every ranker fell back to
+    /// `embeddings[...] ?? embedder.embed(searchText(item))`. Because the veto
+    /// REMOVES a secret's vector, that fallback inverted it — instead of the
+    /// secret going through the model once at capture, it went through on EVERY
+    /// query. A vetoed clip must never be embedded here.
+    @MainActor
+    func testSearchNeverEmbedsAVetoedClip() {
+        /// Records any text it is asked to embed, so the test can prove the
+        /// ranker never handed the secret to a model.
+        final class SpyEmbedder: TextEmbedder {
+            let dimension = 256
+            let signature = "spy-256"
+            let relevanceFloor: Float = 0
+            var embedded: [String] = []
+            func embed(_ text: String) -> [Float] {
+                embedded.append(text)
+                return HashingEmbedder().embed(text)
+            }
+        }
+        let secretText = "AKIAIOSFODNN7EXAMPLE super secret credential"
+        let secret = ClipItem(kind: .text, text: secretText)
+        secret.flags = [.secret]
+        XCTAssertTrue(secret.isIndexVetoed, "precondition: this clip is vetoed")
+        let benign = ClipItem(kind: .text, text: "ordinary note about groceries")
+
+        for mode in ["smart", "neural"] {
+            let spy = SpyEmbedder()
+            _ = mode == "smart"
+                ? SemanticRanker.smart(query: "credential", items: [secret, benign], embedder: spy)
+                : SemanticRanker.neural(query: "credential", items: [secret, benign], embedder: spy)
+            XCTAssertFalse(spy.embedded.contains(secretText),
+                           "\(mode) sent the vetoed clip's text through the model")
+        }
+    }
+
     // MARK: The invariant that must never regress
 
     /// Design principle 3: no detector may ever emit a positive safe/public

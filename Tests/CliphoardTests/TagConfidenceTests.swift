@@ -211,7 +211,10 @@ final class SuggestedUserTagTests: XCTestCase {
         let index: [String: [ClipItem]] = [
             "near":      members([1, 0, 0], 4),
             "rare":      members([1, 0, 0], 3),   // under minApplies
-            "dismissed": members([1, 0, 0], 4),
+            // Deliberately NOT co-located with "near": a dismissed tag vetoes a
+            // near-twin by design (see SuggestionGateTests), and this test is
+            // about the exclusion rules, not confusability.
+            "dismissed": members([0.5, 0.87, 0], 4),
             "carried":   members([1, 0, 0], 4),   // already on the clip
         ]
         let dismissed: Set<String> = [

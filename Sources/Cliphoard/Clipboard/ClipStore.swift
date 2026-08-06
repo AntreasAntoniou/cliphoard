@@ -195,11 +195,33 @@ final class ClipStore: ObservableObject {
             db?.updateMeta(existing)
             return
         }
+        // Tier-1 detector pass (design §5). SYNCHRONOUS, and deliberately ordered
+        // BEFORE the CoreML embed and BEFORE the SQLite write: it is sub-millisecond
+        // against a tens-of-milliseconds forward pass, and running it first is the
+        // only thing that lets a detector VETO indexing of a secret. Exactly one
+        // scan per added clip — the dedup path above returns before reaching here,
+        // and nothing re-scans in a loop over history.
+        let verdict = Detectors.scan(text: SemanticRanker.searchText(item),
+                                     kind: item.kind, sourceApp: item.sourceApp)
+        item.flags = verdict.flags
+        item.shape = verdict.shape
+        // Belt and braces: `scan` already applies the §3.9 origin rule, but the
+        // quarantine is the one signal that must hold even if the content pass
+        // ever bails early, so OR it in explicitly rather than assume.
+        if Detectors.isSensitiveSource(item.sourceApp) { item.flags.insert(.quarantined) }
+
         // Embed + tag at ingest (for the active model) so semantic search is
         // ready immediately. Skipped in the `off` tier, which uses no vectors.
         // NB: the clip's KIND is whatever deterministic detection decided — we no
         // longer let embeddings reclassify it (that put non-URLs into Links).
-        if DeepSearch.level != .off && ClipIndexer.isStale(item) {
+        if item.isIndexVetoed {
+            // Fail closed: a secret or a quarantined clip is excluded from the
+            // CoreML index entirely — it is never sent through the model and any
+            // vector it somehow arrived with is dropped before it can be stored.
+            // The clip is still persisted (sealed) and still shows in history; it
+            // simply has no vector, so semantic search cannot surface it.
+            item.embeddings = [:]
+        } else if DeepSearch.level != .off && ClipIndexer.isStale(item) {
             ClipIndexer.index(item)
         }
         items.insert(item, at: 0)
@@ -439,7 +461,20 @@ final class ClipStore: ObservableObject {
     /// and is resumable — an interrupted pass leaves the rest for next time.
     func reindexStale() {
         let sig = EmbedderProvider.active.signature
-        let stale = items.filter { ClipIndexer.isStale($0) }
+        // A vetoed clip is permanently "stale" (it has no vector and never will),
+        // so it must be filtered out HERE rather than skipped inside the loop —
+        // otherwise a background pass would both re-offer it to the model and
+        // report a total it can never reach. This is the re-index half of the
+        // §5 veto: housekeeping must not quietly undo an ingest-time decision.
+        // PURGE before filtering: a clip can BECOME vetoed after it was indexed
+        // (the denylist grows, a detector improves). Skipping it in later passes
+        // stops NEW leaks but leaves the old vector in memory and on disk — the
+        // secret stays searchable. Drop those vectors first, then filter.
+        for item in items where item.isIndexVetoed && !item.embeddings.isEmpty {
+            item.embeddings = [:]
+            db?.deleteEmbeddings(clipID: item.id)
+        }
+        let stale = items.filter { ClipIndexer.isStale($0) && !$0.isIndexVetoed }
         guard !stale.isEmpty else { return }
         let total = stale.count
         let started = Date()
@@ -474,7 +509,12 @@ final class ClipStore: ObservableObject {
     /// names are embedded, once); just re-runs the cheap nearest-tag step.
     func reclassifyAllTags() {
         let sig = EmbedderProvider.active.signature
-        let targets = items.filter { $0.embeddings[sig] != nil }
+        // Same veto as `reindexStale`. A vetoed clip should have no embedding at
+        // all, so this normally filters nothing — but if one ever acquired a
+        // vector (a row written before the detector shipped, a future code path),
+        // the reclassify pass must not be the thing that puts it back in the tag
+        // index.
+        let targets = items.filter { $0.embeddings[sig] != nil && !$0.isIndexVetoed }
         rebuildTagIndex()                       // drop stale mappings immediately
         guard !targets.isEmpty else { return }
         let total = targets.count

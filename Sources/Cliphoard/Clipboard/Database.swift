@@ -28,9 +28,20 @@ final class Database {
             rtf BLOB, payload_file TEXT, file_path TEXT, color_hex TEXT,
             created_at REAL NOT NULL, last_used_at REAL NOT NULL,
             pinned INTEGER NOT NULL, source_app TEXT, use_count INTEGER NOT NULL,
-            user_tags TEXT);
+            user_tags TEXT, flags INTEGER, shape TEXT);
         """)
         ensureColumn("user_tags", definition: "TEXT", in: "clips")
+        // Tier-1 detector verdict (design §5). Both columns are additive and
+        // guarded exactly like `user_tags`, so an older database gains them on
+        // open with its rows intact (they read back as flags=[] / shape=nil).
+        //
+        // Deliberately NOT encrypted, unlike the content columns: `flags` is a
+        // small non-content integer that filtering reads on every render, and
+        // `shape` is a short enum-like token from a fixed vocabulary. Neither
+        // carries clipboard content, and sealing them would cost a decrypt per
+        // row per query for no confidentiality gain.
+        ensureColumn("flags", definition: "INTEGER", in: "clips")
+        ensureColumn("shape", definition: "TEXT", in: "clips")
         exec("""
         CREATE TABLE IF NOT EXISTS embeddings (
             clip_id TEXT NOT NULL, model TEXT NOT NULL,
@@ -90,7 +101,8 @@ final class Database {
         var result: [ClipItem] = []
         prepareEach("""
             SELECT id, kind, text, rtf, payload_file, file_path, color_hex,
-                   created_at, last_used_at, pinned, source_app, use_count, user_tags
+                   created_at, last_used_at, pinned, source_app, use_count, user_tags,
+                   flags, shape
             FROM clips ORDER BY pinned DESC, last_used_at DESC;
             """) { stmt in
             let idStr = column(stmt, 0)
@@ -109,7 +121,12 @@ final class Database {
                 pinned: sqlite3_column_int(stmt, 9) != 0,
                 sourceApp: columnOpt(stmt, 10),
                 useCount: Int(sqlite3_column_int(stmt, 11)),
-                userTags: Self.userTags(fromText: columnOpt(stmt, 12).map(Crypto.open) ?? ""))
+                userTags: Self.userTags(fromText: columnOpt(stmt, 12).map(Crypto.open) ?? ""),
+                // The FULL stored integer, never masked to the bits this build
+                // knows: a flag written by a newer version must survive a
+                // load → save round-trip through an older one untouched.
+                flags: ClipFlags(rawValue: columnIntOpt(stmt, 13) ?? 0),
+                shape: columnOpt(stmt, 14))
             item.embeddings = embByClip[idStr] ?? [:]
             result.append(item)
         }
@@ -123,8 +140,9 @@ final class Database {
         let sql = """
             INSERT OR REPLACE INTO clips
             (id, kind, text, rtf, payload_file, file_path, color_hex,
-             created_at, last_used_at, pinned, source_app, use_count, user_tags)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?);
+             created_at, last_used_at, pinned, source_app, use_count, user_tags,
+             flags, shape)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);
             """
         // Encrypt the actual clipboard CONTENT at rest (text, rich text, file
         // path, color). Metadata (id, kind, timestamps, source app) stays clear.
@@ -174,6 +192,10 @@ final class Database {
             bindText(stmt, 11, item.sourceApp)
             sqlite3_bind_int(stmt, 12, Int32(item.useCount))
             bindText(stmt, 13, encUserTags)
+            // Written verbatim (see `loadAll`): the whole raw value goes back to
+            // disk, including any bit this build has no name for.
+            sqlite3_bind_int64(stmt, 14, Int64(item.flags.rawValue))
+            bindText(stmt, 15, item.shape)
             ok = step(stmt)
         }
         for (model, emb) in item.embeddings { upsertEmbedding(clipID: item.id, model: model, embedding: emb) }
@@ -282,6 +304,21 @@ final class Database {
             }
         }
         return rows
+    }
+
+    /// Drop every stored vector for a clip.
+    ///
+    /// Needed by the §5 veto: a clip can BECOME vetoed after it was indexed (the
+    /// sensitive-source denylist grows, a detector improves), and merely skipping
+    /// it in later passes would leave the old vector on disk forever. Filtering
+    /// prevents new leaks; only this removes the existing one.
+    @discardableResult
+    func deleteEmbeddings(clipID: UUID) -> Bool {
+        var ok = false
+        prepare("DELETE FROM embeddings WHERE clip_id=?;") { stmt in
+            bindText(stmt, 1, clipID.uuidString); ok = step(stmt)
+        }
+        return ok
     }
 
     @discardableResult
@@ -393,6 +430,13 @@ private func column(_ stmt: OpaquePointer?, _ i: Int32) -> String {
 }
 private func columnOpt(_ stmt: OpaquePointer?, _ i: Int32) -> String? {
     sqlite3_column_type(stmt, i) == SQLITE_NULL ? nil : column(stmt, i)
+}
+/// A 64-bit integer column, or nil when the column is NULL (a row written before
+/// the column existed). Read as int64 and widened without truncation so every
+/// bit — including ones this build does not recognise — is preserved.
+private func columnIntOpt(_ stmt: OpaquePointer?, _ i: Int32) -> Int? {
+    guard sqlite3_column_type(stmt, i) != SQLITE_NULL else { return nil }
+    return Int(truncatingIfNeeded: sqlite3_column_int64(stmt, i))
 }
 
 extension Database {
