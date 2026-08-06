@@ -1,6 +1,58 @@
 import SwiftUI
 import AppKit
 
+/// The signal facets currently switched on in the filter menu.
+///
+/// Lives outside `PanelViewModel` because the model owns the *store-resolved*
+/// filters (kind, pin, time, tag facets, user tags) and resolving a signal needs
+/// no index at all — `ClipSignal.matches` is a pure predicate over fields the
+/// clip already carries. Keeping it here also means the chips a user sees and
+/// the filters they can apply are defined in one place (`ClipSignal`).
+///
+/// Selection is deliberately *not* persisted across summons: the panel rebuilds
+/// its hosting view on every summon, so this starts empty each time. A filter
+/// that silently survives into the next summon would hide clips the user does
+/// not remember hiding — and failing open (showing everything) is the safe
+/// direction for a *display* filter.
+@MainActor
+final class SignalFilterModel: ObservableObject {
+    /// Facet semantics, matching the tag-dimension menu: values within a group
+    /// OR, groups AND.
+    @Published var active: Set<ClipSignal> = []
+
+    var count: Int { active.count }
+
+    func toggle(_ signal: ClipSignal) {
+        if active.contains(signal) { active.remove(signal) } else { active.insert(signal) }
+    }
+
+    /// Whether `item` survives the active filter. Empty filter → everything.
+    func matches(_ item: ClipItem, now: Date) -> Bool {
+        guard !active.isEmpty else { return true }
+        var byGroup: [ClipSignal.Group: [ClipSignal]] = [:]
+        for signal in active { byGroup[signal.group, default: []].append(signal) }
+        for (_, signals) in byGroup {
+            guard signals.contains(where: { $0.matches(item, now: now) }) else { return false }
+        }
+        return true
+    }
+}
+
+/// One clip as it appears on screen, carrying its index in `model.results`.
+///
+/// The index is load-bearing: the model owns keyboard selection, ⌘1–9 quick
+/// paste and Enter-to-commit, and every one of those indexes into
+/// `model.results`. Rendering a filtered subset with *renumbered* positions
+/// would make ⌘3 paste a different clip from the card labelled ⌘3 — with a
+/// sensitivity filter on, quite possibly a secret the user could not see. So the
+/// view renumbers nothing: it hides rows and keeps their real indices.
+private struct DisplayedClip: Identifiable {
+    /// Position in `model.results` — NOT the position on screen.
+    let index: Int
+    let item: ClipItem
+    var id: UUID { item.id }
+}
+
 /// The bar content: search + category filters on top, a horizontal strip of
 /// clip cards, and a keyboard-hint footer.
 struct ContentView: View {
@@ -22,6 +74,11 @@ struct ContentView: View {
     @State private var customTo = Date()
     /// Builds the facet NSMenu on click (kept out of the summon-critical layout).
     @State private var facetMenu = FacetMenuController()
+    /// Signal facets (flags / shape / source / lifecycle) switched on in that menu.
+    @StateObject private var signals = SignalFilterModel()
+    /// Previous `model.selection`, used only to infer which way the user was
+    /// travelling when a filter hides the clip they landed on.
+    @State private var lastSelection = 0
 
     init(model: PanelViewModel, store: ClipStore, pasteStatus: PasteStatus) {
         self.model = model
@@ -75,6 +132,11 @@ struct ContentView: View {
         }
         .onAppear { DispatchQueue.main.async { searchFocused = !model.showSettings } }
         .onChange(of: settings.searchMode) { _ in model.resetSelection() }
+        // Keep keyboard selection on a card the user can actually see. Arrow keys
+        // walk `model.results`, which still contains the clips this view is
+        // hiding; without this, Enter could commit an invisible clip.
+        .onChange(of: model.selection) { new in reconcileSelection(to: new) }
+        .onChange(of: signals.active) { _ in reconcileSelection(to: model.selection) }
         // Brief success confirmation: a real paste bumps this token, so the flash
         // makes a successful paste distinguishable from a silent no-op.
         .onChange(of: pasteStatus.pasteConfirmToken) { _ in
@@ -177,7 +239,11 @@ struct ContentView: View {
             if !model.showSettings {
                 HStack(spacing: 8) {
                     timeMenu
-                    if TagSpace.isDimensional { filtersMenu }
+                    // Always available now: the signal facets (flags, shape,
+                    // source, lifecycle) exist regardless of which tag basket is
+                    // loaded, so gating the whole menu on a dimensional basket
+                    // would hide them.
+                    filtersMenu
                     searchModePicker
                     HStack(spacing: 6) {
                         Image(systemName: "magnifyingglass")
@@ -336,9 +402,9 @@ struct ContentView: View {
     /// layout — a measurable summon delay. A plain chip that builds an NSMenu on
     /// click keeps the summon path O(1); the menu's cost is paid only when opened.
     private var filtersMenu: some View {
-        let filterCount = model.activeFacets.count + model.activeUserTags.count
+        let filterCount = model.activeFacets.count + model.activeUserTags.count + signals.count
         return Button {
-            facetMenu.present(model: model)
+            facetMenu.present(model: model, signals: signals)
         } label: {
             filterChipLabel(icon: "line.3.horizontal.decrease.circle",
                             text: filterCount == 0 ? "Filters" : "Filters (\(filterCount))",
@@ -346,7 +412,7 @@ struct ContentView: View {
         }
         .buttonStyle(.plain)
         .fixedSize()
-        .help("Filter by dimension (content type, sensitivity, intent…)")
+        .help("Filter by what the cards show — secrets, shape, source app, lifecycle, your tags")
     }
 
     /// Chip-styled label shared by the time and filter menus, matching the
@@ -362,36 +428,92 @@ struct ContentView: View {
         .foregroundStyle(active ? Color.white : Color.primary)
     }
 
+    // MARK: Signal filtering
+
+    /// `model.results` narrowed by the signal filter, each row keeping its index
+    /// in `model.results` (see ``DisplayedClip``).
+    ///
+    /// `Date()` is sampled once per pass so every row in one render answers the
+    /// age-derived predicates against the same instant.
+    private var displayed: [DisplayedClip] {
+        let results = model.results
+        guard !signals.active.isEmpty else {
+            return results.enumerated().map { DisplayedClip(index: $0.offset, item: $0.element) }
+        }
+        let now = Date()
+        return results.enumerated().compactMap { offset, item in
+            signals.matches(item, now: now) ? DisplayedClip(index: offset, item: item) : nil
+        }
+    }
+
+    /// Move keyboard selection off a clip the signal filter is hiding, in the
+    /// direction the user was travelling.
+    ///
+    /// Selection lives in the model and is driven by ⌘-key handlers this view
+    /// cannot see, so the view corrects it after the fact instead of trying to
+    /// own it. The direction inference makes ← and → skip a hidden run the way
+    /// they would if the run were not there at all; the wrap cases are checked
+    /// explicitly because `moveSelection` wraps at both ends.
+    ///
+    /// Idempotent: the write below re-enters this method once, finds the new
+    /// index visible, and stops.
+    private func reconcileSelection(to target: Int) {
+        defer { lastSelection = model.selection }
+        guard !signals.active.isEmpty else { return }
+        let count = model.results.count
+        guard count > 0 else { return }
+        let visible = Set(displayed.map(\.index))
+        // Everything is filtered out: leave selection alone rather than point it
+        // somewhere arbitrary. The strip shows its empty state.
+        guard !visible.isEmpty, !visible.contains(target) else { return }
+
+        let forwards: Bool
+        if target == 0, lastSelection == count - 1 { forwards = true }
+        else if target == count - 1, lastSelection == 0 { forwards = false }
+        else { forwards = target >= lastSelection }
+
+        for step in 1...count {
+            let probe = ((target + (forwards ? step : -step)) % count + count) % count
+            guard visible.contains(probe) else { continue }
+            model.selection = probe
+            // Follow the jump in the strip; keyboard navigation is the only way
+            // to get here, and it always scrolls.
+            model.scrollRequest = probe
+            return
+        }
+    }
+
     // MARK: Cards
 
     private var cards: some View {
         ScrollViewReader { proxy in
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(spacing: 14) {
-                    let results = model.results
+                    let rows = displayed
                     // Leading sentinel: resets scroll to here (not to card 0), so the
                     // first card keeps its margin instead of jamming against the edge.
                     Color.clear.frame(width: 0.5, height: 1).id("head")
-                    if results.isEmpty {
+                    if rows.isEmpty {
                         emptyState
                     } else {
-                        ForEach(Array(results.enumerated()), id: \.element.id) { idx, item in
+                        ForEach(rows) { row in
                             ClipCardView(
-                                item: item,
-                                index: idx,
-                                selected: idx == model.selection,
+                                item: row.item,
+                                // The model's index, so the ⌘N badge names the
+                                // shortcut that actually pastes THIS card.
+                                index: row.index,
+                                selected: row.index == model.selection,
                                 storeDir: store.storeDirectory,
-                                tags: tagNames(for: item),
-                                onActivate: { model.onPaste?(item, false) },
-                                onInspect: { model.inspect(item) },
-                                onInspectTags: { model.inspect(item, focusTags: true) },
-                                onPin: { store.togglePin(item) },
-                                onDelete: { store.delete(item) }
+                                onActivate: { model.onPaste?(row.item, false) },
+                                onInspect: { model.inspect(row.item) },
+                                onInspectTags: { model.inspect(row.item, focusTags: true) },
+                                onPin: { store.togglePin(row.item) },
+                                onDelete: { store.delete(row.item) }
                             )
                             // Identity is the clip's id (from ForEach) — NOT the index.
                             // An index-based .id reused stale views across filters
                             // (e.g. URLs showing under Images). Scroll by id below.
-                            .onTapGesture { model.click(idx) }
+                            .onTapGesture { model.click(row.index) }
                         }
                     }
                 }
@@ -435,12 +557,12 @@ struct ContentView: View {
         ScrollViewReader { proxy in
             ScrollView(.vertical, showsIndicators: false) {
                 LazyVStack(spacing: 2) {
-                    let results = model.results
-                    if results.isEmpty {
+                    let rows = displayed
+                    if rows.isEmpty {
                         emptyState.frame(maxWidth: .infinity)
                     } else {
-                        ForEach(Array(results.enumerated()), id: \.element.id) { idx, item in
-                            clipRow(idx, item).id(item.id)
+                        ForEach(rows) { row in
+                            clipRow(row.index, row.item).id(row.item.id)
                         }
                     }
                 }
@@ -458,12 +580,12 @@ struct ContentView: View {
             ScrollViewReader { proxy in
                 ScrollView(.vertical, showsIndicators: false) {
                     LazyVStack(spacing: 2) {
-                        let results = model.results
-                        if results.isEmpty {
+                        let rows = displayed
+                        if rows.isEmpty {
                             emptyState.frame(maxWidth: .infinity)
                         } else {
-                            ForEach(Array(results.enumerated()), id: \.element.id) { idx, item in
-                                clipRow(idx, item).id(item.id)
+                            ForEach(rows) { row in
+                                clipRow(row.index, row.item).id(row.item.id)
                             }
                         }
                     }
@@ -491,12 +613,11 @@ struct ContentView: View {
                 .font(.system(size: 12.5))
                 .lineLimit(1)
             Spacer(minLength: 8)
-            ForEach(tagNames(for: item).prefix(1), id: \.self) { tag in
-                Text(tag)
-                    .font(.system(size: 9.5, weight: .medium))
-                    .padding(.horizontal, 6).padding(.vertical, 2)
-                    .background(Theme.t.tagFill, in: Capsule())
-                    .foregroundStyle(Theme.t.tagText)
+            // One chip only — the row is a single line. It is the FIRST chip, so
+            // the certainty ordering guarantees a protective badge outranks a
+            // shape or a source name for the one slot there is.
+            ForEach(ClipChips.chips(for: item).prefix(1), id: \.self) { signal in
+                signalPill(signal, size: 9.5)
             }
             if item.pinned {
                 Image(systemName: "pin.fill").font(.system(size: 9)).foregroundStyle(Theme.pin)
@@ -549,14 +670,14 @@ struct ContentView: View {
                     Text(item.characterCountLabel).font(.system(size: 11)).foregroundStyle(.secondary)
                 }
                 previewBody(item)
-                let tags = tagNames(for: item)
-                if !tags.isEmpty {
+                // The preview pane has room, so it shows the FULL certainty-ordered
+                // list rather than the card's three-slot prefix — this is the
+                // surface the "+N" chip exists to reach.
+                let chips = ClipChips.chips(for: item)
+                if !chips.isEmpty {
                     FlowLayout(spacing: 5) {
-                        ForEach(tags, id: \.self) { tag in
-                            Text(tag).font(.system(size: 10))
-                                .padding(.horizontal, 7).padding(.vertical, 3)
-                                .background(Theme.t.tagFill, in: Capsule())
-                                .foregroundStyle(Theme.t.tagText)
+                        ForEach(chips, id: \.self) { signal in
+                            signalPill(signal, size: 10)
                         }
                     }
                 }
@@ -605,24 +726,27 @@ struct ContentView: View {
         Text(s).foregroundStyle(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    /// The active model's top tag names for a clip (falls back to any cached
-    /// model's tags), so the card can show how the system classified it.
-    @MainActor private func tagNames(for item: ClipItem) -> [String] {
-        // Only the ACTIVE model's tags — no fallback to a stale model's tags, so a
-        // freshly captured clip and an old one are always consistent. Suppress tags
-        // entirely on the HashingEmbedder fallback: without a real semantic model
-        // its classifications are unreliable and were showing misleading pills.
-        let auto: [String]
-        if DeepSearch.level != .off,
-           let ids = item.embeddings[EmbedderProvider.active.signature]?.tags {
-            auto = ids.compactMap { TagSpace.names.indices.contains($0) ? TagSpace.names[$0] : nil }
-        } else {
-            auto = []
+    /// A signal chip for the dense rows and the preview pane.
+    ///
+    /// Same glyph + label + tier tint as the card, so a chip means one thing
+    /// everywhere. Colour is never the only carrier: the glyph and the spoken
+    /// label say "sensitive" too.
+    ///
+    /// This replaces `tagNames(for:)`, which listed the top embedding tag names.
+    /// The audit found those were decoration — a forced argmax with a 0.03–0.04
+    /// margin — so they are not shown anywhere any more.
+    private func signalPill(_ signal: ClipSignal, size: CGFloat) -> some View {
+        let colors = ClipChips.colors(for: signal.tier)
+        return HStack(spacing: 3) {
+            Image(systemName: signal.symbol).font(.system(size: size - 1.5, weight: .semibold))
+            Text(signal.title).font(.system(size: size, weight: .medium)).lineLimit(1)
         }
-        // Explicit user tags lead because they are intentional; automatic tags
-        // follow. Preserve first occurrence when vocabularies overlap.
-        var seen: Set<String> = []
-        return (item.userTags + auto).filter { seen.insert($0).inserted }
+        .fixedSize()
+        .padding(.horizontal, 7).padding(.vertical, 2)
+        .background(colors.fill, in: Capsule())
+        .foregroundStyle(colors.text)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(signal.spoken)
     }
 
     private func indexingBar(_ p: ClipStore.IndexingProgress) -> some View {
@@ -646,10 +770,14 @@ struct ContentView: View {
             Image(systemName: "tray")
                 .font(.system(size: 40))
                 .foregroundStyle(.tertiary)
-            Text(model.query.isEmpty ? "Nothing copied yet" : "No matches")
+            // An active filter is why the strip is empty — saying "nothing copied
+            // yet" when a signal filter is hiding everything would be a lie the
+            // user has no way to correct.
+            let filtered = !model.query.isEmpty || !signals.active.isEmpty
+            Text(filtered ? "No matches" : "Nothing copied yet")
                 .font(.system(size: 14, weight: .medium))
                 .foregroundStyle(.secondary)
-            Text("Copy something and it will appear here.")
+            Text(filtered ? "Try clearing a filter." : "Copy something and it will appear here.")
                 .font(.system(size: 12))
                 .foregroundStyle(.tertiary)
         }
@@ -679,7 +807,10 @@ struct ContentView: View {
                 hint("⌘⌫", "Delete")
                 hint("esc", "Close")
                 Spacer()
-                Text("\(model.results.count) item\(model.results.count == 1 ? "" : "s")")
+                // Count what is on screen, not what the model holds — with a
+                // signal filter on, those differ.
+                let shown = displayed.count
+                Text("\(shown) item\(shown == 1 ? "" : "s")")
                     .font(.system(size: 11)).foregroundStyle(.tertiary)
             }
             .padding(.horizontal, 16)
@@ -730,18 +861,22 @@ private extension View {
 @MainActor
 final class FacetMenuController: NSObject {
     private weak var model: PanelViewModel?
+    private weak var signals: SignalFilterModel?
 
-    func present(model: PanelViewModel) {
+    func present(model: PanelViewModel, signals: SignalFilterModel) {
         self.model = model
+        self.signals = signals
         let menu = NSMenu()
-        if !model.activeFacets.isEmpty || !model.activeUserTags.isEmpty {
-            let n = model.activeFacets.count + model.activeUserTags.count
+        let signalCount = signals.count
+        if !model.activeFacets.isEmpty || !model.activeUserTags.isEmpty || signalCount > 0 {
+            let n = model.activeFacets.count + model.activeUserTags.count + signalCount
             let clear = NSMenuItem(title: "Clear \(n) filter\(n == 1 ? "" : "s")",
                                    action: #selector(clearAll), keyEquivalent: "")
             clear.target = self
             menu.addItem(clear)
             menu.addItem(.separator())
         }
+        addSignalSections(to: menu, model: model, signals: signals)
         for (d, dim) in TagSpace.dimensions.enumerated() {
             let sub = NSMenu()
             let base = TagSpace.range(ofDimension: d).lowerBound
@@ -775,6 +910,78 @@ final class FacetMenuController: NSObject {
         menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
     }
 
+    /// The signal sections: sensitivity flags, shape, source app, lifecycle.
+    ///
+    /// Built from the values **actually present** in the history rather than from
+    /// the full vocabulary, for the same reason the category chips only show
+    /// non-empty kinds: an entry that can only ever return nothing is a dead end,
+    /// and design principle 4 wants every offered value to lead somewhere.
+    ///
+    /// One O(n) pass over the store, paid only when the menu is opened — the
+    /// whole reason this is an NSMenu built on click rather than a SwiftUI Menu
+    /// materialised on every summon.
+    private func addSignalSections(to menu: NSMenu, model: PanelViewModel, signals: SignalFilterModel) {
+        let items = model.store.items
+        guard !items.isEmpty else { return }
+        let now = Date()
+
+        var flagsPresent: [ClipFlags] = []
+        var shapes: Set<String> = []
+        var sources: Set<String> = []
+        var lifecycles: Set<String> = []
+        for item in items {
+            for (_, flag) in ClipFlags.allKnown where item.flags.contains(flag) {
+                if !flagsPresent.contains(flag) { flagsPresent.append(flag) }
+            }
+            if let shape = item.shape, !shape.isEmpty { shapes.insert(shape) }
+            if let source = DerivedTags.source(item) { sources.insert(source) }
+            if let value = DerivedTags.lifecycle(item, now: now) { lifecycles.insert(value) }
+            if let value = DerivedTags.linkDisposition(item, now: now) { lifecycles.insert(value) }
+        }
+
+        // Flags keep `allKnown` (bit) order rather than discovery order, so the
+        // list is stable between openings; everything else sorts alphabetically.
+        let flagSignals = ClipFlags.allKnown
+            .filter { flagsPresent.contains($0.flag) }
+            .map { ClipSignal.flag($0.flag) }
+
+        var added = false
+        for (title, group) in [("Sensitive", flagSignals),
+                               ("Shape", shapes.sorted().map(ClipSignal.shape)),
+                               ("Source app", sources.sorted().map(ClipSignal.source)),
+                               ("Lifecycle", lifecycles.sorted().map(ClipSignal.lifecycle))]
+        where !group.isEmpty {
+            let sub = NSMenu()
+            for signal in group {
+                let item = NSMenuItem(title: signal.menuTitle,
+                                      action: #selector(toggleSignal(_:)), keyEquivalent: "")
+                item.target = self
+                item.representedObject = SignalBox(signal)
+                item.state = signals.active.contains(signal) ? .on : .off
+                sub.addItem(item)
+            }
+            let parent = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+            parent.submenu = sub
+            menu.addItem(parent)
+            added = true
+        }
+        if added { menu.addItem(.separator()) }
+    }
+
+    /// Carries a `ClipSignal` through `NSMenuItem.representedObject`, which is an
+    /// Objective-C `id`. A class box keeps the round-trip explicit instead of
+    /// relying on implicit bridging of a Swift enum.
+    private final class SignalBox: NSObject {
+        let signal: ClipSignal
+        init(_ signal: ClipSignal) { self.signal = signal }
+    }
+
+    @objc private func toggleSignal(_ sender: NSMenuItem) {
+        guard let signals, let box = sender.representedObject as? SignalBox else { return }
+        signals.toggle(box.signal)
+        model?.resetSelection()
+    }
+
     @objc private func toggle(_ sender: NSMenuItem) {
         guard let model else { return }
         if model.activeFacets.contains(sender.tag) { model.activeFacets.remove(sender.tag) }
@@ -785,6 +992,7 @@ final class FacetMenuController: NSObject {
     @objc private func clearAll() {
         model?.activeFacets = []
         model?.activeUserTags = []
+        signals?.active = []
         model?.resetSelection()
     }
 

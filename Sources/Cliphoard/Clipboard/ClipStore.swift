@@ -68,6 +68,10 @@ final class ClipStore: ObservableObject {
         migrateLegacyJSONIfNeeded()
         items = db?.loadAll() ?? []
         repairKinds()
+        // Ordered BEFORE the index builds below: a clip that turns out to be a
+        // secret must have its vectors dropped before anything can put it back
+        // into a tag bucket.
+        backfillDetectorFlagsIfNeeded()
         encryptExistingRowsIfNeeded()
         reKeyToSecureEnclaveIfNeeded()
         encryptImagePayloadsIfNeeded()
@@ -126,6 +130,96 @@ final class ClipStore: ObservableObject {
             }
         }
         UserDefaults.standard.set(true, forKey: flag)
+    }
+
+    // MARK: Detector backfill
+
+    /// Gate for the one-time detector backfill. The version lives in the key
+    /// itself: shipping a materially better detector means adding
+    /// `detectorBackfillV2` rather than redefining what an already-set flag
+    /// meant, so an upgrade can re-run the pass without a schema change.
+    static let detectorBackfillDefaultsKey = "detectorBackfillV1"
+
+    /// True for a clip whose Tier-1 verdict was (as far as we can tell) never
+    /// computed — it predates `ClipStore.add`'s detector pass (design §5).
+    ///
+    /// There is no "scanned" column to consult, so the predicate is deliberately
+    /// **over-inclusive**: a scanned prose clip on which nothing fired is
+    /// indistinguishable from an unscanned one, and it is re-scanned. That is the
+    /// fail-closed direction — a false positive costs one sub-millisecond pure
+    /// function call and produces the same empty verdict (the pass is idempotent),
+    /// whereas a false negative would leave a secret unscanned, and therefore in
+    /// the CoreML index, forever.
+    static func needsDetectorBackfill(_ item: ClipItem) -> Bool {
+        item.flags.isEmpty && item.shape == nil
+    }
+
+    /// One-time backfill: compute `flags` + `shape` for every clip captured
+    /// before the detectors existed, persist the verdict, and — critically —
+    /// PURGE the vectors of anything that turns out to be `.secret` /
+    /// `.quarantined`.
+    ///
+    /// Why the purge is the point: `add` can veto indexing only for clips it
+    /// sees at capture time. Every clip already in history was embedded before
+    /// any detector existed, so a password or an API token sitting in the store
+    /// today is still a live row in the CoreML index and still reachable by
+    /// semantic search. Flagging it without dropping its vector would put a
+    /// warning badge on a leak instead of closing it, so the purge is both
+    /// in-memory (`embeddings = [:]`) and on-disk (`Database.deleteEmbeddings`),
+    /// exactly as `reindexStale` does for a clip that becomes vetoed later.
+    ///
+    /// Runs at construction, never on the copy hot path — `add` keeps its single
+    /// scan of the single clip being captured and never loops over history.
+    /// Cheap: pure byte rules over clips that have no verdict yet, one batched
+    /// transaction, and a row write only for the clips that actually changed.
+    /// Resumable: the completion flag is set only after a whole pass, so an
+    /// interrupted (crashed) run simply repeats — the scan is a pure function of
+    /// the clip, so re-running it cannot produce a different answer.
+    private func backfillDetectorFlagsIfNeeded() {
+        let flag = Self.detectorBackfillDefaultsKey
+        guard !UserDefaults.standard.bool(forKey: flag) else { return }
+        let candidates = items.filter(Self.needsDetectorBackfill)
+        var scanned = 0
+        var purged = 0
+        // Only a COMMITTED pass may mark the backfill done. Setting the one-shot
+        // flag after a rolled-back transaction would retire the backfill forever
+        // while the rows stayed unscanned — and these are precisely the clips
+        // captured before detectors existed, so a secret already in the history
+        // would keep its vector in the CoreML index with nothing left to catch it.
+        var committed = true
+        if !candidates.isEmpty {
+            committed = db?.transaction {
+                for item in candidates {
+                    let verdict = Detectors.scan(text: SemanticRanker.searchText(item),
+                                                 kind: item.kind, sourceApp: item.sourceApp)
+                    item.flags = verdict.flags
+                    item.shape = verdict.shape
+                    // Same belt-and-braces as `add`: the origin rule is the one
+                    // signal that must hold even if the content pass ever bails
+                    // early, so OR it in explicitly rather than assume.
+                    if Detectors.isSensitiveSource(item.sourceApp) { item.flags.insert(.quarantined) }
+                    scanned += 1
+                    let vetoed = item.isIndexVetoed
+                    if vetoed {
+                        item.embeddings = [:]
+                        db?.deleteEmbeddings(clipID: item.id)
+                        purged += 1
+                    }
+                    // Nothing fired and no shape: the stored row already reads
+                    // back as exactly this verdict, so skip the write entirely.
+                    guard vetoed || !item.flags.isEmpty || item.shape != nil else { continue }
+                    db?.insert(item)
+                }
+            } ?? false      // no database open → nothing was persisted
+        }
+        guard committed else {
+            DebugLog.write("detector backfill: transaction rolled back — NOT marking done, will retry")
+            return
+        }
+        UserDefaults.standard.set(true, forKey: flag)
+        if scanned > 0 {
+            DebugLog.write("detector backfill: scanned \(scanned) unscanned clips, purged vectors from \(purged)")
+        }
     }
 
     /// Heal stored rows: (1) re-derive each text-bearing clip's kind from

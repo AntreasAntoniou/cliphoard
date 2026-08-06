@@ -369,11 +369,20 @@ final class Database {
         transaction { for id in ids { delete(id: id) } }
     }
 
-    func transaction(_ body: () -> Void) {
+    /// Runs `body` in a transaction and reports whether it COMMITTED.
+    ///
+    /// The return value matters for one-shot passes (the detector backfill): a
+    /// caller that marks itself "done" after a rolled-back transaction never runs
+    /// again, so work that silently failed is never retried. Discardable, so
+    /// existing fire-and-forget callers are unaffected.
+    @discardableResult
+    func transaction(_ body: () -> Void) -> Bool {
         exec("BEGIN;")
         txnFailed = false
         body()
-        exec(txnFailed ? "ROLLBACK;" : "COMMIT;")
+        let committed = !txnFailed
+        exec(committed ? "COMMIT;" : "ROLLBACK;")
+        return committed
     }
 
     // MARK: Low-level helpers

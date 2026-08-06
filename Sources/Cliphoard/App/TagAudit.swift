@@ -9,29 +9,33 @@ import Foundation
 /// `outfile` and prints an aggregate summary to stdout (no full clip contents —
 /// only short previews, and only in the on-disk report the user owns).
 enum TagAudit {
+    /// Which audit to run, from `CLIPHOARD_AUDIT_MODE`. The default is the
+    /// original vocabulary audit — an unset (or unrecognised) variable must never
+    /// change what `--analyze-tags` has always done.
+    enum Mode: String {
+        case vocabulary
+        case topics
+
+        static var fromEnvironment: Mode {
+            Mode(rawValue: ProcessInfo.processInfo.environment["CLIPHOARD_AUDIT_MODE"] ?? "") ?? .vocabulary
+        }
+    }
+
     @MainActor
     static func run(outputPath: String) {
-        // General basket; model chosen by CLIPHOARD_AUDIT_LEVEL (default = normal =
-        // open-ogma-small). ogma tiers load synchronously; HF tiers (MiniLM/Gemma)
-        // load async on the main run loop, so spin it until the embedder swaps in.
-        TagBaskets.overlayID = nil
-        DeepSearch.detail = .full1024
-        let level = DeepSearchLevel(rawValue: ProcessInfo.processInfo.environment["CLIPHOARD_AUDIT_LEVEL"] ?? "normal") ?? .normal
-        EmbedderProvider.configure(level: level)
-        let wantModel = level.modelName ?? ""
-        let deadline = Date().addingTimeInterval(120)
-        while EmbedderProvider.active.signature == "hashing-256", !wantModel.isEmpty, Date() < deadline {
-            RunLoop.current.run(mode: .default, before: Date().addingTimeInterval(0.25))
+        switch Mode.fromEnvironment {
+        case .vocabulary: runVocabularyAudit(outputPath: outputPath)
+        case .topics: runTopicsAudit(outputPath: outputPath)
         }
-        let embedder = EmbedderProvider.active
-        let sig = embedder.signature
-        guard sig != "hashing-256" else { err("embedder \(wantModel) failed to load (still hashing)"); exit(2) }
+    }
 
-        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        let dbPath = appSupport.appendingPathComponent("Ditto/ditto.sqlite").path
-        guard let db = Database(path: dbPath) else { err("cannot open DB at \(dbPath)"); exit(2) }
-        let clips = db.loadAll()
-        guard !clips.isEmpty else { err("no clips found"); exit(2) }
+    // MARK: - Default mode: the basket vocabulary audit
+
+    @MainActor
+    private static func runVocabularyAudit(outputPath: String) {
+        let embedder = loadEmbedder()
+        let sig = embedder.signature
+        let clips = loadStoredClips()
 
         let names = TagSpace.names
         let tagVecs = TagSpace.vectors(using: embedder)
@@ -126,6 +130,43 @@ enum TagAudit {
         print("Full report → \(outputPath)")
     }
 
+    // MARK: - Shared setup
+
+    /// Bring up the audit embedder exactly as the vocabulary audit always has.
+    /// General basket; model chosen by CLIPHOARD_AUDIT_LEVEL (default = normal =
+    /// open-ogma-small). ogma tiers load synchronously; HF tiers (MiniLM/Gemma)
+    /// load async on the main run loop, so spin it until the embedder swaps in.
+    @MainActor
+    private static func loadEmbedder() -> TextEmbedder {
+        TagBaskets.overlayID = nil
+        DeepSearch.detail = .full1024
+        let level = DeepSearchLevel(rawValue: ProcessInfo.processInfo.environment["CLIPHOARD_AUDIT_LEVEL"] ?? "normal") ?? .normal
+        EmbedderProvider.configure(level: level)
+        let wantModel = level.modelName ?? ""
+        let deadline = Date().addingTimeInterval(120)
+        while EmbedderProvider.active.signature == "hashing-256", !wantModel.isEmpty, Date() < deadline {
+            RunLoop.current.run(mode: .default, before: Date().addingTimeInterval(0.25))
+        }
+        let embedder = EmbedderProvider.active
+        guard embedder.signature != "hashing-256" else {
+            err("embedder \(wantModel) failed to load (still hashing)"); exit(2)
+        }
+        return embedder
+    }
+
+    /// The real corpus: every stored clip, read-only. Both audits are gates on
+    /// the user's ACTUAL clipboard — never a synthetic sample — so an empty or
+    /// unreadable store is a hard failure, not an empty report.
+    @MainActor
+    private static func loadStoredClips() -> [ClipItem] {
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        let dbPath = appSupport.appendingPathComponent("Ditto/ditto.sqlite").path
+        guard let db = Database(path: dbPath) else { err("cannot open DB at \(dbPath)"); exit(2) }
+        let clips = db.loadAll()
+        guard !clips.isEmpty else { err("no clips found"); exit(2) }
+        return clips
+    }
+
     // ---- helpers ----
     private static func err(_ s: String) { FileHandle.standardError.write((s + "\n").data(using: .utf8)!) }
     private static func f2(_ x: Float) -> String { String(format: "%.2f", x) }
@@ -141,5 +182,327 @@ enum TagAudit {
     }
     private static func statInline(_ a: [Float]) -> String {
         "median \(f2(median(a))) · p10 \(f2(percentile(a, 0.10))) · p90 \(f2(percentile(a, 0.90)))"
+    }
+}
+
+// MARK: - Coarse Topic (§3.11) validation harness
+
+/// One candidate Coarse-Topic bucket as the harness needs to see it: a name and
+/// its unit-length centroid **in the active embedder's space**.
+///
+/// The harness deliberately takes centroids rather than the example phrases that
+/// produced them. Recomputing them here would validate the harness's own idea of
+/// a bucket instead of the one the app would ship, and the gate is only
+/// meaningful if it scores the exact vectors the runtime classifier would use.
+struct TopicBucketProbe: Sendable {
+    let name: String
+    let centroid: [Float]
+
+    init(name: String, centroid: [Float]) {
+        self.name = name
+        self.centroid = centroid
+    }
+}
+
+/// The seam between this harness and the Coarse-Topic implementation (§3.11).
+///
+/// Coarse Topic is *probationary*: §7 says it "stays behind the harness gate and
+/// ships only for buckets that clear floor+margin on the real corpus", and it
+/// lands separately from this harness. So the harness must build and run whether
+/// or not the bucket library exists yet — it reaches the library through this
+/// registration point instead of a hard reference to a symbol that may not be
+/// compiled in. When the classifier ships, it installs `provider` (one line at
+/// launch / in the audit entry point) and the gate starts scoring for real; until
+/// then `--analyze-tags` in topics mode says so and exits 0.
+@MainActor
+enum TopicBucketSource {
+    /// Installed by the Coarse-Topic classifier when it exists. Returns the
+    /// candidate buckets already projected into `embedder`'s space.
+    static var provider: ((TextEmbedder) -> [TopicBucketProbe])?
+
+    /// The candidate buckets, or nil when Coarse Topic is not in this build.
+    /// An empty library counts as absent — there is nothing to validate.
+    static func buckets(for embedder: TextEmbedder) -> [TopicBucketProbe]? {
+        guard let provider else { return nil }
+        let buckets = provider(embedder)
+        return buckets.isEmpty ? nil : buckets
+    }
+}
+
+extension TagAudit {
+    /// Whether there is anything to validate at all.
+    enum TopicsGate {
+        case available([TopicBucketProbe])
+        /// Coarse Topic is not in this build; the message explains it in full.
+        case unavailable(String)
+    }
+
+    /// Thresholds the gate is run at. Every one is overridable from the
+    /// environment so the gate can be re-run at a different bar without a
+    /// rebuild — but the DEFAULTS are the spec's, so an un-parameterised run is
+    /// the one that decides whether Coarse Topic ships.
+    struct TopicsGateConfig: Sendable {
+        /// Minimum top-1 cosine for a clip to count as assigned to a bucket
+        /// (§3.11 `absoluteFloor`).
+        var floor: Float
+        /// δ: minimum (top1 − top2) a bucket's assignments must average.
+        var marginThreshold: Float
+        /// A bucket assigned fewer clips than this has not been measured, and an
+        /// unmeasured bucket FAILS — the gate can only clear on evidence.
+        var minSamples: Int
+
+        init(floor: Float, marginThreshold: Float = 0.06, minSamples: Int = 4) {
+            self.floor = floor
+            self.marginThreshold = marginThreshold
+            self.minSamples = minSamples
+        }
+
+        @MainActor
+        static func fromEnvironment() -> TopicsGateConfig {
+            let env = ProcessInfo.processInfo.environment
+            func float(_ key: String, _ fallback: Float) -> Float {
+                guard let raw = env[key], let value = Float(raw) else { return fallback }
+                return value
+            }
+            func int(_ key: String, _ fallback: Int) -> Int {
+                guard let raw = env[key], let value = Int(raw), value > 0 else { return fallback }
+                return value
+            }
+            return TopicsGateConfig(
+                floor: float("CLIPHOARD_TOPIC_FLOOR", TagSpace.assignmentThreshold),
+                marginThreshold: float("CLIPHOARD_TOPIC_MARGIN", 0.06),
+                minSamples: int("CLIPHOARD_TOPIC_MIN_SAMPLES", 4))
+        }
+    }
+
+    /// What the corpus said about one candidate bucket.
+    struct TopicBucketVerdict: Sendable {
+        let name: String
+        /// Clips whose nearest bucket was this one, at or above the floor.
+        let assigned: Int
+        let meanTop1: Float
+        /// The number the whole gate turns on: mean (top1 − top2) over this
+        /// bucket's assignments. A bucket that coin-flips against its neighbour
+        /// sits near zero here however high its absolute cosine looks.
+        let meanMargin: Float
+        /// Assignments that would ALSO clear the per-clip margin rule — i.e. what
+        /// the shipped classifier would actually label rather than blank.
+        let acceptedPerClip: Int
+        let passed: Bool
+        /// Why it passed or failed, in one clause, for the recommendation line.
+        let reason: String
+    }
+
+    /// The full gate result. `render` turns it into the report body; the caller
+    /// prints the table and writes the whole thing to the output file.
+    struct TopicsReport: Sendable {
+        let config: TopicsGateConfig
+        let verdicts: [TopicBucketVerdict]
+        /// Clips that carried a usable vector and were scored.
+        let scored: Int
+        /// Clips skipped because they had no usable vector for this embedder.
+        let unusable: Int
+        /// Clips skipped because they are `.secret`/`.quarantined` — §3.11:
+        /// "sensitive-flagged clips are excluded from the embedding index
+        /// entirely", so they are not part of the population being validated
+        /// either.
+        let sensitiveExcluded: Int
+        /// Scored clips whose top-1 never reached the floor: no bucket at all.
+        let unassigned: Int
+
+        var passing: [TopicBucketVerdict] { verdicts.filter { $0.passed } }
+        var failing: [TopicBucketVerdict] { verdicts.filter { !$0.passed } }
+
+        /// The one line a human needs: what ships and what gets cut.
+        var recommendation: String {
+            guard !verdicts.isEmpty else { return "RECOMMENDATION: no buckets scored — do not ship Coarse Topic." }
+            let ship = passing.map(\.name).sorted()
+            let drop = failing.map(\.name).sorted()
+            if ship.isEmpty {
+                return "RECOMMENDATION: SHIP NOTHING — no bucket clears margin ≥ \(TagAudit.f2(config.marginThreshold)); drop Coarse Topic entirely (drop: \(drop.joined(separator: ", ")))."
+            }
+            if drop.isEmpty {
+                return "RECOMMENDATION: ship all \(ship.count) buckets (\(ship.joined(separator: ", "))) — every one clears margin ≥ \(TagAudit.f2(config.marginThreshold))."
+            }
+            return "RECOMMENDATION: ship \(ship.joined(separator: ", ")) · DROP BEFORE SHIP \(drop.joined(separator: ", ")) (margin < \(TagAudit.f2(config.marginThreshold)) or too few assignments to judge)."
+        }
+    }
+
+    /// Score a corpus of clip vectors against the candidate buckets.
+    ///
+    /// Pure and side-effect free (no store, no embedder, no I/O) so the gate's
+    /// arithmetic is unit-testable without a real clipboard.
+    ///
+    /// **Assignment is by argmax over the floor only — never by margin.** Mean
+    /// margin measured over the clips that already passed a margin test would be
+    /// circular, and would report every bucket as clearing whatever bar it was
+    /// filtered at. `acceptedPerClip` reports the margin-passing subset
+    /// separately, as information, not as the denominator.
+    static func scoreTopics(vectors: [[Float]],
+                            buckets: [TopicBucketProbe],
+                            config: TopicsGateConfig,
+                            unusable: Int = 0,
+                            sensitiveExcluded: Int = 0) -> TopicsReport {
+        var top1s = [[Float]](repeating: [], count: buckets.count)
+        var margins = [[Float]](repeating: [], count: buckets.count)
+        var accepted = [Int](repeating: 0, count: buckets.count)
+        var unassigned = 0
+
+        for vector in vectors {
+            var scored: [(index: Int, cosine: Float)] = []
+            scored.reserveCapacity(buckets.count)
+            for (index, bucket) in buckets.enumerated() {
+                scored.append((index, SemanticRanker.cosine(vector, bucket.centroid)))
+            }
+            scored.sort { $0.cosine > $1.cosine }
+            guard let best = scored.first, best.cosine >= config.floor else { unassigned += 1; continue }
+            // With a single candidate bucket there is no runner-up to beat, so
+            // the margin is the full top-1 — an honest reading: nothing competes.
+            let runnerUp = scored.count > 1 ? scored[1].cosine : 0
+            let margin = best.cosine - runnerUp
+            top1s[best.index].append(best.cosine)
+            margins[best.index].append(margin)
+            if margin >= config.marginThreshold { accepted[best.index] += 1 }
+        }
+
+        let verdicts = buckets.enumerated().map { index, bucket -> TopicBucketVerdict in
+            let n = top1s[index].count
+            let meanMargin = mean(margins[index])
+            let passed = n >= config.minSamples && meanMargin >= config.marginThreshold
+            let reason: String
+            if n == 0 {
+                reason = "no clip in the corpus lands here — unvalidated"
+            } else if n < config.minSamples {
+                reason = "only \(n) assignment(s) (< \(config.minSamples)) — not enough evidence to judge"
+            } else if !passed {
+                reason = "mean margin \(f2(meanMargin)) < δ \(f2(config.marginThreshold)) — coin-flips against its neighbour"
+            } else {
+                reason = "mean margin \(f2(meanMargin)) ≥ δ \(f2(config.marginThreshold)) over \(n) clips"
+            }
+            return TopicBucketVerdict(name: bucket.name, assigned: n,
+                                      meanTop1: mean(top1s[index]), meanMargin: meanMargin,
+                                      acceptedPerClip: accepted[index], passed: passed, reason: reason)
+        }
+
+        return TopicsReport(config: config, verdicts: verdicts, scored: vectors.count,
+                            unusable: unusable, sensitiveExcluded: sensitiveExcluded,
+                            unassigned: unassigned)
+    }
+
+    /// The per-bucket table, shared by stdout and the on-disk report so the two
+    /// can never disagree about what the gate said.
+    static func topicsTable(_ report: TopicsReport) -> String {
+        var out = "bucket           |     n | mean top1 | mean margin | per-clip accept | verdict\n"
+        out += "-----------------|-------|-----------|-------------|-----------------|--------\n"
+        for v in report.verdicts {
+            let name = v.name.padding(toLength: 16, withPad: " ", startingAt: 0)
+            let n = String(v.assigned).leftPadded(to: 5)
+            let acc = "\(v.acceptedPerClip)/\(v.assigned)".leftPadded(to: 15)
+            out += "\(name) | \(n) |      \(f2(v.meanTop1)) |        \(f2(v.meanMargin)) | \(acc) | \(v.passed ? "PASS" : "FAIL")\n"
+        }
+        return out
+    }
+
+    /// `CLIPHOARD_AUDIT_MODE=topics`: the §3.11 gate. Scores every stored clip
+    /// against the candidate topic buckets on the REAL corpus and reports, per
+    /// bucket, whether it separates anything — the decision on whether Coarse
+    /// Topic ships at all.
+    @MainActor
+    static func topicsGate(embedder: TextEmbedder) -> TopicsGate {
+        guard let buckets = TopicBucketSource.buckets(for: embedder) else {
+            return .unavailable(topicsUnavailableMessage)
+        }
+        return .available(buckets)
+    }
+
+    /// What the harness says when there is nothing to validate. Deliberately
+    /// spells out the exit code: a CI step that runs the gate before the Coarse
+    /// Topic wave lands must read "not built yet", never "gate failed".
+    static let topicsUnavailableMessage = """
+        TOPICS AUDIT: no candidate topic buckets in this build.
+        Coarse Topic (design §3.11) is probationary and ships separately; nothing to validate yet.
+        Install `TopicBucketSource.provider` from the bucket library and re-run:
+          CLIPHOARD_AUDIT_MODE=topics Cliphoard --analyze-tags <outfile>
+        Exiting 0 — an absent gate is not a failed gate.
+        """
+
+    @MainActor
+    static func runTopicsAudit(outputPath: String) {
+        // Checked BEFORE anything expensive: with no bucket library there is
+        // nothing to validate, so the harness must not spend two minutes loading
+        // a CoreML model (or fail on a machine that has no model at all) only to
+        // then say so. Degrade first, work second.
+        guard TopicBucketSource.provider != nil else {
+            print(topicsUnavailableMessage)
+            exit(0)
+        }
+        let embedder = loadEmbedder()
+        let buckets: [TopicBucketProbe]
+        switch topicsGate(embedder: embedder) {
+        case .unavailable(let message):
+            print(message)
+            exit(0)
+        case .available(let found):
+            buckets = found
+        }
+
+        let config = TopicsGateConfig.fromEnvironment()
+        let clips = loadStoredClips()
+        let sig = embedder.signature
+        var vectors = [[Float]]()
+        var unusable = 0
+        var sensitive = 0
+        // Previews are for the on-disk report only (the user owns that file), and
+        // never for a clip we refused to embed.
+        var rows = [(bucket: String, top1: Float, margin: Float, preview: String)]()
+
+        for clip in clips {
+            // Fail closed: a flagged clip is out of the embedding index (§3.11),
+            // so the audit must not embed it either — not even to score it.
+            guard !clip.isIndexVetoed else { sensitive += 1; continue }
+            let vec = clip.embeddings[sig]?.vector ?? embedder.embed(SemanticRanker.searchText(clip))
+            guard vec.count == embedder.dimension else { unusable += 1; continue }
+            vectors.append(vec)
+
+            var scored = buckets.enumerated().map { ($0.element.name, SemanticRanker.cosine(vec, $0.element.centroid)) }
+            scored.sort { $0.1 > $1.1 }
+            let preview = String(SemanticRanker.searchText(clip).prefix(48))
+                .replacingOccurrences(of: "\n", with: "⏎")
+            if let best = scored.first, best.1 >= config.floor {
+                rows.append((best.0, best.1, best.1 - (scored.count > 1 ? scored[1].1 : 0), preview))
+            } else {
+                rows.append(("—", scored.first?.1 ?? 0, 0, preview))
+            }
+        }
+
+        let report = scoreTopics(vectors: vectors, buckets: buckets, config: config,
+                                 unusable: unusable, sensitiveExcluded: sensitive)
+        let table = topicsTable(report)
+
+        var out = "# Cliphoard Coarse Topic gate (§3.11) — \(sig)\n\n"
+        out += "Clips scored: \(report.scored) (skipped \(report.unusable) without a usable vector, "
+        out += "\(report.sensitiveExcluded) sensitive-flagged and excluded from the index)\n"
+        out += "Floor: \(f2(config.floor)) · margin δ: \(f2(config.marginThreshold)) · min samples: \(config.minSamples)\n"
+        out += "Unassigned (top-1 below floor → blank, which is a valid result): \(pct(report.unassigned, max(report.scored, 1)))\n\n"
+        out += "## Per bucket\n\n" + table + "\n"
+        out += "## Why\n"
+        for v in report.verdicts { out += "• \(v.name): \(v.passed ? "PASS" : "FAIL") — \(v.reason)\n" }
+        out += "\n" + report.recommendation + "\n"
+        out += "\n## Every clip (assigned bucket, top-1, margin)\n"
+        for r in rows { out += "  \(r.bucket) top1=\(f2(r.top1)) margin=\(f2(r.margin)) | \"\(r.preview)\"\n" }
+        try? out.write(toFile: outputPath, atomically: true, encoding: .utf8)
+
+        print("=== COARSE TOPIC GATE (\(sig)) — \(report.scored) clips ===")
+        print("floor=\(f2(config.floor)) · δ=\(f2(config.marginThreshold)) · min n=\(config.minSamples) · unassigned \(pct(report.unassigned, max(report.scored, 1)))")
+        print(table, terminator: "")
+        print(report.recommendation)
+        print("Full report → \(outputPath)")
+    }
+}
+
+private extension String {
+    /// Right-align a short numeric cell in the fixed-width gate table.
+    func leftPadded(to width: Int) -> String {
+        count >= width ? self : String(repeating: " ", count: width - count) + self
     }
 }
