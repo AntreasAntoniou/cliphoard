@@ -7,6 +7,12 @@ struct Main {
         // Headless tag-quality audit: `Cliphoard --analyze-tags [outfile]`.
         // Runs the analysis in-process (so it can decrypt the store) and exits,
         // never starting the menu-bar UI.
+        if let i = CommandLine.arguments.firstIndex(of: "--archive-unreadable") {
+            let out = CommandLine.arguments.indices.contains(i + 1)
+                ? CommandLine.arguments[i + 1] : "/tmp/cliphoard-unreadable-archive.json"
+            TagAudit.archiveUnreadable(to: out, delete: CommandLine.arguments.contains("--delete"))
+            exit(0)
+        }
         if CommandLine.arguments.contains("--crypto-diagnostics") {
             TagAudit.cryptoDiagnostics()
             exit(0)

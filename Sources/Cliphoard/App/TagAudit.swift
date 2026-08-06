@@ -49,6 +49,65 @@ enum TagAudit {
               : "VERDICT: UI path decrypts cleanly.")
     }
 
+    /// Archive every clip whose content can no longer be decrypted, then delete
+    /// those rows.
+    ///
+    /// ARCHIVE FIRST, DELETE SECOND, and only delete what was verifiably written:
+    /// the export keeps each row's metadata *and its raw ciphertext*, so if a key
+    /// is ever recovered the content can still be restored. Deleting without that
+    /// export would turn "unreadable" into "gone".
+    @MainActor
+    static func archiveUnreadable(to path: String, delete: Bool) {
+        let dbPath = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Ditto/ditto.sqlite").path
+        guard let db = Database(path: dbPath) else { err("cannot open DB"); exit(2) }
+        let items = db.loadAll()
+        let unreadable = items.filter { Crypto.isSealed($0.text) }
+        print("clips: \(items.count) · unreadable: \(unreadable.count)")
+        guard !unreadable.isEmpty else { print("nothing to archive"); return }
+
+        let iso = ISO8601DateFormatter()
+        let rows: [[String: Any]] = unreadable.map { item in
+            [
+                "id": item.id.uuidString,
+                "kind": item.kind.rawValue,
+                "sourceApp": item.sourceApp ?? "",
+                "createdAt": iso.string(from: item.createdAt),
+                "lastUsedAt": iso.string(from: item.lastUsedAt),
+                "useCount": item.useCount,
+                "pinned": item.pinned,
+                "characters": item.text.count,
+                // The still-sealed bytes, retained verbatim so a future key
+                // recovery can decrypt them. This is why deletion is safe.
+                "ciphertext": item.text,
+            ]
+        }
+        let payload: [String: Any] = [
+            "exportedAt": iso.string(from: Date()),
+            "reason": "content sealed with a key that no longer exists (see CHRONICLE 2026-08-06)",
+            "count": rows.count,
+            "clips": rows,
+        ]
+        guard let data = try? JSONSerialization.data(withJSONObject: payload,
+                                                     options: [.prettyPrinted, .sortedKeys]),
+              (try? data.write(to: URL(fileURLWithPath: path), options: .atomic)) != nil else {
+            err("ARCHIVE FAILED — refusing to delete anything"); exit(2)
+        }
+        // Verify the archive is readable and complete BEFORE deleting.
+        guard let check = try? Data(contentsOf: URL(fileURLWithPath: path)),
+              let parsed = try? JSONSerialization.jsonObject(with: check) as? [String: Any],
+              (parsed["clips"] as? [[String: Any]])?.count == rows.count else {
+            err("ARCHIVE VERIFICATION FAILED — refusing to delete anything"); exit(2)
+        }
+        print("archived \(rows.count) clips → \(path) (\(check.count) bytes, verified)")
+
+        guard delete else { print("dry run: no rows deleted (pass --delete to remove them)"); return }
+        db.delete(ids: unreadable.map { $0.id })
+        let after = db.loadAll()
+        print("deleted \(items.count - after.count) rows · remaining: \(after.count) "
+              + "· still unreadable: \(after.filter { Crypto.isSealed($0.text) }.count)")
+    }
+
     @MainActor
     static func cryptoDiagnostics() {
         let db = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
