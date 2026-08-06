@@ -17,3 +17,9 @@ prompt, with full content — lives in the chronicle ledger; `chron resume` read
 ## [2026-08-06T14:58Z-ZEQ4] NOTE — Fixing the Wave-3 backfill one-shot flag: it is set outside the db transaction, so a rolled-back backfill is marked complete forever and pre-detector secrets are never re-scanned or purged from the CoreML index.
 
 
+
+## [2026-08-06T15:24Z-91RG] DECISION — Root-cause fix: SE key must never be regenerated over an existing blob
+
+- **State reading:** BUG, now fixed in code: 202 clips' TEXT is permanently unreadable — the key that sealed them no longer exists (no Time Machine, no duplicate keychain entry, no history.json archive). INTENTIONAL going forward: on unrestorable blob we fail closed to the legacy key rather than mint a new one. DB backed up at ~/Library/Application Support/Ditto/ditto.sqlite.backup-20260806-160731 (still encrypted with the lost key).
+- **Why:** secureEnclaveKey() fell into its create-branch whenever restore failed, and storeBlob deletes-then-adds, so it silently destroyed the only key that could open already-sealed rows. Verified: db-se-key-v2 cdat=mdat=2026-08-06T02:25:54Z while 202 clips (all created Aug 5 or earlier) fail to open with BOTH the current SE key and the June legacy key; the 30 clips created today open fine.
+

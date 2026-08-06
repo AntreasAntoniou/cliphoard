@@ -21,6 +21,51 @@ enum TagAudit {
         }
     }
 
+    /// Diagnostic: load through the SAME path the UI uses (ClipStore, including
+    /// its migrations) and report whether any clip's text is still sealed. The
+    /// plain `Database.loadAll` path can decrypt correctly while the UI shows
+    /// `enc1:` if a migration re-seals already-sealed text, so the two must be
+    /// compared rather than assumed identical.
+    @MainActor
+    static func dumpUIText() {
+        let sealed = "enc1:"
+        let db = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Ditto/ditto.sqlite").path
+        let direct = Database(path: db)?.loadAll() ?? []
+        let directBad = direct.filter { $0.text.hasPrefix(sealed) }.count
+        print("Database.loadAll     : \(direct.count) clips, \(directBad) still sealed")
+
+        let store = ClipStore()
+        let storeBad = store.items.filter { $0.text.hasPrefix(sealed) }.count
+        print("ClipStore (UI path)  : \(store.items.count) clips, \(storeBad) still sealed")
+        if storeBad > 0 {
+            print("SEALED SAMPLES (first 3):")
+            for item in store.items.filter({ $0.text.hasPrefix(sealed) }).prefix(3) {
+                print("  [\(item.kind)] \(item.text.prefix(40))…  flags=\(item.flags.rawValue)")
+            }
+        }
+        print(storeBad > directBad ? "VERDICT: a ClipStore MIGRATION is corrupting text (double-seal)."
+              : storeBad > 0 ? "VERDICT: sealed at load — decryption failing for these rows."
+              : "VERDICT: UI path decrypts cleanly.")
+    }
+
+    @MainActor
+    static func cryptoDiagnostics() {
+        let db = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Ditto/ditto.sqlite").path
+        let items = Database(path: db)?.loadAll() ?? []
+        let sealed = items.filter { $0.text.hasPrefix("enc1:") }
+        print("CRYPTO DIAGNOSTICS")
+        print("  usesSecureEnclave : \(Crypto.usesSecureEnclave)")
+        print("  legacyKeyAvailable: \(Crypto.legacyKeyAvailable)")
+        print("  clips             : \(items.count)")
+        print("  still sealed      : \(sealed.count)")
+        if let first = sealed.first {
+            print("  sample            : \(first.text.prefix(30))…")
+            print("  unseal probe      : \(Crypto.unsealProbe(first.text))")
+        }
+    }
+
     @MainActor
     static func run(outputPath: String) {
         switch Mode.fromEnvironment {

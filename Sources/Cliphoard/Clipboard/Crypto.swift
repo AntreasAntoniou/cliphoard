@@ -59,12 +59,57 @@ enum Crypto {
         return out
     }
 
+    /// Unseal, tolerating rows that were sealed MORE THAN ONCE.
+    ///
+    /// A one-time migration (`encryptExistingRowsIfNeeded` / `reKeyToSecureEnclave`)
+    /// re-`insert`s every row, and `insert` seals whatever it is handed. If such a
+    /// pass ever ran while a row's text was still sealed in memory, the row was
+    /// sealed a second time — and a single unwrap then returns a string that still
+    /// begins with `enc1:`, which is exactly what the UI was rendering.
+    ///
+    /// Unwrapping repeatedly is safe because a layer is only peeled when it
+    /// genuinely DECRYPTS: text that merely looks like a marker (a user really did
+    /// copy "enc1:…") fails to decrypt and is returned untouched. The round cap
+    /// bounds the work on adversarial input.
     static func open(_ stored: String) -> String {
-        guard stored.hasPrefix(marker) else { return stored }
-        guard let data = Data(base64Encoded: String(stored.dropFirst(marker.count))) else { return stored }
-        if let s = decryptString(data, with: key) { return s }
-        if let lk = legacyKey, let s = decryptString(data, with: lk) { return s }   // pre-rekey rows
-        return stored
+        var current = stored
+        for _ in 0..<maxUnsealRounds {
+            guard current.hasPrefix(marker),
+                  let data = Data(base64Encoded: String(current.dropFirst(marker.count)))
+            else { return current }
+            if let s = decryptString(data, with: key) { current = s }
+            else if let lk = legacyKey, let s = decryptString(data, with: lk) { current = s } // pre-rekey rows
+            else { return current }
+        }
+        return current
+    }
+
+    /// Enough to undo an accidental double- or triple-seal without letting a
+    /// crafted payload spin here.
+    private static let maxUnsealRounds = 4
+
+    // MARK: Diagnostics (read-only; used by --crypto-diagnostics)
+
+    /// Whether the pre-Secure-Enclave random key is readable in this process.
+    /// If it is NOT, rows sealed under it cannot be opened here even though the
+    /// data is intact — which distinguishes "wrong key" from "corrupt data".
+    static var legacyKeyAvailable: Bool { legacyKey != nil }
+
+    /// Explains, in words, what happens when unsealing `stored` — which layer
+    /// opens with which key, and where it stops.
+    static func unsealProbe(_ stored: String) -> String {
+        var current = stored
+        var steps: [String] = []
+        for round in 1...maxUnsealRounds {
+            guard current.hasPrefix(marker) else { return (steps + ["plaintext after \(round - 1) round(s)"]).joined(separator: " -> ") }
+            guard let data = Data(base64Encoded: String(current.dropFirst(marker.count))) else {
+                return (steps + ["round \(round): not valid base64"]).joined(separator: " -> ")
+            }
+            if let s = decryptString(data, with: key) { current = s; steps.append("round \(round): opened with CURRENT key") }
+            else if let lk = legacyKey, let s = decryptString(data, with: lk) { current = s; steps.append("round \(round): opened with LEGACY key") }
+            else { return (steps + ["round \(round): FAILED with both keys"]).joined(separator: " -> ") }
+        }
+        return steps.joined(separator: " -> ")
     }
 
     private static func decryptString(_ data: Data, with k: SymmetricKey) -> String? {
@@ -81,13 +126,18 @@ enum Crypto {
         return markerData + combined
     }
 
+    /// Data counterpart of `open(_: String)` — same multi-round unwrap, same
+    /// reasoning (RTF and image payloads went through the same migrations).
     static func open(_ stored: Data?) -> Data? {
-        guard let stored else { return nil }
-        guard stored.starts(with: markerData) else { return stored }
-        let body = stored.dropFirst(markerData.count)
-        if let d = decryptData(body, with: key) { return d }
-        if let lk = legacyKey, let d = decryptData(body, with: lk) { return d }
-        return stored
+        guard var current = stored else { return nil }
+        for _ in 0..<maxUnsealRounds {
+            guard current.starts(with: markerData) else { return current }
+            let body = current.dropFirst(markerData.count)
+            if let d = decryptData(body, with: key) { current = d }
+            else if let lk = legacyKey, let d = decryptData(body, with: lk) { current = d }
+            else { return current }
+        }
+        return current
     }
 
     private static func decryptData(_ body: Data.SubSequence, with k: SymmetricKey) -> Data? {
@@ -124,10 +174,24 @@ enum Crypto {
     /// the operation (we then fall back to the random key).
     private static func secureEnclaveKey() -> SymmetricKey? {
         let priv: SecureEnclave.P256.KeyAgreement.PrivateKey
-        if let blob = readBlob(account: seAccount),
+        let existingBlob = readBlob(account: seAccount)
+
+        if let blob = existingBlob,
            let restored = try? SecureEnclave.P256.KeyAgreement.PrivateKey(dataRepresentation: blob) {
             priv = restored
+        } else if existingBlob != nil {
+            // A key blob EXISTS but will not restore. NEVER mint a replacement
+            // here: `storeBlob` deletes-then-adds, so overwriting would destroy
+            // the only key that can open everything already sealed under it —
+            // silent, total, unrecoverable loss of history (this happened once;
+            // 202 clips were orphaned). Fail closed instead and let the caller
+            // fall back to the legacy random key. Degraded encryption is
+            // recoverable; a destroyed key is not.
+            NSLog("Cliphoard Crypto: SE key blob present but unrestorable — refusing to overwrite it. "
+                  + "Falling back to the legacy key; existing data stays readable.")
+            return nil
         } else {
+            // No blob at all: first run on this Mac, so minting one destroys nothing.
             do {
                 let fresh = try SecureEnclave.P256.KeyAgreement.PrivateKey()
                 storeBlob(fresh.dataRepresentation, account: seAccount)
