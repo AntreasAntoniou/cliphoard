@@ -19,11 +19,18 @@ SKIP_TESTS="${1:-}"
 # 1. Gate on the suite unless explicitly skipped — never deploy a red build.
 if [ "$SKIP_TESTS" != "--skip-tests" ]; then
     echo "▸ Testing…"
-    if ! swift test 2>&1 | tail -3 | grep -q "0 failures"; then
-        echo "✗ tests failed — refusing to deploy. Run 'swift test' to see why."
+    # Gate on swift test's EXIT CODE, not on scraping its output: the suite prints
+    # a semantic-retrieval demo AFTER the summary line, so tailing the output
+    # misses "0 failures" and would fail a perfectly green build.
+    TEST_LOG="$(mktemp -t cliphoard-test)"
+    if ! swift test >"$TEST_LOG" 2>&1; then
+        echo "✗ tests failed — refusing to deploy:"
+        grep -E "error:|failed|XCTAssert" "$TEST_LOG" | head -15
+        echo "  (full log: $TEST_LOG)"
         exit 1
     fi
-    echo "  ✓ suite green"
+    echo "  ✓ $(grep -oE "Executed [0-9]+ tests, with [0-9]+ failures" "$TEST_LOG" | tail -1)"
+    rm -f "$TEST_LOG"
 fi
 
 # 2. Build the universal, signed bundle.
