@@ -10,18 +10,27 @@ final class TagBasketShapeTests: XCTestCase {
         super.tearDown()
     }
 
-    /// The hard rule of the hybrid model: every axis of every curated basket is
-    /// exactly `dimensionSize` wide, so tag-ids fall on predictable slices.
+    /// The layout rule of the hybrid model: any axis a curated basket still
+    /// carries is exactly `dimensionSize` wide, so tag-ids fall on predictable
+    /// slices. Wave 4 dropped the *other* half of the old invariant — the
+    /// obligation to carry axes at all — so General now legitimately has none and
+    /// must still report as dimensional.
     func testEveryBuiltInDimensionHoldsExactlyEightTags() {
         XCTAssertEqual(TagBasket.dimensionSize, 8)
         for basket in TagBaskets.builtIn {
-            XCTAssertFalse(basket.dimensions.isEmpty, "\(basket.id) must be dimensional")
             for dim in basket.dimensions {
                 XCTAssertEqual(dim.tags.count, TagBasket.dimensionSize,
                                "\(basket.id) / \(dim.name)")
             }
-            XCTAssertTrue(basket.isDimensional, basket.id)
+            XCTAssertTrue(basket.isDimensional, "\(basket.id) must be hybrid, not flat")
+            // General legitimately owns NO tag space now (design §4); the
+            // specialists keep theirs.
+            if basket.id != "general" {
+                XCTAssertFalse(basket.tags.isEmpty, "\(basket.id) must still own a tag space")
+            }
         }
+        XCTAssertTrue(TagBaskets.general.dimensions.isEmpty,
+                      "General's four axes were retired, not replaced")
     }
 
     /// Axis ids and topical ids tile `0..<tags.count` exactly once each — no gap
@@ -96,18 +105,20 @@ final class TagBasketCompositionTests: XCTestCase {
         XCTAssertEqual(composed.id, "composed:dev")
 
         // No duplicate axis names and no duplicate topical tags — the point of the
-        // dedupe merge (developer reuses General's Intent/Sensitivity axes and the
-        // topical terms url/path).
+        // dedupe merge (developer still reuses the topical terms url/path).
         let axisNames = composed.dimensions.map { $0.name }
         XCTAssertEqual(axisNames.count, Set(axisNames).count, "axis names must be unique")
         XCTAssertEqual(composed.topical.count, Set(composed.topical).count, "topical must be de-duped")
 
-        // On a shared axis the overlay's more-specific vocabulary wins.
-        XCTAssertEqual(composed.dimensions.first { $0.name == "Intent" },
-                       overlay.dimensions.first { $0.name == "Intent" })
-        // General-only axes are preserved; overlay-only axes are appended.
-        XCTAssertNotNil(composed.dimensions.first { $0.name == "Content type" })
+        // Since Wave 4 retired the four abstract axes, General contributes NO axis
+        // at all, so the composed cube is exactly the overlay's surviving concrete
+        // axes — nothing to override, and nothing of General's to preserve.
+        XCTAssertTrue(general.dimensions.isEmpty, "General has no axes left to merge")
+        XCTAssertEqual(composed.dimensions, overlay.dimensions)
         XCTAssertNotNil(composed.dimensions.first { $0.name == "Artifact" })
+        XCTAssertNotNil(composed.dimensions.first { $0.name == "Language" })
+        XCTAssertNil(composed.dimensions.first { $0.name == "Intent" },
+                     "a retired axis must not reappear through composition")
 
         // Topical is the order-preserving union of General then overlay.
         var seen = Set<String>()

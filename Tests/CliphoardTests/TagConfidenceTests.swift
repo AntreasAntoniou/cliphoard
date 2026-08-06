@@ -25,16 +25,31 @@ final class TagTauTests: XCTestCase {
     override func setUp() {
         super.setUp()
         TagBaskets.activeID = "general"
-        TagBaskets.overlayID = nil
+        // τ has to be exercised on a basket that still HAS axes. Wave 4 retired
+        // General's four abstract ones (design §4), so the Developer overlay —
+        // Artifact on ids 0..<8, Language on 8..<16 — supplies the axis leg while
+        // General supplies the topical tail. The behaviour under test (the
+        // confidence floor) is unchanged; only where the axes live moved.
+        TagBaskets.overlayID = "dev"
         UserDefaults.standard.removeObject(forKey: "tagAssignmentThreshold")
     }
 
     override func tearDown() {
         UserDefaults.standard.removeObject(forKey: "tagAssignmentThreshold")
+        TagBaskets.overlayID = nil
         super.tearDown()
     }
 
     private func embedder() -> BasisEmbedder { BasisEmbedder(vocabulary: TagSpace.names) }
+
+    /// The lowest id on axis `d` whose WORD occurs exactly once in the basket.
+    /// `BasisEmbedder` keys on the word, so a word that also appears in the
+    /// topical tail (e.g. "code") would give two ids the same vector and make the
+    /// range-restriction assertions ambiguous rather than wrong.
+    private func uniqueAxisTag(onDimension d: Int) -> Int {
+        let counts = TagSpace.names.reduce(into: [String: Int]()) { $0[$1, default: 0] += 1 }
+        return TagSpace.range(ofDimension: d).first { counts[TagSpace.names[$0]] == 1 }!
+    }
 
     /// A vector orthogonal to the whole taxonomy earns NOTHING under τ — no axis
     /// argmax is manufactured, and no topical tag either.
@@ -53,7 +68,7 @@ final class TagTauTests: XCTestCase {
     /// argmax — the other axes stay blank because it has no opinion there.
     func testStrongVectorYieldsTheArgmaxOnItsOwnAxis() {
         let e = embedder()
-        let axisTag = TagSpace.range(ofDimension: 1).lowerBound
+        let axisTag = uniqueAxisTag(onDimension: 1)
         let strong = e.embed(TagSpace.names[axisTag])
         XCTAssertEqual(TagSpace.classifyDimensions(strong, embedder: e, tau: 0.5), [axisTag])
     }
@@ -66,7 +81,7 @@ final class TagTauTests: XCTestCase {
         XCTAssertEqual(TagSpace.classifyTopical(strong, embedder: e, topK: 3, tau: 0.5), [topicalTag])
 
         // An AXIS word must never come back from the topical leg.
-        let axisVector = e.embed(TagSpace.names[0])
+        let axisVector = e.embed(TagSpace.names[uniqueAxisTag(onDimension: 0)])
         XCTAssertTrue(TagSpace.classifyTopical(axisVector, embedder: e, topK: 3, tau: 0.5).isEmpty,
                       "axis vocabulary can't win a topical slot")
     }
@@ -75,7 +90,7 @@ final class TagTauTests: XCTestCase {
     /// TOPICAL tags — the two legs are merged, not one-or-the-other.
     func testAssignmentMergesAxisAndTopicalTags() {
         let e = embedder()
-        let axisTag = TagSpace.range(ofDimension: 0).lowerBound
+        let axisTag = uniqueAxisTag(onDimension: 0)
         let topicalTag = TagSpace.topicalRange.lowerBound
         // Halfway between one axis tag and one topical tag: cosine ≈ 0.707 with
         // each (comfortably over the 0.28 default τ), 0 with everything else.
@@ -93,7 +108,7 @@ final class TagTauTests: XCTestCase {
     /// default earns none once τ sits above its cosine.
     func testRaisingTauSuppressesMarginalAssignments() {
         let e = embedder()
-        let axisTag = TagSpace.range(ofDimension: 0).lowerBound
+        let axisTag = uniqueAxisTag(onDimension: 0)
         let topicalTag = TagSpace.topicalRange.lowerBound
         var mixed = [Float](repeating: 0, count: e.dimension)
         mixed[axisTag] = 1; mixed[topicalTag] = 1

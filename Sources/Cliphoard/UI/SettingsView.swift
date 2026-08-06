@@ -213,9 +213,7 @@ struct SettingsView: View {
                         }
                         .labelsHidden().frame(width: 170)
                     }
-                    Text(TagBaskets.active.isDimensional
-                         ? "\(TagBaskets.active.dimensions.count) axes × 8 + \(TagBaskets.active.topical.count) topical tags — weak matches stay blank."
-                         : "\(TagBaskets.active.tags.count) tags — clips are classified into their nearest few.")
+                    Text(basketSummary)
                         .font(.system(size: 11)).foregroundStyle(.secondary)
 
                     HStack {
@@ -427,4 +425,22 @@ struct SettingsView: View {
         _ = AXIsProcessTrustedWithOptions(
             [kAXTrustedCheckOptionPrompt.takeRetainedValue() as String: true] as CFDictionary)
     }
+
+    /// Describes the active vocabulary. After the Wave-4 retirement General owns
+    /// no axes and no topical tail, so the old string rendered the nonsense
+    /// "0 axes × 8 + 0 topical tags"; that state is now named honestly.
+    private var basketSummary: String {
+        let b = TagBaskets.active
+        guard b.isDimensional else {
+            return "\(b.tags.count) tags — clips are classified into their nearest few."
+        }
+        if b.tags.isEmpty {
+            return "Tags come from deterministic detection only — no model-guessed labels."
+        }
+        if b.dimensions.isEmpty {
+            return "\(b.topical.count) topical tags — weak matches stay blank."
+        }
+        return "\(b.dimensions.count) axes × 8 + \(b.topical.count) topical tags — weak matches stay blank."
+    }
+
 }

@@ -1,36 +1,59 @@
 import XCTest
 @testable import Cliphoard
 
-// MARK: - The hybrid facet basket (4 dimensions × 8 tags + topical pool)
+// MARK: - The hybrid facet basket (surviving 8-wide axes + topical pool)
+//
+// Wave 4 retired the four abstract axes (design §4), so General now carries ZERO
+// axes and the axis MACHINERY is exercised through a specialist overlay, which is
+// where the surviving concrete axes live. The numbers below were tightened, not
+// relaxed: every assertion that used to say "4 axes / 48 tags" now names the
+// smaller, exact truth. Per-basket axis counts are pinned in CoarseTopicTests.
 
 @MainActor
 final class DimensionalTagTests: XCTestCase {
     private let e = HashingEmbedder()
 
-    override func setUp() { super.setUp(); TagBaskets.activeID = "general" }
+    override func setUp() {
+        super.setUp()
+        TagBaskets.activeID = "general"
+        TagBaskets.overlayID = nil
+    }
+    override func tearDown() { TagBaskets.overlayID = nil; super.tearDown() }
 
-    func testGeneralBasketHasFourEightWideAxes() {
-        XCTAssertTrue(TagSpace.isDimensional)
-        XCTAssertEqual(TagSpace.dimensionCount, 4)
-        XCTAssertEqual(TagSpace.count, 48)
-        XCTAssertTrue(TagSpace.dimensions.allSatisfy { $0.tags.count == 8 })
+    /// General is still a hybrid basket — it just has no axes left to force onto
+    /// a clip — and, after design §4 struck the topical word tags too, no tag
+    /// space at all. Every chip a General user sees is deterministic.
+    func testGeneralBasketHasNoModelDerivedVocabulary() {
+        XCTAssertTrue(TagSpace.isDimensional, "still hybrid, not a flat pool")
+        XCTAssertEqual(TagSpace.dimensionCount, 0, "all four abstract axes are retired")
+        XCTAssertEqual(TagSpace.count, 0, "the topical word tags were struck too")
+        XCTAssertTrue(TagSpace.topicalRange.isEmpty)
     }
 
     func testDimensionRangesAreContiguousEightWideSlices() {
-        for d in 0..<4 {
+        // Developer keeps two concrete axes (Artifact, Language); General adds none.
+        TagBaskets.overlayID = "dev"
+        XCTAssertEqual(TagSpace.dimensionCount, 2)
+        for d in 0..<2 {
             XCTAssertEqual(TagSpace.range(ofDimension: d), (d * 8)..<(d * 8 + 8))
         }
+        XCTAssertEqual(TagSpace.range(ofDimension: 2), 0..<0, "no third axis exists")
     }
 
     func testDimensionOfTag() {
+        TagBaskets.overlayID = "dev"
         XCTAssertEqual(TagSpace.dimension(ofTag: 0), 0)
         XCTAssertEqual(TagSpace.dimension(ofTag: 7), 0)
         XCTAssertEqual(TagSpace.dimension(ofTag: 8), 1)
-        XCTAssertEqual(TagSpace.dimension(ofTag: 31), 3)
-        XCTAssertNil(TagSpace.dimension(ofTag: 32), "topical tags do not belong to an axis")
+        XCTAssertEqual(TagSpace.dimension(ofTag: 15), 1)
+        XCTAssertNil(TagSpace.dimension(ofTag: 16), "topical tags do not belong to an axis")
+
+        TagBaskets.overlayID = nil
+        XCTAssertNil(TagSpace.dimension(ofTag: 0), "General has no axis to own id 0")
     }
 
     func testClassifyDimensionsGivesOnePerDimensionInOrder() {
+        TagBaskets.overlayID = "dev"
         let v = e.embed("def foo(): return 1   # some python code")
         let dims = TagSpace.classifyDimensions(v, embedder: e)
         XCTAssertLessThanOrEqual(dims.count, TagSpace.dimensionCount,
@@ -45,16 +68,26 @@ final class DimensionalTagTests: XCTestCase {
 
     func testIndexerTagsAreDimensionalForCube() {
         let v = e.embed("select * from users")
-        XCTAssertLessThanOrEqual(ClipIndexer.tags(for: v, embedder: e).count, 7,
-                                 "at most four axes plus three topical tags")
+        XCTAssertLessThanOrEqual(ClipIndexer.tags(for: v, embedder: e).count, 3,
+                                 "General: three topical tags and no axes at all")
+        TagBaskets.overlayID = "dev"
+        XCTAssertLessThanOrEqual(ClipIndexer.tags(for: v, embedder: e).count, 5,
+                                 "at most two axes plus three topical tags")
     }
 
     func testFacetLabelsPairDimensionWithValue() {
-        // ids 1 (Content type slice) and 13 (Domain slice) → labelled by axis.
-        let labels = TagSpace.facetLabels(for: [1, 13, 33])
+        TagBaskets.overlayID = "dev"
+        // ids 1 (Artifact slice) and 9 (Language slice) → labelled by axis; 20 is
+        // topical and carries no axis label.
+        let labels = TagSpace.facetLabels(for: [1, 9, 20])
         XCTAssertEqual(labels.count, 2)
         XCTAssertEqual(labels[0].dimension, TagSpace.dimensions[0].name)
         XCTAssertEqual(labels[1].dimension, TagSpace.dimensions[1].name)
+    }
+
+    /// General emits no facet labels at all now — there is no axis to label with.
+    func testGeneralProducesNoFacetLabels() {
+        XCTAssertTrue(TagSpace.facetLabels(for: [0, 1, 2]).isEmpty)
     }
 
     func testWeakSimilarityAssignsNoAutomaticTags() {
@@ -71,13 +104,34 @@ final class DimensionalTagTests: XCTestCase {
                       "weak topical matches must not manufacture tags")
     }
 
+    /// The hybrid SHAPE survives the retirement even though the axis COUNT fell:
+    /// every basket is still dimensional, every surviving axis is still 8-wide,
+    /// and the tag list is still exactly "axes then topical". The exact per-basket
+    /// axis counts (and that each one went DOWN) are pinned in `RetiredAxisTests`.
     func testEveryBuiltInBasketUsesTheHybridShape() {
         XCTAssertEqual(TagBaskets.builtIn.count, 11)
         for basket in TagBaskets.builtIn {
-            XCTAssertEqual(basket.dimensions.count, 4, basket.name)
+            XCTAssertTrue(basket.isDimensional, basket.name)
+            XCTAssertLessThan(basket.dimensions.count, 4,
+                              "\(basket.name) must have shed at least one abstract axis")
             XCTAssertTrue(basket.dimensions.allSatisfy { $0.tags.count == 8 }, basket.name)
-            XCTAssertEqual(basket.tags.count, 48, basket.name)
+            XCTAssertEqual(basket.tags.count,
+                           basket.dimensions.count * 8 + basket.topical.count, basket.name)
+            // The old invariant "every basket carries exactly 16 topical words" is
+            // GONE by design: those words either duplicated a deterministic
+            // detector (url/path/command/code/color/email/phone/password …) or had
+            // no glance action, so they were struck per design §4. What remains is
+            // the layout rule — axes first, then a tail — plus the ban on
+            // re-introducing a term a detector already emits exactly.
+            let deterministic: Set<String> = ["url", "path", "link", "email", "address", "phone",
+                                              "code", "color", "command", "password", "amount",
+                                              "id", "env-var", "endpoint"]
+            XCTAssertTrue(Set(basket.topical).isDisjoint(with: deterministic),
+                          "\(basket.name) re-introduces a term a detector already emits exactly")
         }
+        // General is the default experience: it must emit NO model-derived tags.
+        XCTAssertTrue(TagBaskets.general.tags.isEmpty,
+                      "General must produce no model-guessed labels at all")
     }
 }
 
@@ -90,8 +144,17 @@ final class FacetFilterTests: XCTestCase {
         Feedback.soundEnabled = false
         DeepSearch.level = .normal
         TagBaskets.activeID = "general"
+        // OR-within / AND-across is a property of AXES, and General no longer has
+        // any (the four abstract ones were retired). Developer is the smallest
+        // basket that still carries two concrete axes — Artifact on ids 0..<8 and
+        // Language on ids 8..<16 — which is exactly the id layout this suite uses.
+        TagBaskets.overlayID = "dev"
     }
-    override func tearDown() { DeepSearch.level = .off; super.tearDown() }
+    override func tearDown() {
+        TagBaskets.overlayID = nil
+        DeepSearch.level = .off
+        super.tearDown()
+    }
 
     private func tempStore() -> ClipStore {
         ClipStore(directory: FileManager.default.temporaryDirectory
@@ -115,19 +178,19 @@ final class FacetFilterTests: XCTestCase {
 
     func testWithinDimensionOrAcrossDimensionAnd() {
         let store = tempStore()
-        // Content type: 1=code, 2=link. Domain: 10=software, 11=web.
-        let a = clip("a", tags: [1, 10])   // code + software
-        let b = clip("b", tags: [1, 11])   // code + web
-        let c = clip("c", tags: [2, 10])   // link + software
+        // Artifact: 1=config, 2=command. Language: 10=swift, 11=shell.
+        let a = clip("a", tags: [1, 10])   // config + swift
+        let b = clip("b", tags: [1, 11])   // config + shell
+        let c = clip("c", tags: [2, 10])   // command + swift
         store.add(a); store.add(b); store.add(c)
 
         // Single facet → its bucket.
         XCTAssertEqual(Set(store.items(matchingFacets: [1]).map { $0.text }), ["a", "b"])
-        // Same dimension (Domain 10 OR 11) → union.
+        // Same dimension (Language 10 OR 11) → union.
         XCTAssertEqual(Set(store.items(matchingFacets: [10, 11]).map { $0.text }), ["a", "b", "c"])
-        // Across dimensions (code AND software) → intersection.
+        // Across dimensions (config AND swift) → intersection.
         XCTAssertEqual(Set(store.items(matchingFacets: [1, 10]).map { $0.text }), ["a"])
-        // Across dimensions with an OR leg: (code) AND (software OR web) → a, b.
+        // Across dimensions with an OR leg: (config) AND (swift OR shell) → a, b.
         XCTAssertEqual(Set(store.items(matchingFacets: [1, 10, 11]).map { $0.text }), ["a", "b"])
         // Empty selection → everything.
         XCTAssertEqual(store.items(matchingFacets: []).count, 3)

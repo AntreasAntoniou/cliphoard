@@ -524,8 +524,9 @@ enum TagSpace {
             .map { $0.0 }
     }
 
-    /// The facet labels for a set of tag ids ("Content type: code", …), in
-    /// dimension order. For display of a clip's cube coordinates.
+    /// The facet labels for a set of tag ids ("Artifact: diff", …), in dimension
+    /// order. For display of a clip's cube coordinates. Empty when the active
+    /// basket has no axes left (General), which is now the default.
     static func facetLabels(for tagIDs: [Int]) -> [(dimension: String, value: String)] {
         let names = self.names
         return tagIDs.sorted().compactMap { id in
@@ -542,6 +543,12 @@ enum ClipIndexer {
     /// Compute and attach the entry's vector + top-5 tag ids using the active
     /// embedder. Entries are documents, so use the DOC task token.
     static func index(_ item: ClipItem) {
+        // Fail closed, and do it HERE as well as in `ClipStore.add`: §3.11 says a
+        // sensitive clip is out of the embedding index entirely, and this function
+        // is also reachable from the background re-index / reclassify passes. One
+        // guard at the single point that calls `embed` is what makes "a secret is
+        // never sent through the model" true of every caller, present and future.
+        guard !item.isIndexVetoed else { return }
         let embedder = EmbedderProvider.active
         let vec = embedder.embed(SemanticRanker.searchText(item))
         // Don't cache a failed/degenerate embedding — leave the clip stale so it's

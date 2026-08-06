@@ -1,10 +1,34 @@
 import Foundation
 
-/// One axis of the facet cube. A dimension is an orthogonal question about a
-/// clip ("what kind of content is this?", "how sensitive is it?"), answered by
-/// exactly one of its `tags`. A dimensional basket classifies every clip along
-/// ALL of its dimensions — one value per dimension — rather than picking a few
-/// tags from a flat pool. See `TagBasket.dimensions`.
+/// One axis of the facet cube: an orthogonal question about a clip, answered by
+/// the argmax of its `tags` (gated on `TagSpace.assignmentThreshold`).
+///
+/// **What an axis may NOT be any more.** The 2026-08-06 audit of all 202 real
+/// clips (design §1) measured this technique — argmax cosine against a bare tag
+/// *word* — and found the abstract axes were coin flips: Intent and Sensitivity
+/// scored a top1−top2 margin of 0.03–0.04 on BOTH open-ogma-small (8.9M) and
+/// embeddinggemma-300m (300M). A 34× larger model did not move them, so the
+/// TECHNIQUE, not model capacity, is the root cause. Content type merely
+/// re-derived the known `kind` field; Domain (0.08) was abstract and actionless.
+///
+/// So `Content type`, `Domain`, `Intent` and `Sensitivity` are **retired** (design
+/// §4 drop list) and replaced with NOTHING. They already have deterministic
+/// successors in the shipped product — `Detectors` (shape + `ClipFlags`) and
+/// `DerivedTags` (source / lifecycle / link-disposition) — which is why deleting
+/// them costs the product nothing and *reduces* the chips per clip.
+///
+/// An axis survives here only if BOTH hold:
+///  1. every one of its values names a **concrete, externally-checkable thing**
+///     (a programming language, a data structure, a deploy environment, a
+///     document type) rather than an abstract judgement about purpose, tone,
+///     audience or sensitivity; and
+///  2. it is **not already derived deterministically** (app of origin, recency /
+///     reuse, link disposition — see `DerivedTags`).
+///
+/// Adding a new *word*-scored axis is a regression, not a feature. The gated,
+/// deterministic detectors and behavioural signals are the only
+/// sanctioned way to add embedding-driven vocabulary, and it scores against
+/// centroids of concrete example PHRASES, never against a bare word.
 struct TagDimension: Codable, Equatable {
     var name: String
     var tags: [String]
@@ -12,20 +36,28 @@ struct TagDimension: Codable, Equatable {
 
 /// A named classification taxonomy ("basket"). Two shapes:
 ///
-/// - **Hybrid** (`dimensions` non-empty): fixed-width axes followed by a topical
-///   pool. Axis ids remain contiguous and stable; topical ids occupy the tail.
-/// - **Flat** (`dimensions` empty): the legacy pool, where a clip takes its
-///   nearest few tags globally (`TagSpace.classify`). Used by the user-editable
-///   Custom basket, whose tags are an arbitrary list.
+/// - **Hybrid** (`isDimensional`): fixed-width axes — possibly NONE — followed by
+///   a topical pool. Axis ids remain contiguous and stable; topical ids occupy
+///   the tail.
+/// - **Flat**: the legacy pool, where a clip takes its nearest few tags globally
+///   (`TagSpace.classify`). Used by the user-editable Custom basket, whose tags
+///   are an arbitrary list.
 ///
 /// Switching basket re-tags clips from their cached vectors — no re-embedding —
 /// so it's cheap.
 struct TagBasket: Identifiable, Codable, Equatable {
-    /// Fixed axis width. EVERY dimension of EVERY curated basket holds exactly
-    /// this many tags, so tag-ids map onto contiguous, predictable slices
+    /// Width of a *surviving* axis. Every dimension that is still curated holds
+    /// exactly this many tags, so tag-ids map onto contiguous, predictable slices
     /// (dimension `d` owns `d*dimensionSize ..< (d+1)*dimensionSize`) and two
     /// baskets can be concatenated (see `TagBaskets.composed`) without
     /// renumbering anything but the topical tail.
+    ///
+    /// NOTE — this is a LAYOUT constant, not a vocabulary mandate. Design §4
+    /// explicitly drops "the `dimensionSize = 8` invariant", by which it means the
+    /// obligation to *invent* eight near-synonyms for an axis so it can exist at
+    /// all: that padding is what produced the 0.04-margin coin flips. Baskets are
+    /// now free to carry FEWER axes (General carries none), and the rule that
+    /// survives is only "if an axis exists, it tiles on an 8-wide slice".
     static let dimensionSize = 8
 
     var id: String
@@ -35,38 +67,52 @@ struct TagBasket: Identifiable, Codable, Equatable {
     /// Free topical vocabulary appended after every axis slice. Empty for the
     /// user-editable flat Custom basket.
     var topical: [String]
-    /// Backing store for a flat basket's tag pool. Ignored when `dimensions` is
-    /// non-empty (the flat view is then derived from the dimensions).
+    /// Backing store for a flat basket's tag pool. Ignored by a hybrid basket
+    /// (the flat view is then derived from the dimensions + topical tail).
     private var flatTags: [String]
 
-    /// Flat tag list: tag-id = index. For a cube this is the dimensions
-    /// concatenated (dimension d owns ids `d*size ..< d*size+size`); for a flat
-    /// basket it's the raw pool.
+    /// Discriminator between the two shapes, stored rather than inferred.
+    ///
+    /// It used to be inferred as `dimensions.isEmpty`, which was fine only while
+    /// every hybrid basket was guaranteed to own at least one axis. Retiring the
+    /// four abstract axes leaves General with ZERO axes and a topical tail, and
+    /// under the old inference that basket would silently flip to "flat" and
+    /// report an EMPTY tag list (`flatTags` is empty for a hybrid). So the shape
+    /// is now recorded at construction.
+    private var isFlat: Bool
+
+    /// Flat tag list: tag-id = index. For a hybrid basket this is the dimensions
+    /// concatenated (dimension d owns ids `d*size ..< d*size+size`) followed by
+    /// the topical tail; for a flat basket it's the raw pool.
     var tags: [String] {
-        dimensions.isEmpty ? flatTags : dimensions.flatMap { $0.tags } + topical
+        isFlat ? flatTags : dimensions.flatMap { $0.tags } + topical
     }
 
     /// Tag-id range owned by the topical tail: `dimensions.count * dimensionSize
     /// ..< tags.count` whenever the fixed-width invariant holds. Summed from the
     /// real axis widths rather than multiplied so a hand-built uneven basket
-    /// (tests, a future migration) still partitions correctly. Empty
-    /// (`0..<0`-shaped) for a flat basket.
+    /// (tests, a future migration) — or an axis-less basket like General — still
+    /// partitions correctly. Empty (`0..<0`-shaped) for a flat basket.
     var topicalRange: Range<Int> {
-        guard !dimensions.isEmpty else { return 0..<0 }
+        guard !isFlat else { return 0..<0 }
         let start = dimensions.reduce(0) { $0 + $1.tags.count }
         return start..<(start + topical.count)
     }
 
-    /// True when this basket is a facet cube (classify along every dimension).
-    var isDimensional: Bool { !dimensions.isEmpty }
+    /// True when this basket is a facet cube: classify along every dimension it
+    /// has (possibly none) PLUS the topical tail, instead of taking the nearest
+    /// few tags from one undifferentiated pool.
+    var isDimensional: Bool { !isFlat }
 
-    /// Dimensional basket (a facet cube). Every dimension should hold the same
-    /// number of tags so tag-ids map cleanly onto fixed-width slices.
+    /// Hybrid basket (a facet cube plus a topical tail). Every dimension should
+    /// hold `dimensionSize` tags so tag-ids map cleanly onto fixed-width slices.
+    /// Zero dimensions is legal and, for General, is now the point.
     init(id: String, name: String, dimensions: [TagDimension], topical: [String] = []) {
         self.id = id; self.name = name
         self.dimensions = dimensions
         self.topical = topical
         self.flatTags = []
+        self.isFlat = false
     }
 
     /// Flat basket (legacy pool). Kept for the Custom basket, which the user
@@ -76,6 +122,7 @@ struct TagBasket: Identifiable, Codable, Equatable {
         self.dimensions = []
         self.topical = []
         self.flatTags = tags
+        self.isFlat = true
     }
 
     /// Stable fingerprint of the tag set, for caching tag vectors. `tags` is the
@@ -84,9 +131,33 @@ struct TagBasket: Identifiable, Codable, Equatable {
     /// tag vectors — no separate topical term is needed.
     var fingerprint: String { "\(id):\(tags.count):\(HashingEmbedder.fnv1a(tags.joined(separator: "|")))" }
 
+    /// Fingerprint of the vocabulary the tag-ids CURRENTLY ON DISK were minted
+    /// against, or nil if never recorded.
+    ///
+    /// `ModelEmbedding.tags` stores integer ids resolved POSITIONALLY through
+    /// `TagBaskets.active.tags`. Nothing else on disk records which vocabulary
+    /// produced them, so any edit to a basket silently re-points every stored id
+    /// at a different word — e.g. the old `Domain` value "personal" (global id 12)
+    /// lands on "password" under a 16-tag General, and a private note renders a
+    /// `password` chip. Ids past the new end simply vanish.
+    ///
+    /// This is not only a migration concern: switching the overlay in Settings has
+    /// always renumbered the ids, and that reclassify is an async task with no
+    /// completion marker, so quitting mid-pass leaves clips permanently carrying a
+    /// MIX of old and new ids with nothing able to detect it. The marker below is
+    /// what makes that state observable and self-healing.
+    static var persistedVocabulary: String? {
+        get { UserDefaults.standard.string(forKey: persistedVocabularyKey) }
+        set {
+            if let newValue { UserDefaults.standard.set(newValue, forKey: persistedVocabularyKey) }
+            else { UserDefaults.standard.removeObject(forKey: persistedVocabularyKey) }
+        }
+    }
+    static let persistedVocabularyKey = "persistedTagVocabulary"
+
     // MARK: Codable (resilient: old baskets persisted before `dimensions` existed
     // still decode as flat).
-    private enum CodingKeys: String, CodingKey { case id, name, dimensions, topical, flatTags, tags }
+    private enum CodingKeys: String, CodingKey { case id, name, dimensions, topical, flatTags, tags, isFlat }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(String.self, forKey: .id)
@@ -97,6 +168,13 @@ struct TagBasket: Identifiable, Codable, Equatable {
         let flat = try c.decodeIfPresent([String].self, forKey: .flatTags)
         let legacy = try c.decodeIfPresent([String].self, forKey: .tags)
         flatTags = flat ?? legacy ?? []
+        // Payloads written before the shape was stored carry neither key; the old
+        // inference (`dimensions.isEmpty`) reproduces their meaning exactly,
+        // because no basket could be hybrid-with-no-axes back then. A payload with
+        // a topical tail but no axes could only have come from a NEW build, and
+        // that build always writes `isFlat`.
+        isFlat = try c.decodeIfPresent(Bool.self, forKey: .isFlat)
+            ?? (dimensions.isEmpty && topical.isEmpty)
     }
     func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
@@ -105,6 +183,7 @@ struct TagBasket: Identifiable, Codable, Equatable {
         try c.encode(dimensions, forKey: .dimensions)
         try c.encode(topical, forKey: .topical)
         try c.encode(flatTags, forKey: .flatTags)
+        try c.encode(isFlat, forKey: .isFlat)
     }
 }
 
@@ -117,82 +196,121 @@ enum TagBaskets {
                   topical: topical)
     }
 
-    static let general = hybrid("general", "General", [
-        ("Content type", ["text", "code", "link", "command", "image", "file", "document", "number"]),
-        ("Domain", ["software", "web", "business", "finance", "personal", "academic", "design", "admin"]),
-        ("Intent", ["reuse", "reference", "share", "task", "read-later", "edit", "login", "cite"]),
-        ("Sensitivity", ["public", "internal", "personal-info", "confidential", "credential", "financial", "pii", "ephemeral"]),
-    ], ["url", "email", "phone", "address", "path", "date", "amount", "name", "quote", "command", "color", "id", "password", "note", "link", "code"])
+    // MARK: The retirement (design §4)
+    //
+    // Every basket below shed the axes the 202-clip audit condemned. Nothing was
+    // put in their place — the replacements already shipped as deterministic
+    // rules (`Detectors`, `DerivedTags`), so the net effect is FEWER auto-tags per
+    // clip, which is the entire point.
+    //
+    //   basket      axes before → after   dropped
+    //   ─────────────────────────────────────────────────────────────────────────
+    //   general        4 → 0    Content type, Domain, Intent, Sensitivity
+    //   dev            4 → 2    Intent, Sensitivity
+    //   writer         4 → 1    Domain, Intent, Tone
+    //   design         4 → 1    Domain, Intent, Source
+    //   research       4 → 1    Field, Intent, Source
+    //   finance        4 → 1    Sensitivity, Intent, Party
+    //   personal       4 → 1    Sensitivity, Intent, Recurrence
+    //   marketing      4 → 2    Intent, Audience
+    //   data           4 → 1    Domain, Intent, Sensitivity
+    //   devops         4 → 2    Intent, Sensitivity
+    //   legal          4 → 1    Sensitivity, Intent, Party
+    //   ─────────────────────────────────────────────────────────────────────────
+    //   total         44 → 13
+    //
+    // Beyond the four named axes, the same two tests (see `TagDimension`) removed:
+    //  · Tone / Audience / Party / Field — abstract judgements with no glance
+    //    action, i.e. Intent and Domain wearing a specialist hat.
+    //  · Source (designer, researcher) and Recurrence (personal) — already
+    //    derived, exactly and for free, by `DerivedTags.source` and
+    //    `DerivedTags.lifecycle` from `clip.sourceApp` / `useCount` / age. Asking
+    //    a 8.9M-parameter model to guess what a metadata field already knows is
+    //    strictly worse than reading the field.
+    //
+    // What survives is concrete and externally checkable: a language, a data
+    // structure, a deploy environment, a document type. The topical tail is
+    // unchanged and still capped at three, thresholded entries.
 
+    /// General: **zero axes**. Every axis it used to carry was one of the four the
+    /// audit condemned, and design §4 says to replace them with nothing. What a
+    /// clip gets from the model is now at most three *thresholded* topical tags,
+    /// on top of the deterministic chips the UI already renders.
+    static let general = hybrid("general", "General", [
+    ], [])   // §4: every one of the old 16 either duplicates a deterministic
+             // detector (url/path/command/code/color/amount/id -> Detectors.shape;
+             // email/phone/address/password -> ClipFlags) or maps to no glance
+             // action at all (date/name/quote/note). General emits NO model-derived
+             // tags; the chips a user sees come from detectors, metadata and their
+             // own labels.
+
+    /// Developer keeps `Artifact` (a diff is not a stack trace is not a schema)
+    /// and `Language` (python/swift/sql are genuinely separable, and the audit
+    /// never faulted them). Intent and Sensitivity are gone.
     static let developer = hybrid("dev", "Developer", [
         ("Artifact", ["code", "config", "command", "log", "error", "snippet", "diff", "schema"]),
         ("Language", ["python", "javascript", "swift", "shell", "sql", "markup", "rust", "go"]),
-        ("Intent", ["reuse", "debug", "reference", "share", "edit", "run", "cite", "archive"]),
-        ("Sensitivity", ["public", "internal", "credential", "token", "api-key", "pii", "confidential", "ephemeral"]),
-    ], ["git", "regex", "docker", "kubernetes", "api", "endpoint", "stacktrace", "dependency", "env-var", "path", "uuid", "url", "json", "yaml", "test", "build"])
+    ], ["git", "regex", "docker", "kubernetes", "api", "stacktrace", "dependency", "uuid", "json", "yaml", "test", "build"])
 
+    /// Writer keeps `Form` — an outline really does look different from a
+    /// headline. `Tone` went with `Intent`: "persuasive vs neutral vs formal" is
+    /// the same synonym soup, and no chip on it leads to an action.
     static let writer = hybrid("writer", "Writer / Content", [
         ("Form", ["draft", "quote", "note", "outline", "headline", "paragraph", "list", "revision"]),
-        ("Domain", ["fiction", "essay", "blog", "script", "academic", "marketing", "personal", "journalism"]),
-        ("Intent", ["edit", "cite", "publish", "reference", "reuse", "share", "read-later", "archive"]),
-        ("Tone", ["formal", "casual", "persuasive", "technical", "humorous", "neutral", "urgent", "draft"]),
     ], ["title", "intro", "conclusion", "citation", "epigraph", "dialogue", "metaphor", "hook", "cta", "byline", "footnote", "excerpt", "summary", "tagline", "pullquote", "caption"])
 
+    /// Designer keeps `Asset` (a hex colour, a font name and a shadow spec are
+    /// distinguishable by *shape*, not by vibe). `Source` is dropped because
+    /// `DerivedTags.source` reads the originating app exactly.
     static let designer = hybrid("design", "Designer", [
         ("Asset", ["color", "font", "spec", "asset-link", "measurement", "icon", "gradient", "shadow"]),
-        ("Domain", ["ui", "brand", "print", "web", "motion", "product", "illustration", "type"]),
-        ("Intent", ["reuse", "reference", "share", "edit", "apply", "cite", "archive", "sample"]),
-        ("Source", ["figma", "sketch", "photoshop", "illustrator", "browser", "canva", "code", "notes"]),
     ], ["hex", "rgba", "hsl", "px", "rem", "spacing", "radius", "opacity", "css", "tailwind", "breakpoint", "grid", "palette", "token", "kerning", "leading"])
 
+    /// Researcher keeps `Content` (a citation, an equation and an abstract are
+    /// structurally distinct). `Field` is Domain in a lab coat; `Source` is
+    /// derived metadata.
     static let researcher = hybrid("research", "Researcher / Academic", [
         ("Content", ["citation", "quote", "data", "note", "abstract", "figure", "definition", "hypothesis"]),
-        ("Field", ["cs", "ml", "biology", "physics", "medicine", "social", "humanities", "math"]),
-        ("Intent", ["cite", "read-later", "annotate", "reference", "reuse", "share", "verify", "archive"]),
-        ("Source", ["paper", "book", "preprint", "dataset", "web", "slides", "email", "notes"]),
     ], ["doi", "bibtex", "arxiv", "citation", "dataset", "equation", "p-value", "methodology", "abstract", "reference", "corpus", "benchmark", "hypothesis", "figure", "table", "appendix"])
 
+    /// Finance keeps `Doc`. `Party` (client vs vendor vs partner vs investor) is
+    /// an unknowable judgement about a relationship, not a property of the text.
     static let finance = hybrid("finance", "Finance / Business", [
         ("Doc", ["invoice", "figure", "contract", "email", "receipt", "statement", "quote", "report"]),
-        ("Sensitivity", ["public", "internal", "financial", "pii", "confidential", "credential", "legal", "ephemeral"]),
-        ("Intent", ["reference", "reuse", "share", "cite", "submit", "reconcile", "archive", "edit"]),
-        ("Party", ["client", "vendor", "internal", "bank", "tax", "partner", "investor", "personal"]),
-    ], ["amount", "iban", "invoice", "tax", "vat", "currency", "account", "balance", "deadline", "po-number", "quote", "budget", "expense", "revenue", "contract", "terms"])
+    ], ["iban", "invoice", "tax", "vat", "currency", "account", "balance", "deadline", "po-number", "quote", "budget", "expense", "revenue", "contract", "terms"])
 
+    /// Personal keeps `Category`. `Recurrence` is dropped outright: momentary /
+    /// today / expired is `DerivedTags.lifecycle`, computed from real timestamps
+    /// instead of guessed from prose.
     static let personal = hybrid("personal", "Personal / Life", [
         ("Category", ["contact", "address", "credential", "note", "link", "booking", "id", "reminder"]),
-        ("Sensitivity", ["public", "personal-info", "pii", "credential", "health", "financial", "private", "ephemeral"]),
-        ("Intent", ["reuse", "reference", "share", "login", "schedule", "read-later", "save", "archive"]),
-        ("Recurrence", ["momentary", "today", "this-week", "recurring", "evergreen", "scheduled", "expired", "undated"]),
-    ], ["phone", "email", "address", "otp", "password", "booking", "tracking", "wifi", "appointment", "birthday", "gift-idea", "recipe", "url", "code", "pin", "membership"])
+    ], ["otp", "booking", "tracking", "wifi", "appointment", "birthday", "gift-idea", "recipe", "pin", "membership"])
 
+    /// Marketing keeps `Channel` and `Asset` — both name concrete artefacts.
+    /// `Audience` (broad/niche/lead/community) is unmeasurable from a clipboard
+    /// snippet.
     static let marketing = hybrid("marketing", "Marketing / Social", [
         ("Channel", ["post", "ad", "email", "dm", "story", "thread", "newsletter", "landing"]),
         ("Asset", ["copy", "headline", "cta", "hashtag", "link", "caption", "subject", "bio"]),
-        ("Intent", ["publish", "schedule", "reuse", "reference", "edit", "share", "test", "archive"]),
-        ("Audience", ["broad", "niche", "customer", "lead", "internal", "press", "community", "personal"]),
-    ], ["hashtag", "cta", "utm", "caption", "headline", "subject-line", "emoji", "mention", "link", "tagline", "hook", "offer", "promo-code", "handle", "bio", "thread"])
+    ], ["hashtag", "cta", "utm", "caption", "headline", "subject-line", "emoji", "mention", "tagline", "hook", "offer", "promo-code", "handle", "bio", "thread"])
 
+    /// Data keeps `Structure` — the one axis here a model can actually see in the
+    /// bytes (a CSV is not JSON is not a SQL query).
     static let data = hybrid("data", "Data / Analyst", [
         ("Structure", ["table", "json", "csv", "query", "chart", "schema", "key-value", "blob"]),
-        ("Domain", ["sales", "product", "finance", "ops", "marketing", "research", "engineering", "hr"]),
-        ("Intent", ["reuse", "reference", "analyze", "share", "cite", "transform", "archive", "verify"]),
-        ("Sensitivity", ["public", "internal", "pii", "confidential", "financial", "aggregated", "raw", "ephemeral"]),
-    ], ["sql", "csv", "json", "schema", "query", "column", "join", "aggregate", "dashboard", "metric", "kpi", "pivot", "dataset", "api", "endpoint", "regex"])
+    ], ["sql", "csv", "json", "schema", "query", "column", "join", "aggregate", "dashboard", "metric", "kpi", "pivot", "dataset", "api", "regex"])
 
+    /// DevOps keeps `Artifact` and `Environment` — "prod" vs "staging" is usually
+    /// literally spelled out in the string being classified.
     static let devops = hybrid("devops", "DevOps / Sysadmin", [
         ("Artifact", ["command", "config", "log", "secret", "script", "manifest", "endpoint", "path"]),
         ("Environment", ["prod", "staging", "dev", "local", "ci", "cloud", "on-prem", "test"]),
-        ("Intent", ["run", "debug", "reference", "reuse", "deploy", "monitor", "archive", "share"]),
-        ("Sensitivity", ["public", "internal", "credential", "token", "ssh-key", "secret", "pii", "ephemeral"]),
-    ], ["ssh", "kubernetes", "docker", "ip", "port", "env-var", "path", "dns", "cert", "systemd", "cron", "terraform", "ansible", "endpoint", "hostname", "namespace"])
+    ], ["ssh", "kubernetes", "docker", "ip", "port", "dns", "cert", "systemd", "cron", "terraform", "ansible", "hostname", "namespace"])
 
+    /// Legal keeps `Doc`. `Party` goes for the same reason as in Finance.
     static let legal = hybrid("legal", "Legal / Admin", [
         ("Doc", ["clause", "id", "reference", "date", "form", "letter", "notice", "statement"]),
-        ("Sensitivity", ["public", "confidential", "legal", "pii", "privileged", "financial", "personal", "ephemeral"]),
-        ("Intent", ["reference", "cite", "submit", "sign", "reuse", "share", "file", "archive"]),
-        ("Party", ["client", "court", "counterparty", "self", "agency", "employer", "vendor", "personal"]),
-    ], ["case-no", "statute", "clause", "date", "deadline", "signature", "reference-no", "ni-number", "passport", "address", "jurisdiction", "party", "exhibit", "form", "notice", "docket"])
+    ], ["case-no", "statute", "clause", "date", "deadline", "signature", "reference-no", "ni-number", "passport", "jurisdiction", "party", "exhibit", "form", "notice", "docket"])
 
     static let builtIn: [TagBasket] = [
         general, developer, writer, designer, researcher, finance,
@@ -267,10 +385,15 @@ enum TagBaskets {
 
     /// The basket the app actually classifies with: General on its own, or
     /// General MERGED with a specialist overlay. The merge is deduplicated, not a
-    /// raw concatenation: many specialists redefine a shared axis (Intent,
-    /// Sensitivity, Domain) or reuse a topical term (url, path, email). A plain
-    /// concatenation would then produce two same-named axes and duplicate topical
-    /// tags — duplicate tag-name vectors that corrupt classification. Instead:
+    /// raw concatenation: specialists may reuse a topical term (url, path, email)
+    /// and could still redefine a same-named axis. A plain concatenation would
+    /// then produce two same-named axes and duplicate topical tags — duplicate
+    /// tag-name vectors that corrupt classification. Instead:
+    ///
+    /// Since the retirement, General contributes ZERO axes, so a composed basket
+    /// carries only the overlay's surviving concrete axes (1–2) plus the merged
+    /// topical tail. Overlay selection can no longer *add* an abstract axis to
+    /// General, because General has none to redefine and no specialist keeps one.
     ///  - Axes keep General's ordering; where the overlay redefines an axis of the
     ///    same name, the overlay's more-specific vocabulary WINS; the overlay's
     ///    genuinely new axes are appended after General's.

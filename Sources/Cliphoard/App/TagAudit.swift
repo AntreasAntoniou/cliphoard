@@ -155,9 +155,14 @@ enum TagAudit {
         var overallBest = [Float]()
         var rows = [(best: Float, line: String)]()
         var missing = 0
+        var sensitiveExcluded = 0
 
         for clip in clips {
-            let vec = clip.embeddings[sig]?.vector ?? embedder.embed(SemanticRanker.searchText(clip))
+            // NEVER embed inside the audit: the old `?? embed(...)` fallback fired
+            // precisely on vetoed clips (they have no stored vector by design),
+            // pushing secrets through CoreML on every run.
+            guard !clip.isIndexVetoed else { sensitiveExcluded += 1; continue }
+            guard let vec = clip.embeddings[sig]?.vector else { missing += 1; continue }
             guard vec.count == embedder.dimension else { missing += 1; continue }
             var best: Float = -2
             var parts = [String]()
@@ -181,7 +186,11 @@ enum TagAudit {
                 }
             }
             overallBest.append(best)
-            let preview = String(SemanticRanker.searchText(clip).prefix(48))
+            // NO CLIP CONTENT IN THE REPORT. This file is written unencrypted to
+            // disk by a product whose entire storage layer is sealed; a 48-char
+            // plaintext preview of every clip undid that. A non-content descriptor
+            // is enough to identify a row while auditing.
+            let preview = "[\(clip.kind)] chars=\(clip.text.count) id=\(clip.id.uuidString.prefix(8))"
                 .replacingOccurrences(of: "\n", with: "⏎")
             rows.append((best, "[\(clip.kind)] best=\(f2(best)) | \(parts.joined(separator: " ")) | \"\(preview)\""))
         }
@@ -564,13 +573,22 @@ extension TagAudit {
             // Fail closed: a flagged clip is out of the embedding index (§3.11),
             // so the audit must not embed it either — not even to score it.
             guard !clip.isIndexVetoed else { sensitive += 1; continue }
-            let vec = clip.embeddings[sig]?.vector ?? embedder.embed(SemanticRanker.searchText(clip))
+            // NEVER embed inside the audit. A vetoed clip has no stored vector BY
+            // DESIGN, so the old `?? embed(...)` fallback fired precisely on
+            // secrets — pushing them through CoreML on every audit run, which is
+            // the exact invariant the veto exists to hold.
+            // NEVER embed here either — same reasoning as the vocabulary audit.
+            guard let vec = clip.embeddings[sig]?.vector else { unusable += 1; continue }
             guard vec.count == embedder.dimension else { unusable += 1; continue }
             vectors.append(vec)
 
             var scored = buckets.enumerated().map { ($0.element.name, SemanticRanker.cosine(vec, $0.element.centroid)) }
             scored.sort { $0.1 > $1.1 }
-            let preview = String(SemanticRanker.searchText(clip).prefix(48))
+            // NO CLIP CONTENT IN THE REPORT. This file is written unencrypted to
+            // disk by a product whose entire storage layer is sealed; a 48-char
+            // plaintext preview of every clip undid that. A non-content descriptor
+            // is enough to identify a row while auditing.
+            let preview = "[\(clip.kind)] chars=\(clip.text.count) id=\(clip.id.uuidString.prefix(8))"
                 .replacingOccurrences(of: "\n", with: "⏎")
             if let best = scored.first, best.1 >= config.floor {
                 rows.append((best.0, best.1, best.1 - (scored.count > 1 ? scored[1].1 : 0), preview))

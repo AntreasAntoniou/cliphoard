@@ -37,16 +37,20 @@ final class EmbeddingTests: XCTestCase {
 final class TagSpaceTests: XCTestCase {
     private let e = HashingEmbedder()
 
-    func testGeneralHybridHasFortyEightTags() {
-        XCTAssertEqual(TagSpace.count, 48)
-        XCTAssertEqual(TagSpace.names.count, 48)
+    /// Wave 4 retired General's four abstract axes AND (design §4) its topical
+    /// word tags, which duplicated deterministic detectors. General therefore has
+    /// an EMPTY model vocabulary: an empty vocabulary cannot mis-tag anything.
+    func testGeneralHasNoModelVocabulary() {
+        XCTAssertEqual(TagSpace.count, 0)
+        XCTAssertTrue(TagSpace.names.isEmpty)
+        XCTAssertTrue(TagBaskets.general.topical.isEmpty)
     }
 
     func testClassifyReturnsFiveValidTags() {
         let v = e.embed("def foo(): return 1   # some python code")
         let tags = TagSpace.classify(v, embedder: e, topK: 5)
         XCTAssertLessThanOrEqual(tags.count, 5)
-        XCTAssertTrue(tags.allSatisfy { (0..<48).contains($0) })
+        XCTAssertTrue(tags.allSatisfy { (0..<TagSpace.count).contains($0) })
         XCTAssertEqual(Set(tags).count, tags.count, "tags should be distinct")
     }
 
@@ -59,8 +63,13 @@ final class TagSpaceTests: XCTestCase {
             }
         }
         let embedder = URLAlignedEmbedder()
-        let id = TagSpace.nearestTag(toQuery: "https://example.com/page", embedder: embedder)
-        XCTAssertEqual(id.map { TagSpace.names[$0] }, "url")
+        // With General's vocabulary empty there is no preset tag to be nearest TO,
+        // so tag-mode search correctly yields nothing rather than a wrong bucket.
+        XCTAssertNil(TagSpace.nearestTag(toQuery: "https://example.com/page", embedder: embedder))
+        // Under a specialist overlay the mechanism still works.
+        TagBaskets.overlayID = "dev"
+        defer { TagBaskets.overlayID = nil }
+        XCTAssertNotNil(TagSpace.nearestTag(toQuery: "git rebase --onto main", embedder: HashingEmbedder()))
     }
 }
 
