@@ -75,14 +75,12 @@ final class MigrationTests: XCTestCase {
         // Legacy single-vector fields folded into embeddings[<vectorModel>].
         let emb = try XCTUnwrap(pinned.embeddings["ogma-small-256"],
                                 "legacy vector folded under its vectorModel signature")
-        XCTAssertEqual(emb.tags, [3, 7])
         XCTAssertEqual(emb.vector.count, 2)
         XCTAssertEqual(emb.vector[0], 0.6, accuracy: 0.01)
         XCTAssertEqual(emb.vector[1], 0.8, accuracy: 0.01)
 
         // The legacy scalar fields are cleared once folded.
         XCTAssertNil(pinned.vector)
-        XCTAssertNil(pinned.tagIDs)
         XCTAssertNil(pinned.vectorModel)
 
         // JSON archived so a relaunch doesn't re-import it.

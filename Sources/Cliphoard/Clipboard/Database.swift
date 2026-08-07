@@ -45,21 +45,11 @@ final class Database {
         exec("""
         CREATE TABLE IF NOT EXISTS embeddings (
             clip_id TEXT NOT NULL, model TEXT NOT NULL,
-            vector BLOB NOT NULL, tags TEXT NOT NULL,
+            vector BLOB NOT NULL,
             PRIMARY KEY (clip_id, model),
             FOREIGN KEY (clip_id) REFERENCES clips(id) ON DELETE CASCADE);
         """)
-        // REVERT SHIM. The `tags` column is retired by the derived-tag-ids change that
-        // follows this commit. If a build carrying THIS line ever opens a database
-        // written by that change — a revert, a downgrade, a store shared between
-        // builds — this re-adds the column so the four-column SELECT and INSERT still
-        // prepare. It lands in its own, EARLIER commit on purpose: shipping it inside
-        // the change it protects would mean a revert removed the shim too.
-        //
-        // NOT NULL requires a DEFAULT — SQLite cannot ADD a NOT NULL column without
-        // one. The empty default reads back as "no ids", which is the correct state:
-        // the reverted code recomputes them from the cached vectors.
-        ensureColumn("tags", definition: "TEXT NOT NULL DEFAULT ''", in: "embeddings")
+        dropTagIDColumnIfPresent()
         // Suggested user tags the user has explicitly dismissed for a clip, so the
         // suggestion loop (spec §5.1) never re-offers them. `tag` holds the SEALED
         // tag (user content, same at-rest guarantee as `clips.user_tags`); the
@@ -100,13 +90,12 @@ final class Database {
     func loadAll() -> [ClipItem] {
         // 1. Embeddings grouped by clip id.
         var embByClip: [String: [String: ModelEmbedding]] = [:]
-        prepareEach("SELECT clip_id, model, vector, tags FROM embeddings;") { stmt in
+        prepareEach("SELECT clip_id, model, vector FROM embeddings;") { stmt in
             let clipID = column(stmt, 0)
             let model = column(stmt, 1)
             // Decrypt at-rest embedding columns (legacy plaintext passes through).
             let vec = Self.vectorFromBlob(Crypto.open(Self.blob(stmt, 2)))
-            let tags = Self.tags(fromText: Crypto.open(column(stmt, 3)))
-            embByClip[clipID, default: [:]][model] = ModelEmbedding(vector: vec, tags: tags)
+            embByClip[clipID, default: [:]][model] = ModelEmbedding(vector: vec)
         }
         // 2. Clips.
         var result: [ClipItem] = []
@@ -334,20 +323,18 @@ final class Database {
 
     @discardableResult
     func upsertEmbedding(clipID: UUID, model: String, embedding: ModelEmbedding) -> Bool {
-        // Fail CLOSED: the vector and tags are content-derived, so never persist
-        // them unsealed. If sealing fails, skip this embedding — the clip itself is
-        // already stored sealed by `insert`, and degraded search beats a leak.
-        guard let encVec = Crypto.sealStrict(Self.blob(fromVector: embedding.vector)),
-              let encTags = Crypto.sealStrict(embedding.tags.map(String.init).joined(separator: ",")) else {
+        // Fail CLOSED: the vector is content-derived, so never persist it unsealed.
+        // If sealing fails, skip this embedding — the clip itself is already stored
+        // sealed by `insert`, and degraded search beats a leak.
+        guard let encVec = Crypto.sealStrict(Self.blob(fromVector: embedding.vector)) else {
             NSLog("Cliphoard db: embedding seal failed — skipping upsert")
             return false
         }
         var ok = false
-        prepare("INSERT OR REPLACE INTO embeddings (clip_id, model, vector, tags) VALUES (?,?,?,?);") { stmt in
+        prepare("INSERT OR REPLACE INTO embeddings (clip_id, model, vector) VALUES (?,?,?);") { stmt in
             bindText(stmt, 1, clipID.uuidString)
             bindText(stmt, 2, model)
             bindBlob(stmt, 3, encVec)
-            bindText(stmt, 4, encTags)
             ok = step(stmt)
         }
         return ok
@@ -424,6 +411,43 @@ final class Database {
         prepare(sql) { stmt in while sqlite3_step(stmt) == SQLITE_ROW { row(stmt) } }
     }
 
+    /// One-way retirement of `embeddings.tags`.
+    ///
+    /// Tag ids are a pure function of (vector, embedder, basket, τ, topK) and are now
+    /// DERIVED at the point of use. A stored copy is a second, independently mutable
+    /// answer to a question the vector already answers — and the marker that claimed
+    /// it was current stamped itself without writing anything: the migration filtered
+    /// its targets by the ACTIVE embedder signature while every row on disk belonged
+    /// to a different one, so it hit its empty-targets early return, stamped, and
+    /// persisted nothing. The column is the substrate of that lie, so it goes.
+    ///
+    /// BLANK-then-drop, not drop alone: on a SQLite older than 3.35 the DROP is
+    /// refused, and the stale ids must be gone regardless. Fail-safe, not fail-open.
+    /// VACUUM afterwards because the ids were content-derived and sealed, and this
+    /// file's own standard (see `upsertEmbedding`, and the encryption migration in
+    /// ClipStore) is that content-derived bytes must not linger in free pages.
+    ///
+    /// PROBED rather than attempted-and-logged: a DROP that errors on every launch
+    /// writes "no such column" to the log forever, which trains readers to ignore the
+    /// log — the same failure family as the marker this replaces.
+    private func dropTagIDColumnIfPresent() {
+        var exists = false
+        prepareEach("PRAGMA table_info(embeddings);") { stmt in
+            if column(stmt, 1) == "tags" { exists = true }
+        }
+        guard exists else { return }
+        exec("UPDATE embeddings SET tags='';")
+        exec("ALTER TABLE embeddings DROP COLUMN tags;")
+        exec("VACUUM;")
+        // Clearing the marker is what keeps the revert shim honest. The shim restores
+        // an EMPTY `tags` column, and the reverted `migrateTagVocabularyIfNeeded`
+        // recomputes only when the marker disagrees with the active basket. Leave it
+        // stamped and a revert yields a store where every clip has zero tags and
+        // nothing ever notices — the same stamp-without-writing bug this change kills.
+        UserDefaults.standard.removeObject(forKey: TagBasket.persistedVocabularyKey)
+        NSLog("Cliphoard db: retired embeddings.tags — tag ids are now derived, never stored")
+    }
+
     private func ensureColumn(_ name: String, definition: String, in table: String) {
         var exists = false
         prepareEach("PRAGMA table_info(\(table));") { stmt in
@@ -492,9 +516,6 @@ extension Database {
         }
     }
 
-    static func tags(fromText s: String) -> [Int] {
-        s.isEmpty ? [] : s.split(separator: ",").compactMap { Int($0) }
-    }
 
     static func userTags(fromText s: String) -> [String] {
         ClipItem.normalizedUserTags(s.split(separator: "\n").map(String.init))

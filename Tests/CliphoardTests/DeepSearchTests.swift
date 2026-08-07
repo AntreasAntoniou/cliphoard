@@ -104,19 +104,33 @@ final class IngestIndexingTests: XCTestCase {
         store.add(item)
         let sig = EmbedderProvider.active.signature
         XCTAssertNotNil(item.embeddings[sig]?.vector)
-        // General is hybrid → 0–4 axis tags plus at most 3 topical tags.
-        XCTAssertLessThanOrEqual(item.embeddings[sig]?.tags.count ?? .max, 7)
+        // Tag ids are derived on demand now, so there is nothing on the embedding to
+        // assert; `testTagIndexLookupIsPopulated` covers derivation + indexing.
     }
 
     func testTagIndexLookupIsPopulated() {
+        // General has an EMPTY vocabulary by design, so an index built under it is
+        // correctly empty. Exercise the index where tags actually exist.
+        TagBaskets.overlayID = "dev"
+        defer { TagBaskets.overlayID = nil }
         let store = tempStore()
         let item = ClipItem(kind: .text, text: "git commit -m fix the parser bug")
-        var vector = [Float](repeating: 0, count: EmbedderProvider.active.dimension)
-        vector[0] = 1
-        item.embeddings[EmbedderProvider.active.signature] =
-            ModelEmbedding(vector: vector, tags: [0])
+        // A one-hot vector is orthogonal to the whole vocabulary, so nothing clears
+        // the assignment floor. Embed a topical tag's OWN NAME instead: tag vectors
+        // ARE `embedder.embed(name)`, so this scores cosine 1.0 against that tag by
+        // construction, and stays correct whatever the active embedder is.
+        let e = EmbedderProvider.active
+        guard let topical = TagSpace.topicalRange.first else {
+            return XCTFail("precondition: the dev overlay must contribute a topical vocabulary")
+        }
+        item.embeddings[e.signature] = ModelEmbedding(vector: e.embed(TagSpace.names[topical]))
         store.add(item)
-        XCTAssertTrue(store.items(taggedWith: 0).contains { $0.id == item.id })
+        // The id is read back from what the clip DERIVES — ids are no longer
+        // injectable, so the test asks the system which bucket it chose.
+        guard let derived = store.tags(of: item).first else {
+            return XCTFail("precondition: the clip must derive at least one tag")
+        }
+        XCTAssertTrue(store.items(taggedWith: derived).contains { $0.id == item.id })
     }
 
     func testAddCachesForActiveModelAndIsNotStale() {
@@ -132,16 +146,16 @@ final class IngestIndexingTests: XCTestCase {
         let dim = EmbedderProvider.active.dimension
 
         let zero = ClipItem(kind: .text, text: "zero")
-        zero.embeddings[sig] = ModelEmbedding(vector: [Float](repeating: 0, count: dim), tags: [])
+        zero.embeddings[sig] = ModelEmbedding(vector: [Float](repeating: 0, count: dim))
         XCTAssertTrue(ClipIndexer.isStale(zero), "all-zero vector is degenerate -> stale (retry)")
 
         let wrongLen = ClipItem(kind: .text, text: "wrong")
-        wrongLen.embeddings[sig] = ModelEmbedding(vector: [1, 2, 3], tags: [])
+        wrongLen.embeddings[sig] = ModelEmbedding(vector: [1, 2, 3])
         XCTAssertTrue(ClipIndexer.isStale(wrongLen), "wrong-length vector -> stale")
 
         let ok = ClipItem(kind: .text, text: "ok")
         var v = [Float](repeating: 0, count: dim); v[5] = 0.5
-        ok.embeddings[sig] = ModelEmbedding(vector: v, tags: [1])
+        ok.embeddings[sig] = ModelEmbedding(vector: v)
         XCTAssertFalse(ClipIndexer.isStale(ok), "right-length non-zero vector -> not stale")
     }
 
@@ -149,14 +163,14 @@ final class IngestIndexingTests: XCTestCase {
         let fresh = ClipItem(kind: .text, text: "never embedded")
         XCTAssertTrue(ClipIndexer.isStale(fresh), "no embedding for active model → stale")
         let otherModel = ClipItem(kind: .text, text: "other model only")
-        otherModel.embeddings["some-other-model-999"] = ModelEmbedding(vector: [0, 0], tags: [])
+        otherModel.embeddings["some-other-model-999"] = ModelEmbedding(vector: [0, 0])
         XCTAssertTrue(ClipIndexer.isStale(otherModel), "embedded only by a different model → stale")
     }
 
     func testPerModelCacheIsKeptAcrossModels() {
         let item = ClipItem(kind: .text, text: "cached by two models")
-        item.embeddings["ogma-small-256"] = ModelEmbedding(vector: [1, 0], tags: [3])
-        item.embeddings["ogma-micro-128"] = ModelEmbedding(vector: [0, 1], tags: [7])
+        item.embeddings["ogma-small-256"] = ModelEmbedding(vector: [1, 0])
+        item.embeddings["ogma-micro-128"] = ModelEmbedding(vector: [0, 1])
         XCTAssertTrue(item.isEmbedded(by: "ogma-small-256"))
         XCTAssertTrue(item.isEmbedded(by: "ogma-micro-128"))   // round-trip switch is free
         XCTAssertEqual(item.embeddings.count, 2)
@@ -172,7 +186,6 @@ final class IngestIndexingTests: XCTestCase {
         let reloaded = ClipStore(directory: dir)
         let sig = EmbedderProvider.active.signature
         XCTAssertNotNil(reloaded.items.first?.embeddings[sig]?.vector)
-        XCTAssertLessThanOrEqual(reloaded.items.first?.embeddings[sig]?.tags.count ?? .max, 7)
         XCTAssertFalse(ClipIndexer.isStale(reloaded.items.first!), "reload shouldn't need reprocessing")
     }
 }
@@ -236,7 +249,7 @@ final class LengthConfidenceTests: XCTestCase {
         let hub = ClipItem(kind: .text, text: "c")
         let real = ClipItem(kind: .text, text: "board game night with friends")
         for item in [hub, real] {
-            item.embeddings[e.signature] = ModelEmbedding(vector: qv, tags: [])
+            item.embeddings[e.signature] = ModelEmbedding(vector: qv)
         }
         let ranked = SemanticRanker.neural(query: "fun", items: [hub, real], embedder: e)
         // real: cos 1.0 × conf 1.0 = 1.0 ≥ floor → kept, and ranks first.
@@ -249,7 +262,7 @@ final class LengthConfidenceTests: XCTestCase {
     /// closest clips — a short TRUE hit is shown rather than an empty strip.
     func testFallbackStillShowsShortClipsWhenNothingElseMatches() {
         let hub = ClipItem(kind: .text, text: "c")
-        hub.embeddings[e.signature] = ModelEmbedding(vector: e.embed("fun", query: true), tags: [])
+        hub.embeddings[e.signature] = ModelEmbedding(vector: e.embed("fun", query: true))
         let ranked = SemanticRanker.neural(query: "fun", items: [hub], embedder: e)
         XCTAssertEqual(ranked.count, 1, "top-K fallback keeps the strip populated")
     }

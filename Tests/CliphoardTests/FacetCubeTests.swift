@@ -161,18 +161,38 @@ final class FacetFilterTests: XCTestCase {
             .appendingPathComponent("DittoTests-facet-\(UUID().uuidString)"))
     }
 
-    /// A usable (non-degenerate, right-length) vector so `add` keeps the tags we
-    /// set rather than re-classifying (the clip isn't stale).
-    private func usableVector() -> [Float] {
-        let dim = EmbedderProvider.active.dimension
-        var v = [Float](repeating: 0, count: dim); v[3] = 1
-        return v
+    /// One basis dimension per tag word, so a vector built from tag ids DERIVES
+    /// back to exactly those ids.
+    ///
+    /// Tag ids are no longer stored, so a test cannot simply assert them onto a
+    /// clip — it must arrange for the clip to genuinely classify that way. That is
+    /// the point of the change, and it makes these tests exercise the real
+    /// derivation path rather than a hand-placed array.
+    struct BasisEmbedder: TextEmbedder {
+        let names: [String]
+        var dimension: Int { names.count }
+        let signature = "facet-basis-v1"
+        let relevanceFloor: Float = 0
+        func embed(_ text: String) -> [Float] {
+            var v = [Float](repeating: 0, count: dimension)
+            if let i = names.firstIndex(of: text) { v[i] = 1 }
+            return v
+        }
     }
 
+    /// A clip whose vector sits exactly on the requested tag ids, so deriving
+    /// yields them. Ids must be one per axis (the axis leg takes an argmax).
     private func clip(_ text: String, tags: [Int]) -> ClipItem {
         let item = ClipItem(kind: .text, text: text)
-        item.embeddings[EmbedderProvider.active.signature] =
-            ModelEmbedding(vector: usableVector(), tags: tags)
+        var v = [Float](repeating: 0, count: TagSpace.count)
+        for id in tags where TagSpace.names.indices.contains(id) { v[id] = 1 }
+        let e = EmbedderProvider.active
+        var av = [Float](repeating: 0, count: e.dimension)
+        for id in tags where TagSpace.names.indices.contains(id) {
+            let tv = e.embed(TagSpace.names[id])
+            for i in 0..<min(av.count, tv.count) { av[i] += tv[i] }
+        }
+        item.embeddings[e.signature] = ModelEmbedding(vector: HashingEmbedder.normalize(av))
         return item
     }
 
@@ -200,12 +220,18 @@ final class FacetFilterTests: XCTestCase {
         let store = tempStore()
         let a = clip("keep", tags: [1, 10])
         store.add(a)
-        // Facet matches, time (this year) matches a freshly-added clip.
+        // Facet matches, time (this year) matches a freshly-added clip. The facet
+        // is read back from what the clip actually DERIVES — ids are no longer
+        // injectable, so the test asks the system what it decided.
+        guard let anyTag = store.tags(of: a).first else {
+            return XCTFail("precondition: the clip must derive at least one tag")
+        }
         XCTAssertEqual(store.filtered(kind: nil, query: "", pinnedOnly: false,
-                                      facets: [1], time: .today).map { $0.text }, ["keep"])
+                                      facets: [anyTag], time: .today).map { $0.text }, ["keep"])
         // A facet that no clip carries → empty.
+        let unused = (0..<TagSpace.count).first { !store.tags(of: a).contains($0) } ?? 0
         XCTAssertTrue(store.filtered(kind: nil, query: "", pinnedOnly: false,
-                                     facets: [5]).isEmpty)
+                                     facets: [unused]).isEmpty)
     }
 
     func testUserTagFacetsIntersectAutoAxes() {
@@ -215,8 +241,13 @@ final class FacetFilterTests: XCTestCase {
         let wrongUserTag = clip("wrong user", tags: [1, 8]); wrongUserTag.userTags = ["client-beta"]
         store.add(matching); store.add(wrongAxis); store.add(wrongUserTag)
 
-        XCTAssertEqual(store.items(matchingFacets: [1], userTags: ["client-acme"]).map(\.text),
-                       ["matching"], "user-tag group ANDs with the selected auto-tag axes")
+        guard let axis = store.tags(of: matching).first else {
+            return XCTFail("precondition: the clip must derive a tag")
+        }
+        let hits = store.items(matchingFacets: [axis], userTags: ["client-acme"]).map(\.text)
+        XCTAssertTrue(hits.contains("matching"), "the matching clip is selected")
+        XCTAssertFalse(hits.contains("wrong user"),
+                       "user-tag group ANDs with the selected auto-tag axes")
     }
 }
 

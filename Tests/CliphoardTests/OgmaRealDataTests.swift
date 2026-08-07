@@ -44,7 +44,7 @@ final class OgmaRealDataTests: XCTestCase {
     private func makeItem(_ text: String, _ kind: ClipKind, _ embedder: OgmaEmbedder) -> ClipItem {
         let it = ClipItem(kind: kind, text: text)
         let vec = embedder.embed(SemanticRanker.searchText(it))
-        it.embeddings[embedder.signature] = ModelEmbedding(vector: vec, tags: [])
+        it.embeddings[embedder.signature] = ModelEmbedding(vector: vec)
         return it
     }
 

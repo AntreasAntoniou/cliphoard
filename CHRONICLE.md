@@ -161,3 +161,43 @@ prompt, with full content — lives in the chronicle ledger; `chron resume` read
 
 - **Why:** {"summary": "plan verdict recorded", "plus_ultra": {"arbiter": "Athena"}}
 
+
+## [2026-08-06T17:07Z-CY5D] NOTE — plus-ultra: stop BLOCKED (no reality verdict)
+
+- **Why:** {"summary": "stop BLOCKED (no reality verdict)", "plus_ultra": {"mutations": 11}}
+
+
+## [2026-08-06T17:09Z-DX9P] NOTE — plus-ultra: reality verdict recorded
+
+- **Why:** {"summary": "reality verdict recorded", "plus_ultra": {"verifier": "Argus"}}
+
+
+## [2026-08-06T17:20Z-K03Z] NOTE — plus-ultra: gate BLOCKED (no plan verdict)
+
+- **Why:** {"summary": "gate BLOCKED (no plan verdict)", "plus_ultra": {"tool": "Bash", "target": "cat > /private/tmp/claude-501/-Users-antreas/a3424a85-37ed-435a-88a6-482496e45604/scratchpad/bench.swift <<'EOF'\nimport Foundation\nimport Accelerate\n\nfunc cosine(_ a: [Float], _ b: [Float]) -> Float {"}}
+
+
+## [2026-08-06T17:36Z-JGH6] NOTE — plus-ultra: plan verdict recorded
+
+- **Why:** {"summary": "plan verdict recorded", "plus_ultra": {"arbiter": "Athena"}}
+
+
+## [2026-08-06T17:49Z-76T6] NOTE — plus-ultra: stop BLOCKED (no reality verdict)
+
+- **Why:** {"summary": "stop BLOCKED (no reality verdict)", "plus_ultra": {"mutations": 2}}
+
+
+## [2026-08-06T17:55Z-NDYH] NOTE — plus-ultra: reality verdict recorded
+
+- **Why:** {"summary": "reality verdict recorded", "plus_ultra": {"verifier": "Argus"}}
+
+
+## [2026-08-07T17:03Z-Q4E4] NOTE — plus-ultra: gate BLOCKED (no plan verdict)
+
+- **Why:** {"summary": "gate BLOCKED (no plan verdict)", "plus_ultra": {"tool": "Bash", "target": "cd /private/tmp/claude-501/-Users-antreas/a3424a85-37ed-435a-88a6-482496e45604/scratchpad && rm -f probe.db* && sqlite3 probe.db \"PRAGMA journal_mode=WAL; CREATE TABLE t(a); INSERT INTO t VALUES(1);\" "}}
+
+
+## [2026-08-07T17:13Z-FHA9] NOTE — plus-ultra: plan verdict recorded
+
+- **Why:** {"summary": "plan verdict recorded", "plus_ultra": {"arbiter": "Athena"}}
+

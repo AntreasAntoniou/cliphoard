@@ -23,7 +23,7 @@ final class IncrementalIndexTests: XCTestCase {
         let sig = EmbedderProvider.active.signature
         var index: [Int: [UUID]] = [:]
         for item in store.items {
-            for tag in item.embeddings[sig]?.tags ?? [] {
+            for tag in store.tags(of: item) {
                 index[tag, default: []].append(item.id)
             }
         }
@@ -32,9 +32,8 @@ final class IncrementalIndexTests: XCTestCase {
 
     private func actualIndex(_ store: ClipStore) -> [Int: [UUID]] {
         // Reconstruct id ordering from the published tagIndex.
-        let sig = EmbedderProvider.active.signature
         var ids: [Int: [UUID]] = [:]
-        for tag in Set(store.items.flatMap { $0.embeddings[sig]?.tags ?? [] }) {
+        for tag in Set(store.items.flatMap { store.tags(of: $0) }) {
             ids[tag] = store.items(taggedWith: tag).map { $0.id }
         }
         return ids
@@ -65,7 +64,7 @@ final class IncrementalIndexTests: XCTestCase {
         // The deleted items must no longer appear in any bucket.
         let sig = EmbedderProvider.active.signature
         for gone in [items[1], items[3]] {
-            for tag in gone.embeddings[sig]?.tags ?? [] {
+            for tag in store.tags(of: gone) {
                 XCTAssertFalse(store.items(taggedWith: tag).contains { $0.id == gone.id })
             }
         }

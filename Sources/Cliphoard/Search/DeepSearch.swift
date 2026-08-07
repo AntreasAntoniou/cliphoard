@@ -554,7 +554,7 @@ enum ClipIndexer {
         // Don't cache a failed/degenerate embedding — leave the clip stale so it's
         // retried, rather than poisoning its tags/search permanently.
         guard isUsable(vec, dimension: embedder.dimension) else { return }
-        item.embeddings[embedder.signature] = ModelEmbedding(vector: vec, tags: tags(for: vec, embedder: embedder))
+        item.embeddings[embedder.signature] = ModelEmbedding(vector: vec)
     }
 
     /// A clip's tag ids for the active basket: for a facet cube, the confident
@@ -700,11 +700,14 @@ enum SemanticRanker {
             // substring hits are untouched — they don't rely on the vector.
             let confidence = lengthConfidence(item)
             let neural = cosine(qv, vec) * confidence
-            let shared = emb.map { Set($0.tags).intersection(queryTags).count } ?? 0
+            // Derived, not read from storage — the ids are a view of the vector.
+            let itemTags: [Int] = emb.map { ClipIndexer.tags(for: $0.vector, embedder: embedder) } ?? []
+            let shared = Set(itemTags).intersection(queryTags).count
             let tagBoost = Float(min(shared, 2)) * 0.10 * confidence  // up to +0.20 for topic agreement
             let userTagMatch = item.userTags.contains { $0 == q || queryTagNames.contains($0) }
             let userTagBoost: Float = userTagMatch ? 3.0 : 0
-            let score = (exact ? 10 : 0) + neural + tagBoost + userTagBoost
+            let exactScore: Float = exact ? 10 : 0
+            let score: Float = exactScore + neural + tagBoost + userTagBoost
             return (item, score, exact)
         }
         // Keep every exact hit; keep the rest only when meaning OR shared topic

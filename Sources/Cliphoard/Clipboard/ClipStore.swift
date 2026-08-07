@@ -104,7 +104,6 @@ final class ClipStore: ObservableObject {
         // secret must have its vectors dropped before anything can put it back
         // into a tag bucket.
         backfillDetectorFlagsIfNeeded()
-        migrateTagVocabularyIfNeeded()
         encryptExistingRowsIfNeeded()
         reKeyToSecureEnclaveIfNeeded()
         encryptImagePayloadsIfNeeded()
@@ -461,11 +460,14 @@ final class ClipStore: ObservableObject {
         return items.filter { keep.contains($0.id) }
     }
 
-    private func rebuildTagIndex() {
-        let sig = EmbedderProvider.active.signature
+    /// Idempotent and unconditional: a pure function of (items, active embedder,
+    /// active basket) whose only output is this in-memory index. Interrupting it is
+    /// harmless because it writes nothing that could later be read as authoritative —
+    /// which is why it needs no marker, no one-shot guard and no bounds check.
+    func rebuildTagIndex() {
         var index: [Int: [ClipItem]] = [:]
         for item in items {
-            for tag in item.embeddings[sig]?.tags ?? [] { index[tag, default: []].append(item) }
+            for tag in tags(of: item) { index[tag, default: []].append(item) }
         }
         tagIndex = index
     }
@@ -507,8 +509,28 @@ final class ClipStore: ObservableObject {
     }
 
     /// The active-model tag ids attached to a clip, or an empty list.
-    private func activeTags(of item: ClipItem) -> [Int] {
-        item.embeddings[EmbedderProvider.active.signature]?.tags ?? []
+    /// A clip's tag ids, DERIVED from its cached vector under the active embedder
+    /// and the active basket. Never stored.
+    ///
+    /// This is the fix. An id is a positional index into `TagBaskets.active.tags`, so
+    /// a stored id does not become INVALID when the vocabulary changes — it becomes
+    /// WRONG, resolving to a different word. Deriving means the ids cannot disagree
+    /// with the vocabulary, because there is no second copy to disagree with and no
+    /// marker that can claim they are current while they are not.
+    ///
+    /// A clip with no vector for the active model yields NO tags rather than a wrong
+    /// answer. That is also the correct answer during the window before the real
+    /// embedder finishes loading — which is why nothing here depends on the order in
+    /// which the store and the embedder are constructed. Every ordering yields the
+    /// right answer or no answer, never a wrong one.
+    ///
+    /// The veto is applied HERE, at the single point of derivation, rather than left
+    /// to whichever purge happened to run first: a secret must not reach the tag index
+    /// even if some future path leaves a vector behind.
+    func tags(of item: ClipItem) -> [Int] {
+        guard !item.isIndexVetoed,
+              let emb = item.embeddings[EmbedderProvider.active.signature] else { return [] }
+        return ClipIndexer.tags(for: emb.vector, embedder: EmbedderProvider.active)
     }
 
     /// Insert `item` into each of its active-model tag buckets at the position
@@ -528,7 +550,7 @@ final class ClipStore: ObservableObject {
         order.reserveCapacity(items.count)
         for (i, it) in items.enumerated() { order[it.id] = i }
         guard order[item.id] != nil else { return }
-        for tag in activeTags(of: item) {
+        for tag in tags(of: item) {
             var bucket = tagIndex[tag] ?? []
             bucket.append(item)
             bucket.sort { (order[$0.id] ?? .max) < (order[$1.id] ?? .max) }
@@ -540,7 +562,7 @@ final class ClipStore: ObservableObject {
     /// reshuffled `items`. Only the moved item's own buckets can be affected, so
     /// this stays cheap (O(itemTags · bucket)).
     private func repositionInTagIndex(_ item: ClipItem) {
-        let tags = activeTags(of: item)
+        let tags = tags(of: item)
         guard !tags.isEmpty else { return }
         var order: [UUID: Int] = [:]
         order.reserveCapacity(items.count)
@@ -628,93 +650,6 @@ final class ClipStore: ObservableObject {
             indexing = nil
             indexingTask = nil
             DebugLog.write("reindexed \(done) stale items → \(sig)")
-        }
-    }
-
-    /// Recompute tags for every clip from its already-cached vector — used when
-    /// the tag basket changes. No re-embedding of clips (only the basket's tag
-    /// names are embedded, once); just re-runs the cheap nearest-tag step.
-    /// Discard tag-ids minted against a DIFFERENT vocabulary.
-    ///
-    /// Ids are positional indices into `TagBaskets.active.tags`; when the
-    /// vocabulary changes they do not become invalid, they become WRONG — every
-    /// surviving id resolves to some other word, and the rest fall out of range.
-    /// So they are discarded, never remapped: half the retired vocabulary has no
-    /// successor at all, and a remap table would be a guess dressed as a
-    /// migration — exactly the failure this design exists to end.
-    ///
-    /// Discarding is cheap and lossless: ids are a DERIVED index over a vector the
-    /// clip already owns, so `reclassifyAllTags` regenerates them from cached
-    /// vectors with no re-embedding, no CoreML pass, and the index veto honoured.
-    /// The in-memory clear happens immediately so no wrong chip is ever rendered;
-    /// the on-disk marker advances only after a complete pass (see below), so an
-    /// interrupted run simply repeats.
-    private func migrateTagVocabularyIfNeeded() {
-        let current = TagBasket.persistedVocabulary
-        let active = TagBaskets.active.fingerprint
-        guard current != active else { return }
-        var cleared = 0
-        for item in items {
-            for (sig, var emb) in item.embeddings where !emb.tags.isEmpty {
-                emb.tags = []
-                item.embeddings[sig] = emb
-                cleared += 1
-            }
-        }
-        NSLog("Cliphoard: tag vocabulary changed (\(current ?? "none") -> \(active)); "
-              + "discarded ids on \(cleared) embeddings, recomputing from cached vectors")
-        rebuildTagIndex()
-        reclassifyAllTags()
-    }
-
-    func reclassifyAllTags() {
-        let sig = EmbedderProvider.active.signature
-        // Same veto as `reindexStale`. A vetoed clip should have no embedding at
-        // all, so this normally filters nothing — but if one ever acquired a
-        // vector (a row written before the detector shipped, a future code path),
-        // the reclassify pass must not be the thing that puts it back in the tag
-        // index.
-        let targets = items.filter { $0.embeddings[sig] != nil && !$0.isIndexVetoed }
-        rebuildTagIndex()                       // drop stale mappings immediately
-        guard !targets.isEmpty else {
-            // Nothing to recompute IS a complete pass — stamp it, or the migration
-            // re-runs on every launch for a store with no embeddings.
-            TagBasket.persistedVocabulary = TagBaskets.active.fingerprint
-            return
-        }
-        let total = targets.count
-        let started = Date()
-        indexing = IndexingProgress(done: 0, total: total, etaSeconds: nil)
-        indexingTask?.cancel()
-        indexingTask = Task { @MainActor in
-            var done = 0
-            for item in targets {
-                if Task.isCancelled { break }
-                if var emb = item.embeddings[sig] {
-                    emb.tags = ClipIndexer.tags(for: emb.vector, embedder: EmbedderProvider.active)
-                    item.embeddings[sig] = emb
-                    db?.upsertEmbedding(clipID: item.id, model: sig, embedding: emb)
-                }
-                done += 1
-                if done % 16 == 0 || done == total {
-                    let elapsed = Date().timeIntervalSince(started)
-                    indexing = IndexingProgress(done: done, total: total,
-                        etaSeconds: done > 0 ? elapsed / Double(done) * Double(total - done) : nil)
-                    rebuildTagIndex()
-                    await Task.yield()
-                }
-            }
-            rebuildTagIndex()
-            // Stamp the vocabulary ONLY after a complete, uncancelled pass — the
-            // same commit-before-marking discipline the detector backfill uses.
-            // Marking a partial pass done is what let mixed old/new ids persist
-            // undetected: the app believed its ids were current while half of them
-            // were minted against the previous vocabulary.
-            if !Task.isCancelled {
-                TagBasket.persistedVocabulary = TagBaskets.active.fingerprint
-            }
-            indexing = nil
-            indexingTask = nil
         }
     }
 
@@ -852,9 +787,9 @@ final class ClipStore: ObservableObject {
             // Fold legacy single-vector fields into the per-model cache.
             if item.embeddings.isEmpty, let v = item.vector {
                 item.embeddings[item.vectorModel ?? "hashing-256"] =
-                    ModelEmbedding(vector: v, tags: item.tagIDs ?? [])
+                    ModelEmbedding(vector: v)
             }
-            item.vector = nil; item.tagIDs = nil; item.vectorModel = nil
+            item.vector = nil; item.vectorModel = nil
         }
         db?.transaction { decoded.forEach { db?.insert($0) } }
         // Archive the JSON so we don't re-import (and as a safety backup), but

@@ -13,9 +13,8 @@ struct ClipDetailView: View {
 
     @State private var newTag = ""
 
-    private var activeTagIDs: [Int] {
-        item.embeddings[EmbedderProvider.active.signature]?.tags ?? []
-    }
+    /// Derived, never stored — see `ClipStore.tags(of:)`.
+    private var activeTagIDs: [Int] { store.tags(of: item) }
 
     private var axisTags: [(dimension: String, value: String)] {
         TagSpace.facetLabels(for: activeTagIDs)

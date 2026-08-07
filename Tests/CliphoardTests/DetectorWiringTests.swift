@@ -173,7 +173,7 @@ final class DetectorWiringTests: XCTestCase {
         XCTAssertTrue(secret.embeddings.isEmpty, "the veto holds across a re-index pass")
 
         // …and the reclassify path too (it recomputes tags from cached vectors).
-        store.reclassifyAllTags()
+        store.rebuildTagIndex()
         for _ in 0..<200 where store.indexing != nil { await Task.yield() }
         XCTAssertTrue(secret.embeddings.isEmpty, "reclassify must not resurrect a vetoed clip")
     }

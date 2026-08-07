@@ -108,9 +108,9 @@ final class SearchRankingTests: XCTestCase {
         let qv = e.embed(query, query: true)
         let tagged = text("unrelated words but deliberately labelled")
         tagged.userTags = [query]
-        tagged.embeddings[e.signature] = ModelEmbedding(vector: e.embed("distant prose"), tags: [])
+        tagged.embeddings[e.signature] = ModelEmbedding(vector: e.embed("distant prose"))
         let neuralOnly = text("semantically perfect but unlabelled")
-        neuralOnly.embeddings[e.signature] = ModelEmbedding(vector: qv, tags: [])
+        neuralOnly.embeddings[e.signature] = ModelEmbedding(vector: qv)
 
         let ranked = SemanticRanker.smart(query: query, items: [neuralOnly, tagged], embedder: e)
         XCTAssertEqual(ranked.first?.id, tagged.id, "an explicit user label is a stronger signal than cosine alone")

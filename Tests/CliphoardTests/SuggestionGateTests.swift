@@ -16,7 +16,7 @@ final class SuggestionGateTests: XCTestCase {
         let item = ClipItem(kind: .text, text: "clip \(UUID().uuidString.prefix(4))")
         item.userTags = ClipItem.normalizedUserTags(tags)
         item.embeddings[space ?? signature] =
-            ModelEmbedding(vector: HashingEmbedder.normalize(v), tags: [])
+            ModelEmbedding(vector: HashingEmbedder.normalize(v))
         return item
     }
 

@@ -44,7 +44,7 @@ final class DetectorBackfillTests: XCTestCase {
                                model: String = "backfill-test-sig") -> ClipItem {
         let item = ClipItem(kind: .text, text: text)
         item.sourceApp = sourceApp
-        item.embeddings[model] = ModelEmbedding(vector: [1, 0, 0], tags: [3])
+        item.embeddings[model] = ModelEmbedding(vector: [1, 0, 0])
         XCTAssertTrue(db.insert(item))
         return item
     }
@@ -66,7 +66,7 @@ final class DetectorBackfillTests: XCTestCase {
         // even though this text would produce a different one if re-scanned.
         let scanned = ClipItem(kind: .text, text: Self.pemKey)
         scanned.flags = [.pii]
-        scanned.embeddings["backfill-test-sig"] = ModelEmbedding(vector: [0, 1, 0], tags: [4])
+        scanned.embeddings["backfill-test-sig"] = ModelEmbedding(vector: [0, 1, 0])
         XCTAssertTrue(seedDB.insert(scanned))
 
         XCTAssertTrue(ClipStore.needsDetectorBackfill(unscanned))

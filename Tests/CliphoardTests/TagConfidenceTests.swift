@@ -153,11 +153,11 @@ final class SmartUserTagRankingTests: XCTestCase {
         let labelled = ClipItem(kind: .text, text: "notes with no lexical overlap whatsoever")
         labelled.userTags = [normalized]
         labelled.embeddings[e.signature] =
-            ModelEmbedding(vector: e.embed("entirely different prose"), tags: [])
+            ModelEmbedding(vector: e.embed("entirely different prose"))
 
         let neuralOnly = ClipItem(kind: .text, text: "a semantically perfect but unlabelled clip")
         neuralOnly.embeddings[e.signature] =
-            ModelEmbedding(vector: e.embed(query, query: true), tags: [])
+            ModelEmbedding(vector: e.embed(query, query: true))
 
         let ranked = SemanticRanker.smart(query: query, items: [neuralOnly, labelled], embedder: e)
         XCTAssertEqual(ranked.first?.id, labelled.id,
@@ -172,10 +172,10 @@ final class SmartUserTagRankingTests: XCTestCase {
         let other = ClipItem(kind: .text, text: "notes with no lexical overlap whatsoever")
         other.userTags = ["client-beta"]
         other.embeddings[e.signature] =
-            ModelEmbedding(vector: e.embed("entirely different prose"), tags: [])
+            ModelEmbedding(vector: e.embed("entirely different prose"))
         let neuralOnly = ClipItem(kind: .text, text: "client-acme mentioned verbatim")
         neuralOnly.embeddings[e.signature] =
-            ModelEmbedding(vector: e.embed(query, query: true), tags: [])
+            ModelEmbedding(vector: e.embed(query, query: true))
 
         let ranked = SemanticRanker.smart(query: query, items: [other, neuralOnly], embedder: e)
         XCTAssertEqual(ranked.first?.id, neuralOnly.id,
@@ -190,7 +190,7 @@ final class SuggestedUserTagTests: XCTestCase {
     private func clip(_ v: [Float], tags: [String] = []) -> ClipItem {
         let item = ClipItem(kind: .text, text: "clip \(UUID().uuidString.prefix(4))")
         item.userTags = ClipItem.normalizedUserTags(tags)
-        item.embeddings[signature] = ModelEmbedding(vector: HashingEmbedder.normalize(v), tags: [])
+        item.embeddings[signature] = ModelEmbedding(vector: HashingEmbedder.normalize(v))
         return item
     }
 

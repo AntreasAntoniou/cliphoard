@@ -131,28 +131,13 @@ struct TagBasket: Identifiable, Codable, Equatable {
     /// tag vectors — no separate topical term is needed.
     var fingerprint: String { "\(id):\(tags.count):\(HashingEmbedder.fnv1a(tags.joined(separator: "|")))" }
 
-    /// Fingerprint of the vocabulary the tag-ids CURRENTLY ON DISK were minted
-    /// against, or nil if never recorded.
-    ///
-    /// `ModelEmbedding.tags` stores integer ids resolved POSITIONALLY through
-    /// `TagBaskets.active.tags`. Nothing else on disk records which vocabulary
-    /// produced them, so any edit to a basket silently re-points every stored id
-    /// at a different word — e.g. the old `Domain` value "personal" (global id 12)
-    /// lands on "password" under a 16-tag General, and a private note renders a
-    /// `password` chip. Ids past the new end simply vanish.
-    ///
-    /// This is not only a migration concern: switching the overlay in Settings has
-    /// always renumbered the ids, and that reclassify is an async task with no
-    /// completion marker, so quitting mid-pass leaves clips permanently carrying a
-    /// MIX of old and new ids with nothing able to detect it. The marker below is
-    /// what makes that state observable and self-healing.
-    static var persistedVocabulary: String? {
-        get { UserDefaults.standard.string(forKey: persistedVocabularyKey) }
-        set {
-            if let newValue { UserDefaults.standard.set(newValue, forKey: persistedVocabularyKey) }
-            else { UserDefaults.standard.removeObject(forKey: persistedVocabularyKey) }
-        }
-    }
+    /// UserDefaults key of the vocabulary marker the pre-derived-tags builds wrote.
+    /// Nothing reads it any more — ids are derived from the vector on demand. It
+    /// survives for one reason: a store migrated by `dropTagIDColumnIfPresent` must
+    /// not be left with it STAMPED. Reverting this change restores an empty `tags`
+    /// column, and the reverted `migrateTagVocabularyIfNeeded` only recomputes when
+    /// the marker DISAGREES with the active basket — so a stale marker would turn
+    /// the revert into a silent zero-tags store. Clearing it keeps a revert real.
     static let persistedVocabularyKey = "persistedTagVocabulary"
 
     // MARK: Codable (resilient: old baskets persisted before `dimensions` existed

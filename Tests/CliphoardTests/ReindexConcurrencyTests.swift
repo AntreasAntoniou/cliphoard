@@ -2,8 +2,8 @@ import XCTest
 import Combine
 @testable import Cliphoard
 
-/// TP-11: concurrency safety of the two background (re)indexing passes,
-/// `ClipStore.reindexStale` and `ClipStore.reclassifyAllTags`.
+/// TP-11: concurrency safety of the background re-indexing pass,
+/// `ClipStore.reindexStale`, against the synchronous `ClipStore.rebuildTagIndex`.
 ///
 /// Both passes publish progress through the `@Published` `indexing` state on the
 /// main actor and run a cancellable `Task`; starting a new pass cancels the
@@ -47,10 +47,9 @@ final class ReindexConcurrencyTests: XCTestCase {
     /// The index a full `rebuildTagIndex()` would produce: for each active-model
     /// tag, the items carrying it in `items` order, with no empty buckets.
     private func expectedIndex(_ store: ClipStore) -> [Int: [UUID]] {
-        let sig = EmbedderProvider.active.signature
         var index: [Int: [UUID]] = [:]
         for item in store.items {
-            for tag in item.embeddings[sig]?.tags ?? [] {
+            for tag in store.tags(of: item) {
                 index[tag, default: []].append(item.id)
             }
         }
@@ -59,9 +58,8 @@ final class ReindexConcurrencyTests: XCTestCase {
 
     /// The live, incrementally maintained index reconstructed from `tagIndex`.
     private func actualIndex(_ store: ClipStore) -> [Int: [UUID]] {
-        let sig = EmbedderProvider.active.signature
         var ids: [Int: [UUID]] = [:]
-        for tag in Set(store.items.flatMap { $0.embeddings[sig]?.tags ?? [] }) {
+        for tag in Set(store.items.flatMap { store.tags(of: $0) }) {
             ids[tag] = store.items(taggedWith: tag).map { $0.id }
         }
         return ids
@@ -147,7 +145,7 @@ final class ReindexConcurrencyTests: XCTestCase {
     func testOverlappingReindexAndReclassifyCoalesceToSinglePass() async {
         let store = tempStore()
 
-        // A pool of already-embedded items → real work for `reclassifyAllTags`.
+        // A pool of already-embedded items → real work for `rebuildTagIndex`.
         for i in 0..<20 {
             store.add(ClipItem(kind: .text, text: "embedded sample number \(i) lorem ipsum"))
         }
@@ -173,7 +171,7 @@ final class ReindexConcurrencyTests: XCTestCase {
         // Fire both back-to-back on the main actor: the second call cancels the
         // first's task, so the two passes coalesce rather than running two live
         // passes that fight over the published `indexing` state.
-        store.reclassifyAllTags()
+        store.rebuildTagIndex()
         store.reindexStale()
 
         await fulfillment(of: [idle], timeout: 5)
@@ -283,26 +281,8 @@ final class ReindexConcurrencyTests: XCTestCase {
     }
 
     // MARK: 1c — a single reclassify pass alone is monotonic and ends exactly once
+    // testSingleReclassifyPassIsMonotonicAndEndsExactlyOnce was DELETED with the
+    // async reclassify pass it measured: tag ids are derived now, so there is no
+    // pass, no progress to be monotonic, and nothing that can end more than once.
 
-    func testSingleReclassifyPassIsMonotonicAndEndsExactlyOnce() async {
-        let store = tempStore()
-        for i in 0..<24 {
-            store.add(ClipItem(kind: .text, text: "reclassify sample \(i) the lazy dog jumps"))
-        }
-
-        store.reclassifyAllTags()
-        let log = await recordUntilIdle(store)
-
-        let firstWork = log.firstIndex(where: { $0 != nil }) ?? log.count
-        let nilCount = log[firstWork...].filter { $0 == nil }.count
-        XCTAssertEqual(nilCount, 1, "a single reclassify pass returns to nil exactly once")
-
-        assertSegmentsMonotonic(log)
-
-        let progresses = log.compactMap { $0 }
-        XCTAssertFalse(progresses.isEmpty, "the pass must publish progress")
-        XCTAssertEqual(progresses.last!.done, progresses.last!.total, "pass ends at done == total")
-        XCTAssertEqual(actualIndex(store), expectedIndex(store),
-                       "tagIndex equals a full rebuild after reclassify")
-    }
 }

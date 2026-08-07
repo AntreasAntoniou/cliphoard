@@ -43,13 +43,13 @@ final class AppSettings: ObservableObject {
             // "general" = base only (no overlay); "custom" = the flat editable
             // pool; anything else = that specialist layered on General.
             TagBaskets.overlayID = (activeBasket == "general") ? nil : activeBasket
-            store.reclassifyAllTags()   // cheap: re-tags from cached vectors
+            store.rebuildTagIndex()     // synchronous: ids are derived, not stored
         }
     }
     @Published var assignmentThreshold: Double {
         didSet {
             TagSpace.assignmentThreshold = Float(assignmentThreshold)
-            store.reclassifyAllTags()
+            store.rebuildTagIndex()
         }
     }
     /// Custom-basket tags, one per line, for editing.
@@ -61,7 +61,7 @@ final class AppSettings: ObservableObject {
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty }
         TagBaskets.custom = TagBasket(id: "custom", name: "Custom", tags: tags)
-        if activeBasket == "custom" { store.reclassifyAllTags() }
+        if activeBasket == "custom" { store.rebuildTagIndex() }
     }
 
     init(store: ClipStore) {
@@ -396,7 +396,9 @@ struct SettingsView: View {
 
     private var averageAutomaticTags: Double {
         let signature = EmbedderProvider.active.signature
-        let counts = store.items.compactMap { $0.embeddings[signature]?.tags.count }
+        let counts = store.items
+            .filter { $0.embeddings[signature] != nil }
+            .map { store.tags(of: $0).count }
         guard !counts.isEmpty else { return 0 }
         return Double(counts.reduce(0, +)) / Double(counts.count)
     }

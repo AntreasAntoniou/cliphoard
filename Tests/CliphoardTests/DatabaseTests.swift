@@ -18,37 +18,34 @@ final class DatabaseTests: XCTestCase {
     /// Read the raw (undecrypted) vector/tags columns of the first embedding row
     /// via an independent connection — verifies what is actually on disk.
     private func rawEmbedding(path: String) -> (vector: Data?, tags: String?) {
+        // `tags` is retired; the tuple keeps its shape so callers need no churn.
         var raw: OpaquePointer?
         guard sqlite3_open_v2(path, &raw, SQLITE_OPEN_READONLY, nil) == SQLITE_OK else { return (nil, nil) }
         defer { sqlite3_close_v2(raw) }
         var stmt: OpaquePointer?
         defer { sqlite3_finalize(stmt) }
-        guard sqlite3_prepare_v2(raw, "SELECT vector, tags FROM embeddings LIMIT 1;", -1, &stmt, nil) == SQLITE_OK,
+        guard sqlite3_prepare_v2(raw, "SELECT vector FROM embeddings LIMIT 1;", -1, &stmt, nil) == SQLITE_OK,
               sqlite3_step(stmt) == SQLITE_ROW else { return (nil, nil) }
         var vec: Data?
         if let p = sqlite3_column_blob(stmt, 0) { vec = Data(bytes: p, count: Int(sqlite3_column_bytes(stmt, 0))) }
-        var tags: String?
-        if let c = sqlite3_column_text(stmt, 1) { tags = String(cString: c) }
-        return (vec, tags)
+        return (vec, nil)
     }
 
     /// Insert a PLAINTEXT (legacy, pre-encryption) embedding row directly, so we
     /// can prove old databases still load after the encrypt-at-rest change.
-    private func insertLegacyPlaintextEmbedding(path: String, clipID: UUID, vector: [Float], tags: [Int]) {
+    private func insertLegacyPlaintextEmbedding(path: String, clipID: UUID, vector: [Float]) {
         var raw: OpaquePointer?
         guard sqlite3_open_v2(path, &raw, SQLITE_OPEN_READWRITE, nil) == SQLITE_OK else { return }
         defer { sqlite3_close_v2(raw) }
         var stmt: OpaquePointer?
         defer { sqlite3_finalize(stmt) }
         guard sqlite3_prepare_v2(raw,
-            "INSERT OR REPLACE INTO embeddings (clip_id, model, vector, tags) VALUES (?,?,?,?);",
+            "INSERT OR REPLACE INTO embeddings (clip_id, model, vector) VALUES (?,?,?);",
             -1, &stmt, nil) == SQLITE_OK else { return }
         sqlite3_bind_text(stmt, 1, clipID.uuidString, -1, Self.transient)
         sqlite3_bind_text(stmt, 2, "legacy", -1, Self.transient)
         let blob = Database.blob(fromVector: vector)   // plaintext Float16 blob
         _ = blob.withUnsafeBytes { sqlite3_bind_blob(stmt, 3, $0.baseAddress, Int32(blob.count), Self.transient) }
-        let tagsText = tags.map(String.init).joined(separator: ",")
-        sqlite3_bind_text(stmt, 4, tagsText, -1, Self.transient)
         _ = sqlite3_step(stmt)
     }
 
@@ -132,14 +129,13 @@ final class DatabaseTests: XCTestCase {
         let db = tempDB()
         let item = text("hello db")
         item.pinned = true
-        item.embeddings["m1"] = ModelEmbedding(vector: [0.5, -0.25, 1.0], tags: [3, 7])
+        item.embeddings["m1"] = ModelEmbedding(vector: [0.5, -0.25, 1.0])
         db.insert(item)
         let loaded = db.loadAll()
         XCTAssertEqual(loaded.count, 1)
         XCTAssertEqual(loaded.first?.text, "hello db")
         XCTAssertTrue(loaded.first?.pinned ?? false)
         let emb = loaded.first?.embeddings["m1"]
-        XCTAssertEqual(emb?.tags, [3, 7])
         // Float16 round-trip tolerance.
         XCTAssertEqual(emb?.vector.count, 3)
         XCTAssertEqual(emb?.vector[0] ?? 0, 0.5, accuracy: 0.01)
@@ -149,7 +145,7 @@ final class DatabaseTests: XCTestCase {
     func testDeleteCascadesEmbeddings() {
         let db = tempDB()
         let item = text("to delete")
-        item.embeddings["m1"] = ModelEmbedding(vector: [1, 0], tags: [1])
+        item.embeddings["m1"] = ModelEmbedding(vector: [1, 0])
         db.insert(item)
         db.delete(id: item.id)
         XCTAssertEqual(db.loadAll().count, 0)
@@ -164,7 +160,7 @@ final class DatabaseTests: XCTestCase {
         XCTAssertTrue(db.updateMeta(item), "updateMeta should report success")
         XCTAssertTrue(
             db.upsertEmbedding(clipID: item.id, model: "m1",
-                               embedding: ModelEmbedding(vector: [0.5], tags: [1])),
+                               embedding: ModelEmbedding(vector: [0.5])),
             "upsertEmbedding should report success")
         XCTAssertTrue(db.delete(id: item.id), "delete should report success")
     }
@@ -196,15 +192,13 @@ final class DatabaseTests: XCTestCase {
         let path = tempPath()
         let db = Database(path: path)!
         let item = text("secret vec")
-        item.embeddings["m1"] = ModelEmbedding(vector: [0.5, -0.25, 1.0], tags: [3, 7])
+        item.embeddings["m1"] = ModelEmbedding(vector: [0.5, -0.25, 1.0])
         db.insert(item)
 
         let raw = rawEmbedding(path: path)
         XCTAssertTrue(Crypto.isSealed(raw.vector), "on-disk vector blob must be sealed")
-        XCTAssertTrue(raw.tags?.hasPrefix("enc1:") ?? false, "on-disk tags text must be sealed")
         // And it must still round-trip back to the original values.
         let emb = db.loadAll().first?.embeddings["m1"]
-        XCTAssertEqual(emb?.tags, [3, 7])
         XCTAssertEqual(emb?.vector.count, 3)
         XCTAssertEqual(emb?.vector[0] ?? 0, 0.5, accuracy: 0.01)
         XCTAssertEqual(emb?.vector[2] ?? 0, 1.0, accuracy: 0.01)
@@ -261,16 +255,14 @@ final class DatabaseTests: XCTestCase {
         let db = Database(path: path)!
         let item = text("has legacy emb")
         db.insert(item)   // clip row (needed for the FK)
-        insertLegacyPlaintextEmbedding(path: path, clipID: item.id, vector: [0.5, -0.25, 1.0], tags: [3, 7])
+        insertLegacyPlaintextEmbedding(path: path, clipID: item.id, vector: [0.5, -0.25, 1.0])
 
         // Confirm the row really is plaintext on disk.
         let raw = rawEmbedding(path: path)
         XCTAssertFalse(Crypto.isSealed(raw.vector), "legacy vector should be plaintext")
-        XCTAssertFalse(raw.tags?.hasPrefix("enc1:") ?? true, "legacy tags should be plaintext")
 
         // Reopen and confirm it decodes via the plaintext passthrough.
         let emb = Database(path: path)!.loadAll().first?.embeddings["legacy"]
-        XCTAssertEqual(emb?.tags, [3, 7])
         XCTAssertEqual(emb?.vector.count, 3)
         XCTAssertEqual(emb?.vector[0] ?? 0, 0.5, accuracy: 0.01)
         XCTAssertEqual(emb?.vector[2] ?? 0, 1.0, accuracy: 0.01)
@@ -284,7 +276,7 @@ final class DatabaseTests: XCTestCase {
             // A foreign-key violation (embedding for a nonexistent clip) makes
             // step() fail, which must roll the whole transaction back.
             db.upsertEmbedding(clipID: UUID(), model: "m",
-                               embedding: ModelEmbedding(vector: [1.0], tags: [1]))
+                               embedding: ModelEmbedding(vector: [1.0]))
         }
         // Only the pre-transaction commit survives; the txn insert is undone too.
         XCTAssertEqual(db.loadAll().map(\.text), ["pre-existing"],

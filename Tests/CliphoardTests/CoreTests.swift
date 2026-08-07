@@ -82,10 +82,9 @@ final class CodableResilienceTests: XCTestCase {
 
     func testRoundTripPreservesEmbeddings() throws {
         let item = ClipItem(kind: .text, text: "round trip")
-        item.embeddings["ogma-small-256"] = ModelEmbedding(vector: [0.5, 0.5], tags: [3, 7])
+        item.embeddings["ogma-small-256"] = ModelEmbedding(vector: [0.5, 0.5])
         let data = try JSONEncoder().encode([item])
         let back = try JSONDecoder().decode([ClipItem].self, from: data)
-        XCTAssertEqual(back.first?.embeddings["ogma-small-256"]?.tags, [3, 7])
     }
 
     func testUserTagsDecodeNormalisedAndRoundTrip() throws {

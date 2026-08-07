@@ -32,8 +32,16 @@ enum ClipKind: String, Codable, CaseIterable {
 
 /// A cached embedding for one model: the vector plus the top-K preset tag ids.
 struct ModelEmbedding: Codable {
+    /// The cached vector for one model. Tag ids are NOT stored — see
+    /// `ClipStore.tags(of:)`.
+    ///
+    /// They used to live here, and that was the defect: an id is a positional index
+    /// into `TagBaskets.active.tags`, so a stored id does not go INVALID when the
+    /// vocabulary changes, it goes WRONG — it resolves to a different word. Keeping a
+    /// second copy of a derived value required a marker to say whether the copy was
+    /// current, and that marker stamped itself without writing anything. Deleting the
+    /// copy deletes the marker, the migration, the repair pass, and the possibility.
     var vector: [Float]
-    var tags: [Int]
 }
 
 /// A single entry in the clipboard history.
@@ -108,7 +116,6 @@ final class ClipItem: Codable, Identifiable {
     // Legacy single-vector fields (pre per-model cache). Decoded only to migrate
     // old data into `embeddings`, then cleared. Not written for new clips.
     var vector: [Float]?
-    var tagIDs: [Int]?
     var vectorModel: String?
 
     /// Whether this clip already has an embedding for `signature`.
@@ -144,7 +151,7 @@ final class ClipItem: Codable, Identifiable {
         case createdAt, lastUsedAt, pinned, sourceApp, useCount
         case userTags
         case flags, shape
-        case embeddings, vector, tagIDs, vectorModel
+        case embeddings, vector, vectorModel
     }
 
     /// Resilient decoding: every field is optional-with-default, so adding or
@@ -175,7 +182,6 @@ final class ClipItem: Codable, Identifiable {
         shape = try c.decodeIfPresent(String.self, forKey: .shape)
         embeddings = try c.decodeIfPresent([String: ModelEmbedding].self, forKey: .embeddings) ?? [:]
         vector = try c.decodeIfPresent([Float].self, forKey: .vector)
-        tagIDs = try c.decodeIfPresent([Int].self, forKey: .tagIDs)
         vectorModel = try c.decodeIfPresent(String.self, forKey: .vectorModel)
     }
 
