@@ -27,38 +27,38 @@ import CryptoKit
 /// loss and break the product, while passing any one-sided test).
 final class EphemeralKeyTests: XCTestCase {
 
-    /// THE TEST THAT WOULD HAVE CAUGHT THE REAL BUG.
+    /// WHAT THIS DOES AND DOES NOT PROVE — stated because the previous version's comment
+    /// was false, and a test whose comment lies is worse than no test.
     ///
-    /// The previous version of this function was `_ = Crypto.keyIsEphemeral` with no
-    /// assertion — it passed under every possible implementation, including one where the
-    /// flag was always false. Worse, the other tests here set the flag BY HAND, eagerly,
-    /// while production sets it LAZILY as a side effect of resolving the key. A test that
-    /// SETS a flag can never catch a bug in WHEN the flag is set — and that was the bug:
-    /// every guard read the flag before the thing that assigns it had run, so the first
-    /// fail-closed seal in a process sailed straight through.
+    /// It claimed to exercise "the FIRST fail-closed seal in this process". It cannot. A
+    /// review established two independent reasons: a dozen suites sort before this one and
+    /// every one of them seals or inserts, forcing key resolution long beforehand; and
+    /// within this class XCTest orders methods alphabetically, so this is FOURTH and the
+    /// canary test has already run. Reverting `ensureKeyResolved` to a bare flag read
+    /// leaves every assertion below true. It would pass.
     ///
-    /// This asserts the ORDERING property instead: after `ensureKeyResolved`, the flag is
-    /// authoritative, and a guard consulting it cannot be reading a stale default.
-    func testFlagIsAuthoritativeBeforeAnyGuardConsultsIt() {
-        // Forcing resolution must be idempotent and must agree with the raw flag. If a
-        // guard could see something different from this, the guard is reading a value
-        // that has not been established yet.
+    /// What it does prove is still worth having: the resolving accessor agrees with the
+    /// flag, is idempotent, and the fail-closed seal's behaviour is consistent with both.
+    /// Those are real invariants — they are simply weaker than "the ordering bug cannot
+    /// return".
+    ///
+    /// The discriminating test does not exist yet and needs a fresh process with an
+    /// injectable keychain outcome, asserting the flag BEFORE any other crypto call.
+    /// Recorded as a known gap rather than papered over with a green tick.
+    func testResolvingAccessorAgreesWithTheFlagAndIsIdempotent() {
         let resolved = Crypto.ensureKeyResolved()
         XCTAssertEqual(resolved, Crypto.keyIsEphemeral,
-                       "ensureKeyResolved disagrees with the flag it exists to establish")
+                       "the accessor disagrees with the flag it exists to establish")
         XCTAssertEqual(Crypto.ensureKeyResolved(), resolved,
-                       "resolution is not idempotent — a second guard would see a "
-                       + "different answer from the first")
+                       "resolution is not idempotent — two guards would see different "
+                       + "answers")
 
-        // And the fail-closed seal must agree with it, in the SAME process, on the FIRST
-        // call. Under the lazy version this was the failing case: call one returned
-        // ciphertext, call two refused.
-        let first = Crypto.sealStrict("first call in this process")
+        // Consistency between the accessor and the guard that consumes it.
+        let sealed = Crypto.sealStrict("consistency probe")
         if Crypto.keyIsEphemeral {
-            XCTAssertNil(first, "the FIRST fail-closed seal returned ciphertext under an "
-                         + "ephemeral key — the guard ran before the flag was set")
+            XCTAssertNil(sealed, "ephemeral key must refuse a fail-closed seal")
         } else {
-            XCTAssertNotNil(first, "a healthy key must still seal on the first call")
+            XCTAssertNotNil(sealed, "a persisted key must still seal")
         }
     }
 

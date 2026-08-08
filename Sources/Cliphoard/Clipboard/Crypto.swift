@@ -90,6 +90,17 @@ enum Crypto {
     /// restores the previous value. The alternative — asserting against a local copy of
     /// the logic — is what let a reintroduced bug pass a full green suite earlier today.
     static func simulatingEphemeralKey<T>(_ body: () throws -> T) rethrows -> T {
+        // Resolve FIRST, then set the flag. Otherwise the guards inside `body` call
+        // `ensureKeyResolved`, that triggers resolution for the first time, and resolution
+        // ASSIGNS the flag — clearing the simulation before it is ever read. A real test
+        // failure caught this: the fail-closed seal returned ciphertext inside a block
+        // that had explicitly asked for the ephemeral state.
+        //
+        // Production is unaffected: there, resolution happens once and is the only thing
+        // that sets the flag. This ordering hazard exists solely because the seam writes a
+        // value the resolver also owns — which is worth knowing about any test hook that
+        // mutates state the code under test also mutates.
+        ensureKeyResolved()
         let previous = keyIsEphemeral
         keyIsEphemeral = true
         defer { keyIsEphemeral = previous }
@@ -459,6 +470,16 @@ enum Crypto {
             archiveKey(k, label: "se-v2")
             return k
         }
+        // Clear a STICKY ephemeral mark before trying the fallback.
+        //
+        // If the enclave branch minted a key, could not persist it (so marked ephemeral),
+        // and then key agreement failed, control arrives here — and the fallback may yield
+        // a perfectly durable key while the flag stays true forever. The result is a
+        // permanent refusal to write under a good key: an availability failure caused by a
+        // safety flag that outlived the situation it described. Newly reachable because
+        // the enclave branch only started setting the flag last commit.
+        keyIsEphemeral = false
+
         // No Secure Enclave, OR the Enclave key was unreadable and refused to be
         // replaced — which means this path is now the destination of that refusal and
         // must carry the same discipline, or the fix above merely relocates the damage.

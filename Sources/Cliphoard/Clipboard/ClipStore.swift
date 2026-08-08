@@ -159,14 +159,18 @@ final class ClipStore: ObservableObject {
         guard Crypto.usesSecureEnclave, !UserDefaults.standard.bool(forKey: flag) else { return }
         // Same rule as above: stamp only what actually landed. A re-key that wrote nothing
         // must be retried, not retired.
+        guard let db else {
+            DebugLog.write("migrate: no database — NOT stamping re-key")
+            return
+        }
         var written = 0
-        for item in items where db?.insert(item) == true { written += 1 }
+        for item in items where db.insert(item) { written += 1 }
         guard written == items.count else {
             DebugLog.write("migrate: re-key wrote \(written)/\(items.count) rows — NOT "
                            + "stamping the marker, so a healthy launch retries")
             return
         }
-        db?.vacuum()
+        db.vacuum()
         UserDefaults.standard.set(true, forKey: flag)
     }
 
@@ -181,14 +185,24 @@ final class ClipStore: ObservableObject {
         // is fail-closed against an ephemeral key — retired the migration permanently.
         // The rows stay unencrypted forever and no healthy launch ever revisits them.
         // A one-shot marker must record work done, not merely an attempt made.
+        // A live database is required before stamping. `items` comes from `db?.loadAll()
+        // ?? []`, so a FAILED sqlite open forces items empty — and zero-equals-zero then
+        // passes the count check and stamps a marker for work that never happened. The
+        // setting survives the failed launch, so the next healthy one loads plaintext rows
+        // and never revisits them: one transient open failure permanently retires at-rest
+        // encryption. This was a hole in my own counting fix, not in the original code.
+        guard let db else {
+            DebugLog.write("migrate: no database — NOT stamping encrypt-existing")
+            return
+        }
         var written = 0
-        for item in items where db?.insert(item) == true { written += 1 }
+        for item in items where db.insert(item) { written += 1 }
         guard written == items.count else {
             DebugLog.write("migrate: encrypt-existing wrote \(written)/\(items.count) rows "
                            + "— NOT stamping the marker, so a healthy launch retries")
             return
         }
-        db?.vacuum()   // purge stale plaintext from free pages
+        db.vacuum()   // purge stale plaintext from free pages
         UserDefaults.standard.set(true, forKey: key)
     }
 

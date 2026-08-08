@@ -69,7 +69,11 @@ enum TagAudit {
         // that is about the process, not the data. It consulted nothing: no canary, no
         // health signal, no safe mode.
         Crypto.verifyCanary()
-        if Crypto.keyIsEphemeral || !Crypto.decryptionHealthy || Crypto.keychainAccessDenied {
+        // `ensureKeyResolved()`, not the raw flag. The flag is set as a side effect of key
+        // resolution, so reading it directly can see a stale false — and this is the one
+        // tool that DELETES rows. It happened to be safe only because the other two
+        // disjuncts caught the case; correct by over-determination is not correct.
+        if Crypto.ensureKeyResolved() || !Crypto.decryptionHealthy || Crypto.keychainAccessDenied {
             err("REFUSING: this process cannot reach the keychain, so EVERY clip looks "
                 + "unreadable — that is a property of this process, not of your data. "
                 + "Running with --delete here would destroy your whole history. Try again "
