@@ -194,31 +194,77 @@ enum Crypto {
 
     /// Every previously-archived symmetric key, read from `db-archived-key-*`
     /// entries. An archived key is never deleted, only added to.
-    private static func archivedKeys() -> [SymmetricKey] {
-        let query: [String: Any] = [
+    /// Read in TWO steps — list the accounts, then fetch each one's bytes on its own.
+    ///
+    /// The single-query version of this did not work, and its failure was silent, which
+    /// is the worst possible combination for a recovery mechanism. On macOS, asking for
+    /// `kSecMatchLimitAll` together with `kSecReturnData` does not reliably return the
+    /// data for multiple items; the call fails and every archived key vanishes from the
+    /// ring. The keyring was introduced specifically so a re-minted key could never
+    /// orphan history again — and because of this one query, it carried nothing, so it
+    /// protected nothing on the day it was needed.
+    ///
+    /// Per-account reads are slightly more work and actually return the bytes. Failures
+    /// are logged per account rather than collapsing the whole ring to empty, because a
+    /// ring that is quietly empty looks exactly like a ring with nothing to recover.
+    static func archivedKeys() -> [SymmetricKey] {
+        let listing: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecMatchLimit as String: kSecMatchLimitAll,
             kSecReturnAttributes as String: true,
-            kSecReturnData as String: true,
         ]
         var out: CFTypeRef?
-        guard SecItemCopyMatching(query as CFDictionary, &out) == errSecSuccess,
-              let rows = out as? [[String: Any]] else { return [] }
-        return rows.compactMap { row in
-            guard let account = row[kSecAttrAccount as String] as? String,
-                  account.hasPrefix(archivedPrefix),
-                  let data = row[kSecValueData as String] as? Data, data.count == 32
-            else { return nil }
-            return SymmetricKey(data: data)
+        let status = SecItemCopyMatching(listing as CFDictionary, &out)
+        guard status == errSecSuccess, let rows = out as? [[String: Any]] else {
+            if status != errSecItemNotFound {
+                NSLog("Cliphoard crypto: could not list archived keys (OSStatus \(status)) "
+                      + "— the recovery ring is EMPTY this session, not absent")
+            }
+            return []
         }
+        let accounts = rows.compactMap { $0[kSecAttrAccount as String] as? String }
+            .filter { $0.hasPrefix(archivedPrefix) }
+        var keys: [SymmetricKey] = []
+        for account in accounts {
+            switch readBlobStatus(account: account) {
+            case .found(let data) where data.count == 32:
+                keys.append(SymmetricKey(data: data))
+            case .found(let data):
+                NSLog("Cliphoard crypto: archived key \(account) has \(data.count) bytes, "
+                      + "expected 32 — skipping")
+            case .absent:
+                continue   // listed then vanished; nothing to do
+            case .unavailable(let s):
+                NSLog("Cliphoard crypto: archived key \(account) unreadable (OSStatus \(s)) "
+                      + "— rows sealed under it cannot be opened in this session")
+            }
+        }
+        return keys
     }
 
     /// Archive a symmetric key so it is retained forever and keeps opening old
     /// rows. Idempotent, and NEVER deletes anything.
+    /// Archive under a label derived from the KEY, not from its role.
+    ///
+    /// This used to take a fixed label like "se-v2", and `SecItemAdd` is insert-only, so
+    /// the second distinct key to claim that label was silently not archived — the add
+    /// returned duplicate-item and was ignored by design. That is how one clip on this
+    /// machine became unrecoverable: an intermediate key was minted, sealed a clip, and
+    /// was replaced before anything could retain it, because its slot was already taken
+    /// by an earlier key. A fixed label makes the archive hold exactly one key per role
+    /// forever, which is precisely what an append-only ring must not do.
+    ///
+    /// Suffixing a short fingerprint of the key material gives every distinct key its own
+    /// slot, so re-archiving the same key is still idempotent while a NEW key always
+    /// lands somewhere. The fingerprint is a truncated SHA-256 of the key bytes: it
+    /// identifies without revealing, and 64 bits is ample when the set is a handful of
+    /// keys on one Mac.
     static func archiveKey(_ k: SymmetricKey, label: String) {
         let raw = k.withUnsafeBytes { Data($0) }
-        let account = archivedPrefix + label
+        let fingerprint = SHA256.hash(data: raw).prefix(8)
+            .map { String(format: "%02x", $0) }.joined()
+        let account = archivedPrefix + label + "-" + fingerprint
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
