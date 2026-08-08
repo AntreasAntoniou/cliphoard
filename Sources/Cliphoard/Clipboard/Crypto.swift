@@ -480,6 +480,23 @@ enum Crypto {
     /// be overwritten. An earlier fix guarded the case where a blob comes back and will
     /// not restore; it could not guard this one, because here nothing comes back at all.
     private static func readBlobStatus(account: String) -> BlobRead {
+        // The data-protection keychain FIRST: no ACLs, so no prompt, so this path works
+        // when the app is relaunched by a script, when the Mac is in dark wake, and when
+        // the lid is shut. Every key written from now on lives here.
+        var dpOut: CFTypeRef?
+        let dpStatus = SecItemCopyMatching([
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne,
+            kSecUseDataProtectionKeychain as String: true,
+        ] as CFDictionary, &dpOut)
+        if dpStatus == errSecSuccess, let data = dpOut as? Data { return .found(data) }
+
+        // Fall back to the legacy file-based keychain, where every key written before
+        // this change lives. If it opens, MIGRATE it forward so the prompt is needed at
+        // most once more, ever.
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -528,8 +545,16 @@ enum Crypto {
         switch status {
         case errSecSuccess:
             guard let data = out as? Data else { return .unavailable(status) }
+            // MIGRATE FORWARD where possible: we could read it this time, so copy it into
+            // the data-protection keychain, which needs no prompt and so cannot fail the
+            // way this read just did. Purely additive — the legacy item stays exactly
+            // where it is, so this costs nothing if it fails and an older build still
+            // finds its key. On a self-signed build it WILL fail (no entitlement), and
+            // `storeBlob` falls back to rewriting the legacy item, which is a no-op.
+            storeBlob(data, account: account)
             return .found(data)
         case errSecItemNotFound:
+            // Absent from BOTH keychains. Only now is this genuinely first run.
             return .absent
         default:
             if status == errSecInteractionNotAllowed || status == errSecAuthFailed || status == errSecInDarkWake {
@@ -551,6 +576,18 @@ enum Crypto {
         if case .found(let data) = readBlobStatus(account: account) { return data }
         return nil
     }
+    /// Write into the DATA-PROTECTION keychain.
+    ///
+    /// The legacy file-based keychain guards items with an ACL, and any read by a binary
+    /// not on that ACL needs a confirmation prompt. When no prompt can be shown — an
+    /// app relaunched by a script, a Mac in dark wake, a closed lid — the read fails.
+    /// That is not a hypothetical: on this machine the app could list all its keys and
+    /// read none of them, because the lid was shut and the keychain had nobody to ask.
+    ///
+    /// The data-protection keychain has NO ACLs. Access is decided by code identity, so a
+    /// correctly-signed app reads its own items with no UI, ever. That removes the entire
+    /// failure mode rather than working around it: unattended launches, headless
+    /// relaunches and clamshell mode all just work.
     private static func storeBlob(_ data: Data, account: String) {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
@@ -561,8 +598,29 @@ enum Crypto {
             // items are excluded from keychain backups / Migration Assistant, so the raw
             // AES-256 key cannot travel alongside the encrypted DB on non-Secure-Enclave Macs.
             kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
+            kSecUseDataProtectionKeychain as String: true,
         ]
         SecItemDelete(query as CFDictionary)
-        SecItemAdd(query as CFDictionary, nil)
+        let status = SecItemAdd(query as CFDictionary, nil)
+        if status == errSecSuccess { return }
+
+        // errSecMissingEntitlement (-34018): the data-protection keychain needs a
+        // keychain-access-groups entitlement, which a self-signed local build with no
+        // team identity cannot carry. A notarized release can; a developer build cannot.
+        //
+        // Falling back to the legacy keychain is ESSENTIAL, not a nicety: without it,
+        // first run on any self-signed build would fail to store a key at all and the app
+        // would be unable to encrypt anything. The prompt-free path is an improvement
+        // where it is available, never a prerequisite.
+        DebugLog.write("crypto: data-protection keychain unavailable for \(account) "
+                       + "(OSStatus \(status)) — storing in the legacy keychain instead")
+        var legacy = query
+        legacy.removeValue(forKey: kSecUseDataProtectionKeychain as String)
+        SecItemDelete(legacy as CFDictionary)
+        let legacyStatus = SecItemAdd(legacy as CFDictionary, nil)
+        if legacyStatus != errSecSuccess {
+            DebugLog.write("crypto: storeBlob(\(account)) FAILED in both keychains, "
+                           + "OSStatus \(legacyStatus) — this process cannot persist a key")
+        }
     }
 }
