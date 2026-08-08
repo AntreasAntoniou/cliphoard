@@ -176,17 +176,31 @@ final class IngestIndexingTests: XCTestCase {
         XCTAssertEqual(item.embeddings.count, 2)
     }
 
-    func testVectorsPersistAndReload() {
+    func testVectorsPersistAndReload() throws {
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent("DittoTests-persist-\(UUID().uuidString)")
+        var wasFrozen = false
         do {
             let store = ClipStore(directory: dir)
             store.add(ClipItem(kind: .text, text: "persisted vector entry"))
+            wasFrozen = store.safeMode
         }
+        // A frozen store deliberately persists NOTHING, so there is nothing to reload and
+        // this test has no subject. Skip, naming the reason, rather than assert against a
+        // store the app correctly refused to write.
+        try XCTSkipIf(wasFrozen,
+                      "store was in safe mode (keychain unreachable — dark wake, locked, "
+                      + "or lid closed), so nothing was persisted by design")
+
         let reloaded = ClipStore(directory: dir)
         let sig = EmbedderProvider.active.signature
-        XCTAssertNotNil(reloaded.items.first?.embeddings[sig]?.vector)
-        XCTAssertFalse(ClipIndexer.isStale(reloaded.items.first!), "reload shouldn't need reprocessing")
+        // XCTUnwrap, not `!`. The force-unwrap here turned a plain failure into a SIGTRAP
+        // that killed the whole xctest process, so roughly a third of the suite never ran
+        // and an aborted run could not certify anything after it. A crashing test hides
+        // its neighbours; a failing one does not.
+        let first = try XCTUnwrap(reloaded.items.first, "reload produced no items")
+        XCTAssertNotNil(first.embeddings[sig]?.vector)
+        XCTAssertFalse(ClipIndexer.isStale(first), "reload shouldn't need reprocessing")
     }
 }
 

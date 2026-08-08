@@ -1065,6 +1065,23 @@ final class ClipStore: ObservableObject {
 
     private func trim() {
         guard historyLimit > 0 else { return } // 0 = unlimited
+
+        // SAFE MODE DELETES NOTHING. This ran ahead of the write guard and was itself
+        // ungated, so a frozen store would add a clip to memory, persist nothing — and
+        // still evict the oldest REAL clips, removing their payload files and rows.
+        // Deleting old data while storing none is a straight loss, and it is the exact
+        // failure class this whole effort exists to remove.
+        //
+        // Two of my own changes opened it: freezing writes but not deletes turned a
+        // trade of new-for-old into a deletion, and making the freeze unconditional on
+        // canary health made that state far more reachable. Each was right alone.
+        //
+        // It also fires with no capture at all, because the history-limit setter calls
+        // this directly — so changing that setting while degraded used to delete
+        // immediately. And the safe-mode message promises "nothing will be deleted",
+        // which was false while this ran. A promise in a log is still a promise.
+        guard !safeMode else { return }
+
         let unpinned = items.filter { !$0.pinned }
         guard unpinned.count > historyLimit else { return }
         let toRemove = Array(unpinned.suffix(unpinned.count - historyLimit))
