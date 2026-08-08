@@ -60,6 +60,24 @@ enum TagAudit {
     static func archiveUnreadable(to path: String, delete: Bool) {
         let dbPath = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Ditto/ditto.sqlite").path
+        // REFUSE when this process cannot reach the keychain.
+        //
+        // This is the tool someone reaches for DURING an incident — and an incident is
+        // exactly when the keychain is unreadable. In that state every clip looks
+        // unreadable, because the key is missing rather than the data, so `--delete`
+        // would archive and destroy the ENTIRE history on the strength of a diagnosis
+        // that is about the process, not the data. It consulted nothing: no canary, no
+        // health signal, no safe mode.
+        Crypto.verifyCanary()
+        if Crypto.keyIsEphemeral || !Crypto.decryptionHealthy || Crypto.keychainAccessDenied {
+            err("REFUSING: this process cannot reach the keychain, so EVERY clip looks "
+                + "unreadable — that is a property of this process, not of your data. "
+                + "Running with --delete here would destroy your whole history. Try again "
+                + "on an awake, unlocked Mac; if clips are still unreadable then, the "
+                + "diagnosis is real.")
+            exit(3)
+        }
+
         guard let db = Database(path: dbPath) else { err("cannot open DB"); exit(2) }
         let items = db.loadAll()
         let unreadable = items.filter { Crypto.isSealed($0.text) }
@@ -77,9 +95,25 @@ enum TagAudit {
                 "useCount": item.useCount,
                 "pinned": item.pinned,
                 "characters": item.text.count,
-                // The still-sealed bytes, retained verbatim so a future key
-                // recovery can decrypt them. This is why deletion is safe.
+                // The still-sealed bytes, retained verbatim so a future key recovery can
+                // decrypt them.
                 "ciphertext": item.text,
+                // EVERYTHING ELSE THAT MAKES A CLIP RECOVERABLE. The archive used to keep
+                // only the text ciphertext and claimed "this is why deletion is safe" —
+                // it was not. Dropping `payloadFile` was the worst of it: with no
+                // clip→file mapping, the next healthy launch sees the PNGs unreferenced
+                // and `sweepOrphanPayloads` deletes the image bytes, so even a SUCCESSFUL
+                // key recovery restores nothing for an image clip. The row survived and
+                // the picture did not.
+                "payloadFile": item.payloadFile ?? "",
+                "imageHash": item.imageHash ?? "",
+                "rtfBase64": item.rtf?.base64EncodedString() ?? "",
+                "filePath": item.filePath ?? "",
+                "colorHex": item.colorHex ?? "",
+                "ocrText": item.ocrText ?? "",
+                "userTags": item.userTags,
+                "flags": item.flags.rawValue,
+                "shape": item.shape ?? "",
             ]
         }
         let payload: [String: Any] = [

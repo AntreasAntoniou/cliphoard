@@ -46,6 +46,39 @@ enum Crypto {
     /// True when the active key is bound to this Mac's Secure Enclave.
     private(set) static var usesSecureEnclave = false
 
+    /// True when the key in use was created for THIS PROCESS ONLY and is not stored
+    /// anywhere. Anything sealed with it becomes unreadable the moment the app exits.
+    ///
+    /// This is the fact the whole codebase was missing, and its absence is what made three
+    /// separate paths destroy data. Every "fail closed" check verifies that ciphertext was
+    /// PRODUCED — and sealing always succeeds; it is opening that fails. So a guard reading
+    /// "the sealed archive was written, therefore deleting the original is safe" is
+    /// satisfied by a seal guaranteed to be unreadable tomorrow.
+    ///
+    /// Consumed in exactly three places, which is why one flag closes three holes:
+    ///   • `decryptionHealthy` is forced false, so the freeze cannot be certified away;
+    ///   • `sealStrict` REFUSES, so no fail-closed writer can persist doomed ciphertext;
+    ///   • the diagnostic archive-and-delete tool refuses to run.
+    /// None of those three had to learn the rule individually.
+    private(set) static var keyIsEphemeral = false
+
+    /// Run `body` as though the active key were ephemeral, then restore.
+    ///
+    /// A test seam, and a necessary one: the ephemeral state only arises when the
+    /// keychain is unreachable, which is not a condition a test can arrange. Without
+    /// this, every test of the most consequential guard in the product SKIPS — four
+    /// tests providing zero coverage, which is how the original defect survived review.
+    ///
+    /// It changes no production behaviour: nothing outside tests calls it, and it always
+    /// restores the previous value. The alternative — asserting against a local copy of
+    /// the logic — is what let a reintroduced bug pass a full green suite earlier today.
+    static func simulatingEphemeralKey<T>(_ body: () throws -> T) rethrows -> T {
+        let previous = keyIsEphemeral
+        keyIsEphemeral = true
+        defer { keyIsEphemeral = previous }
+        return try body()
+    }
+
     // MARK: Strings
 
     static func seal(_ plain: String) -> String {
@@ -63,6 +96,18 @@ enum Crypto {
     /// AES-GCM seal effectively never fails on valid input; this is a safety
     /// backstop, not an expected path.
     static func sealStrict(_ plain: String) -> String? {
+        // REFUSE under an ephemeral key. Every caller of this function treats a non-nil
+        // result as "safely stored, the original may now be discarded" — the legacy
+        // import literally deletes the plaintext history on the strength of it. But
+        // sealing ALWAYS succeeds; it is opening that fails. Producing ciphertext under a
+        // key that dies with the process satisfies the old check and guarantees the data
+        // is unreadable tomorrow. Fail-closed has to mean "readable later", not
+        // "encrypted now".
+        guard !keyIsEphemeral else {
+            NSLog("Cliphoard crypto: refusing a fail-closed seal — the key is EPHEMERAL "
+                  + "and anything sealed with it is unreadable after this process exits.")
+            return nil
+        }
         let out = seal(plain)
         return out.hasPrefix(marker) ? out : nil
     }
@@ -70,6 +115,7 @@ enum Crypto {
     /// Fail-CLOSED seal for blob content (RTF / vectors). `nil` on seal failure;
     /// never returns the plaintext bytes. See `sealStrict(_:String)`.
     static func sealStrict(_ plain: Data) -> Data? {
+        guard !keyIsEphemeral else { return nil }   // see sealStrict(_:String)
         guard let out = seal(plain), out.starts(with: markerData) else { return nil }
         return out
     }
@@ -352,6 +398,25 @@ enum Crypto {
               let sealedText = String(data: stored, encoding: .utf8) else {
             // Genuinely absent: first run, or the canary was lost. Establishing one now
             // destroys nothing, because there is nothing there.
+            //
+            // UNLESS the key is ephemeral — and this branch is how the freeze used to be
+            // defeated. On an upgrade from a pre-canary build, with the real keys
+            // unreadable, this would seal a NEW canary under the session key, find that
+            // it round-trips (it does, within one process), and declare decryption
+            // healthy. Safe mode's first term then went false, and on a store too small
+            // for the ratio gate the migration that re-seals every row ran under a key
+            // that dies at exit. The mechanism designed to prevent total loss caused it.
+            //
+            // `sealStrict` now refuses under an ephemeral key, so the store below fails —
+            // but the health verdict must be set explicitly, not left to fall through.
+            guard !keyIsEphemeral else {
+                decryptionHealthy = false
+                NSLog("Cliphoard crypto: canary absent AND the key is ephemeral — refusing "
+                      + "to establish one, because it would certify a health this process "
+                      + "cannot deliver. Entering safe mode.")
+                DebugLog.write("crypto: canary absent + ephemeral key — safe mode")
+                return false
+            }
             if let sealed = sealStrict(canaryPlaintext),
                let data = sealed.data(using: .utf8) {
                 storeBlob(data, account: canaryAccount)
@@ -390,6 +455,7 @@ enum Crypto {
             NSLog("Cliphoard crypto: legacy key present but malformed — refusing to "
                   + "replace it. Using an EPHEMERAL key for this session; nothing "
                   + "already stored will be re-sealed.")
+            keyIsEphemeral = true
             return SymmetricKey(size: .bits256)
 
         case .unavailable(let status):
@@ -401,6 +467,7 @@ enum Crypto {
             NSLog("Cliphoard crypto: legacy key unreadable (OSStatus \(status)) — NOT "
                   + "first run, so refusing to mint over it. Using an ephemeral session "
                   + "key; no existing data is touched.")
+            keyIsEphemeral = true
             return SymmetricKey(size: .bits256)
 
         case .absent:

@@ -85,7 +85,11 @@ final class ClipStore: ObservableObject {
         Crypto.verifyCanary()
         migrateLegacyJSONIfNeeded()
         items = db?.loadAll() ?? []
-        repairKinds()
+        // repairKinds MOVED below the safe-mode decision. It deletes rows, and it ran
+        // here — before safeMode was even assigned — so a frozen store could still lose
+        // data to it. It also recomputes each clip's kind from `item.text`, which is
+        // CIPHERTEXT when unreadable, so it would permanently mislabel history it could
+        // not read.
         // Second, independent check: even with a healthy canary, if a large share
         // of existing rows will not open, something is wrong that the canary did
         // not model. Refuse to run migrations rather than guess.
@@ -135,6 +139,11 @@ final class ClipStore: ObservableObject {
         rebuildTagIndex()
         rebuildUserTagIndex()
         sweepOrphanPayloads()
+        // Moved here from above the safe-mode decision: it deletes rows and it rewrites
+        // each clip's kind from `item.text`, which is ciphertext when unreadable. Running
+        // it before the freeze was decided meant a degraded launch could both delete and
+        // permanently mislabel history it could not read.
+        repairKinds()
         // After the safe-mode early return above, so safe mode is honoured by
         // construction here rather than by remembering a second check.
         scheduleImageUnderstanding()
