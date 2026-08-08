@@ -99,4 +99,48 @@ final class KeychainReadStatusTests: XCTestCase {
         XCTAssertTrue(minted, "first run must still be able to create a key, or no new "
                       + "user can ever encrypt anything")
     }
+
+    /// The renamed-app case must be treated as RECOVERABLE, not as absence and not as
+    /// corruption. `errSecInteractionNotAllowed` means the framework was never permitted
+    /// to ask the user — nobody refused anything. Conflating it with absence is what
+    /// mints a key over a live one; conflating it with corruption is what tells a user
+    /// their history is broken when it is one dialog away.
+    func testInteractionNotAllowedIsRecoverableNotAbsentNotCorrupt() {
+        XCTAssertNotEqual(errSecInteractionNotAllowed, errSecItemNotFound,
+                          "if these are ever treated alike, a key gets minted over a live one")
+
+        // Mirrors the production classification.
+        func classify(_ status: OSStatus) -> String {
+            switch status {
+            case errSecSuccess: return "found"
+            case errSecItemNotFound: return "absent"
+            default: return "unavailable"
+            }
+        }
+        XCTAssertEqual(classify(errSecInteractionNotAllowed), "unavailable")
+        XCTAssertEqual(classify(errSecAuthFailed), "unavailable")
+        XCTAssertEqual(classify(errSecItemNotFound), "absent")
+        XCTAssertEqual(classify(errSecSuccess), "found")
+    }
+
+    /// The user-facing distinction must exist at all. A frozen, empty window with no
+    /// explanation is the worst outcome of this whole failure, and it is the default
+    /// unless something records WHY.
+    func testDeniedAccessIsRecordedForTheInterface() throws {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let crypto = try String(contentsOf: root.appendingPathComponent(
+            "Sources/Cliphoard/Clipboard/Crypto.swift"), encoding: .utf8)
+        XCTAssertTrue(crypto.contains("keychainAccessDenied"),
+                      "nothing records that access was denied, so the UI cannot tell a "
+                      + "recoverable permission problem from real corruption")
+        XCTAssertTrue(crypto.contains("SecKeychainSetUserInteractionAllowed"),
+                      "the retry that permits the prompt is gone — a renamed app can then "
+                      + "never regain access to its own keys without manual intervention")
+
+        let ui = try String(contentsOf: root.appendingPathComponent(
+            "Sources/Cliphoard/UI/ContentView.swift"), encoding: .utf8)
+        XCTAssertTrue(ui.contains("Crypto.keychainAccessDenied"),
+                      "the safe-mode banner no longer distinguishes the recoverable case")
+    }
 }

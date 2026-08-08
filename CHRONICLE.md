@@ -338,3 +338,8 @@ prompt, with full content — lives in the chronicle ledger; `chron resume` read
 - **Restore:** `Quit, copy ~/Documents/Ditto-Rescue-20260807/live-pre-keyfix.sqlite over the live store (83 clips, integrity ok, standalone). Code: git revert d9b0c2c 821867d`
 - **Verified:** 400 tests green; measured read-only on a copy: ring 1->3 keys, clips opening 0/80 -> 79/80; minting now reachable only from errSecItemNotFound; safe mode still blocks all re-sealing
 
+
+## [2026-08-08T11:23Z-0RK2] NOTE — plus-ultra: plan verdict recorded
+
+- **Why:** {"summary": "plan verdict recorded", "plus_ultra": {"arbiter": "Athena"}}
+

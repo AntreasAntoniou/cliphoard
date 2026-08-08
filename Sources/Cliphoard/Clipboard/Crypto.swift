@@ -106,6 +106,15 @@ enum Crypto {
 
     // MARK: Diagnostics (read-only; used by --crypto-diagnostics)
 
+    /// True when a key EXISTS and this process could not read it — most often because
+    /// the Mac was in dark wake and no prompt could be shown to anyone.
+    ///
+    /// Distinct from corruption and from absence, and worth distinguishing in the
+    /// interface: the history is intact and the condition is usually transient, which is
+    /// a very different message from "something is broken". It is also the condition
+    /// that must never be mistaken for first run.
+    private(set) static var keychainAccessDenied = false
+
     /// Whether the pre-Secure-Enclave random key is readable in this process.
     /// If it is NOT, rows sealed under it cannot be opened here even though the
     /// data is intact — which distinguishes "wrong key" from "corrupt data".
@@ -479,7 +488,43 @@ enum Crypto {
             kSecMatchLimit as String: kSecMatchLimitOne,
         ]
         var out: CFTypeRef?
-        let status = SecItemCopyMatching(query as CFDictionary, &out)
+        var status = SecItemCopyMatching(query as CFDictionary, &out)
+
+        // NEEDS-A-PROMPT RECOVERY. These items carry an ACL, so any read that would
+        // require asking the user fails when no prompt can be shown.
+        //
+        // Two distinct statuses arrive here and only ONE is worth retrying:
+        //   errSecInteractionNotAllowed (-25308) — UI was disallowed for this process.
+        //       Permitting it and retrying once can genuinely succeed.
+        //   errSecInDarkWake (-25320) — the Mac is in dark wake, screen off, and NO UI is
+        //       possible at all. Retrying cannot help; there is nobody to ask. This is
+        //       what happens when the app is launched by a script or relaunched while the
+        //       machine is unattended, and it is the condition that was FIRST MISREAD
+        //       here as a permissions problem caused by the app's rename.
+        //
+        // Neither may EVER be treated as absence — that is what mints a key over a live
+        // one. Dark wake especially: it is transient, the identical read succeeds once
+        // somebody is at the machine, so destroying a key over it does permanent damage
+        // in response to a condition that resolves itself.
+        if status == errSecInteractionNotAllowed {
+            DebugLog.write("crypto: \(account) needs confirmation — permitting interaction "
+                           + "and retrying once")
+            // Deprecated since 10.10 with the whole SecKeychain family, used knowingly:
+            // these items live in the legacy file-based keychain, which is the only thing
+            // that HAS ACLs and therefore the only thing that produces this status. The
+            // modern data-protection keychain has no ACLs and also cannot see these
+            // items, so it is not a migration path for an existing store.
+            SecKeychainSetUserInteractionAllowed(true)
+            out = nil
+            status = SecItemCopyMatching(query as CFDictionary, &out)
+            DebugLog.write("crypto: \(account) retry returned OSStatus \(status)")
+        } else if status == errSecInDarkWake {
+            DebugLog.write("crypto: \(account) unreadable — Mac is in DARK WAKE, no UI is "
+                           + "possible, so the keychain cannot ask anyone. TRANSIENT: the "
+                           + "identical read succeeds once the machine is awake. Refusing "
+                           + "to mint a replacement.")
+        }
+
         switch status {
         case errSecSuccess:
             guard let data = out as? Data else { return .unavailable(status) }
@@ -487,6 +532,12 @@ enum Crypto {
         case errSecItemNotFound:
             return .absent
         default:
+            if status == errSecInteractionNotAllowed || status == errSecAuthFailed || status == errSecInDarkWake {
+                // The key is there and we were not permitted to reach it. Record it so
+                // the interface can say something true and actionable instead of leaving
+                // a user staring at a frozen, empty window.
+                keychainAccessDenied = true
+            }
             NSLog("Cliphoard crypto: keychain read for \(account) failed with OSStatus "
                   + "\(status) — treating as PRESENT-BUT-UNREADABLE and refusing to "
                   + "replace it. Nothing will be re-sealed.")

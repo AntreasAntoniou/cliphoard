@@ -101,7 +101,14 @@ struct ContentView: View {
                 VStack(alignment: .leading, spacing: 1) {
                     Text("Cliphoard can’t read \(store.unreadableClipCount) of \(store.items.count) clips")
                         .font(.system(size: 11, weight: .semibold))
-                    Text("Nothing has been deleted or changed. History is frozen until this is resolved.")
+                    // Two very different situations, and the difference is the whole
+                    // message. Denied access means the history is intact and one keychain
+                    // confirmation away; anything else means we genuinely do not know.
+                    Text(Crypto.keychainAccessDenied
+                         ? "Your clips are safe — macOS wouldn’t unlock the key just now, usually "
+                           + "because the Mac was asleep when Cliphoard started. Quit and reopen it "
+                           + "while you’re here, and approve any keychain prompt."
+                         : "Nothing has been deleted or changed. History is frozen until this is resolved.")
                         .font(.system(size: 10)).foregroundStyle(.secondary)
                 }
                 Spacer()
