@@ -544,6 +544,7 @@ struct ContentView: View {
                                 onInspect: { model.inspect(row.item) },
                                 onInspectTags: { model.inspect(row.item, focusTags: true) },
                                 onPin: { store.togglePin(row.item) },
+                                // `delete` itself refuses while frozen (ClipStore).
                                 onDelete: { store.delete(row.item) }
                             )
                             // Identity is the clip's id (from ForEach) — NOT the index.
@@ -678,7 +679,12 @@ struct ContentView: View {
             Button("Paste") { model.onPaste?(item, false) }
             Button("Inspect") { model.inspect(item) }
             Button(item.pinned ? "Unpin" : "Pin") { store.togglePin(item) }
+            // Disabled while frozen. The action already refuses, and a destructive
+            // control that looks live and silently does nothing is worse than one that
+            // fails — safe mode is exactly when every clip renders as gibberish, which
+            // is what makes someone reach for Delete on recoverable data.
             Button("Delete", role: .destructive) { store.delete(item) }
+                .disabled(store.safeMode)
         }
     }
 

@@ -69,4 +69,51 @@ final class SafeModeDeletionTests: XCTestCase {
                                  "a healthy store must still trim to its limit — the safe-mode "
                                  + "guard must not disable trimming outright")
     }
+
+    /// The three user-facing destructive actions must REFUSE while frozen.
+    ///
+    /// They had no tests at all. Worse, `testClearUnpinned` was converted from failing to
+    /// skipping in the very commit that changed its behaviour — the guard is intended, but
+    /// converting the old assertion to a skip removed the only coverage without replacing
+    /// it. This is the replacement, in the inverted form this file already uses.
+    ///
+    /// Safe mode is the state where every clip renders as `enc1:` gibberish, so it
+    /// actively manufactures the motive to press Delete on data that is fully recoverable
+    /// once the keychain is reachable again.
+    func testFrozenStoreRefusesEveryDestructiveAction() throws {
+        let store = ClipStore(directory: tempDir())
+        try XCTSkipUnless(store.safeMode,
+                          "store is healthy here, so there is no frozen state to exercise")
+
+        for i in 0..<4 { store.add(ClipItem(kind: .text, text: "clip \(i)")) }
+        let before = store.items.count
+        XCTAssertGreaterThan(before, 0, "precondition: clips must be present in memory")
+
+        store.delete(store.items[0])
+        XCTAssertEqual(store.items.count, before,
+                       "delete() removed a clip while frozen — it also unlinks the image "
+                       + "payload, so this is permanent")
+
+        store.clearUnpinned()
+        XCTAssertEqual(store.items.count, before,
+                       "clearUnpinned() emptied a frozen store — the largest blast radius "
+                       + "in the app, on rows the process knows it cannot read")
+
+        store.forgetImageUnderstanding()
+        XCTAssertEqual(store.items.count, before,
+                       "forgetImageUnderstanding() mutated a frozen store")
+    }
+
+    /// The converse, so the guards cannot pass by disabling the features outright.
+    func testHealthyStoreStillDeletes() throws {
+        let store = ClipStore(directory: tempDir())
+        try XCTSkipIf(store.safeMode, "store is frozen here (keychain unreachable)")
+
+        for i in 0..<3 { store.add(ClipItem(kind: .text, text: "clip \(i)")) }
+        let before = store.items.count
+        store.delete(store.items[0])
+        XCTAssertEqual(store.items.count, before - 1,
+                       "a healthy store must still delete — the safe-mode guard must not "
+                       + "disable deletion outright")
+    }
 }

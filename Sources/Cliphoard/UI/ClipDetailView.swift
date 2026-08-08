@@ -317,6 +317,7 @@ struct ClipDetailView: View {
             Button(item.pinned ? "Unpin" : "Pin") { store.togglePin(item) }
             Spacer()
             Button("Delete", role: .destructive) { store.delete(item); onClose() }
+                .disabled(store.safeMode)   // refuses while frozen; do not look live
         }
     }
 }

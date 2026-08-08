@@ -188,7 +188,7 @@ struct SettingsView: View {
                             .font(.system(size: 11)).foregroundStyle(.secondary)
                         Spacer()
                         Button("Forget recognised text") { settings.forgetImageUnderstanding() }
-                            .disabled(store.recognisedImageCount == 0)
+                            .disabled(store.recognisedImageCount == 0 || store.safeMode)
                     }
                 }
 
@@ -341,6 +341,7 @@ struct SettingsView: View {
                         Spacer()
                         Button("Clear Unpinned", role: .destructive) { store.clearUnpinned() }
                             .controlSize(.small)
+                            .disabled(store.safeMode)   // refuses while frozen
                     }
                 }
 

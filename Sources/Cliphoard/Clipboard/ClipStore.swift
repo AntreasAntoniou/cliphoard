@@ -1220,10 +1220,19 @@ final class ClipStore: ObservableObject {
         // which every write refused — exactly what a fail-closed seal does under a doomed
         // key — still proceeded to delete the original.
         var imported = 0
-        db.transaction { for item in decoded where db.insert(item) { imported += 1 } }
-        guard imported == decoded.count else {
-            NSLog("Cliphoard: legacy import wrote \(imported)/\(decoded.count) clips — "
-                  + "KEEPING history.json and not archiving. Nothing was deleted.")
+        // The transaction's OWN result matters, and discarding it left the delete firing
+        // on a lost import: `transaction` decides `committed` before running COMMIT, and a
+        // failure there is only logged — so on a disk-full at commit time every insert
+        // reported true, the count matched, the archive sealed and verified, and the
+        // original was deleted with an empty database. Counting the rows was necessary and
+        // not sufficient.
+        let committed = db.transaction { for item in decoded where db.insert(item) { imported += 1 } }
+        // Re-read the database rather than trusting the tally, the same write-then-verify
+        // discipline applied to the archive file a few lines below.
+        guard committed, imported == decoded.count, db.clipCount() == decoded.count else {
+            NSLog("Cliphoard: legacy import did not complete "
+                  + "(committed=\(committed), inserted=\(imported)/\(decoded.count), "
+                  + "stored=\(db.clipCount())) — KEEPING history.json. Nothing was deleted.")
             DebugLog.write("migrate-legacy: \(imported)/\(decoded.count) — original kept")
             return
         }
