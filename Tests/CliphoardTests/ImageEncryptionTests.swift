@@ -111,7 +111,8 @@ final class ImageEncryptionTests: XCTestCase {
 
     /// (1) After the at-rest upgrade, both `<hash>.png` and `<hash>-thumb.png`
     /// begin with the `enc1:` marker and are NOT a valid PNG header.
-    func testPayloadAndThumbAreSealedNotPlaintextPNG() {
+    func testPayloadAndThumbAreSealedNotPlaintextPNG() throws {
+        try skipIfKeychainUnreachable()
         let hash = seedReferencedPlaintextPayload(red: 1.0)
         _ = ClipStore(directory: tempDir)   // runs encryptImagePayloadsIfNeeded()
 
@@ -207,7 +208,8 @@ final class ImageEncryptionTests: XCTestCase {
     /// and is idempotent: a second store over the same dir (flag re-cleared,
     /// mimicking an interrupted/re-run pass) leaves the already-sealed bytes
     /// untouched and still decryptable.
-    func testMigrationIsIdempotent() {
+    func testMigrationIsIdempotent() throws {
+        try skipIfKeychainUnreachable()
         let hash = seedReferencedPlaintextPayload(red: 0.75)
         let url = tempDir.appendingPathComponent("\(hash).png")
         let thumbURL = tempDir.appendingPathComponent("\(hash)-thumb.png")

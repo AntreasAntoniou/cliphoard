@@ -50,6 +50,7 @@ final class RefineKindTests: XCTestCase {
     /// A whitespace-free string that is really a URL/domain but was mis-stored as
     /// plain `.text` is promoted to `.link` when the store re-derives kinds on init.
     func testRefineKindPromotesWhitespaceFreeTextToLinkWhenTagged() throws {
+        try skipIfKeychainUnreachable()
         // Sanity: the classifier itself recognises these as links.
         XCTAssertEqual(ClipboardMonitor.detectKind(for: "https://example.com"), .link)
         XCTAssertEqual(ClipboardMonitor.detectKind(for: "github.com"), .link)

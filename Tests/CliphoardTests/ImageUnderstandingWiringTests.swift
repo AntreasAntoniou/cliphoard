@@ -104,7 +104,8 @@ final class ImageUnderstandingWiringTests: XCTestCase {
     // MARK: - The pass
 
     /// Cheapest possible protection: an already-vetoed clip's pixels are never decoded.
-    func testQuarantinedClipIsNeverHandedToTheAnalyzer() async {
+    func testQuarantinedClipIsNeverHandedToTheAnalyzer() async throws {
+        try skipIfKeychainUnreachable()
         let store = tempStore()
         let item = imageClip(source: "1Password")
         store.add(item)

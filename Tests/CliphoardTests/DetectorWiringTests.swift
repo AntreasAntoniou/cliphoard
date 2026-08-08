@@ -72,6 +72,7 @@ final class DetectorWiringTests: XCTestCase {
     /// and has NO vector for the active model — the detector vetoed the embed.
     @MainActor
     func testSecretIsFlaggedPersistedAndNeverEmbedded() throws {
+        try skipIfKeychainUnreachable()
         Feedback.soundEnabled = false
         DeepSearch.level = .normal          // ingest WOULD embed, if not vetoed
         defer { DeepSearch.level = .off }

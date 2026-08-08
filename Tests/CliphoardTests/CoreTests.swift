@@ -193,7 +193,8 @@ final class ClipStoreTests: XCTestCase {
         XCTAssertEqual(store.items.first?.text, "dup") // bumped to front
     }
 
-    func testTrimDropsOldestUnpinned() {
+    func testTrimDropsOldestUnpinned() throws {
+        try skipIfKeychainUnreachable()
         let store = newStore()
         store.historyLimit = 2
         store.add(text("a")); store.add(text("b")); store.add(text("c"))
@@ -231,7 +232,8 @@ final class ClipStoreTests: XCTestCase {
         XCTAssertEqual(store.filtered(kind: nil, query: "", pinnedOnly: true).count, 1)
     }
 
-    func testUserTagIndexTracksAddEditDeleteAndPersists() {
+    func testUserTagIndexTracksAddEditDeleteAndPersists() throws {
+        try skipIfKeychainUnreachable()
         var store: ClipStore? = newStore()
         let item = text("customer follow-up")
         item.userTags = [" Client-Acme ", "client-acme"]
@@ -259,7 +261,8 @@ final class ClipStoreTests: XCTestCase {
         XCTAssertEqual(store.filtered(kind: nil, query: "CLIENT-ACME", pinnedOnly: false).map(\.id), [item.id])
     }
 
-    func testClearUnpinned() {
+    func testClearUnpinned() throws {
+        try skipIfKeychainUnreachable()
         let store = newStore()
         let pinned = text("keep")
         store.add(pinned); store.togglePin(pinned)
@@ -269,7 +272,8 @@ final class ClipStoreTests: XCTestCase {
         XCTAssertEqual(store.items.first?.text, "keep")
     }
 
-    func testPersistenceRoundTrip() {
+    func testPersistenceRoundTrip() throws {
+        try skipIfKeychainUnreachable()
         do {
             let store = newStore()
             store.add(text("persisted-a"))

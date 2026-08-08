@@ -83,6 +83,7 @@ final class PayloadTests: XCTestCase {
     /// interaction (live payload survives, stray dies) rather than re-deriving
     /// the sweep's own rules — `OrphanSweepTests` owns those.
     func testPersistedPayloadSurvivesSweepWhileStrayIsRemoved() throws {
+        try skipIfKeychainUnreachable()
         // 1. Capture an image into THIS store so it becomes a live payload.
         let pb = FakePasteboard()
         pb.image = rasterisableImage()

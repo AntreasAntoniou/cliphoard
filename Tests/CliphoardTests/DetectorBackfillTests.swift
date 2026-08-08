@@ -56,6 +56,7 @@ final class DetectorBackfillTests: XCTestCase {
     /// re-scan could only overwrite a newer build's answer with an older one).
     @MainActor
     func testBackfillScoresUnscannedClipsAndLeavesScannedOnesAlone() throws {
+        try skipIfKeychainUnreachable()
         resetBackfillGate()
         defer { resetBackfillGate() }
         let dir = tempDir()
@@ -92,6 +93,7 @@ final class DetectorBackfillTests: XCTestCase {
     /// it while leaving it searchable would badge a leak instead of closing it.
     @MainActor
     func testBackfilledSecretHasItsVectorsPurgedFromMemoryAndDisk() throws {
+        try skipIfKeychainUnreachable()
         resetBackfillGate()
         defer { resetBackfillGate() }
         let dir = tempDir()
@@ -129,6 +131,7 @@ final class DetectorBackfillTests: XCTestCase {
     /// no work at all — a row that appears unscanned afterwards is left alone.
     @MainActor
     func testBackfillRunsOnlyOnce() throws {
+        try skipIfKeychainUnreachable()
         resetBackfillGate()
         defer { resetBackfillGate() }
         let dir = tempDir()

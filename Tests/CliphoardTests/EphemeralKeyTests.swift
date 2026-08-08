@@ -92,16 +92,31 @@ final class EphemeralKeyTests: XCTestCase {
         XCTAssertNotNil(Crypto.sealStrict(Data("payload bytes".utf8)))
     }
 
-    /// The canary must not be able to certify health under a doomed key — that is how the
-    /// freeze itself was defeated, on a store too small for the ratio gate to catch.
-    func testCanaryCannotReportHealthUnderAnEphemeralKey() {
+    /// The canary must not certify health under a doomed key — that is how the freeze
+    /// itself was defeated, on a store too small for the ratio gate to catch.
+    ///
+    /// SKIPS when the keychain is reachable, and that is not evasion — it is the only
+    /// honest form of this test. `verifyCanary` guards on ephemerality ONLY in its
+    /// canary-absent branch. With an established, readable canary the read is `.found`,
+    /// `open()` succeeds under the durable key, and health is reported true — correctly.
+    /// Asserting false there would make this test RED on a healthy Mac, i.e. red on
+    /// exactly the machine state the fix targets, which a review caught before it could
+    /// happen.
+    ///
+    /// Known gap: the branch this exists for needs a genuinely ABSENT canary, which a test
+    /// cannot arrange without an injectable keychain. Recorded rather than faked.
+    func testCanaryCannotReportHealthUnderAnEphemeralKey() throws {
+        try XCTSkipUnless(Crypto.keychainAccessDenied,
+                          "the canary is readable here, so verifyCanary takes its .found "
+                          + "branch and the ephemerality guard is never consulted — there "
+                          + "is nothing to assert")
         Crypto.simulatingEphemeralKey {
-        _ = Crypto.verifyCanary()
-        XCTAssertFalse(Crypto.decryptionHealthy,
-                       "decryption was reported HEALTHY while the key is ephemeral. That "
-                       + "sets safe mode's first term false, and on a store below the "
-                       + "ratio gate the re-seal migration then runs under a key that "
-                       + "dies at exit — total permanent loss.")
+            _ = Crypto.verifyCanary()
+            XCTAssertFalse(Crypto.decryptionHealthy,
+                           "decryption was reported HEALTHY while the key is ephemeral. "
+                           + "That sets safe mode's first term false, and on a store below "
+                           + "the ratio gate the re-seal migration then runs under a key "
+                           + "that dies at exit — total permanent loss.")
         }
     }
 

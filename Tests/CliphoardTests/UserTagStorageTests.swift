@@ -164,6 +164,7 @@ final class UserTagStorageTests: XCTestCase {
 
     @MainActor
     func testStoreTagSettersWriteThroughAndKeepIndexInSync() throws {
+        try skipIfKeychainUnreachable()
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent("DittoUserTagStore-\(UUID().uuidString)")
         var store: ClipStore? = ClipStore(directory: dir)

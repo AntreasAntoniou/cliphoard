@@ -159,8 +159,14 @@ final class ClipStore: ObservableObject {
         guard Crypto.usesSecureEnclave, !UserDefaults.standard.bool(forKey: flag) else { return }
         // Same rule as above: stamp only what actually landed. A re-key that wrote nothing
         // must be retried, not retired.
-        guard let db else {
-            DebugLog.write("migrate: no database — NOT stamping re-key")
+        // Compare against the DATABASE's own count, not the in-memory list. The row
+        // loader stops on ANY non-row result, so a transient sqlite error mid-scan
+        // silently yields a TRUNCATED `items` — and `written == items.count` would then
+        // pass on the truncated set and retire the migration permanently, leaving the
+        // unloaded rows plaintext forever.
+        guard let db, items.count == db.clipCount() else {
+            DebugLog.write("migrate: no database, or the loaded rows do not match the "
+                           + "stored count (possible truncated load) — NOT stamping re-key")
             return
         }
         var written = 0
@@ -191,8 +197,14 @@ final class ClipStore: ObservableObject {
         // setting survives the failed launch, so the next healthy one loads plaintext rows
         // and never revisits them: one transient open failure permanently retires at-rest
         // encryption. This was a hole in my own counting fix, not in the original code.
-        guard let db else {
-            DebugLog.write("migrate: no database — NOT stamping encrypt-existing")
+        // Compare against the DATABASE's own count, not the in-memory list. The row
+        // loader stops on ANY non-row result, so a transient sqlite error mid-scan
+        // silently yields a TRUNCATED `items` — and `written == items.count` would then
+        // pass on the truncated set and retire the migration permanently, leaving the
+        // unloaded rows plaintext forever.
+        guard let db, items.count == db.clipCount() else {
+            DebugLog.write("migrate: no database, or the loaded rows do not match the "
+                           + "stored count (possible truncated load) — NOT stamping encrypt-existing")
             return
         }
         var written = 0
@@ -589,6 +601,10 @@ final class ClipStore: ObservableObject {
     /// Rows go back to NULL, not "": if the user re-enables recognition later, they
     /// should be analysed again rather than being permanently marked "nothing there".
     func forgetImageUnderstanding() {
+        guard !safeMode else {
+            DebugLog.write("safe mode: refusing to forget recognised text")
+            return
+        }
         imageTask?.cancel()
         imageTask = nil
         for item in items where item.kind == .image {
@@ -1025,6 +1041,14 @@ final class ClipStore: ObservableObject {
     }
 
     func delete(_ item: ClipItem) {
+        // Refuse while frozen. Safe mode is the state in which every clip renders as
+        // `enc1:` gibberish — so it actively MANUFACTURES the motive to delete data that
+        // is fully recoverable once the keychain is reachable again. This also unlinks
+        // the image payload, so a click here is permanent.
+        guard !safeMode else {
+            DebugLog.write("safe mode: refusing delete — the clips are unreadable, not lost")
+            return
+        }
         items.removeAll { $0.id == item.id }
         removePayload(item)
         removeFromTagIndex(item)
@@ -1034,6 +1058,11 @@ final class ClipStore: ObservableObject {
 
     /// Clear everything that is not pinned.
     func clearUnpinned() {
+        guard !safeMode else {
+            DebugLog.write("safe mode: refusing clear-unpinned — this would destroy every "
+                           + "recoverable clip on the strength of a display problem")
+            return
+        }
         let removed = items.filter { !$0.pinned }
         items.removeAll { !$0.pinned }
         removed.forEach(removePayload)
@@ -1158,7 +1187,10 @@ final class ClipStore: ObservableObject {
     /// One-time import of an old `history.json` into the database, then archive it.
     private func migrateLegacyJSONIfNeeded() {
         let jsonURL = dir.appendingPathComponent("history.json")
-        guard (db?.clipCount() ?? 0) == 0,
+        // A LIVE database is required. The guard used to be `(db?.clipCount() ?? 0) == 0`,
+        // which is SATISFIED when the handle is nil — so a failed sqlite open ran the
+        // import, inserted nothing, and still reached the delete below.
+        guard let db, db.clipCount() == 0,
               let data = try? Data(contentsOf: jsonURL) else { return }
         let decoded: [ClipItem]
         do { decoded = try JSONDecoder().decode([ClipItem].self, from: data) }
@@ -1184,20 +1216,45 @@ final class ClipStore: ObservableObject {
             }
             item.vector = nil; item.vectorModel = nil
         }
-        db?.transaction { decoded.forEach { db?.insert($0) } }
+        // COUNT what actually landed. This discarded every insert result, so a pass in
+        // which every write refused — exactly what a fail-closed seal does under a doomed
+        // key — still proceeded to delete the original.
+        var imported = 0
+        db.transaction { for item in decoded where db.insert(item) { imported += 1 } }
+        guard imported == decoded.count else {
+            NSLog("Cliphoard: legacy import wrote \(imported)/\(decoded.count) clips — "
+                  + "KEEPING history.json and not archiving. Nothing was deleted.")
+            DebugLog.write("migrate-legacy: \(imported)/\(decoded.count) — original kept")
+            return
+        }
         // Archive the JSON so we don't re-import (and as a safety backup), but
         // never as plaintext: this is exactly the upgrade audience at-rest
         // encryption is meant to protect. Seal the bytes (enc1: marker) into
         // history.migrated.json, then remove the original plaintext history.json.
         // Fail CLOSED: only delete the plaintext original once a SEALED archive is
         // safely written — never write a plaintext archive, never delete without one.
-        if let sealed = Crypto.sealStrict(data) {
-            let archiveURL = dir.appendingPathComponent("history.migrated.json")
-            try? sealed.write(to: archiveURL, options: .atomic)
-            try? FileManager.default.setAttributes(
-                [.posixPermissions: 0o600], ofItemAtPath: archiveURL.path)
-            try? FileManager.default.removeItem(at: jsonURL)
+        // VERIFY THE ARCHIVE EXISTS BEFORE DELETING THE ORIGINAL. The write result was
+        // discarded and the delete ran unconditionally inside this block, so the same
+        // disk-full or permissions failure that lost the archive also destroyed the only
+        // readable copy. The diagnostic archive tool re-reads and counts its own output
+        // before deleting anything; this path did not.
+        guard let sealed = Crypto.sealStrict(data) else {
+            NSLog("Cliphoard: could not seal the legacy archive — keeping history.json.")
+            return
         }
+        let archiveURL = dir.appendingPathComponent("history.migrated.json")
+        do { try sealed.write(to: archiveURL, options: .atomic) } catch {
+            NSLog("Cliphoard: legacy archive write failed (\(error)) — keeping history.json.")
+            return
+        }
+        try? FileManager.default.setAttributes(
+            [.posixPermissions: 0o600], ofItemAtPath: archiveURL.path)
+        // Read it back and confirm it is the size we wrote before removing the original.
+        guard let check = try? Data(contentsOf: archiveURL), check.count == sealed.count else {
+            NSLog("Cliphoard: legacy archive did not read back intact — keeping history.json.")
+            return
+        }
+        try? FileManager.default.removeItem(at: jsonURL)
         DebugLog.write("migrated \(decoded.count) clips from history.json → sqlite (archive sealed)")
     }
 }

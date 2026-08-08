@@ -21,6 +21,7 @@ final class OrphanSweepTests: XCTestCase {
     }
 
     func testInitRemovesUnreferencedPNGAndKeepsReferenced() throws {
+        try skipIfKeychainUnreachable()
         let referencedName = "kept.png"
         let strayName = "stray.png"
         let referencedURL = tempDir.appendingPathComponent(referencedName)
