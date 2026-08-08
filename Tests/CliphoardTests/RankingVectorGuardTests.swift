@@ -51,27 +51,81 @@ final class RankingVectorGuardTests: XCTestCase {
         try String(contentsOf: repoRoot().appendingPathComponent(path), encoding: .utf8)
     }
 
+    /// Walk back to the enclosing `func`, then forward to the next one, and report
+    /// whether that body mentions `isIndexVetoed`. Crude — it does not parse Swift — but
+    /// it encodes the invariant we actually care about: a function may hand a clip's text
+    /// to a model only if it consults the veto. That generalises to code not yet written,
+    /// which a list of blessed function names does not.
+    private static func enclosingFunctionConsultsTheVeto(lines: [String], at index: Int) -> Bool {
+        guard let start = (0...index).reversed().first(where: { lines[$0].contains("func ") })
+        else { return false }
+        let end = ((index + 1)..<lines.count).first { lines[$0].contains("func ") } ?? lines.count
+        return lines[start..<end].contains { $0.contains("isIndexVetoed") }
+    }
+
     /// The raw "embed this clip's text" idiom may appear ONLY inside `rankingVector`.
     /// Anywhere else it is a ranking path that forgot the veto.
+    ///
+    /// The first version whitelisted the sanctioned line by its exact TEXT and scanned
+    /// one file. A review ran eight realistic violations through it; five slipped past —
+    /// a qualified call, a hoisted local, extra whitespace, a trailing comment, and,
+    /// worst, a copy-pasted second accessor spelled identically to the real one, which
+    /// the text whitelist then exempted wherever it appeared.
+    ///
+    /// The rewrite changes the RULE, not just the regex. It is no longer "only
+    /// `rankingVector` may embed clip text" — it is **"whoever embeds clip text must
+    /// consult the veto"**, checked by walking to the enclosing function and requiring
+    /// it to mention `isIndexVetoed`. That is the invariant we actually want, it
+    /// generalises to functions nobody has written yet, and it correctly allows
+    /// `ClipIndexer.index`, which legitimately embeds on the WRITE path behind its own
+    /// guard. A blessed-names list would not have done any of that.
+    ///
+    /// Verified against seven cases rather than one: control and a properly-guarded
+    /// function are allowed; plain, qualified, whitespaced, comment-trailed and
+    /// copy-pasted violations are all caught.
+    ///
+    /// Residual, stated plainly because a grep pretending to be a proof is worse than
+    /// one that admits what it is: the hoisted-local evasion (`let t = searchText(item)`
+    /// then `embed(t)`) is still invisible, the function-boundary walk is textual rather
+    /// than a real parse, and only the Search directory is scanned. Catching the rest
+    /// needs call-graph analysis. This is a tripwire for a regression that has already
+    /// happened once, sized to that job.
     func testClipTextIsOnlyEmbeddedInsideRankingVector() throws {
-        let deepSearch = try source("Sources/Cliphoard/Search/DeepSearch.swift")
-        let offenders = deepSearch
-            .components(separatedBy: .newlines)
-            .enumerated()
-            .filter { _, line in
-                line.contains("embed(searchText(")
-                    && !line.contains("///")            // the doc comment quotes it
-                    && !line.contains("return embedder.embed(searchText(item))")
+        var offenders: [String] = []
+
+        for file in ["DeepSearch.swift", "HFEmbedder.swift", "TagBaskets.swift",
+                     "Detectors.swift", "DerivedTags.swift", "ModelAssets.swift"] {
+            let path = "Sources/Cliphoard/Search/\(file)"
+            guard let text = try? source(path) else { continue }
+            let lines = text.components(separatedBy: .newlines)
+
+            for (i, raw) in lines.enumerated() {
+                // Strip line comments so a trailing `///` cannot launder a violation,
+                // and squeeze whitespace so ` embed( searchText( item ) )` still matches.
+                let code = raw.components(separatedBy: "//").first ?? raw
+                let squeezed = code.filter { !$0.isWhitespace }
+                guard squeezed.contains(".embed(searchText(")
+                        || squeezed.contains(".embed(SemanticRanker.searchText(") else { continue }
+
+                // The rule is not "only rankingVector may do this" — it is "whoever does
+                // this must consult the veto". `ClipIndexer.index` legitimately embeds
+                // clip text and carries its OWN guard, because it is the write path: it
+                // refuses to PRODUCE a vector, rather than substituting an empty one for
+                // ranking. Exempting it by name would be the same text-whitelist mistake
+                // this test was rewritten to remove, so the exemption is structural —
+                // the enclosing function must mention the veto.
+                if Self.enclosingFunctionConsultsTheVeto(lines: lines, at: i) { continue }
+                offenders.append("  \(file):\(i + 1): \(raw.trimmingCharacters(in: .whitespaces))")
             }
-            .map { "  DeepSearch.swift:\($0.offset + 1): \($0.element.trimmingCharacters(in: .whitespaces))" }
+        }
 
         XCTAssertTrue(offenders.isEmpty, """
             A clip's text is being embedded outside SemanticRanker.rankingVector.
 
-            That is how the veto was defeated before: a ranking mode that embeds
-            `searchText(item)` directly will push a `.secret` or `.quarantined` clip
-            through the model on every query. Call `rankingVector(for:embedder:)`
-            instead — it does cache → veto → model in the right order.
+            That is how the veto was defeated before: a ranking path that embeds
+            `searchText(item)` directly pushes a `.secret` or `.quarantined` clip
+            through the model on every query, instead of never. Call
+            `rankingVector(for:embedder:)` — it does cache → veto → model in order.
 
             Offending lines:
             \(offenders.joined(separator: "\n"))

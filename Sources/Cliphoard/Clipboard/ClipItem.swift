@@ -68,9 +68,17 @@ final class ClipItem: Codable, Identifiable {
     /// The three states are load-bearing and are carried by NULL-vs-empty, not by a
     /// separate marker column:
     ///   `nil` — never analysed. The background pass selects exactly this.
-    ///   `""`  — analysed, nothing to index: no text found, or the payload could not
-    ///           be decrypted, or the withhold rule REFUSED to store what was found.
+    ///   `""`  — analysed, nothing to index: no text was found, or the withhold rule
+    ///           REFUSED to store what was found.
     ///   text  — analysed and cleared by `Detectors.scan`.
+    ///
+    /// An undecryptable payload is NOT one of those states, and this comment used to
+    /// claim it was. `Crypto.open` fails OPEN — on failure it returns the stored string
+    /// verbatim — so a value that could not be unsealed would load as literal `enc1:`
+    /// ciphertext, be non-empty, and be handed to the model as the image's text. The
+    /// analysing pass therefore has to notice that case itself and store `""`; the
+    /// state machine does not cover it for free. (`text` has the same fail-open
+    /// behaviour, so this is a property of the crypto layer, not of this field.)
     ///
     /// That collapse is deliberate. Because a withheld result is stored as `""`, and
     /// `SemanticRanker.searchText` falls back to the caption when it is empty, a
@@ -139,6 +147,14 @@ final class ClipItem: Codable, Identifiable {
     /// `.secretEntropy` is included here precisely because recognition is lossy: OCR
     /// can transpose a character, and a mangled key no longer matches the byte-exact
     /// signature detectors. Entropy is the net that catches what the signatures drop.
+    /// `.pii` is deliberately NOT here, and the exclusion matters as much as the
+    /// inclusions: it is the informational tier — a bare email address or phone number —
+    /// which fires on a large share of ordinary recognised text. Withholding on it would
+    /// suppress most screenshots for no meaningful safety gain. Its stronger sibling
+    /// `.piiSensitive` IS withheld, because that one needs several co-occurring signals
+    /// (house number, street suffix and postcode together), so it fires on an address
+    /// block rather than on any mention of a person.
+    ///
     /// Known gap, documented rather than papered over: `.otp` cannot catch an
     /// authenticator screenshot, because `detectOTP` needs a contiguous 4–8 digit run
     /// plus a keyword, and a code rendered "482 913" is two 3-digit groups with neither.

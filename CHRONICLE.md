@@ -287,3 +287,18 @@ prompt, with full content — lives in the chronicle ledger; `chron resume` read
 
 - **Why:** {"summary": "plan verdict recorded", "plus_ultra": {"arbiter": "Athena"}}
 
+
+## [2026-08-08T09:21Z-4EW3] NOTE — plus-ultra: stop BLOCKED (no reality verdict)
+
+- **Why:** {"summary": "stop BLOCKED (no reality verdict)", "plus_ultra": {"mutations": 24}}
+
+
+## [2026-08-08T09:28Z-147X] NOTE — plus-ultra: reality verdict recorded
+
+- **Why:** {"summary": "reality verdict recorded", "plus_ultra": {"verifier": "Argus"}}
+
+
+## [2026-08-08T09:28Z-3FWQ] NOTE — plus-ultra: plan verdict recorded
+
+- **Why:** {"summary": "plan verdict recorded", "plus_ultra": {"arbiter": "Athena"}}
+
