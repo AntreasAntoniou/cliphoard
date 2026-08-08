@@ -91,17 +91,25 @@ final class ClipStore: ObservableObject {
         // not model. Refuse to run migrations rather than guess.
         let unreadable = items.filter { Crypto.isSealed($0.text) }.count
         unreadableClipCount = unreadable
-        // The canary answers "can this process read what a previous run wrote?" — but it
-        // is evidence ABOUT THIS STORE only when this store actually has something it
-        // cannot read. If every row opens, the key plainly works here, whatever happened
-        // to the canary item itself; freezing then would refuse to run over a keychain
-        // hiccup that demonstrably did not affect the data.
+        // An unhealthy canary freezes the store, FULL STOP — no "unless the rows look
+        // fine" qualifier.
         //
-        // So the canary gates when it is unhealthy AND at least one row confirms it, and
-        // the ratio gate stays independent for the converse case the canary cannot model:
+        // That qualifier was tried and reverted, and the reason is worth keeping. It read
+        // "if every row opens, the key plainly works here", which sounds reasonable and is
+        // false in the one case that matters: a store with nothing sealed yet. A fresh
+        // install, or one upgrading from before at-rest encryption, has ZERO unreadable
+        // rows — not because the key works, but because there is nothing to test it
+        // against. Absence of evidence, read as evidence of health. Safe mode would then
+        // stand down and `encryptExistingRowsIfNeeded` would seal every row under an
+        // ephemeral key that dies with the process: total, permanent loss.
+        //
+        // It was also introduced to turn a red suite green, which is the wrong reason to
+        // widen a safety gate. The right fix for a degraded test environment is a skip
+        // that names the condition, not a weaker production rule.
+        //
+        // The ratio gate stays independent, for the converse the canary cannot model:
         // the canary opens but the rows do not.
-        let canaryContradictedByData = !Crypto.decryptionHealthy && unreadable > 0
-        safeMode = canaryContradictedByData
+        safeMode = !Crypto.decryptionHealthy
             || (items.count >= 10 && unreadable * 2 > items.count)
         if safeMode {
             let reason = !Crypto.decryptionHealthy
@@ -626,7 +634,23 @@ final class ClipStore: ObservableObject {
         pruneUserTagIndexToItems()
         addToUserTagIndex(item)
         lastAddedID = item.id
-        db?.insert(item)
+        // SAFE MODE STOPS WRITES, not just migrations.
+        //
+        // This guard was missing, and it cost real clips: a process that could not reach
+        // the keychain entered safe mode, correctly refused every migration — and then
+        // went on capturing, sealing each new clip with an ephemeral key that dies when
+        // the process does. Nine clips were written that way in one session before anyone
+        // noticed, every one of them unreadable the moment the app quit.
+        //
+        // Keeping the clip in memory means it is still visible and pastable for this
+        // session, which is the most that can honestly be offered: writing it would
+        // manufacture a row nobody can ever open.
+        if safeMode {
+            DebugLog.write("safe mode: NOT persisting a new clip — it would be sealed with "
+                           + "a key this process cannot store, and unreadable after quit")
+        } else {
+            db?.insert(item)
+        }
         // Recognition runs off the capture path — this only schedules. The dedup branch
         // above returns before reaching here, so a re-copied screenshot never re-analyses.
         if item.kind == .image { scheduleImageUnderstanding() }

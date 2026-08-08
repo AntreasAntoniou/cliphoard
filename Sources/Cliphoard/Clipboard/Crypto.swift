@@ -544,6 +544,24 @@ enum Crypto {
         ] as CFDictionary, &dpOut)
         if dpStatus == errSecSuccess, let data = dpOut as? Data { return .found(data) }
 
+        // The modern read's status must NOT be discarded, and discarding it was a real
+        // hole. Accepting only outright success meant the mint decision was made by the
+        // legacy read alone, whatever the modern side had said. For a signed release —
+        // whose keys live in the modern keychain by design — a later re-sign or identity
+        // change makes that read fail for an item that EXISTS; the legacy side has
+        // nothing; the result classifies as "genuinely absent" and a fresh key is minted
+        // over a live one. The same failure that cost 210 clips, relocated.
+        //
+        // Anything other than success or a genuine not-found means "there may be a key
+        // over there that I cannot see", and that must never reach the mint path.
+        if dpStatus != errSecItemNotFound {
+            keychainAccessDenied = true
+            DebugLog.write("crypto: \(account) — data-protection read failed with OSStatus "
+                           + "\(dpStatus); a key may exist there. Refusing to treat this "
+                           + "as first run whatever the legacy keychain says.")
+            return .unavailable(dpStatus)
+        }
+
         // Fall back to the legacy file-based keychain, where every key written before
         // this change lives. If it opens, MIGRATE it forward so the prompt is needed at
         // most once more, ever.
