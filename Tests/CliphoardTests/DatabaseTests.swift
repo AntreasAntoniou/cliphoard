@@ -149,7 +149,8 @@ final class DatabaseTests: XCTestCase {
         db.insert(item)
         db.delete(id: item.id)
         XCTAssertEqual(db.loadAll().count, 0)
-        XCTAssertEqual(db.clipCount(), 0)
+        XCTAssertEqual(db.clipCountStatus(), .counted(0),
+                       "a REPORTED zero, not a zero produced by a failed count")
     }
 
     func testWriteMethodsReportSuccess() {
@@ -281,7 +282,7 @@ final class DatabaseTests: XCTestCase {
         // Only the pre-transaction commit survives; the txn insert is undone too.
         XCTAssertEqual(db.loadAll().map(\.text), ["pre-existing"],
                        "a failed step must roll back the whole transaction (no partial rows)")
-        XCTAssertEqual(db.clipCount(), 1)
+        XCTAssertEqual(db.clipCountStatus(), .counted(1))
     }
 
     func testReopenIsIdempotentAndPersists() {

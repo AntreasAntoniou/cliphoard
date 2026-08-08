@@ -458,3 +458,33 @@ prompt, with full content — lives in the chronicle ledger; `chron resume` read
 
 - **Why:** {"summary": "plan verdict recorded", "plus_ultra": {"arbiter": "Athena"}}
 
+
+## [2026-08-08T13:16Z-FYED] NOTE — plus-ultra: stop BLOCKED (no reality verdict)
+
+- **Why:** {"summary": "stop BLOCKED (no reality verdict)", "plus_ultra": {"mutations": 1}}
+
+
+## [2026-08-08T13:17Z-7D8X] NOTE — plus-ultra: stop BLOCKED (no reality verdict)
+
+- **Why:** {"summary": "stop BLOCKED (no reality verdict)", "plus_ultra": {"mutations": 1}}
+
+
+## [2026-08-08T13:21Z-104J] NOTE — plus-ultra: reality verdict recorded
+
+- **Why:** {"summary": "reality verdict recorded", "plus_ultra": {"verifier": "Argus14-interim"}}
+
+
+## [2026-08-08T13:43Z-VHHJ] NOTE — plus-ultra: gate BLOCKED (no plan verdict)
+
+- **Why:** {"summary": "gate BLOCKED (no plan verdict)", "plus_ultra": {"tool": "Bash", "target": "cat > /private/tmp/claude-501/-Users-antreas/a3424a85-37ed-435a-88a6-482496e45604/scratchpad/menuprobe.swift <<'EOF'\nimport AppKit\n\nfinal class T: NSObject, NSMenuItemValidation {\n    @objc func liveA"}}
+
+
+## [2026-08-08T13:50Z-7HWB] NOTE — plus-ultra: gate BLOCKED (no plan verdict)
+
+- **Why:** {"summary": "gate BLOCKED (no plan verdict)", "plus_ultra": {"tool": "Write", "target": "/private/tmp/claude-501/-Users-antreas/a3424a85-37ed-435a-88a6-482496e45604/scratchpad/athena-plan.md"}}
+
+
+## [2026-08-08T13:53Z-HAZW] NOTE — plus-ultra: plan verdict recorded
+
+- **Why:** {"summary": "plan verdict recorded", "plus_ultra": {"arbiter": "Athena"}}
+

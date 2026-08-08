@@ -115,20 +115,170 @@ final class Database {
 
     // MARK: Reads
 
-    func clipCount() -> Int {
+    /// What a COUNT actually reported.
+    ///
+    /// `clipCount() -> Int` returned `0` for "the table is empty", for "the statement
+    /// would not prepare", and for "the step failed". Those are the same two meanings
+    /// whose conflation cost 210 clips one layer down — "I could not read" spent as
+    /// "there is nothing there" — and the guard written to catch it,
+    /// `items.count == db.clipCount()`, is SATISFIED by `0 == 0` in exactly the
+    /// total-failure case.
+    ///
+    /// That is not a hypothetical. Probed: a `ditto.sqlite` of garbage bytes opens
+    /// fine (`sqlite3_open_v2` defers header validation), so `Database.init?` returns a
+    /// live handle; `CREATE TABLE` then fails with rc 26 so the table never exists;
+    /// the COUNT fails to prepare and reported `0`; the loader returns `[]`. The guard
+    /// passed and stamped one-shot migration markers for work never done.
+    enum CountRead: Equatable {
+        /// A statement ran and produced this number — including `0`. A zero here is a
+        /// REPORTED zero, which is the entire point of the type.
+        case counted(Int)
+        /// Prepare or step failed. The count is UNKNOWN. It is not zero.
+        case unavailable(Int32)
+    }
+
+    /// The number of stored clips, or why it could not be taken.
+    func clipCountStatus() -> CountRead {
         var stmt: OpaquePointer?
         defer { sqlite3_finalize(stmt) }
-        guard sqlite3_prepare_v2(db, "SELECT COUNT(*) FROM clips;", -1, &stmt, nil) == SQLITE_OK else { return 0 }
-        return sqlite3_step(stmt) == SQLITE_ROW ? Int(sqlite3_column_int(stmt, 0)) : 0
+        let rc = sqlite3_prepare_v2(db, "SELECT COUNT(*) FROM clips;", -1, &stmt, nil)
+        guard rc == SQLITE_OK else {
+            NSLog("Cliphoard db: clip count unavailable: \(String(cString: sqlite3_errmsg(db)))")
+            return .unavailable(rc)
+        }
+        let step = sqlite3_step(stmt)
+        guard step == SQLITE_ROW else {
+            NSLog("Cliphoard db: clip count returned no row: \(String(cString: sqlite3_errmsg(db)))")
+            return .unavailable(step)
+        }
+        return .counted(Int(sqlite3_column_int(stmt, 0)))
+    }
+
+    /// What a history read actually found.
+    ///
+    /// Mirrors `Crypto.BlobRead` deliberately and for the same reason: the only value
+    /// that may be treated as "this is the whole history" is one that can prove it.
+    /// That shape is the single fix in this codebase that has held under fourteen
+    /// consecutive rounds of adversarial review, while every positional guard has been
+    /// breached at least once.
+    enum HistoryRead {
+        /// Every row the database holds was materialised. The array may be empty — but
+        /// that emptiness was REPORTED by statements that ran, not manufactured by a
+        /// failure.
+        case complete([ClipItem], CompleteHistory)
+        /// No handle, a count that would not run, a scan that stopped early, or fewer
+        /// rows loaded than stored. The history is not empty; it is UNKNOWN.
+        case unavailable(Reason)
+
+        enum Reason: Equatable {
+            case noDatabase
+            case countUnavailable(Int32)
+            case clipScanStoppedEarly(Int32)
+            case embeddingScanStoppedEarly(Int32)
+            case featureScanStoppedEarly(Int32)
+            /// Rows were skipped without erroring — today, a row whose id is not a
+            /// UUID (see the `guard let id` in the clips scan). The clip vanishes from
+            /// `items` with no signal, and its payload PNG then looks unreferenced.
+            case short(loaded: Int, stored: Int)
+        }
+
+        var isComplete: Bool { if case .complete = self { return true }; return false }
+    }
+
+    /// Proof that a load saw EVERY row the database holds.
+    ///
+    /// It exists to be a parameter. Every pass that permanently destroys stored bytes
+    /// takes one, and `init` is `fileprivate` to this file, so the only way to obtain
+    /// the value is a load that actually proved completeness. That is the difference
+    /// between this and the guard it replaces: a guard is invisible to the next call
+    /// site somebody writes, and a required argument of a type they cannot construct
+    /// is the first thing the compiler asks them about.
+    ///
+    /// Deliberately holds FLAT IMMUTABLE FACTS rather than `[ClipItem]`. `ClipItem` is
+    /// a class, so a token carrying references would prove the set was complete and
+    /// nothing whatever about the objects in it — and the reapers have no business
+    /// touching a live item anyway.
+    struct CompleteHistory {
+        /// Every `payloadFile` referenced by a live clip.
+        let referencedPayloads: Set<String>
+        /// Image clips only, id → payload file name.
+        let imagePayloadsByClip: [UUID: String]
+        /// What the database itself reported, which `loadAll` matched exactly.
+        let storedCount: Int
+
+        fileprivate init(referencedPayloads: Set<String>,
+                         imagePayloadsByClip: [UUID: String],
+                         storedCount: Int) {
+            self.referencedPayloads = referencedPayloads
+            self.imagePayloadsByClip = imagePayloadsByClip
+            self.storedCount = storedCount
+        }
     }
 
     /// Load every clip with its embeddings, newest/pinned first.
+    ///
+    /// DISCARDS the completeness signal, so the result MAY BE SHORT and must never
+    /// feed a deletion. Callers that delete take a `CompleteHistory` instead, which
+    /// only `loadAllStatus` can mint. Kept for diagnostics, the audit tool and tests.
     func loadAll() -> [ClipItem] {
+        if case .complete(let rows, _) = loadAllStatus() { return rows }
+        return loadAllUnchecked().rows
+    }
+
+    /// `loadAll`, plus whether it read the whole thing.
+    ///
+    /// One `BEGIN DEFERRED` snapshot around the count and all three scans: in WAL mode
+    /// that pins a consistent view, so a second process writing between the count and
+    /// the scan cannot manufacture a `.short` and freeze this one for nothing.
+    ///
+    /// Must not be called from inside an open transaction — nesting `BEGIN` is an
+    /// error. Today the only callers are `ClipStore.init` and the audit tool, neither
+    /// of which holds one.
+    func loadAllStatus() -> HistoryRead {
+        exec("BEGIN DEFERRED;")
+        defer { exec("COMMIT;") }
+
+        guard case .counted(let stored) = clipCountStatus() else {
+            if case .unavailable(let rc) = clipCountStatus() {
+                return .unavailable(.countUnavailable(rc))
+            }
+            return .unavailable(.countUnavailable(SQLITE_ERROR))
+        }
+        let read = loadAllUnchecked()
+        guard read.featureRC == SQLITE_DONE else {
+            return .unavailable(.featureScanStoppedEarly(read.featureRC))
+        }
+        guard read.embeddingRC == SQLITE_DONE else {
+            return .unavailable(.embeddingScanStoppedEarly(read.embeddingRC))
+        }
+        guard read.clipRC == SQLITE_DONE else {
+            return .unavailable(.clipScanStoppedEarly(read.clipRC))
+        }
+        // A row that EXISTS and could not be materialised is a SHORT read, not a
+        // smaller history. Today the only route is a non-UUID id, which the scan skips
+        // silently — and that clip's PNG then looks unreferenced to the sweep.
+        guard read.rows.count == stored else {
+            return .unavailable(.short(loaded: read.rows.count, stored: stored))
+        }
+        var imagePayloads: [UUID: String] = [:]
+        for item in read.rows where item.kind == .image {
+            if let f = item.payloadFile { imagePayloads[item.id] = f }
+        }
+        return .complete(read.rows, CompleteHistory(
+            referencedPayloads: Set(read.rows.compactMap { $0.payloadFile }),
+            imagePayloadsByClip: imagePayloads,
+            storedCount: stored))
+    }
+
+    /// The scans themselves, reporting each one's terminal sqlite result.
+    private func loadAllUnchecked()
+        -> (rows: [ClipItem], clipRC: Int32, embeddingRC: Int32, featureRC: Int32) {
         // 0. Vision prints, one query rather than one per clip.
-        let featuresByClip = loadImageFeatures()
+        let features = loadImageFeaturesChecked()
+        let featuresByClip = features.features
         // 1. Embeddings grouped by clip id.
         var embByClip: [String: [String: ModelEmbedding]] = [:]
-        prepareEach("SELECT clip_id, model, vector FROM embeddings;") { stmt in
+        let embeddingRC = prepareEach("SELECT clip_id, model, vector FROM embeddings;") { stmt in
             let clipID = column(stmt, 0)
             let model = column(stmt, 1)
             // Decrypt at-rest embedding columns (legacy plaintext passes through).
@@ -137,7 +287,7 @@ final class Database {
         }
         // 2. Clips.
         var result: [ClipItem] = []
-        prepareEach("""
+        let clipRC = prepareEach("""
             SELECT id, kind, text, rtf, payload_file, file_path, color_hex,
                    created_at, last_used_at, pinned, source_app, use_count, user_tags,
                    flags, shape, ocr_text
@@ -175,7 +325,7 @@ final class Database {
             item.imageFeature = featuresByClip[idStr]
             result.append(item)
         }
-        return result
+        return (result, clipRC, embeddingRC, features.rc)
     }
 
     // MARK: Writes
@@ -308,7 +458,9 @@ final class Database {
     /// pass through `Crypto.open` unchanged, exactly like `user_tags`.
     func userTagDismissals() -> Set<UserTagDismissal> {
         var result: Set<UserTagDismissal> = []
-        prepareEach("SELECT tag, clip_id FROM user_tag_dismissals;") { stmt in
+        // `_ =` on purpose: a short read here loses a dismissed SUGGESTION, so the
+        // suggestion reappears. Nothing is deleted on the strength of this scan.
+        _ = prepareEach("SELECT tag, clip_id FROM user_tag_dismissals;") { stmt in
             guard let clipID = UUID(uuidString: column(stmt, 1)),
                   let tag = ClipItem.normalizedUserTags([Crypto.open(column(stmt, 0))]).first
             else { return }
@@ -464,14 +616,21 @@ final class Database {
 
     /// All stored prints, by clip. Read once at load, like the vector cache.
     func loadImageFeatures() -> [String: (revision: Int, vector: [Float])] {
+        loadImageFeaturesChecked().features
+    }
+
+    /// `loadImageFeatures`, plus the scan's terminal result so a truncated read is
+    /// reportable rather than silently smaller.
+    private func loadImageFeaturesChecked()
+        -> (features: [String: (revision: Int, vector: [Float])], rc: Int32) {
         var out: [String: (revision: Int, vector: [Float])] = [:]
-        prepareEach("SELECT clip_id, revision, vector FROM image_features;") { stmt in
+        let rc = prepareEach("SELECT clip_id, revision, vector FROM image_features;") { stmt in
             let id = column(stmt, 0)
             let revision = Int(sqlite3_column_int(stmt, 1))
             guard let blob = Crypto.open(Self.blob(stmt, 2)) else { return }
             out[id] = (revision, Self.vectorFromBlob(blob))
         }
-        return out
+        return (out, rc)
     }
 
     @discardableResult
@@ -560,8 +719,32 @@ final class Database {
         return false
     }
 
-    private func prepareEach(_ sql: String, _ row: (OpaquePointer?) -> Void) {
-        prepare(sql) { stmt in while sqlite3_step(stmt) == SQLITE_ROW { row(stmt) } }
+    /// Run a read statement over every row, returning the scan's TERMINAL result.
+    ///
+    /// `SQLITE_DONE` means the cursor genuinely reached the end. Any other value means
+    /// the loop stopped early and the rows the caller accumulated are a PREFIX, not the
+    /// answer — and a failed `prepare` never enters the loop at all, which is why the
+    /// initial value is `SQLITE_ERROR` rather than `SQLITE_DONE`.
+    ///
+    /// Deliberately NOT `@discardableResult`. The defect this whole change exists to
+    /// remove is that a short read is indistinguishable from a complete one; an
+    /// attribute whose meaning is "you may ignore this", applied to the value that
+    /// distinguishes them, is that defect with a nicer name. The three callers that
+    /// genuinely do not care write `_ =`, which is a visible act — and none of them can
+    /// feed a deletion: both PRAGMA probes fail safe on a short read, and the
+    /// dismissals scan only ever loses a suggestion.
+    private func prepareEach(_ sql: String, _ row: (OpaquePointer?) -> Void) -> Int32 {
+        var terminal: Int32 = SQLITE_ERROR
+        prepare(sql) { stmt in
+            var rc = sqlite3_step(stmt)
+            while rc == SQLITE_ROW { row(stmt); rc = sqlite3_step(stmt) }
+            if rc != SQLITE_DONE {
+                NSLog("Cliphoard db: row scan stopped early (rc \(rc)): "
+                      + "\(String(cString: sqlite3_errmsg(db)))")
+            }
+            terminal = rc
+        }
+        return terminal
     }
 
     /// One-way retirement of `embeddings.tags`.
@@ -585,7 +768,9 @@ final class Database {
     /// log — the same failure family as the marker this replaces.
     private func dropTagIDColumnIfPresent() {
         var exists = false
-        prepareEach("PRAGMA table_info(embeddings);") { stmt in
+        // `_ =` on purpose: a short PRAGMA read leaves `exists` false, so the DROP is
+        // skipped and retried next launch. Fails safe by construction.
+        _ = prepareEach("PRAGMA table_info(embeddings);") { stmt in
             if column(stmt, 1) == "tags" { exists = true }
         }
         guard exists else { return }
@@ -603,7 +788,9 @@ final class Database {
 
     private func ensureColumn(_ name: String, definition: String, in table: String) {
         var exists = false
-        prepareEach("PRAGMA table_info(\(table));") { stmt in
+        // `_ =` on purpose: a short PRAGMA read leaves `exists` false, so the ALTER is
+        // re-attempted and sqlite refuses a duplicate column. Fails safe, and loudly.
+        _ = prepareEach("PRAGMA table_info(\(table));") { stmt in
             if column(stmt, 1) == name { exists = true }
         }
         if !exists { exec("ALTER TABLE \(table) ADD COLUMN \(name) \(definition);") }

@@ -31,6 +31,20 @@ final class ClipStore: ObservableObject {
     /// alongside `safeMode` so the message is specific rather than alarming.
     @Published private(set) var unreadableClipCount = 0
 
+    /// Whether `items` is the COMPLETE stored history rather than a partial or failed
+    /// read.
+    ///
+    /// Kept separate from `Crypto.decryptionHealthy` because they fail for unrelated
+    /// reasons and the banner has to say which: the canary is about the KEY (can this
+    /// process read what it wrote), this is about the DATABASE (did it read all of it).
+    /// A healthy canary says nothing whatever about sqlite, which is precisely why safe
+    /// mode could not see a failed load.
+    @Published private(set) var storageComplete = true
+
+    /// Proof the launch load was complete, or nil. Only `Database.loadAllStatus` can
+    /// mint one, and only the destructive passes consume it.
+    private var historyProof: Database.CompleteHistory?
+
     /// Live progress of a background (re)indexing pass, or nil when idle.
     @Published private(set) var indexing: IndexingProgress?
 
@@ -84,7 +98,16 @@ final class ClipStore: ObservableObject {
         // exactly how 202 clips were lost. Safe mode freezes history instead.
         Crypto.verifyCanary()
         migrateLegacyJSONIfNeeded()
-        items = db?.loadAll() ?? []
+        // A load that FAILED and a store that is EMPTY are different facts, and the
+        // whole of this file's history is what happens when they share a value. Assigned
+        // BEFORE the safe-mode early return below, deliberately: on a machine where the
+        // keychain is unreachable every store is frozen and returns early, so a fact
+        // recorded after that point could never be asserted by a test there.
+        let load = db?.loadAllStatus() ?? .unavailable(.noDatabase)
+        var proof: Database.CompleteHistory?
+        if case .complete(let rows, let token) = load { items = rows; proof = token }
+        historyProof = proof
+        storageComplete = load.isComplete
         // repairKinds MOVED below the safe-mode decision. It deletes rows, and it ran
         // here — before safeMode was even assigned — so a frozen store could still lose
         // data to it. It also recomputes each clip's kind from `item.text`, which is
@@ -113,13 +136,27 @@ final class ClipStore: ObservableObject {
         //
         // The ratio gate stays independent, for the converse the canary cannot model:
         // the canary opens but the rows do not.
-        safeMode = !Crypto.decryptionHealthy
+        //
+        // The third term is the sqlite analogue of the first. `safeMode` used to be
+        // computed entirely from `items`, so a load that returned nothing because it
+        // FAILED produced `items.count == 0`, which fails `>= 10`, which left safe mode
+        // off — the freeze was structurally blind to the failure it most needed to see.
+        safeMode = !storageComplete
+            || !Crypto.decryptionHealthy
             || (items.count >= 10 && unreadable * 2 > items.count)
         if safeMode {
-            let reason = !Crypto.decryptionHealthy
-                ? "the startup canary did not open — this process cannot read what a "
-                  + "previous run wrote"
-                : "\(unreadable)/\(items.count) clips are unreadable"
+            let reason: String
+            if case .unavailable(let why) = load {
+                // NOT "\(unreadable)/\(items.count) clips are unreadable" — both are
+                // zero here, so that phrasing renders as "can't read 0 of 0 clips".
+                reason = "the stored history could not be read in full (\(why)). An "
+                       + "empty or short read is NOT an empty history"
+            } else if !Crypto.decryptionHealthy {
+                reason = "the startup canary did not open — this process cannot read what a "
+                       + "previous run wrote"
+            } else {
+                reason = "\(unreadable)/\(items.count) clips are unreadable"
+            }
             NSLog("Cliphoard: SAFE MODE — \(reason). No migration, re-seal or re-index "
                   + "will run; nothing will be deleted.")
             DebugLog.write("SAFE MODE — \(reason)")
@@ -138,7 +175,17 @@ final class ClipStore: ObservableObject {
         sortStable()
         rebuildTagIndex()
         rebuildUserTagIndex()
-        sweepOrphanPayloads()
+        // The destructive passes take PROOF the load was complete, not the store's word
+        // for it. `proof` is non-nil only on a `.complete` read; safe mode already
+        // returned above, so this is belt and braces rather than the only guard.
+        if let proof {
+            HistoryReaper.sweepOrphanPayloads(in: dir, history: proof)
+            if let dead = HistoryReaper.orphanedImageRows(in: dir, history: proof),
+               !dead.isEmpty {
+                items.removeAll { dead.contains($0.id) }
+                db?.delete(ids: Array(dead))
+            }
+        }
         // Moved here from above the safe-mode decision: it deletes rows and it rewrites
         // each clip's kind from `item.text`, which is ciphertext when unreadable. Running
         // it before the freeze was decided meant a degraded launch could both delete and
@@ -164,9 +211,9 @@ final class ClipStore: ObservableObject {
         // silently yields a TRUNCATED `items` — and `written == items.count` would then
         // pass on the truncated set and retire the migration permanently, leaving the
         // unloaded rows plaintext forever.
-        guard let db, items.count == db.clipCount() else {
-            DebugLog.write("migrate: no database, or the loaded rows do not match the "
-                           + "stored count (possible truncated load) — NOT stamping re-key")
+        guard let db, let proof = historyProof, items.count == proof.storedCount else {
+            DebugLog.write("migrate: no database, or the launch load was not proven "
+                           + "complete — NOT stamping re-key")
             return
         }
         var written = 0
@@ -202,9 +249,9 @@ final class ClipStore: ObservableObject {
         // silently yields a TRUNCATED `items` — and `written == items.count` would then
         // pass on the truncated set and retire the migration permanently, leaving the
         // unloaded rows plaintext forever.
-        guard let db, items.count == db.clipCount() else {
-            DebugLog.write("migrate: no database, or the loaded rows do not match the "
-                           + "stored count (possible truncated load) — NOT stamping encrypt-existing")
+        guard let db, let proof = historyProof, items.count == proof.storedCount else {
+            DebugLog.write("migrate: no database, or the launch load was not proven "
+                           + "complete — NOT stamping encrypt-existing")
             return
         }
         var written = 0
@@ -356,55 +403,24 @@ final class ClipStore: ObservableObject {
         }
     }
 
-    /// Heal stored rows: (1) re-derive each text-bearing clip's kind from
-    /// deterministic detection, repairing rows a past embedding-based `refineKind`
-    /// mis-promoted (e.g. plain words stored as Links); (2) drop image clips whose
-    /// payload PNG has vanished, since they render as broken cards in Images.
-    /// Idempotent and cheap (O(n)); runs once per launch.
+    /// Re-derive each text-bearing clip's kind from deterministic detection, repairing
+    /// rows a past embedding-based `refineKind` mis-promoted (e.g. plain words stored as
+    /// Links). Idempotent and cheap (O(n)); runs once per launch.
+    ///
+    /// NON-DESTRUCTIVE — it updates metadata and nothing else. The half that DELETED
+    /// image rows whose payload had "vanished" now lives in `HistoryReaper`, where it
+    /// cannot run without proof the history was read whole. Two reasons it had to move:
+    /// a launch that loaded nothing deleted every image row, and the vanish test itself
+    /// was `FileManager.fileExists` per file, which answers false both for "not there"
+    /// and for "I could not stat it".
     private func repairKinds() {
-        var orphanedImages: [ClipItem] = []
-        for item in items {
-            if item.kind == .image {
-                if let f = item.payloadFile,
-                   !FileManager.default.fileExists(atPath: dir.appendingPathComponent(f).path) {
-                    orphanedImages.append(item)
-                }
-                continue
-            }
+        for item in items where item.kind != .image {
             guard item.payloadFile == nil, item.filePath == nil else { continue }
             let correct = ClipboardMonitor.detectKind(for: item.text)
             guard correct != item.kind else { continue }
             item.kind = correct
             item.colorHex = correct == .color ? item.text.trimmingCharacters(in: .whitespaces) : nil
             db?.updateMeta(item)
-        }
-        if !orphanedImages.isEmpty {
-            let ids = Set(orphanedImages.map { $0.id })
-            items.removeAll { ids.contains($0.id) }
-            db?.delete(ids: Array(ids))
-        }
-    }
-
-    /// Best-effort: delete any "*.png" payload files in the store directory that
-    /// are no longer referenced by a live item's `payloadFile`. Guards against
-    /// images leaking on disk after a crash, an interrupted delete, or a stale
-    /// database. Errors are ignored — this is purely housekeeping.
-    private func sweepOrphanPayloads() {
-        let referenced = Set(items.compactMap { $0.payloadFile })
-        // A clip "<uuid>.png" may have a sidecar thumbnail "<uuid>-thumb.png"
-        // (ClipboardMonitor.writeThumbnail). Keep a thumbnail whose original is
-        // still referenced — otherwise the sweep deletes every thumbnail on launch.
-        func isLiveThumbnail(_ name: String) -> Bool {
-            guard name.hasSuffix("-thumb.png") else { return false }
-            return referenced.contains(String(name.dropLast("-thumb.png".count)) + ".png")
-        }
-        guard let entries = try? FileManager.default.contentsOfDirectory(
-            at: dir, includingPropertiesForKeys: nil) else { return }
-        for url in entries where url.pathExtension.lowercased() == "png" {
-            let name = url.lastPathComponent
-            if !referenced.contains(name) && !isLiveThumbnail(name) {
-                try? FileManager.default.removeItem(at: url)
-            }
         }
     }
 
@@ -1190,7 +1206,11 @@ final class ClipStore: ObservableObject {
         // A LIVE database is required. The guard used to be `(db?.clipCount() ?? 0) == 0`,
         // which is SATISFIED when the handle is nil — so a failed sqlite open ran the
         // import, inserted nothing, and still reached the delete below.
-        guard let db, db.clipCount() == 0,
+        //
+        // `.counted(0)` and not `== 0`: a count that could not be TAKEN is now
+        // `.unavailable` and matches no pattern here, so an unreadable database can no
+        // longer present itself as an empty one ready to receive an import.
+        guard let db, case .counted(0) = db.clipCountStatus(),
               let data = try? Data(contentsOf: jsonURL) else { return }
         let decoded: [ClipItem]
         do { decoded = try JSONDecoder().decode([ClipItem].self, from: data) }
@@ -1229,10 +1249,14 @@ final class ClipStore: ObservableObject {
         let committed = db.transaction { for item in decoded where db.insert(item) { imported += 1 } }
         // Re-read the database rather than trusting the tally, the same write-then-verify
         // discipline applied to the archive file a few lines below.
-        guard committed, imported == decoded.count, db.clipCount() == decoded.count else {
+        // `.counted(decoded.count)`, so a verification that could not RUN keeps the
+        // original rather than reading as agreement.
+        let storedAfter = db.clipCountStatus()
+        guard committed, imported == decoded.count,
+              storedAfter == .counted(decoded.count) else {
             NSLog("Cliphoard: legacy import did not complete "
                   + "(committed=\(committed), inserted=\(imported)/\(decoded.count), "
-                  + "stored=\(db.clipCount())) — KEEPING history.json. Nothing was deleted.")
+                  + "stored=\(storedAfter)) — KEEPING history.json. Nothing was deleted.")
             DebugLog.write("migrate-legacy: \(imported)/\(decoded.count) — original kept")
             return
         }
