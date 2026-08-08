@@ -222,6 +222,7 @@ struct ClipDetailView: View {
                         TextField("Add a tag", text: $newTag)
                             .textFieldStyle(.roundedBorder)
                             .onSubmit(commitTag)
+                            .disabled(store.safeMode)
                         if !suggestions.isEmpty {
                             Menu {
                                 ForEach(suggestions, id: \.self) { suggestion in
@@ -229,8 +230,14 @@ struct ClipDetailView: View {
                                 }
                             } label: { Image(systemName: "text.badge.plus") }
                             .menuStyle(.borderlessButton)
+                            .disabled(store.safeMode)
                         }
-                        Button("Add", action: commitTag).disabled(newTag.trimmingCharacters(in: .whitespaces).isEmpty)
+                        // Frozen stores refuse the write, and on an unreadable row the
+                        // labels in memory are its ciphertext parsed as tags — so editing
+                        // them would seal garbage over the real ones.
+                        Button("Add", action: commitTag)
+                            .disabled(newTag.trimmingCharacters(in: .whitespaces).isEmpty
+                                      || store.safeMode)
                     }
                 }
 
@@ -290,10 +297,12 @@ struct ClipDetailView: View {
                                 Text("+ #\(tag)")
                             }
                             .buttonStyle(.plain).accessibilityLabel("Add suggested tag \(tag)")
+                            .disabled(store.safeMode)
                             Button { _ = store.dismissSuggestedUserTag(tag, for: item) } label: {
                                 Image(systemName: "xmark")
                             }
                             .buttonStyle(.plain).foregroundStyle(.secondary).accessibilityLabel("Dismiss suggestion \(tag)")
+                            .disabled(store.safeMode)
                         }
                         .font(.caption)
                         .padding(.horizontal, 8).padding(.vertical, 4)

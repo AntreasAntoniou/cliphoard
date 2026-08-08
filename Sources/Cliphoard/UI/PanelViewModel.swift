@@ -189,6 +189,11 @@ final class PanelViewModel: ObservableObject {
     func deleteSelection() {
         let r = results
         guard r.indices.contains(selection) else { return }
+        // The store already refuses while frozen, so no data is at risk — but a shortcut
+        // that silently does nothing reads as a broken app. AppKit's standard "this is
+        // unavailable" signal, the same one a disabled key equivalent produces. The
+        // safe-mode banner is already on screen and names the reason.
+        guard !store.safeMode else { NSSound.beep(); return }
         store.delete(r[selection])
         selection = min(selection, max(0, results.count - 1))
     }

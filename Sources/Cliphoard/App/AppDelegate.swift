@@ -102,8 +102,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             button.image?.isTemplate = true
         }
         statusMenu.delegate = self
+        // EXPLICIT because the safe-mode disabling in `rebuildMenu` depends on it. Under
+        // automatic enabling an item whose action is nil is disabled by AppKit's own rule
+        // — which is why the destructive items below drop their selector rather than set
+        // `isEnabled`. Probed: with autoenabling on, a manual `isEnabled = false` is
+        // silently DISCARDED, because `NSMenu.update()` recomputes it before every
+        // display. Turning autoenabling off would work too, but `rebuildMenu` constructs
+        // its submenus fresh on every open and each would default back — one submenu added
+        // later and the gate silently reverts.
+        statusMenu.autoenablesItems = true
         statusItem.menu = statusMenu
         rebuildMenu()
+    }
+
+    /// The selector a destructive menu item should carry, or nil to let AppKit disable it.
+    ///
+    /// A greyed item with no explanation sends someone hunting for another way to do the
+    /// thing, so the caller appends the reason to the title.
+    static func destructiveAction(_ selector: Selector, enabled: Bool) -> Selector? {
+        enabled ? selector : nil
     }
 
     /// Rebuilt every time the menu opens (via `menuNeedsUpdate`) so live state —
@@ -158,7 +175,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             menu.addItem(withTitle: "Grant Accessibility (for auto-paste)…",
                          action: #selector(promptAccessibility), keyEquivalent: "")
         }
-        menu.addItem(withTitle: "Clear Unpinned History", action: #selector(clearHistory), keyEquivalent: "")
+        let frozen = store.safeMode
+        menu.addItem(withTitle: frozen ? "Clear Unpinned History (frozen — can’t read history)"
+                                       : "Clear Unpinned History",
+                     action: Self.destructiveAction(#selector(clearHistory), enabled: !frozen),
+                     keyEquivalent: "")
         menu.addItem(withTitle: "Welcome to Cliphoard…", action: #selector(showWelcome), keyEquivalent: "")
         menu.addItem(withTitle: "About Cliphoard", action: #selector(about), keyEquivalent: "")
         menu.addItem(.separator())

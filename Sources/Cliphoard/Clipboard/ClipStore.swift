@@ -785,7 +785,11 @@ final class ClipStore: ObservableObject {
     /// never re-offered for that clip.
     @discardableResult
     func dismissSuggestedUserTag(_ tag: String, for item: ClipItem) -> Bool {
-        db?.addUserTagDismissal(tag: tag, clipID: item.id) ?? false
+        // A dismissal is keyed by the tag TEXT, which is ciphertext-derived on an
+        // unreadable row — so a frozen store would persist a permanent dismissal for a
+        // label the user never saw.
+        guard !safeMode else { return false }
+        return db?.addUserTagDismissal(tag: tag, clipID: item.id) ?? false
     }
 
     func dismissedUserTags(for item: ClipItem) -> Set<String> {
@@ -794,8 +798,25 @@ final class ClipStore: ObservableObject {
 
     /// Replace a clip's user labels and update storage/index atomically from the
     /// caller's perspective. A failed sealed DB write restores the prior labels.
+    ///
+    /// Refuses while frozen, and this one is NOT merely defensive. `Crypto.open(String)`
+    /// fails OPEN — it returns its input unchanged when nothing on the keyring decrypts
+    /// it — and the clips scan feeds that straight into `userTags(fromText:)`. So an
+    /// unreadable row's labels in memory ARE the `enc1:` ciphertext parsed as labels.
+    ///
+    /// Under keychain-denied safe mode `sealStrict` refuses and the old labels are
+    /// restored, so nothing is lost. But safe mode's RATIO term fires with a perfectly
+    /// healthy key, and there the seal SUCCEEDS: editing one tag writes ciphertext-derived
+    /// garbage over the user's real labels, permanently and undetectably. The tag editor
+    /// sat live next to a Delete button that was already disabled.
     @discardableResult
     func updateUserTags(_ item: ClipItem, to tags: [String]) -> Bool {
+        guard !safeMode else {
+            DebugLog.write("safe mode: refusing a user-tag write — an unreadable row's "
+                           + "labels are its ciphertext parsed as tags, and sealing them "
+                           + "destroys the real ones")
+            return false
+        }
         let old = item.userTags
         removeFromUserTagIndex(item)
         item.userTags = ClipItem.normalizedUserTags(tags)

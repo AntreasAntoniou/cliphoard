@@ -338,6 +338,14 @@ struct ClipCardView: View {
     var onInspectTags: () -> Void
     var onPin: () -> Void
     var onDelete: () -> Void
+    /// Whether the store will actually accept a deletion right now.
+    ///
+    /// NOT defaulted, deliberately. This view holds no store (only `storeDir`), so the
+    /// fact has to be passed in — and a default of `true` would be a skip-hatch: the next
+    /// call site that forgets ships a live Delete on a frozen store, which is exactly how
+    /// the primary Delete came to be the one control left ungated while three secondary
+    /// ones were covered. Without a default the compiler makes each call site answer.
+    let historyIsMutable: Bool
 
     @State private var hovering = false
 
@@ -392,6 +400,7 @@ struct ClipCardView: View {
             Button(item.pinned ? "Unpin" : "Pin") { onPin() }
             Divider()
             Button("Delete", role: .destructive) { onDelete() }
+                .disabled(!historyIsMutable)   // refuses while frozen; do not look live
         }
         .help(item.preview)
         .accessibilityElement(children: .combine)

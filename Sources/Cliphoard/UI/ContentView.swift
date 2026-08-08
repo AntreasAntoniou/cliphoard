@@ -544,8 +544,12 @@ struct ContentView: View {
                                 onInspect: { model.inspect(row.item) },
                                 onInspectTags: { model.inspect(row.item, focusTags: true) },
                                 onPin: { store.togglePin(row.item) },
-                                // `delete` itself refuses while frozen (ClipStore).
-                                onDelete: { store.delete(row.item) }
+                                onDelete: { store.delete(row.item) },
+                                // The store refuses while frozen, so nothing is lost —
+                                // but a Delete that looks live and silently does nothing
+                                // reads as a broken app, and the next thing someone tries
+                                // when the app looks broken is to clear it.
+                                historyIsMutable: !store.safeMode
                             )
                             // Identity is the clip's id (from ForEach) — NOT the index.
                             // An index-based .id reused stale views across filters
