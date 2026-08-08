@@ -111,6 +111,9 @@ final class ClipStore: ObservableObject {
         rebuildTagIndex()
         rebuildUserTagIndex()
         sweepOrphanPayloads()
+        // After the safe-mode early return above, so safe mode is honoured by
+        // construction here rather than by remembering a second check.
+        scheduleImageUnderstanding()
     }
 
     /// One-time re-key: when the encryption key gains Secure-Enclave backing, rows
@@ -234,7 +237,9 @@ final class ClipStore: ObservableObject {
                     let vetoed = item.isIndexVetoed
                     if vetoed {
                         item.embeddings = [:]
+                        item.imageFeature = nil
                         db?.deleteEmbeddings(clipID: item.id)
+                        db?.deleteImageFeature(clipID: item.id)
                         purged += 1
                     }
                     // Nothing fired and no shape: the stored row already reads
@@ -309,6 +314,171 @@ final class ClipStore: ObservableObject {
     /// Directory where binary payloads (images) live.
     var storeDirectory: URL { dir }
 
+    // MARK: - Image understanding
+
+    /// Bumped on every applied result. `PanelViewModel.ResultsKey` proxies store changes
+    /// by `(items.count, lastAddedID)` and its own comment admits an in-place mutation
+    /// that touches neither is undetected — recognition landing is exactly that mutation,
+    /// so without this the panel shows stale results until the next copy and the feature
+    /// looks broken.
+    private(set) var imageUnderstandingRevision = 0
+    private var imageTask: Task<Void, Never>?
+    @Published private(set) var imageProgress: IndexingProgress?
+
+    /// Opt-out. Default ON: the image bytes are already sealed in this database, so
+    /// recognition extracts nothing that was not already stored, and it never leaves the
+    /// machine. What it changes is REACHABILITY, which is why the withhold rule below is
+    /// wider than the ordinary index veto.
+    static var imageUnderstandingEnabled: Bool {
+        get {
+            UserDefaults.standard.object(forKey: "imageUnderstandingEnabled") == nil
+                ? true : UserDefaults.standard.bool(forKey: "imageUnderstandingEnabled")
+        }
+        set { UserDefaults.standard.set(newValue, forKey: "imageUnderstandingEnabled") }
+    }
+
+    /// Exactly the rows the pass has never looked at. The column IS the marker, so
+    /// backfill and steady state are one code path and a crash mid-pass leaves the
+    /// remainder untouched — no UserDefaults one-shot flag, which is what forced the
+    /// detector backfill's predicate to be deliberately over-inclusive.
+    static func needsImageUnderstanding(_ item: ClipItem) -> Bool {
+        item.kind == .image && item.payloadFile != nil && item.ocrText == nil
+    }
+
+    /// THE ONLY place `ocrText` is ever assigned. Synchronous from the scan to the
+    /// assignment, with NO `await` between them.
+    ///
+    /// That is the whole safety argument, not a style preference. `flags` is mutable and
+    /// this is the first thing in the codebase that mutates it after capture; if a
+    /// suspension point were introduced between reading the verdict and writing the
+    /// decision, the decision would be made against flags that had already moved. Do not
+    /// "tidy" an await into this function.
+    ///
+    /// Order: scan → union → decide → assign → purge → persist → index.
+    func applyImageUnderstanding(_ result: ImageUnderstanding.Result, to item: ClipItem) {
+        // 1. SCAN FIRST. The recognised string is untrusted content no detector has seen:
+        //    the capture-time scan ran against the placeholder caption ("Image 1920×1080")
+        //    and necessarily returned nothing, because recognition cannot run on the
+        //    sub-second poll path. Nothing else re-scans.
+        let verdict = Detectors.scan(text: result.text, kind: item.kind, sourceApp: item.sourceApp)
+
+        // 2. UNION, never assign. `add` assigns (`item.flags = verdict.flags`) and is
+        //    safe there only because it re-ORs the origin quarantine immediately after.
+        //    Copying that idiom here would clear `.quarantined` from a password-manager
+        //    screenshot the instant recognition finished — a total veto bypass, in code
+        //    that reads correct.
+        item.flags.formUnion(verdict.flags)
+
+        // 3. Decide BEFORE assigning. Withholding is wider than vetoing, deliberately:
+        //    see ClipItem.ocrWithholdFlags.
+        let withhold = item.isIndexVetoed
+            || !item.flags.isDisjoint(with: ClipItem.ocrWithholdFlags)
+        item.ocrText = withhold ? "" : result.text
+
+        // 4. If the clip is NOW vetoed, drop everything derived. It was embedded at
+        //    capture on its caption, and may hold a print. A perceptual print of a
+        //    vault screenshot still confirms the user viewed that exact screen.
+        if item.isIndexVetoed {
+            item.embeddings = [:]
+            item.imageFeature = nil
+            db?.deleteEmbeddings(clipID: item.id)
+            db?.deleteImageFeature(clipID: item.id)
+        } else if !result.featurePrint.isEmpty {
+            item.imageFeature = (revision: result.featurePrintRevision, vector: result.featurePrint)
+            db?.upsertImageFeature(clipID: item.id, revision: result.featurePrintRevision,
+                                   vector: result.featurePrint)
+        }
+
+        // 5. Persist the sealed text and the flags together.
+        db?.updateOCR(item)
+
+        // 6. ONLY NOW may the model see it — and unconditionally, NOT gated on staleness:
+        //    the clip was already embedded at capture on its caption, so it is not stale,
+        //    and that worthless vector would never otherwise be replaced.
+        if !item.isIndexVetoed && DeepSearch.level != .off {
+            ClipIndexer.index(item)
+            if let emb = item.embeddings[EmbedderProvider.active.signature] {
+                db?.upsertEmbedding(clipID: item.id, model: EmbedderProvider.active.signature,
+                                    embedding: emb)
+            }
+        }
+        removeFromTagIndex(item)
+        addToTagIndex(item)
+        imageUnderstandingRevision &+= 1
+        objectWillChange.send()
+    }
+
+    /// Recognise text + prints for every never-analysed image, serialized, off the main
+    /// actor, resumable.
+    ///
+    /// NOT on the capture path: recognition costs 100–300 ms and `ClipboardMonitor.poll`
+    /// fires every 0.4 s. NOT lazy-on-first-search either — that would put a stall on the
+    /// first keystroke after launch and run Vision inside a view body.
+    func scheduleImageUnderstanding() {
+        // Safe mode is absolute. This pass REWRITES rows that already exist, which is
+        // precisely the bulk mutation safe mode exists to forbid. (Belt and braces: the
+        // `init` call site already sits after the safe-mode early return, so this is
+        // honoured by construction there — but `add` also schedules.)
+        guard !safeMode, Self.imageUnderstandingEnabled, imageTask == nil else { return }
+        imageTask = Task { @MainActor [weak self] in
+            defer { self?.imageTask = nil; self?.imageProgress = nil }
+            // Failures are remembered for THIS LAUNCH only. A transient decrypt failure
+            // must retry next launch rather than be stamped `""` — "analysed, nothing
+            // there" — forever.
+            var attempted: Set<UUID> = []
+            while !Task.isCancelled {
+                guard let self else { return }
+                let batch = self.items.filter {
+                    Self.needsImageUnderstanding($0) && !attempted.contains($0.id)
+                }
+                guard !batch.isEmpty else { break }   // drains clips added mid-pass
+                var done = 0
+                self.imageProgress = IndexingProgress(done: 0, total: batch.count)
+                for item in batch {
+                    if Task.isCancelled { return }
+                    attempted.insert(item.id)
+                    defer {
+                        done += 1
+                        self.imageProgress = IndexingProgress(done: done, total: batch.count)
+                    }
+                    // A clip already vetoed at entry is NEVER analysed. Cheapest possible
+                    // protection: the pixels are not even decoded.
+                    guard !item.isIndexVetoed else {
+                        item.ocrText = ""            // analysed-and-nothing-stored
+                        self.db?.updateOCR(item)
+                        continue
+                    }
+                    guard let png = self.decryptedPayload(item) else {
+                        // Unreadable payload. The state machine does NOT cover this for
+                        // free — `Crypto.open` fails open for strings — so mark it here,
+                        // explicitly, rather than leaving it to be retried forever.
+                        item.ocrText = ""
+                        self.db?.updateOCR(item)
+                        continue
+                    }
+                    // Vision OFF the main actor: the panel must never stall behind it.
+                    let analyze = ImageUnderstanding.analyze
+                    let result = await Task.detached(priority: .utility) { analyze(png) }.value
+                    self.applyImageUnderstanding(result, to: item)
+                    await Task.yield()
+                }
+            }
+        }
+    }
+
+    /// Decrypted image bytes, or nil when the payload is missing or unreadable.
+    ///
+    /// The nil case is why the caller must store the empty marker explicitly: `Crypto.open`
+    /// FAILS OPEN for strings, so an unreadable value elsewhere surfaces as ciphertext
+    /// rather than as an error. Here we get a real nil and must not mistake it for
+    /// "analysed, found nothing".
+    func decryptedPayload(_ item: ClipItem) -> Data? {
+        guard let file = item.payloadFile,
+              let stored = try? Data(contentsOf: dir.appendingPathComponent(file))
+        else { return nil }
+        return Crypto.open(stored)
+    }
+
     // MARK: Mutations
 
     func add(_ item: ClipItem) {
@@ -363,6 +533,9 @@ final class ClipStore: ObservableObject {
         addToUserTagIndex(item)
         lastAddedID = item.id
         db?.insert(item)
+        // Recognition runs off the capture path — this only schedules. The dedup branch
+        // above returns before reaching here, so a re-copied screenshot never re-analyses.
+        if item.kind == .image { scheduleImageUnderstanding() }
         Feedback.playCapture()
     }
 
@@ -623,6 +796,14 @@ final class ClipStore: ObservableObject {
             item.embeddings = [:]
             db?.deleteEmbeddings(clipID: item.id)
         }
+        // Prints too, and on their own predicate — a clip can hold a print with no
+        // vectors, so folding this into the loop above would silently miss it. A
+        // perceptual print of a vault screenshot is not readable text, but it still
+        // confirms the user was looking at that exact screen.
+        for item in items where item.isIndexVetoed && item.imageFeature != nil {
+            item.imageFeature = nil
+            db?.deleteImageFeature(clipID: item.id)
+        }
         let stale = items.filter { ClipIndexer.isStale($0) && !$0.isIndexVetoed }
         guard !stale.isEmpty else { return }
         let total = stale.count
@@ -709,6 +890,18 @@ final class ClipStore: ObservableObject {
                 $0.text.lowercased().contains(q)
                 || ($0.filePath?.lowercased().contains(q) ?? false)
                 || ($0.colorHex?.lowercased().contains(q) ?? false)
+                // Recognised image text — this is what lets Exact mode find a screenshot
+                // by a word visible inside it, which is most of the feature's value.
+                //
+                // Note this filter carries NO veto, deliberately and by long-standing
+                // design: a vetoed clip still matches by exact substring, because the veto
+                // is about the MODEL, not about retrieval — the user copied that text and
+                // can see it in the panel. Recognised text is different, because the user
+                // never typed it. What keeps that safe is not a check here but the WRITE:
+                // a withheld result is stored as "" (see ClipItem.ocrText), so this line
+                // can never match one. Gate at the write, and every reader — this one,
+                // `essence`, `smart`, and any future fourth — is safe without knowing why.
+                || ($0.ocrText?.lowercased().contains(q) ?? false)
                 || $0.userTags.contains { $0.contains(q) }
             }
         }

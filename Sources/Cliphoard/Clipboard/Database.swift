@@ -51,6 +51,33 @@ final class Database {
         // verbatim clipboard content, reconstructed from pixels — the same category as
         // `text`, and it gets the same treatment: sealStrict, fail closed.
         ensureColumn("ocr_text", definition: "TEXT", in: "clips")
+        // Vision perceptual prints. A SEPARATE table, not a reserved signature inside
+        // `embeddings`: that dictionary is documented as "per-model cache: embedder
+        // signature → embedding", and a Vision print is not a text-model embedding of
+        // anything. Filing it there would make an existing doc comment false, and a
+        // false invariant is the failure family this codebase keeps writing tests against.
+        //
+        // WITH the cascade, matching `embeddings` and unlike `user_tag_dismissals`. That
+        // neighbour omits its foreign key deliberately, because `insert` is INSERT OR
+        // REPLACE and would cascade-delete its rows on every re-save — but dismissals are
+        // AUTHORED data, gone forever if dropped. A print is DERIVED: one Vision call
+        // rebuilds it. So the two should fail in opposite directions. No-cascade fails
+        // toward RETENTION, leaving the perceptual fingerprint of a DELETED screenshot on
+        // disk, which on a privacy-first product is the wrong way to fail. Cascade fails
+        // toward loss and costs a recompute. `insert` therefore write-throughs the print
+        // from memory, exactly as it already does for every vector.
+        //
+        // `revision` is stored because Vision's print revisions are not comparable:
+        // revision 1 emits 2048 floats, revision 2 emits 768. A future revision selects
+        // `WHERE revision != n` and recomputes, rather than silently comparing across
+        // spaces.
+        exec("""
+        CREATE TABLE IF NOT EXISTS image_features (
+            clip_id TEXT NOT NULL PRIMARY KEY,
+            revision INTEGER NOT NULL,
+            vector BLOB NOT NULL,
+            FOREIGN KEY (clip_id) REFERENCES clips(id) ON DELETE CASCADE);
+        """)
         exec("""
         CREATE TABLE IF NOT EXISTS embeddings (
             clip_id TEXT NOT NULL, model TEXT NOT NULL,
@@ -97,6 +124,8 @@ final class Database {
 
     /// Load every clip with its embeddings, newest/pinned first.
     func loadAll() -> [ClipItem] {
+        // 0. Vision prints, one query rather than one per clip.
+        let featuresByClip = loadImageFeatures()
         // 1. Embeddings grouped by clip id.
         var embByClip: [String: [String: ModelEmbedding]] = [:]
         prepareEach("SELECT clip_id, model, vector FROM embeddings;") { stmt in
@@ -143,6 +172,7 @@ final class Database {
                 // progress marker with no separate flag.
                 ocrText: columnOpt(stmt, 15).map(Crypto.open))
             item.embeddings = embByClip[idStr] ?? [:]
+            item.imageFeature = featuresByClip[idStr]
             result.append(item)
         }
         return result
@@ -228,6 +258,14 @@ final class Database {
             ok = step(stmt)
         }
         for (model, emb) in item.embeddings { upsertEmbedding(clipID: item.id, model: model, embedding: emb) }
+        // Write-through, for the same reason as the loop above: this statement is
+        // INSERT OR REPLACE, so it deletes and reinserts the clip row, and the cascade
+        // takes both child tables with it. The vector loop is the ONLY reason embeddings
+        // survive a re-key today; the print needs the same treatment or it would vanish
+        // on every re-save with no error.
+        if let fp = item.imageFeature, !fp.vector.isEmpty {
+            upsertImageFeature(clipID: item.id, revision: fp.revision, vector: fp.vector)
+        }
         return ok
     }
 
@@ -348,6 +386,75 @@ final class Database {
             bindText(stmt, 1, clipID.uuidString); ok = step(stmt)
         }
         return ok
+    }
+
+    /// Narrow write for an analysed clip: the sealed recognised text and the flags,
+    /// together. Deliberately NOT `insert` — that is INSERT OR REPLACE, which deletes and
+    /// reinserts the row and re-upserts every child — and NOT `updateMeta`, which does not
+    /// write flags, and the flags are half the point of this write. Seals BEFORE touching
+    /// SQLite so a crypto failure leaves the previous value intact.
+    @discardableResult
+    func updateOCR(_ item: ClipItem) -> Bool {
+        var encOCR: String? = nil
+        if let ocr = item.ocrText {
+            guard let s = Crypto.sealStrict(ocr) else {
+                NSLog("Cliphoard db: ocr seal failed — refusing update")
+                return false
+            }
+            encOCR = s
+        }
+        var ok = false
+        prepare("UPDATE clips SET ocr_text=?, flags=? WHERE id=?;") { stmt in
+            bindText(stmt, 1, encOCR)
+            sqlite3_bind_int64(stmt, 2, Int64(item.flags.rawValue))
+            bindText(stmt, 3, item.id.uuidString)
+            ok = step(stmt)
+        }
+        return ok
+    }
+
+    /// Sealed, fail-closed, exactly like `upsertEmbedding` — a perceptual print is
+    /// content-derived, so it never reaches disk in the clear.
+    @discardableResult
+    func upsertImageFeature(clipID: UUID, revision: Int, vector: [Float]) -> Bool {
+        guard !vector.isEmpty else { return false }
+        guard let encVec = Crypto.sealStrict(Self.blob(fromVector: vector)) else {
+            NSLog("Cliphoard db: image-feature seal failed — skipping upsert")
+            return false
+        }
+        var ok = false
+        prepare("INSERT OR REPLACE INTO image_features (clip_id, revision, vector) VALUES (?,?,?);") { stmt in
+            bindText(stmt, 1, clipID.uuidString)
+            sqlite3_bind_int(stmt, 2, Int32(revision))
+            bindBlob(stmt, 3, encVec)
+            ok = step(stmt)
+        }
+        return ok
+    }
+
+    /// Must be called wherever vectors are purged. A clip that becomes vetoed AFTER its
+    /// print was stored would otherwise keep a perceptual fingerprint — and a fingerprint
+    /// of a password-manager screenshot still confirms the user was looking at that exact
+    /// screen, even though it is not readable text.
+    @discardableResult
+    func deleteImageFeature(clipID: UUID) -> Bool {
+        var ok = false
+        prepare("DELETE FROM image_features WHERE clip_id=?;") { stmt in
+            bindText(stmt, 1, clipID.uuidString); ok = step(stmt)
+        }
+        return ok
+    }
+
+    /// All stored prints, by clip. Read once at load, like the vector cache.
+    func loadImageFeatures() -> [String: (revision: Int, vector: [Float])] {
+        var out: [String: (revision: Int, vector: [Float])] = [:]
+        prepareEach("SELECT clip_id, revision, vector FROM image_features;") { stmt in
+            let id = column(stmt, 0)
+            let revision = Int(sqlite3_column_int(stmt, 1))
+            guard let blob = Crypto.open(Self.blob(stmt, 2)) else { return }
+            out[id] = (revision, Self.vectorFromBlob(blob))
+        }
+        return out
     }
 
     @discardableResult

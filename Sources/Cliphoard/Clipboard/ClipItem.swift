@@ -87,6 +87,17 @@ final class ClipItem: Codable, Identifiable {
     /// rule. The gate is at the write, so every present and future reader is safe by
     /// construction rather than by remembering.
     var ocrText: String?
+    /// Vision perceptual print for `.image` clips, with the revision that produced it.
+    ///
+    /// Kept OUT of `embeddings`: that is documented as a per-text-model cache, and a
+    /// perceptual print is not an embedding of text. The revision travels with the
+    /// vector because Vision's revisions are not comparable — 2048 floats under
+    /// revision 1, 768 under revision 2 — so a print from another revision must be
+    /// recomputed rather than reinterpreted.
+    ///
+    /// Not `Codable`: derived data, rebuilt by one Vision call, and the legacy JSON path
+    /// has no business carrying it.
+    var imageFeature: (revision: Int, vector: [Float])?
     /// Absolute file path for `.file` clips.
     var filePath: String?
     /// Hex string for `.color` clips, e.g. "#FF8800".
