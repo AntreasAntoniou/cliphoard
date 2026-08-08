@@ -10,5 +10,32 @@
       This file is deliberately minimal — add keys here only if a future feature
       requires them (e.g. com.apple.security.automation.apple-events).
     -->
+
+    <!--
+      Data-protection keychain access.
+
+      The legacy file-based keychain guards items with an ACL, and any read by a
+      binary not on that ACL needs a confirmation prompt. When no prompt can be
+      shown — app relaunched by a script, Mac in dark wake, laptop lid closed —
+      the read fails with errSecInDarkWake or errSecInteractionNotAllowed. That is
+      not hypothetical: it happened on the developer's own Mac, where the app could
+      list all of its keys and read none of them, and older code answered that by
+      minting a replacement key over the live one and orphaning the history.
+
+      The data-protection keychain has no ACLs; access is decided by code identity,
+      so a correctly-signed app reads its own items with no UI, ever. This
+      entitlement is what makes that available.
+
+      IMPORTANT: it only takes effect when the app is signed with a real team
+      identity. A self-signed local build has none, so the request fails with
+      errSecMissingEntitlement (-34018) and Crypto.storeBlob falls back to the
+      legacy keychain — which is why the fallback is load-bearing and not a nicety.
+      Release builds signed with a Developer ID get the prompt-free path; developer
+      builds keep working exactly as before.
+    -->
+    <key>keychain-access-groups</key>
+    <array>
+        <string>$(AppIdentifierPrefix)io.antreas.cliphoard</string>
+    </array>
 </dict>
 </plist>

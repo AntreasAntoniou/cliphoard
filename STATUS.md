@@ -1,7 +1,7 @@
 # Cliphoard — Release Readiness Status
 
-**Last updated:** 2026-08-05 · **Branch:** `rename/cliphoard`
-**Verdict: NOT-READY for wide distribution — but gated only by human-only steps.**
+**Last updated:** 2026-08-08 · **Branch:** `rename/cliphoard`
+**Verdict: NOT-READY for wide distribution — gated only by human-only steps.**
 
 The codebase is release-quality. What stands between here and a public v1.0 is **not
 code**: it is an Apple Developer ID certificate, a published Homebrew tap, and a
@@ -13,10 +13,34 @@ signed+notarized DMG — none of which an automated agent can produce. See the
 > live here has been resolved across the harden, optional-backlog, staircase, and
 > ship-safe-hardening passes; the historical findings are in `AUDIT.md`.
 
+## Signing note added 2026-08-08 — read before cutting a release
+
+`Scripts/Cliphoard.entitlements` now requests `keychain-access-groups`, which moves the
+encryption keys into the **data-protection keychain**. That keychain has no ACLs and
+therefore never needs to prompt, which matters more than it sounds:
+
+The legacy keychain prompts whenever a binary not on an item's ACL reads it. When no
+prompt can be shown — the app relaunched by a script, the Mac in dark wake, a laptop lid
+closed — the read fails. On 6 and 8 August that failure was mistaken for "no key exists"
+and answered by minting a replacement **over the live key**, orphaning 202 clips and then
+8 more. The mint path is now reachable only from a genuine `errSecItemNotFound`, and the
+recovery ring (which had silently been carrying one key) works. But the entitlement is
+what stops the situation arising at all.
+
+**It only takes effect when signed with a real team identity.** A self-signed local build
+gets `errSecMissingEntitlement` (-34018) and falls back to the legacy keychain, which is
+why that fallback is load-bearing rather than a nicety. So:
+
+- Cut releases with `Scripts/release.sh` (it passes `--entitlements`), **not**
+  `Scripts/build-app.sh`, which does not.
+- After the first signed build, confirm the debug log shows keys resolving with no
+  `DARK WAKE` or `-34018` lines. `defaults write io.antreas.cliphoard debugLog -bool YES`.
+
+
 ## Test + build state
 
-- `swift build` clean; `swift test` → **174 tests, 0 failures** on `rename/cliphoard`
-  (verified 2026-08-05 release-candidate pass, including real-model parity/retrieval).
+- `swift build` clean; `swift test` → **403 tests, 0 failures** on `rename/cliphoard`
+  (verified 2026-08-08, including image understanding and the crypto hardening; 2026-08-05 release-candidate pass, including real-model parity/retrieval).
 - On-device model path (ogma CoreML) proven cert-free in CI (`.github/workflows/models.yml`),
   conversion stack pinned (`torch==2.7.1`, `coremltools==9.0`, `numpy<2`).
 
