@@ -9,6 +9,52 @@ import Foundation
 /// `outfile` and prints an aggregate summary to stdout (no full clip contents —
 /// only short previews, and only in the on-disk report the user owns).
 enum TagAudit {
+    /// What this tool's exit status MEANS.
+    ///
+    /// `2` used to mean six different things: "cannot open DB", "ARCHIVE FAILED", "ARCHIVE
+    /// VERIFICATION FAILED", "no clips found", "embedder failed to load", and — added by a
+    /// safety fix — "I refused because the history could not be read in full". A wrapper
+    /// could not tell "your data is fine and I declined" from "I crashed", which is the one
+    /// distinction that matters after the incident this tool serves.
+    ///
+    /// An enum rather than a documented convention, so a future collision is a BUILD error
+    /// ("raw value for enum case is not unique") instead of something review has to catch.
+    enum ExitCode: Int32 {
+        case ok = 0
+        /// Could not START: no database, no embedder, no clips.
+        case environment = 2
+        /// REFUSED, data intact — this PROCESS is degraded. Retry awake and unlocked.
+        case refusedKeychainUnreachable = 3
+        /// REFUSED, data intact — the stored history could not be read in full.
+        case refusedIncompleteRead = 4
+        /// FAILED part-way, and stopped BEFORE deleting anything.
+        case operationFailed = 5
+    }
+
+    static func stop(_ code: ExitCode) -> Never { exit(code.rawValue) }
+
+    /// What `--archive-unreadable` should do, as a pure function of the three facts.
+    ///
+    /// Extracted because the entry point reads the real Application Support directory and
+    /// calls `exit`, so its ORDERING could not be asserted — which is how a completeness
+    /// guard came to sit above the archive step and silently disable the non-destructive
+    /// dry run in exactly the incident this tool exists for.
+    ///
+    /// The asymmetry is deliberate. A short read still tells the truth about the rows it
+    /// DID load, so their ciphertext is worth preserving, labelled partial. An unreachable
+    /// keychain makes EVERY row look unreadable, so the archive would be a file full of
+    /// perfectly healthy clips — a false positive with no salvage value.
+    enum ArchivePlan: Equatable {
+        case refuseKeychainUnreachable
+        case archive(partial: Bool, thenDelete: Bool)
+    }
+
+    static func archivePlan(keychainReachable: Bool, readComplete: Bool,
+                            deleteRequested: Bool) -> ArchivePlan {
+        guard keychainReachable else { return .refuseKeychainUnreachable }
+        return .archive(partial: !readComplete, thenDelete: readComplete && deleteRequested)
+    }
+
     /// Which audit to run, from `CLIPHOARD_AUDIT_MODE`. The default is the
     /// original vocabulary audit — an unset (or unrecognised) variable must never
     /// change what `--analyze-tags` has always done.
@@ -79,23 +125,31 @@ enum TagAudit {
                 + "Running with --delete here would destroy your whole history. Try again "
                 + "on an awake, unlocked Mac; if clips are still unreadable then, the "
                 + "diagnosis is real.")
-            exit(3)
+            stop(.refusedKeychainUnreachable)
         }
 
-        guard let db = Database(path: dbPath) else { err("cannot open DB"); exit(2) }
-        // The completeness TOKEN, not the convenience accessor. This path deletes, and a
-        // short read makes every unloaded clip invisible — so `--delete` would destroy
-        // rows this process never saw, and the archive it verifies first would not contain
-        // them either. Same rule as the launch-time reapers, for the same reason: a read
-        // that failed is not a smaller history.
-        guard case .complete(let items, _) = db.loadAllStatus() else {
-            err("REFUSING: the stored history could not be read in full. A partial read "
-                + "cannot tell 'unreadable' from 'not loaded', and deleting on it would "
-                + "destroy rows this process never saw.")
-            exit(2)
-        }
+        guard let db = Database(path: dbPath) else { err("cannot open DB"); stop(.environment) }
+        // READ FIRST, DECIDE SECOND — the two halves of this tool must diverge here.
+        //
+        // Preserving ciphertext is the SAFE half, and it is the half a degraded database
+        // needs MOST. The previous shape refused everything on a short read, which meant
+        // `--archive-unreadable` with no `--delete` wrote nothing in exactly the incident
+        // it exists for: the "I could not read it" / "there is nothing there" substitution
+        // wearing a safety hat. A short read still tells the truth about the rows it DID
+        // load, so their ciphertext is worth keeping — labelled partial.
+        let status = db.loadAllStatus()
+        let proof: Database.CompleteHistory?
+        let items: [ClipItem]
+        if case .complete(let rows, let token) = status { items = rows; proof = token }
+        else { items = db.loadAll(); proof = nil }
         let unreadable = items.filter { Crypto.isSealed($0.text) }
-        print("clips: \(items.count) · unreadable: \(unreadable.count)")
+        if proof == nil {
+            err("WARNING: the stored history could not be read in full (\(status)). The "
+                + "archive below is PARTIAL — it contains only the rows this process could "
+                + "load — and --delete will be refused.")
+        }
+        print("clips: \(items.count) · unreadable: \(unreadable.count)"
+              + (proof == nil ? " · PARTIAL READ" : ""))
         guard !unreadable.isEmpty else { print("nothing to archive"); return }
 
         let iso = ISO8601DateFormatter()
@@ -139,20 +193,51 @@ enum TagAudit {
         guard let data = try? JSONSerialization.data(withJSONObject: payload,
                                                      options: [.prettyPrinted, .sortedKeys]),
               (try? data.write(to: URL(fileURLWithPath: path), options: .atomic)) != nil else {
-            err("ARCHIVE FAILED — refusing to delete anything"); exit(2)
+            err("ARCHIVE FAILED — refusing to delete anything"); stop(.operationFailed)
         }
         // Verify the archive is readable and complete BEFORE deleting.
         guard let check = try? Data(contentsOf: URL(fileURLWithPath: path)),
               let parsed = try? JSONSerialization.jsonObject(with: check) as? [String: Any],
               (parsed["clips"] as? [[String: Any]])?.count == rows.count else {
-            err("ARCHIVE VERIFICATION FAILED — refusing to delete anything"); exit(2)
+            err("ARCHIVE VERIFICATION FAILED — refusing to delete anything"); stop(.operationFailed)
         }
         print("archived \(rows.count) clips → \(path) (\(check.count) bytes, verified)")
 
         guard delete else { print("dry run: no rows deleted (pass --delete to remove them)"); return }
-        db.delete(ids: unreadable.map { $0.id })
+        // The token, consumed at the ONLY line in this file that destroys anything.
+        guard let proof else {
+            err("REFUSING TO DELETE: the stored history could not be read in full. The "
+                + "archive above is PARTIAL and has been kept. A partial read cannot tell "
+                + "'unreadable' from 'not loaded', so deleting on it would destroy rows "
+                + "this process never saw — and the archive would not contain them either.")
+            stop(.refusedIncompleteRead)
+        }
+        deleteArchivedRows(db, ids: unreadable.map { $0.id }, loadedCount: items.count,
+                           provenBy: proof)
+    }
+
+    /// The delete half, separated so it CANNOT be called without proof the read was whole.
+    ///
+    /// `provenBy` is a witness: it is never read, it is required. `CompleteHistory.init` is
+    /// fileprivate to Database.swift, so the only way to obtain one is a `loadAllStatus`
+    /// that returned `.complete` — which makes reverting this call site to `db.loadAll()` a
+    /// COMPILE ERROR rather than a silent regression. Reverting it silently is exactly what
+    /// a mutation test showed the suite could not detect.
+    ///
+    /// The victim ids are cross-checked against the token's own answer rather than trusted:
+    /// two populations computed separately have already drifted apart once in this file.
+    @MainActor
+    private static func deleteArchivedRows(_ db: Database, ids: [UUID], loadedCount: Int,
+                                           provenBy proof: Database.CompleteHistory) {
+        guard Set(ids).isSubset(of: proof.unreadableClipIDs) else {
+            err("REFUSING TO DELETE: the rows selected for deletion are not a subset of the "
+                + "rows the completed read found unreadable. Two populations disagree; "
+                + "nothing has been deleted.")
+            stop(.operationFailed)
+        }
+        db.delete(ids: ids)
         let after = db.loadAll()
-        print("deleted \(items.count - after.count) rows · remaining: \(after.count) "
+        print("deleted \(loadedCount - after.count) rows · remaining: \(after.count) "
               + "· still unreadable: \(after.filter { Crypto.isSealed($0.text) }.count)")
     }
 
@@ -310,7 +395,7 @@ enum TagAudit {
         }
         let embedder = EmbedderProvider.active
         guard embedder.signature != "hashing-256" else {
-            err("embedder \(wantModel) failed to load (still hashing)"); exit(2)
+            err("embedder \(wantModel) failed to load (still hashing)"); stop(.environment)
         }
         return embedder
     }
@@ -322,9 +407,9 @@ enum TagAudit {
     private static func loadStoredClips() -> [ClipItem] {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         let dbPath = appSupport.appendingPathComponent("Ditto/ditto.sqlite").path
-        guard let db = Database(path: dbPath) else { err("cannot open DB at \(dbPath)"); exit(2) }
+        guard let db = Database(path: dbPath) else { err("cannot open DB at \(dbPath)"); stop(.environment) }
         let clips = db.loadAll()
-        guard !clips.isEmpty else { err("no clips found"); exit(2) }
+        guard !clips.isEmpty else { err("no clips found"); stop(.environment) }
         return clips
     }
 
@@ -595,14 +680,14 @@ extension TagAudit {
         // then say so. Degrade first, work second.
         guard TopicBucketSource.provider != nil else {
             print(topicsUnavailableMessage)
-            exit(0)
+            stop(.ok)
         }
         let embedder = loadEmbedder()
         let buckets: [TopicBucketProbe]
         switch topicsGate(embedder: embedder) {
         case .unavailable(let message):
             print(message)
-            exit(0)
+            stop(.ok)
         case .available(let found):
             buckets = found
         }

@@ -9,11 +9,18 @@ import Foundation
 ///
 /// The others act on a target the CALLER named: `Database.delete(id:)`/`delete(ids:)`,
 /// `deleteUnpinned`, `deleteEmbeddings`, `deleteImageFeature`, `forgetAllImageUnderstanding`,
-/// `ClipStore.trim`/`clearUnpinned`/`removePayload`, and `TagAudit --delete`. They cannot be
-/// fooled into inventing victims because they invent none, and each is gated where its own
-/// provenance question lives (safe mode, or the completeness guard in `archiveUnreadable`).
-/// Do NOT give them a token: it would claim "this history was read whole" where the real
-/// claim is "the caller asked for these ids", and a token meaning two things means neither.
+/// and `ClipStore.trim`/`clearUnpinned`/`removePayload`. They cannot be fooled into inventing
+/// victims because they invent none, and each is gated where its own provenance question lives
+/// (safe mode). Do NOT give them a token: it would claim "this history was read whole" where
+/// the real claim is "the caller asked for these ids", and a token meaning two things means
+/// neither.
+///
+/// `TagAudit --delete` was on that list and did not belong there — it is one of THESE, and the
+/// header contradicted the code, since `archiveUnreadable` already took the completeness token.
+/// It is handed a list of ids, which is what made it look caller-directed, but it COMPUTES that
+/// list from "every row whose content did not open": an inference from the ABSENCE of
+/// readability across a whole load, which is this module's shape exactly. A short read makes an
+/// unloaded clip indistinguishable from a readable one, so it takes the token like the rest.
 ///
 /// Static functions on a caseless enum, deliberately: they have no `self`, so they
 /// cannot reach `ClipStore.items` — the collapsed value that let an unreadable database
@@ -82,6 +89,26 @@ enum HistoryReaper {
     /// grows, and is logged. The sweep's own contract calls itself best-effort
     /// housekeeping, so declining is within it. The alternative cost is every image the
     /// user has.
+    ///
+    /// SECOND ACCEPTED FALSE POSITIVE, in `orphanDecision`, recorded because it was found
+    /// undocumented and is worse than the first. Its floor counts FILES (via the `max`)
+    /// while its ratio counts ROWS, so ≥10 unreferenced strays keep the floor armed and up
+    /// to 9 genuinely-missing image rows are never reaped: permanent "Image unavailable"
+    /// cards. And it does NOT simply self-heal, because in that same configuration the
+    /// sweep declines too — 10 deletable of 10 payloads is most of the directory — so
+    /// neither pass clears the strays and both keep declining until the store grows.
+    ///
+    /// Kept anyway, and this is a judgement worth being able to reverse: counting rows in
+    /// the floor was enumerated over 0..59^3 and produces ZERO cases where it refuses and
+    /// this rule deletes. It is a strict WIDENING of the deletion surface — it buys ≤9
+    /// broken cards at the price of `db.delete(ids:)` on up to 9 rows, with their user
+    /// tags, OCR text and timestamps, in exactly the state this module exists to distrust:
+    /// a directory that listed cleanly and returned nothing. Refusing more is the thesis.
+    ///
+    /// The mismatch is NOT the defect the previous round fixed. That one had a denominator
+    /// inflated by sidecars, which WEAKENED the guard; this one strengthens it. A
+    /// population mismatch that errs toward refusal is a different thing from one that errs
+    /// toward deletion.
     static func isDisproportionate(deletablePayloads: Int, allPayloads: Int,
                                    onDiskFiles: Int) -> Bool {
         onDiskFiles >= 10 && deletablePayloads * 2 > allPayloads
@@ -180,9 +207,15 @@ enum HistoryReaper {
         let onDisk = payloadFilesOnDisk(in: dir)
         guard let dead = orphanDecision(onDisk: onDisk,
                                         imagePayloadsByClip: history.imagePayloadsByClip) else {
+            // Say WHICH refusal fired and with what counts. "Would delete most of the image
+            // rows" is false when the trigger was the file-counted floor being held up by
+            // strays that reference no clip at all.
             DebugLog.write("orphan rows: declined — "
-                           + (onDisk == nil ? "payload directory unreadable"
-                                            : "would delete most of the image rows"))
+                           + (onDisk == nil
+                              ? "payload directory unreadable"
+                              : "\(history.imagePayloadsByClip.filter { !(onDisk?.contains($0.value) ?? true) }.count)"
+                                + " of \(history.imagePayloadsByClip.count) image rows missing, "
+                                + "floor armed by \(onDisk?.count ?? 0) files on disk"))
             return nil
         }
         return dead

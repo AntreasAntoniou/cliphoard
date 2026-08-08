@@ -185,7 +185,6 @@ struct ContentView: View {
                 item: item,
                 store: store,
                 focusTags: model.inspectorFocusTags,
-                historyIsMutable: !store.safeMode,
                 onPaste: { model.onPaste?(item, false) },
                 onCopy: { model.onCopy?(item) },
                 onClose: { model.closeInspector() },

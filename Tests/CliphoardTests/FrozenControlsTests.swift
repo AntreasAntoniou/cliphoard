@@ -1,5 +1,6 @@
 import XCTest
 import AppKit
+import SwiftUI
 @testable import Cliphoard
 
 /// Controls that look live and silently do nothing.
@@ -104,6 +105,84 @@ final class FrozenControlsTests: XCTestCase {
                        "and the label must reach the index, not just the object")
     }
 
+    // MARK: - The mechanism the section gate rests on
+
+    /// `.disabled` on a container really does reach its descendants — MEASURED, not assumed.
+    ///
+    /// A previous comment in `ClipDetailView` asserted this was unverifiable headlessly and
+    /// used that to justify six per-control gates as "belt and braces". It is verifiable, and
+    /// the claim was false anyway: the per-tag Remove had no gate of its own and rested on
+    /// inheritance regardless. This test is the evidence the rewritten comment cites, so one
+    /// gate on the section is a mechanism rather than a hope.
+    func testDisabledPropagatesThroughAGroupBoxToItsDescendants() {
+        final class Probe { var seen: [Bool] = [] }
+        struct Reader: View {
+            @Environment(\.isEnabled) private var isEnabled
+            let probe: Probe
+            var body: some View {
+                Color.clear.onAppear { probe.seen.append(isEnabled) }
+            }
+        }
+        func render(disabled: Bool) -> [Bool] {
+            let probe = Probe()
+            let view = GroupBox("Tags") { Reader(probe: probe) }.disabled(disabled)
+            let host = NSHostingView(rootView: AnyView(view))
+            host.frame = NSRect(x: 0, y: 0, width: 400, height: 200)
+            host.layoutSubtreeIfNeeded()
+            RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+            return probe.seen
+        }
+        XCTAssertEqual(render(disabled: true), [false],
+                       "a descendant of a .disabled container reported itself ENABLED — the "
+                       + "section gate is the only thing standing between a frozen store and "
+                       + "a live tag editor")
+        XCTAssertEqual(render(disabled: false), [true],
+                       "and the converse, so this cannot pass by never rendering: an empty "
+                       + "list fails the equality")
+    }
+
+    /// The end-to-end path, and the only control whose live state can be READ rather than
+    /// asserted about text: garbage sqlite → `!storageComplete` → `safeMode` →
+    /// `historyIsMutable` false → the tag field is inert.
+    ///
+    /// Selected by placeholder and asserted to match EXACTLY ONE field, deliberately. The
+    /// same view renders several `NSTextField`s for the selectable metadata rows, which are
+    /// correctly enabled — so a naive probe fails against correct code, and a zero-match
+    /// probe would pass vacuously.
+    func testTheInspectorTagFieldIsInertOnAFrozenStore() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("DittoInspector-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try Data(repeating: 0xFF, count: 100)
+            .write(to: dir.appendingPathComponent("ditto.sqlite"))
+        let store = ClipStore(directory: dir)
+        XCTAssertTrue(store.safeMode, "precondition: an unreadable database freezes the store")
+
+        let item = ClipItem(kind: .text, text: "hello")
+        item.userTags = ["invoice"]
+        let view = ClipDetailView(item: item, store: store, focusTags: true,
+                                  onPaste: {}, onCopy: {}, onClose: {})
+        let host = NSHostingView(rootView: AnyView(view))
+        host.frame = NSRect(x: 0, y: 0, width: 700, height: 900)
+        host.layoutSubtreeIfNeeded()
+        RunLoop.current.run(until: Date().addingTimeInterval(0.5))
+
+        func fields(_ v: NSView) -> [NSTextField] {
+            (v as? NSTextField).map { [$0] } ?? [] + v.subviews.flatMap(fields)
+        }
+        let tagFields = fields(host).filter { $0.placeholderString == "Add a tag" }
+        // If this is ever 0, check whether SwiftUI still backs TextField with NSTextField and
+        // still exposes `placeholderString`, BEFORE concluding the gate regressed. The
+        // exactly-one assertion is what makes an OS change fail loudly instead of vacuously.
+        XCTAssertEqual(tagFields.count, 1,
+                       "expected exactly one 'Add a tag' field; 0 means the probe can no "
+                       + "longer see the control (an OS change, not necessarily a regression)")
+        XCTAssertEqual(tagFields.first?.isEnabled, false,
+                       "the inspector's tag field is LIVE on a frozen store. Its labels are "
+                       + "the row's ciphertext parsed as tags, and saving them would seal "
+                       + "that garbage over the user's real labels")
+    }
+
     // MARK: - Structure
 
     /// The primary destructive control is the per-card Delete in the main grid. It was the
@@ -117,13 +196,27 @@ final class FrozenControlsTests: XCTestCase {
             "Sources/Cliphoard/UI/ClipCardView.swift"), encoding: .utf8)
         let content = try String(contentsOf: root.appendingPathComponent(
             "Sources/Cliphoard/UI/ContentView.swift"), encoding: .utf8)
+        let detail = try String(contentsOf: root.appendingPathComponent(
+            "Sources/Cliphoard/UI/ClipDetailView.swift"), encoding: .utf8)
 
         XCTAssertTrue(card.contains("let historyIsMutable: Bool"),
                       "`let` with no default — `var historyIsMutable = true` would let the "
                       + "next call site silently ship a live Delete on a frozen store")
         XCTAssertTrue(card.contains(".disabled(!historyIsMutable)"),
                       "the per-card Delete lost its gate")
-        XCTAssertTrue(content.contains("historyIsMutable: !store.safeMode"),
-                      "the call site stopped passing the real state")
+        // EXACTLY ONE occurrence, and that is the repair. This assertion previously read
+        // `contains(...)` and was satisfied by whichever call site happened to have it — so
+        // `historyIsMutable: true` on the OTHER one passed all 435 tests while shipping a
+        // live editor on a frozen store. ClipDetailView now DERIVES the fact and has no
+        // argument at all, so the single remaining occurrence is the card's.
+        XCTAssertEqual(content.components(separatedBy: "historyIsMutable: !store.safeMode").count - 1,
+                       1,
+                       "expected exactly one call site to pass this fact (the card's). A "
+                       + "file-wide `contains` is satisfiable by an unrelated call site, "
+                       + "which is precisely how the inspector's gate went untested.")
+        XCTAssertFalse(detail.contains("let historyIsMutable"),
+                       "ClipDetailView must DERIVE the fact from the store it already "
+                       + "observes — a parameter is a positional fact a call site can get "
+                       + "wrong, and this one was got wrong three rounds running")
     }
 }

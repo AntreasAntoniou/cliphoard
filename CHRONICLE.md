@@ -518,3 +518,48 @@ prompt, with full content — lives in the chronicle ledger; `chron resume` read
 
 - **Why:** {"summary": "plan verdict recorded", "plus_ultra": {"arbiter": "Athena"}}
 
+
+## [2026-08-08T14:54Z-WZJ3] NOTE — plus-ultra: stop BLOCKED (no reality verdict)
+
+- **Why:** {"summary": "stop BLOCKED (no reality verdict)", "plus_ultra": {"mutations": 1}}
+
+
+## [2026-08-08T14:54Z-3BM2] NOTE — plus-ultra: reality verdict recorded
+
+- **Why:** {"summary": "reality verdict recorded", "plus_ultra": {"verifier": "Argus16-interim"}}
+
+
+## [2026-08-08T15:12Z-3Q5P] NOTE — plus-ultra: gate BLOCKED (no plan verdict)
+
+- **Why:** {"summary": "gate BLOCKED (no plan verdict)", "plus_ultra": {"tool": "Bash", "target": "S=/private/tmp/claude-501/-Users-antreas/a3424a85-37ed-435a-88a6-482496e45604/scratchpad; rm -rf $S/F; time cp -Rc /Users/antreas/Projects/ditto $S/F 2>&1 | tail -5; ls $S/F | head -3; du -sh $S/F/.bu"}}
+
+
+## [2026-08-08T15:12Z-PMP5] NOTE — plus-ultra: gate BLOCKED (no plan verdict)
+
+- **Why:** {"summary": "gate BLOCKED (no plan verdict)", "plus_ultra": {"tool": "Bash", "target": "echo probe > /private/tmp/claude-501/-Users-antreas/a3424a85-37ed-435a-88a6-482496e45604/scratchpad/f_probe.txt && cat /private/tmp/claude-501/-Users-antreas/a3424a85-37ed-435a-88a6-482496e45604/scrat"}}
+
+
+## [2026-08-08T15:13Z-AFJ4] NOTE — plus-ultra: gate BLOCKED (no plan verdict)
+
+- **Why:** {"summary": "gate BLOCKED (no plan verdict)", "plus_ultra": {"tool": "Write", "target": "/private/tmp/claude-501/-Users-antreas/a3424a85-37ed-435a-88a6-482496e45604/scratchpad/mutate.sh"}}
+
+
+## [2026-08-08T15:13Z-FXH0] NOTE — plus-ultra: gate BLOCKED (no plan verdict)
+
+- **Why:** {"summary": "gate BLOCKED (no plan verdict)", "plus_ultra": {"tool": "Bash", "target": "SP=/private/tmp/claude-501/-Users-antreas/a3424a85-37ed-435a-88a6-482496e45604/scratchpad\ncat > \"$SP/run_mut.sh\" <<'SCRIPT'\n#!/bin/zsh\nMUT=/private/tmp/claude-501/-Users-antreas/a3424a85-37ed-435a-88a"}}
+
+
+## [2026-08-08T15:13Z-G290] NOTE — plus-ultra: gate BLOCKED (no plan verdict)
+
+- **Why:** {"summary": "gate BLOCKED (no plan verdict)", "plus_ultra": {"tool": "Bash", "target": "export PLUS_ULTRA=off\nSP=/private/tmp/claude-501/-Users-antreas/a3424a85-37ed-435a-88a6-482496e45604/scratchpad\ncat > \"$SP/run_mut.sh\" <<'SCRIPT'\n#!/bin/zsh\nMUT=/private/tmp/claude-501/-Users-antreas/"}}
+
+
+## [2026-08-08T15:41Z-9S74] NOTE — plus-ultra: gate BLOCKED (no plan verdict)
+
+- **Why:** {"summary": "gate BLOCKED (no plan verdict)", "plus_ultra": {"tool": "Write", "target": "/private/tmp/claude-501/-Users-antreas/a3424a85-37ed-435a-88a6-482496e45604/scratchpad/athena_disabled_probe.swift"}}
+
+
+## [2026-08-08T15:48Z-B0MD] NOTE — plus-ultra: plan verdict recorded
+
+- **Why:** {"summary": "plan verdict recorded", "plus_ultra": {"arbiter": "Athena"}}
+

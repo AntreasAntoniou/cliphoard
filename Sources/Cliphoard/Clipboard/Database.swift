@@ -205,13 +205,23 @@ final class Database {
         let imagePayloadsByClip: [UUID: String]
         /// What the database itself reported, which `loadAll` matched exactly.
         let storedCount: Int
+        /// Clips whose content did not decrypt in THIS process.
+        ///
+        /// On the token because the answer is only meaningful against a whole read: a clip
+        /// that was never loaded is not a readable clip, and a short read makes the two
+        /// indistinguishable. The audit tool derives its delete list from exactly this
+        /// question, so taking it from here is what makes deleting on a partial read
+        /// unrepresentable rather than merely discouraged.
+        let unreadableClipIDs: Set<UUID>
 
         fileprivate init(referencedPayloads: Set<String>,
                          imagePayloadsByClip: [UUID: String],
-                         storedCount: Int) {
+                         storedCount: Int,
+                         unreadableClipIDs: Set<UUID>) {
             self.referencedPayloads = referencedPayloads
             self.imagePayloadsByClip = imagePayloadsByClip
             self.storedCount = storedCount
+            self.unreadableClipIDs = unreadableClipIDs
         }
     }
 
@@ -280,7 +290,8 @@ final class Database {
         return .complete(read.rows, CompleteHistory(
             referencedPayloads: Set(read.rows.compactMap { $0.payloadFile }),
             imagePayloadsByClip: imagePayloads,
-            storedCount: stored))
+            storedCount: stored,
+            unreadableClipIDs: Set(read.rows.filter { Crypto.isSealed($0.text) }.map(\.id))))
     }
 
     /// The scans themselves, reporting each one's terminal sqlite result.

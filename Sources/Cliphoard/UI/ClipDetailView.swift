@@ -7,19 +7,26 @@ struct ClipDetailView: View {
     let item: ClipItem
     @ObservedObject var store: ClipStore
     let focusTags: Bool
-    /// Whether the store will accept a write right now.
-    ///
-    /// `let`, NO DEFAULT — the same shape as `ClipCardView.historyIsMutable`, and for the
-    /// same reason: a default would let the next call site silently ship a live editor on
-    /// a frozen store, which is exactly how the per-card Delete came to be the one control
-    /// left ungated while three secondary ones were covered.
-    let historyIsMutable: Bool
     var onPaste: () -> Void
     var onCopy: () -> Void
     var onClose: () -> Void
     /// Navigate the inspector to another clip. Optional so the "similar images" strip
     /// degrades to plain thumbnails rather than dead buttons if a caller does not wire it.
     var onInspectOther: ((ClipItem) -> Void)? = nil
+
+    /// Whether the store will accept a write right now.
+    ///
+    /// DERIVED, not a parameter. This view already observes the store, so the store is the
+    /// single source of truth and no call site can hand it a wrong answer — the
+    /// `historyIsMutable: true` that would ship a live editor on a frozen store is now a
+    /// COMPILE ERROR rather than something a test has to catch. Measured before the change:
+    /// mutating that one argument left all 435 tests green.
+    ///
+    /// `ClipCardView` keeps its parameter, and that asymmetry is correct rather than an
+    /// inconsistency: it deliberately holds no store (only `storeDir`, so a store change
+    /// does not re-render every card), so it cannot derive the fact and a non-defaulted
+    /// `let` is the right shape THERE.
+    private var historyIsMutable: Bool { !store.safeMode }
 
     @State private var newTag = ""
 
@@ -217,6 +224,7 @@ struct ClipDetailView: View {
                                         _ = store.updateUserTags(item, to: item.userTags.filter { $0 != tag })
                                     } label: { Image(systemName: "xmark") }
                                     .buttonStyle(.plain).accessibilityLabel("Remove \(tag)")
+                                    .disabled(!historyIsMutable)
                                 }
                                 .font(.caption)
                                 .padding(.horizontal, 8).padding(.vertical, 4)
@@ -252,11 +260,23 @@ struct ClipDetailView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        // Gated as a UNIT, so a seventh control added inside this box is covered by
-        // construction. The per-control gates below are KEPT DELIBERATELY rather than
-        // deleted as redundant: the known controls stay correct on their own modifier, so
-        // this does not rest on SwiftUI's `.disabled` inheritance, which was not verified
-        // headlessly. Belt and braces, not duplication by accident.
+        // THIS is the mechanism: one gate on the section, inherited by every descendant.
+        // `.disabled` inheritance is not assumed — `testDisabledPropagatesThroughAGroupBoxToItsDescendants`
+        // renders a real hosting view and reads `@Environment(\.isEnabled)` in a descendant,
+        // in BOTH directions, on every test run.
+        //
+        // The per-control gates are OPPORTUNISTIC REDUNDANCY against a framework behaviour
+        // we have measured but do not own — explicitly NOT a list that must be complete.
+        // The previous comment called them "belt and braces", which was false: the per-tag
+        // Remove had no gate of its own and rested on inheritance regardless, so it was a
+        // hand-maintained list that was short by one. Read as a list, being short by one is
+        // a defect and this had been short three rounds running; read as redundancy, it is
+        // not. It now covers that control too, and if inheritance ever regresses this loses
+        // ONE control rather than seven at once.
+        //
+        // No test pins the individual gates, deliberately: they are redundant with a
+        // verified mechanism, so nothing behavioural can kill them and a source-text grep
+        // asserting their presence would be the exact artefact this file keeps removing.
         .disabled(!historyIsMutable)
     }
 
