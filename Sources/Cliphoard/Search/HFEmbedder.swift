@@ -2,16 +2,18 @@ import Foundation
 import CoreML
 import Tokenizers
 
-/// On-device CoreML embedder for standard HF models (the High/Max tiers:
-/// all-MiniLM-L6-v2, EmbeddingGemma). Tokenization comes from
+/// On-device CoreML embedder for standard HF models (the High tier:
+/// all-MiniLM-L6-v2). Tokenization comes from
 /// swift-transformers' `AutoTokenizer` (WordPiece / SentencePiece read from the
 /// bundled tokenizer folder) — unlike the ogma models, these follow stock HF
 /// pipelines, which is exactly what that library implements. The converted
 /// models bake pooling + L2-normalisation into the graph, so the interface is
 /// (input_ids, attention_mask) → "embedding".
 ///
-/// Asymmetric models (EmbeddingGemma) use task PROMPTS, not task tokens: fixed
-/// string prefixes prepended before tokenizing. MiniLM is symmetric (both empty).
+/// The prefix seam exists for ASYMMETRIC models, which use task PROMPTS rather
+/// than task tokens: fixed strings prepended before tokenizing. Every tier
+/// shipping today is symmetric, so both prefixes are empty — the seam is kept
+/// because the alternative is burying prompt logic inside the embedder later.
 final class HFEmbedder: TextEmbedder {
     let dimension: Int
     let signature: String

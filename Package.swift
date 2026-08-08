@@ -7,7 +7,7 @@ let package = Package(
         .macOS(.v13)
     ],
     dependencies: [
-        // Tokenizers for the High/Max tiers (MiniLM WordPiece, Gemma SentencePiece).
+        // Tokenizer for the High tier (MiniLM WordPiece).
         // The ogma models keep the hand-rolled OgmaTokenizer (custom pipeline).
         .package(url: "https://github.com/huggingface/swift-transformers.git", from: "0.1.0")
     ],

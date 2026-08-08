@@ -254,3 +254,26 @@ prompt, with full content — lives in the chronicle ledger; `chron resume` read
 
 - **Why:** {"summary": "plan verdict recorded", "plus_ultra": {"arbiter": "Athena"}}
 
+
+## [2026-08-08T08:12Z-G44T] ARM — Delete embeddinggemma-300m.zip asset from the models-v1 GitHub release
+
+- **Intent:** Stop redistributing Gemma-licensed weights. Removing the tier from the app stops it being USED; hosting the zip is what makes this project its distributor, so the licence question is unresolved until the asset is gone.
+- **Reversibility:** R1 — reversible only via a named artifact (snapshot, rollback tag, backup file)
+- **Restore:** `Re-upload from tools/models/embeddinggemma-300m.zip (278M, present on hestia): gh release upload models-v1 tools/models/embeddinggemma-300m.zip --repo AntreasAntoniou/cliphoard`
+- **Verified:** All 4 assets currently return 200; local copy present at 278M; no shipped code path can request this model (DeepSearchLevel has no case mapping to it, ModelAssets has no pinned checksum for it)
+
+
+## [2026-08-08T08:14Z-1TVC] NOTE — plus-ultra: stop BLOCKED (no reality verdict)
+
+- **Why:** {"summary": "stop BLOCKED (no reality verdict)", "plus_ultra": {"mutations": 13}}
+
+
+## [2026-08-08T08:19Z-V53Q] NOTE — plus-ultra: gate BLOCKED (no plan verdict)
+
+- **Why:** {"summary": "gate BLOCKED (no plan verdict)", "plus_ultra": {"tool": "Edit", "target": "/Users/antreas/Projects/ditto/README.md"}}
+
+
+## [2026-08-08T08:20Z-DKCR] NOTE — plus-ultra: plan verdict recorded
+
+- **Why:** {"summary": "plan verdict recorded", "plus_ultra": {"arbiter": "Athena"}}
+

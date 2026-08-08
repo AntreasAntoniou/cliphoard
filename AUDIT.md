@@ -115,6 +115,14 @@ Confirmed tally: **1 Critical, 13 High, 11 Medium, 13 Low** (after cross-dimensi
 - **Recommendation:** Add a Swift test loading a checked-in `tokenizer.json` fixture asserting `encode` produces exactly `reference.json` ids for all sample strings, including CLS=9/SEP=10 offset boundaries.
 
 ### M4. High (EmbeddingGemma) tier loads an ogma Unigram tokenizer for a model that does not use one
+- **STATUS: RESOLVED BY REMOVAL (2026-08-08).** The EmbeddingGemma tier was retired on
+  licensing grounds, so the mis-tokenizing path no longer exists: `DeepSearchLevel` is
+  `{off, low, normal, high}` and `.high` is now `all-MiniLM-L6-v2`, which `configure()`
+  routes to `HFEmbedder` + `AutoTokenizer`, not `OgmaTokenizer`. Recorded rather than
+  deleted — the finding was real, and an audit that quietly drops findings is less
+  trustworthy than one that says how each was closed. Note the recommendation below was
+  never implemented: `OgmaTokenizer` is still not gated by model family, so re-adding a
+  non-ogma, non-HF tier would reintroduce this exact defect.
 - **File:** `Sources/Cliphoard/Search/DeepSearch.swift:32,201-207`.
 - **Evidence:** `configure()` unconditionally builds `OgmaTokenizer(folder: "<name>-tokenizer")` for any non-nil modelName including `.high`'s `"embeddinggemma-300m"`; no model-family guard. OgmaTokenizer hardcodes the ogma normalizer (NFKD→strip-accents→lowercase), `▁` metaspace, and `n_special_tokens` offset — none matching Gemma. (Latent: requires BOTH the Gemma `.mlmodelc` AND tokenizer folder bundled; Gemma is gated/not converted today, so the path currently falls back to HashingEmbedder and cannot mis-tokenize.)
 - **Impact:** If a Gemma bundle is ever added, OgmaTokenizer emits garbage `input_ids` under ogma's rules and the "high" tier's embeddings are meaningless but persisted and trusted.
@@ -227,7 +235,7 @@ Confirmed tally: **1 Critical, 13 High, 11 Medium, 13 Low** (after cross-dimensi
 No finding was struck outright (every finding was `confirmed=true`). The adversary **downgraded** the following; the corrected (lower) severities are used above. Material walk-backs of impact:
 
 - **Tokenizer parity test missing** (high→**medium**): assurance/test-coverage gap, not a shipping runtime defect on its own — amplifies H3 but produces no wrong output itself.
-- **High/EmbeddingGemma tier mis-tokenizes** (high→**medium**): latent — requires a Gemma `.mlmodelc` + tokenizer bundled, which is gated/absent today; currently falls back to HashingEmbedder and cannot mis-tokenize.
+- **High/EmbeddingGemma tier mis-tokenizes** (high→**medium** → **RESOLVED BY REMOVAL 2026-08-08**): was latent — required a Gemma `.mlmodelc` + tokenizer bundled, which was gated/absent; fell back to HashingEmbedder and could not mis-tokenize. The tier itself was then retired on licensing grounds, so the path is gone. See M4 — the underlying `OgmaTokenizer` family gate was never added.
 - **Actor reentrancy** (high→**medium**): "orphan embedding row" refuted by the FK constraint + `PRAGMA foreign_keys=ON` (upsert fails, no usable orphan); "torn dict write" refuted by synchronous, cooperative (non-preemptive) `index()`; collision is with older trimmed items, not freshly-added ones.
 - **Unaligned `bindMemory`** (high→**medium**): real latent UB, but `Data(bytes:count:)` copies into ≥16-byte-aligned malloc storage, so it does not misalign/trap in practice — "corrupts all cached embeddings" overstated.
 - **insert() not transactional** (high→**medium**): missing embeddings are self-healing via `isStale`/`reindexStale` for text/link/color clips — recoverable, not permanent loss.
@@ -242,7 +250,7 @@ No finding was struck outright (every finding was `confirmed=true`). The adversa
 - **NSHostingController rebuild** (medium→**low**): the deliberate, documented stale-render fix; resetting transient state per summon is desirable; no functional bug.
 - **Hardcoded white-on-accent** (medium→**low**) and **NSLog token-id leak** (medium→**low**): macOS accents are vibrant (only lightest are low-contrast); the id leak is partial/lossy/rare and behind the error path.
 - **Headline semantic search degrades to hashing** (high→**medium**): default `searchMode` is `exact` (substring), so the out-of-box experience does not depend on embeddings; the fallback is disclosed in README and Settings copy.
-- **EmbeddingGemma tier selectable but non-functional** (high→**medium**): the picker is disabled while `searchMode == .exact` (the default), so the broken tier is reachable only by users who already opted into semantic search.
+- **EmbeddingGemma tier selectable but non-functional** (high→**medium** → **RESOLVED BY REMOVAL 2026-08-08**): was mitigated because the picker is disabled while `searchMode == .exact` (the default), so the broken tier was reachable only by users who had opted into semantic search. The tier no longer exists, so it is no longer selectable at all.
 - **CC-BY-NC vs MIT license conflict** (high→**medium**): conditional/latent — no shipped artifact bundles the NC weights today; MIT (code) vs CC-BY-NC (weights) are separable artifacts, so it is a documentation/attribution gap, not an automatic violation.
 - **Install path = clone only** (critical→**high**): same root cause as C1, so not double-counted as critical.
 - **i18n, signing-script, single-arch, Darwin notifications, ad-hoc signing** all downgraded to **low** as developer-workflow or future-scaling concerns rather than wide-userbase blockers.

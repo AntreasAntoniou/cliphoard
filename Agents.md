@@ -69,7 +69,7 @@
 ### On-device model pipeline — `tools/`
 | Path | Responsibility |
 | --- | --- |
-| `tools/README.md` | Documents the ogma→CoreML conversion: model table (micro 2.3M/128, small 8.6M/256, embeddinggemma 300M/768), requirements, and the download→convert→bundle flow. CoreML↔PyTorch parity cosine = 1.00000. |
+| `tools/README.md` | Documents the ogma→CoreML conversion: model table (micro 2.3M/128, small 8.6M/256, MiniLM 22.7M/384), requirements, and the download→convert→bundle flow. CoreML↔PyTorch parity cosine = 1.00000. |
 | `tools/_dl.py` | `python3 _dl.py <repo>` — `huggingface_hub.snapshot_download` into `models/<name>`, with brotli content-encoding force-disabled (flaky decoder workaround). |
 | `tools/convert_ogma.py` | `python3 convert_ogma.py models/<name>` — loads the ogma model via `trust_remote_code`, wraps `forward(input_ids, attention_mask, task_token_ids)` with `F.normalize`, traces, and `coremltools.convert`s to `models/<name>.mlpackage` (flexible seq length `RangeDim`, macOS13 target); prints the PyTorch-vs-CoreML parity cosine. |
 | `tools/reference.py` | Produces `reference.json` — golden token ids + vector heads + norms for three sample strings, the ground truth the Swift `OgmaTokenizer`/`OgmaEmbedder` are checked against. |

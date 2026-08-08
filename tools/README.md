@@ -1,6 +1,6 @@
 # Ditto model tools — ogma → CoreML
 
-Converts the axiotic **ogma** embedding models (and, later, EmbeddingGemma) to
+Converts the axiotic **ogma** embedding models and **all-MiniLM-L6-v2** to
 CoreML for on-device deep search. Both ogma models convert with **exact parity**
 (CoreML vs PyTorch cosine = 1.00000).
 

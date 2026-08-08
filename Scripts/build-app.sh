@@ -55,7 +55,10 @@ fi
 # the safe behaviour and must opt IN to bundling anything heavier.
 #
 # Anything not bundled AUTO-DOWNLOADS on demand when its tier is selected
-# (ModelAssets.ensure), verified against a pinned SHA-256 and refused on mismatch.
+# (ModelAssets.ensure). Every tier shipping today has a pinned SHA-256 and is
+# refused on mismatch — but note the mechanism is fail-OPEN: a tier absent from
+# ModelAssets.expectedSHA256 SKIPS verification with only a log line. So adding a
+# tier without also adding its digest silently buys an unverified download.
 BUNDLE_MODELS="${BUNDLE_MODELS:-open-ogma-small open-ogma-micro}"
 if ls "$ROOT"/tools/models/*.mlpackage >/dev/null 2>&1; then
     echo "▸ Bundling embedding models…"

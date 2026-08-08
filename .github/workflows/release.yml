@@ -55,8 +55,10 @@ jobs:
           # Conversion stack centralized in tools/requirements.txt (also exercised
           # cert-free by .github/workflows/models.yml).
           python3 -m pip install -r tools/requirements.txt
-          # Lean release set — EmbeddingGemma is gated on HF and auto-downloads
-          # in-app from the models-v1 release instead of shipping in the DMG.
+          # Lean release set. This list is now also build-app.sh's default, so it is
+          # belt-and-braces rather than the only guard — deliberately, because the
+          # runner's model cache can restore a pre-retirement EmbeddingGemma package
+          # that must not reach the DMG.
           MODELS="open-ogma-micro open-ogma-small all-MiniLM-L6-v2" bash tools/restore-models.sh
 
       - name: Verify bundled models are present

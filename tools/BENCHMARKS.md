@@ -39,11 +39,14 @@ column suggests.
   retrieval; distilled trunks don't.
 - **The 1024-d head fully recovers the legacy CC-BY-NC model** (equal top-1/
   top-3, better margin) — the MIT swap cost nothing.
-- **EmbeddingGemma is the quality ceiling**; **all-MiniLM-L6-v2 is the value
-  king** — 19/21 with the best margin of the whole table at 22.7M, Apache-2.0.
-  These are the app's High/Max tiers.
+- **all-MiniLM-L6-v2 is the value king** — 19/21 with the best margin of the whole
+  table (0.295) at 22.7M, Apache-2.0. It is the app's High tier, and the only
+  non-ogma model that ships. The retired EmbeddingGemma row above took top-1 by
+  one, at 13× the parameters and a worse margin; since the app thresholds on
+  cosine, margin is the column that governs behaviour.
 - The gap to the teachers (15 vs 19–20 top-1) is trunk-limited, not head-limited
   — both ogma heads score identically at top-1.
 
-Regenerate: `python compare_models.py` (cliphoard-tools env; EmbeddingGemma is
-gated — needs an HF login with access).
+Regenerate: `python compare_models.py` (cliphoard-tools env). The retired
+EmbeddingGemma row will not reproduce without an HF login with access to the gated
+repo — its numbers above are preserved from the 2026-07-22 run.

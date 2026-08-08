@@ -54,8 +54,9 @@ DEVID="${DEVID:-}"                 # Developer ID Application identity (empty = 
 NOTARY_PROFILE="${NOTARY_PROFILE:-}"   # notarytool keychain profile (empty = skip notarization)
 
 # 1. Ensure the DEFAULT-tier models exist (restore if missing), then build a
-# LEAN app: ogma micro/small + MiniLM bundled (~65MB of models); EmbeddingGemma
-# (294MB) auto-downloads on demand from the models-v1 release. A release without
+# LEAN app: ogma micro/small + MiniLM bundled (~65MB of models). The retired
+# EmbeddingGemma tier no longer exists and its release asset was deleted — do not
+# reintroduce either without reading THIRD-PARTY-NOTICES.md. A release without
 # the default models would ship "basic matching only" — hard-fail instead.
 say "Restoring default-tier models…"
 MODELS="open-ogma-micro open-ogma-small all-MiniLM-L6-v2" bash tools/restore-models.sh
