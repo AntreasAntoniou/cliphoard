@@ -63,6 +63,22 @@ final class ClipItem: Codable, Identifiable {
     /// content-based dedup so byte-identical images collapse to one entry.
     /// `nil` for legacy items captured before content hashing existed.
     var imageHash: String?
+    /// Text recognised inside an `.image` clip, sealed at rest like `text`.
+    ///
+    /// The three states are load-bearing and are carried by NULL-vs-empty, not by a
+    /// separate marker column:
+    ///   `nil` — never analysed. The background pass selects exactly this.
+    ///   `""`  — analysed, nothing to index: no text found, or the payload could not
+    ///           be decrypted, or the withhold rule REFUSED to store what was found.
+    ///   text  — analysed and cleared by `Detectors.scan`.
+    ///
+    /// That collapse is deliberate. Because a withheld result is stored as `""`, and
+    /// `SemanticRanker.searchText` falls back to the caption when it is empty, a
+    /// screenshot whose recognised text was refused is invisible to the embedder, the
+    /// tag index and all three substring paths WITHOUT any of them having to know the
+    /// rule. The gate is at the write, so every present and future reader is safe by
+    /// construction rather than by remembering.
+    var ocrText: String?
     /// Absolute file path for `.file` clips.
     var filePath: String?
     /// Hex string for `.color` clips, e.g. "#FF8800".
@@ -108,6 +124,27 @@ final class ClipItem: Codable, Identifiable {
     /// destructive action until it clears an FP audit.
     static let indexVetoFlags: ClipFlags = [.secret, .quarantined]
 
+    /// Flags that suppress STORING recognised image text (it becomes `""`), not the
+    /// clip. Deliberately wider than `indexVetoFlags`, and that is not a contradiction
+    /// of the rule above: §3.1 bars the low-confidence bits from driving a DESTRUCTIVE
+    /// action, and withholding destroys nothing. The image is still stored, still
+    /// pastable, still in history, still similar-searchable. Only a guess we chose not
+    /// to write down is missing.
+    ///
+    /// Wider because the risk is not symmetric with typed text. For a text clip the
+    /// USER chose the bytes; for a screenshot the APP chose them, sweeping up whatever
+    /// happened to be on screen — other people's messages, a bank balance, an address.
+    /// Parity of policy is not parity of risk.
+    ///
+    /// `.secretEntropy` is included here precisely because recognition is lossy: OCR
+    /// can transpose a character, and a mangled key no longer matches the byte-exact
+    /// signature detectors. Entropy is the net that catches what the signatures drop.
+    /// Known gap, documented rather than papered over: `.otp` cannot catch an
+    /// authenticator screenshot, because `detectOTP` needs a contiguous 4–8 digit run
+    /// plus a keyword, and a code rendered "482 913" is two 3-digit groups with neither.
+    static let ocrWithholdFlags: ClipFlags =
+        indexVetoFlags.union([.secretEntropy, .otp, .financial, .piiSensitive])
+
     /// Fail-closed gate consulted by every path that would embed this clip —
     /// ingest *and* any later background re-index/reclassify pass, so a
     /// housekeeping loop can never quietly undo the veto.
@@ -135,19 +172,19 @@ final class ClipItem: Codable, Identifiable {
     init(id: UUID, kind: ClipKind, text: String, rtf: Data?, payloadFile: String?,
          filePath: String?, colorHex: String?, createdAt: Date, lastUsedAt: Date,
          pinned: Bool, sourceApp: String?, useCount: Int, userTags: [String] = [],
-         flags: ClipFlags = [], shape: String? = nil) {
+         flags: ClipFlags = [], shape: String? = nil, ocrText: String? = nil) {
         self.id = id; self.kind = kind; self.text = text; self.rtf = rtf
         self.payloadFile = payloadFile; self.filePath = filePath; self.colorHex = colorHex
         self.createdAt = createdAt; self.lastUsedAt = lastUsedAt; self.pinned = pinned
         self.sourceApp = sourceApp; self.useCount = useCount
         self.userTags = Self.normalizedUserTags(userTags)
-        self.flags = flags; self.shape = shape
+        self.flags = flags; self.shape = shape; self.ocrText = ocrText
     }
 
     // MARK: Codable
 
     private enum CodingKeys: String, CodingKey {
-        case id, kind, text, rtf, payloadFile, imageHash, filePath, colorHex
+        case id, kind, text, rtf, payloadFile, imageHash, ocrText, filePath, colorHex
         case createdAt, lastUsedAt, pinned, sourceApp, useCount
         case userTags
         case flags, shape
@@ -166,6 +203,10 @@ final class ClipItem: Codable, Identifiable {
         rtf = try c.decodeIfPresent(Data.self, forKey: .rtf)
         payloadFile = try c.decodeIfPresent(String.self, forKey: .payloadFile)
         imageHash = try c.decodeIfPresent(String.self, forKey: .imageHash)
+        // Absent in legacy JSON → nil → "never analysed", so the background pass picks
+        // it up. It must NOT decode to "" here: that would mean "analysed, nothing to
+        // index" and would silently exclude every imported image from recognition.
+        ocrText = try c.decodeIfPresent(String.self, forKey: .ocrText)
         filePath = try c.decodeIfPresent(String.self, forKey: .filePath)
         colorHex = try c.decodeIfPresent(String.self, forKey: .colorHex)
         createdAt = try c.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()

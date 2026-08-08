@@ -613,6 +613,18 @@ enum SemanticRanker {
         switch item.kind {
         case .file:  return (item.filePath as NSString?)?.lastPathComponent ?? item.text
         case .color: return item.colorHex ?? item.text
+        // Recognised image text, when there is any. This ONE case is the entire search
+        // integration for images: the embedder, `Detectors.scan`, `lengthConfidence`
+        // and all three ranking modes already route through here, so images become
+        // first-class in the existing pipeline rather than needing a parallel index,
+        // a fusion weight, or a search mode.
+        //
+        // The empty-string fallback is load-bearing, not defensive. A clip whose
+        // recognised text was WITHHELD stores "" (see ClipItem.ocrText), so it falls
+        // back to the caption — meaning a screenshot holding a secret reads exactly as
+        // it did before this feature existed, everywhere, without a single reader
+        // knowing the withhold rule. `nil` (not yet analysed) behaves the same way.
+        case .image: return item.ocrText.flatMap { $0.isEmpty ? nil : $0 } ?? item.text
         default:     return item.text
         }
     }

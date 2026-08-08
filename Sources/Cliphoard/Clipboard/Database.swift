@@ -42,6 +42,15 @@ final class Database {
         // row per query for no confidentiality gain.
         ensureColumn("flags", definition: "INTEGER", in: "clips")
         ensureColumn("shape", definition: "TEXT", in: "clips")
+        // Recognised image text. Additive and guarded like the pair above, so an older
+        // database gains it on open with rows intact — they read back as ocrText == nil,
+        // "never analysed", which is what makes the background pass find them.
+        //
+        // UNLIKE flags/shape, this one IS sealed. Those two are deliberately clear
+        // because they are small non-content tokens read on every render. This is
+        // verbatim clipboard content, reconstructed from pixels — the same category as
+        // `text`, and it gets the same treatment: sealStrict, fail closed.
+        ensureColumn("ocr_text", definition: "TEXT", in: "clips")
         exec("""
         CREATE TABLE IF NOT EXISTS embeddings (
             clip_id TEXT NOT NULL, model TEXT NOT NULL,
@@ -102,7 +111,7 @@ final class Database {
         prepareEach("""
             SELECT id, kind, text, rtf, payload_file, file_path, color_hex,
                    created_at, last_used_at, pinned, source_app, use_count, user_tags,
-                   flags, shape
+                   flags, shape, ocr_text
             FROM clips ORDER BY pinned DESC, last_used_at DESC;
             """) { stmt in
             let idStr = column(stmt, 0)
@@ -126,7 +135,13 @@ final class Database {
                 // knows: a flag written by a newer version must survive a
                 // load → save round-trip through an older one untouched.
                 flags: ClipFlags(rawValue: columnIntOpt(stmt, 13) ?? 0),
-                shape: columnOpt(stmt, 14))
+                shape: columnOpt(stmt, 14),
+                // `columnOpt` returns nil ONLY for SQL NULL, and sealing "" produces
+                // non-empty ciphertext that opens back to "". So NULL ("never
+                // analysed") and "" ("analysed, nothing to index") survive the round
+                // trip as distinct states — which is what lets the column be its own
+                // progress marker with no separate flag.
+                ocrText: columnOpt(stmt, 15).map(Crypto.open))
             item.embeddings = embByClip[idStr] ?? [:]
             result.append(item)
         }
@@ -141,8 +156,8 @@ final class Database {
             INSERT OR REPLACE INTO clips
             (id, kind, text, rtf, payload_file, file_path, color_hex,
              created_at, last_used_at, pinned, source_app, use_count, user_tags,
-             flags, shape)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);
+             flags, shape, ocr_text)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);
             """
         // Encrypt the actual clipboard CONTENT at rest (text, rich text, file
         // path, color). Metadata (id, kind, timestamps, source app) stays clear.
@@ -177,6 +192,19 @@ final class Database {
         guard let encUserTags = Crypto.sealStrict(normalizedTags.joined(separator: "\n")) else {
             NSLog("Cliphoard db: user-tag seal failed — refusing insert"); return false
         }
+        // MUST be bound, not merely added to the schema. This statement is INSERT OR
+        // REPLACE, so it deletes and reinserts the row — and both `reKeyToSecureEnclave`
+        // and `encryptExistingRows` drive it across every clip. An unbound column would
+        // silently blank every recognised text on the next re-key, with no error.
+        // `nil` stays NULL ("never analysed"); "" seals to real ciphertext that opens
+        // back to "" ("analysed, withheld or empty"), preserving the distinction.
+        var encOCR: String? = nil
+        if let ocr = item.ocrText {
+            guard let s = Crypto.sealStrict(ocr) else {
+                NSLog("Cliphoard db: content seal failed — refusing insert (ocr)"); return false
+            }
+            encOCR = s
+        }
         var ok = false
         prepare(sql) { stmt in
             bindText(stmt, 1, item.id.uuidString)
@@ -196,6 +224,7 @@ final class Database {
             // disk, including any bit this build has no name for.
             sqlite3_bind_int64(stmt, 14, Int64(item.flags.rawValue))
             bindText(stmt, 15, item.shape)
+            bindText(stmt, 16, encOCR)
             ok = step(stmt)
         }
         for (model, emb) in item.embeddings { upsertEmbedding(clipID: item.id, model: model, embedding: emb) }
