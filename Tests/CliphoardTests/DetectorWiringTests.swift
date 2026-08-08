@@ -156,6 +156,11 @@ final class DetectorWiringTests: XCTestCase {
         DeepSearch.level = .normal
         defer { DeepSearch.level = .off }
 
+        // `reindexStale` now refuses while frozen: its vetoed purges DELETE rows and its
+        // vectors would be computed from ciphertext. Every store is frozen on a machine
+        // whose keychain is unreachable, so the pass never starts and the benign clip is
+        // never re-indexed. Named skip, not a weaker production rule.
+        try skipIfKeychainUnreachable()
         let store = ClipStore(directory: tempDir())
         let secret = ClipItem(kind: .text, text: Self.pemKey)
         let benign = ClipItem(kind: .text, text: "meeting notes from the standup")

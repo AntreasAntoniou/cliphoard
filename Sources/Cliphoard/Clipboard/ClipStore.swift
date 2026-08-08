@@ -71,6 +71,21 @@ final class ClipStore: ObservableObject {
     /// that fight over the published `indexing` state.
     private var indexingTask: Task<Void, Never>?
 
+    /// Whether a store must freeze, as a pure function of the four facts that decide it.
+    ///
+    /// Extracted so each term can be asserted with the others held healthy. Asserting
+    /// `store.safeMode` cannot do that: on any machine whose keychain is unreachable the
+    /// canary term is unconditionally true, so every end-to-end assertion is satisfied by
+    /// that term alone — deleting the sqlite term entirely survived the whole suite, which
+    /// is how it was found. Same reason `HistoryReaper`'s refusals are pure functions: a
+    /// rule that can only be exercised in its safe state is not a tested rule.
+    static func shouldFreeze(storageComplete: Bool, decryptionHealthy: Bool,
+                             itemCount: Int, unreadableCount: Int) -> Bool {
+        !storageComplete
+            || !decryptionHealthy
+            || (itemCount >= 10 && unreadableCount * 2 > itemCount)
+    }
+
     /// - Parameter directory: storage location. Defaults to
     ///   `~/Library/Application Support/Ditto`; tests inject a temp directory.
     init(directory: URL? = nil) {
@@ -141,9 +156,10 @@ final class ClipStore: ObservableObject {
         // computed entirely from `items`, so a load that returned nothing because it
         // FAILED produced `items.count == 0`, which fails `>= 10`, which left safe mode
         // off — the freeze was structurally blind to the failure it most needed to see.
-        safeMode = !storageComplete
-            || !Crypto.decryptionHealthy
-            || (items.count >= 10 && unreadable * 2 > items.count)
+        safeMode = Self.shouldFreeze(storageComplete: storageComplete,
+                                     decryptionHealthy: Crypto.decryptionHealthy,
+                                     itemCount: items.count,
+                                     unreadableCount: unreadable)
         if safeMode {
             let reason: String
             if case .unavailable(let why) = load {
@@ -804,11 +820,26 @@ final class ClipStore: ObservableObject {
     /// it — and the clips scan feeds that straight into `userTags(fromText:)`. So an
     /// unreadable row's labels in memory ARE the `enc1:` ciphertext parsed as labels.
     ///
-    /// Under keychain-denied safe mode `sealStrict` refuses and the old labels are
-    /// restored, so nothing is lost. But safe mode's RATIO term fires with a perfectly
-    /// healthy key, and there the seal SUCCEEDS: editing one tag writes ciphertext-derived
-    /// garbage over the user's real labels, permanently and undetectably. The tag editor
-    /// sat live next to a Delete button that was already disabled.
+    /// DO NOT ASSUME THE SEAL WILL REFUSE AND SAVE YOU. This comment used to claim that a
+    /// keychain denial makes `sealStrict` refuse, so only the RATIO term was dangerous.
+    /// That is false, and it was false on the machine it was written on.
+    ///
+    /// `sealStrict` gates on `keyIsEphemeral` and on nothing else — not
+    /// `decryptionHealthy`, not `keychainAccessDenied`. Those flags are set by reads of
+    /// DIFFERENT keychain accounts, and `resolveKey` explicitly clears the ephemeral mark
+    /// before its fallback, so nothing forces them to agree. The instance observed here:
+    /// `readBlobStatus` tries the data-protection keychain first for every account and
+    /// falls through to the legacy one only on `errSecItemNotFound`, and -25320
+    /// (`errSecInDarkWake`) can ONLY be produced in the legacy branch — the
+    /// data-protection keychain has no ACLs and cannot dark-wake-fail. So the canary fell
+    /// through and died while the key came back durably. Measured, twice, independently:
+    /// canary unreadable, store frozen, `sealStrict` succeeds and round-trips.
+    ///
+    /// Worse, `decryptionHealthy` also goes false when the canary was READ and did not
+    /// DECRYPT — a durable key that is the wrong one, the exact signature of the 210-clip
+    /// loss, and the state in which these labels ARE ciphertext. So the guard below is
+    /// load-bearing under EVERY safe-mode term, not just the ratio. The tag editor sat
+    /// live next to a Delete button that was already disabled.
     @discardableResult
     func updateUserTags(_ item: ClipItem, to tags: [String]) -> Bool {
         guard !safeMode else {
@@ -1014,6 +1045,31 @@ final class ClipStore: ObservableObject {
     /// Runs in the background, yields between items so the UI stays responsive,
     /// and is resumable — an interrupted pass leaves the rest for next time.
     func reindexStale() {
+        // FROZEN STORES DO NOT RE-INDEX. Three destructive acts live below and safe
+        // mode's own log promises none of them will happen ("No migration, re-seal or
+        // re-index will run; nothing will be deleted"):
+        //
+        //   1-2. the two vetoed purges DELETE rows (`deleteEmbeddings`,
+        //        `deleteImageFeature`), and
+        //   3.   `upsertEmbedding` overwrites a good vector with one computed from the
+        //        row's CIPHERTEXT — `Crypto.open` fails open, so `item.text` is `enc1:…`
+        //        while frozen. `ClipIndexer.isStale` then reports false FOREVER, so the
+        //        healthy launch that could have computed the real vector never revisits it.
+        //
+        // Do not assume the seal refuses and saves you: under the ratio term the key is
+        // perfectly healthy, and it succeeds on the canary-denied path too (see
+        // `updateUserTags`). This is the `add` guard's reasoning applied to a bulk pass.
+        //
+        // `backfillDetectorFlagsIfNeeded` performs the identical vetoed purge and already
+        // sits below the safe-mode early return, so deferring here is consistency, not a
+        // fresh judgement. ACCEPTED COST, recorded rather than left to be discovered: a
+        // clip vetoed since it was indexed keeps a searchable vector for this degraded
+        // session, and it is purged on the next healthy launch.
+        guard !safeMode else {
+            DebugLog.write("safe mode: NOT re-indexing — vectors here would be computed "
+                           + "from ciphertext, and the vetoed purges delete rows")
+            return
+        }
         let sig = EmbedderProvider.active.signature
         // A vetoed clip is permanently "stale" (it has no vector and never will),
         // so it must be filtered out HERE rather than skipped inside the loop —

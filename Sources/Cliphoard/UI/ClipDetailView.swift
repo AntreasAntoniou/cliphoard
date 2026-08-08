@@ -7,6 +7,13 @@ struct ClipDetailView: View {
     let item: ClipItem
     @ObservedObject var store: ClipStore
     let focusTags: Bool
+    /// Whether the store will accept a write right now.
+    ///
+    /// `let`, NO DEFAULT — the same shape as `ClipCardView.historyIsMutable`, and for the
+    /// same reason: a default would let the next call site silently ship a live editor on
+    /// a frozen store, which is exactly how the per-card Delete came to be the one control
+    /// left ungated while three secondary ones were covered.
+    let historyIsMutable: Bool
     var onPaste: () -> Void
     var onCopy: () -> Void
     var onClose: () -> Void
@@ -222,7 +229,7 @@ struct ClipDetailView: View {
                         TextField("Add a tag", text: $newTag)
                             .textFieldStyle(.roundedBorder)
                             .onSubmit(commitTag)
-                            .disabled(store.safeMode)
+                            .disabled(!historyIsMutable)
                         if !suggestions.isEmpty {
                             Menu {
                                 ForEach(suggestions, id: \.self) { suggestion in
@@ -230,14 +237,14 @@ struct ClipDetailView: View {
                                 }
                             } label: { Image(systemName: "text.badge.plus") }
                             .menuStyle(.borderlessButton)
-                            .disabled(store.safeMode)
+                            .disabled(!historyIsMutable)
                         }
                         // Frozen stores refuse the write, and on an unreadable row the
                         // labels in memory are its ciphertext parsed as tags — so editing
                         // them would seal garbage over the real ones.
                         Button("Add", action: commitTag)
                             .disabled(newTag.trimmingCharacters(in: .whitespaces).isEmpty
-                                      || store.safeMode)
+                                      || !historyIsMutable)
                     }
                 }
 
@@ -245,6 +252,12 @@ struct ClipDetailView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+        // Gated as a UNIT, so a seventh control added inside this box is covered by
+        // construction. The per-control gates below are KEPT DELIBERATELY rather than
+        // deleted as redundant: the known controls stay correct on their own modifier, so
+        // this does not rest on SwiftUI's `.disabled` inheritance, which was not verified
+        // headlessly. Belt and braces, not duplication by accident.
+        .disabled(!historyIsMutable)
     }
 
     @ViewBuilder private func tagLayer(_ title: String, _ values: [String]) -> some View {
@@ -297,12 +310,12 @@ struct ClipDetailView: View {
                                 Text("+ #\(tag)")
                             }
                             .buttonStyle(.plain).accessibilityLabel("Add suggested tag \(tag)")
-                            .disabled(store.safeMode)
+                            .disabled(!historyIsMutable)
                             Button { _ = store.dismissSuggestedUserTag(tag, for: item) } label: {
                                 Image(systemName: "xmark")
                             }
                             .buttonStyle(.plain).foregroundStyle(.secondary).accessibilityLabel("Dismiss suggestion \(tag)")
-                            .disabled(store.safeMode)
+                            .disabled(!historyIsMutable)
                         }
                         .font(.caption)
                         .padding(.horizontal, 8).padding(.vertical, 4)
@@ -326,7 +339,7 @@ struct ClipDetailView: View {
             Button(item.pinned ? "Unpin" : "Pin") { store.togglePin(item) }
             Spacer()
             Button("Delete", role: .destructive) { store.delete(item); onClose() }
-                .disabled(store.safeMode)   // refuses while frozen; do not look live
+                .disabled(!historyIsMutable)   // refuses while frozen; do not look live
         }
     }
 }

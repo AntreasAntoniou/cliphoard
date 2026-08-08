@@ -83,7 +83,17 @@ enum TagAudit {
         }
 
         guard let db = Database(path: dbPath) else { err("cannot open DB"); exit(2) }
-        let items = db.loadAll()
+        // The completeness TOKEN, not the convenience accessor. This path deletes, and a
+        // short read makes every unloaded clip invisible — so `--delete` would destroy
+        // rows this process never saw, and the archive it verifies first would not contain
+        // them either. Same rule as the launch-time reapers, for the same reason: a read
+        // that failed is not a smaller history.
+        guard case .complete(let items, _) = db.loadAllStatus() else {
+            err("REFUSING: the stored history could not be read in full. A partial read "
+                + "cannot tell 'unreadable' from 'not loaded', and deleting on it would "
+                + "destroy rows this process never saw.")
+            exit(2)
+        }
         let unreadable = items.filter { Crypto.isSealed($0.text) }
         print("clips: \(items.count) · unreadable: \(unreadable.count)")
         guard !unreadable.isEmpty else { print("nothing to archive"); return }

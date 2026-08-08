@@ -1,6 +1,19 @@
 import Foundation
 
-/// Every pass that PERMANENTLY DESTROYS stored bytes.
+/// The passes that destroy stored bytes on the strength of a SCAN OF THE STORE.
+///
+/// Not every deleter in the app, and the difference is the point. These two infer their
+/// victims from the ABSENCE of something — a payload not in a listing, a file not in a
+/// row set — so a read that failed and a store that is empty look identical to them, and
+/// that substitution is what cost 210 clips. They therefore take proof the read was whole.
+///
+/// The others act on a target the CALLER named: `Database.delete(id:)`/`delete(ids:)`,
+/// `deleteUnpinned`, `deleteEmbeddings`, `deleteImageFeature`, `forgetAllImageUnderstanding`,
+/// `ClipStore.trim`/`clearUnpinned`/`removePayload`, and `TagAudit --delete`. They cannot be
+/// fooled into inventing victims because they invent none, and each is gated where its own
+/// provenance question lives (safe mode, or the completeness guard in `archiveUnreadable`).
+/// Do NOT give them a token: it would claim "this history was read whole" where the real
+/// claim is "the caller asked for these ids", and a token meaning two things means neither.
 ///
 /// Static functions on a caseless enum, deliberately: they have no `self`, so they
 /// cannot reach `ClipStore.items` — the collapsed value that let an unreadable database
@@ -33,7 +46,22 @@ enum HistoryReaper {
     // machine, where anything that constructs a ClipStore returns early in safe mode and
     // would pass for the wrong reason.
 
-    /// Deleting more than half the payloads on disk is not housekeeping.
+    /// Deleting more than half the payloads is not housekeeping.
+    ///
+    /// TWO POPULATIONS, deliberately, and mixing them is how this rule quietly drifted.
+    /// The FLOOR counts FILES; the RATIO counts PAYLOAD IDENTITIES. A thumbnail is a
+    /// derivative, not a second image — and coverage is non-uniform BY CONSTRUCTION here,
+    /// because `writeThumbnail` is best-effort and `removePayload` deletes a clip's thumb
+    /// WITH its original. So live payloads mostly have sidecars and dead ones often do
+    /// not, and a file-counted ratio slid anywhere between a third and two thirds:
+    /// measured, 20 live-with-thumbs against 21 dead-bare deleted 21 of 41, over half.
+    /// Sidecars cancel only when coverage is uniform, which is exactly the case that
+    /// makes the bug invisible if you probe it.
+    ///
+    /// The floor keeps counting FILES on purpose. Counting payloads on both sides looks
+    /// tidier and destroys a store: nine images with thumbs whose database truthfully
+    /// reports zero — the flagship scenario of this whole effort — is 18 files but 9
+    /// payloads, so a payload-counted floor falls below 10 and deletes all nine. Measured.
     ///
     /// This is the refusal that survives the case no count check can reach. A count
     /// that fails is now `.unavailable` and refuses earlier — but a `ditto.sqlite`
@@ -54,8 +82,16 @@ enum HistoryReaper {
     /// grows, and is logged. The sweep's own contract calls itself best-effort
     /// housekeeping, so declining is within it. The alternative cost is every image the
     /// user has.
-    static func isDisproportionate(deletable: Int, onDisk: Int) -> Bool {
-        onDisk >= 10 && deletable * 2 > onDisk
+    static func isDisproportionate(deletablePayloads: Int, allPayloads: Int,
+                                   onDiskFiles: Int) -> Bool {
+        onDiskFiles >= 10 && deletablePayloads * 2 > allPayloads
+    }
+
+    /// The payload a file belongs to. A thumbnail is a DERIVATIVE of its original, not an
+    /// image in its own right: "<uuid>-thumb.png" -> "<uuid>.png".
+    static func payloadIdentity(of name: String) -> String {
+        guard name.hasSuffix("-thumb.png") else { return name }
+        return String(name.dropLast("-thumb.png".count)) + ".png"
     }
 
     /// The payload files a sweep is entitled to delete, or nil to delete NOTHING.
@@ -72,9 +108,11 @@ enum HistoryReaper {
             return referenced.contains(String(name.dropLast("-thumb.png".count)) + ".png")
         }
         let deletable = onDisk.filter { !referenced.contains($0) && !isLiveThumbnail($0) }
-        guard !isDisproportionate(deletable: deletable.count, onDisk: onDisk.count) else {
-            return nil
-        }
+        // The VICTIM SET is unchanged — only the population the proportion is taken over.
+        guard !isDisproportionate(
+            deletablePayloads: Set(deletable.map(Self.payloadIdentity)).count,
+            allPayloads: Set(onDisk.map(Self.payloadIdentity)).count,
+            onDiskFiles: onDisk.count) else { return nil }
         return deletable
     }
 
@@ -95,8 +133,11 @@ enum HistoryReaper {
             .map(\.key))
         // Same proportionality rule, same reason: an empty-but-listable directory facing
         // 200 image rows is the same catastrophe through a different door.
-        guard !isDisproportionate(deletable: missing.count,
-                                  onDisk: max(onDisk.count, imagePayloadsByClip.count))
+        // The ratio drops the `max`, which inflated the denominator with sidecars and so
+        // weakened the guard; the FLOOR keeps it, so the rule arms no less often than before.
+        guard !isDisproportionate(deletablePayloads: missing.count,
+                                  allPayloads: imagePayloadsByClip.count,
+                                  onDiskFiles: max(onDisk.count, imagePayloadsByClip.count))
         else { return nil }
         return missing
     }

@@ -219,7 +219,12 @@ final class Database {
     ///
     /// DISCARDS the completeness signal, so the result MAY BE SHORT and must never
     /// feed a deletion. Callers that delete take a `CompleteHistory` instead, which
-    /// only `loadAllStatus` can mint. Kept for diagnostics, the audit tool and tests.
+    /// only `loadAllStatus` can mint. Kept for diagnostics, reporting and tests.
+    ///
+    /// That sentence was FALSE when it was written: `TagAudit.archiveUnreadable` loaded
+    /// through here and then deleted rows on the result, so a short read would have
+    /// destroyed rows the process never saw. `TagAudit` now takes the token. The rule is
+    /// true today, and that call site is the reason it is written down.
     func loadAll() -> [ClipItem] {
         if case .complete(let rows, _) = loadAllStatus() { return rows }
         return loadAllUnchecked().rows
@@ -231,18 +236,26 @@ final class Database {
     /// that pins a consistent view, so a second process writing between the count and
     /// the scan cannot manufacture a `.short` and freeze this one for nothing.
     ///
-    /// Must not be called from inside an open transaction — nesting `BEGIN` is an
-    /// error. Today the only callers are `ClipStore.init` and the audit tool, neither
-    /// of which holds one.
+    /// SAVEPOINT rather than BEGIN, so this NESTS legally. Outside a transaction a
+    /// savepoint starts a deferred one and `RELEASE` commits it, which is exactly what
+    /// `BEGIN`/`COMMIT` did — but inside a caller's transaction, `RELEASE` of a nested
+    /// savepoint does NOT commit the enclosing one. With BEGIN/COMMIT it did: probed,
+    /// the inner COMMIT returned the connection to autocommit, the caller's ROLLBACK
+    /// then failed with "no transaction is active", and a write it had decided to
+    /// discard SURVIVED. Nothing reaches that today, and a guard would have to be
+    /// remembered by whoever writes the call that does — this cannot be got wrong.
     func loadAllStatus() -> HistoryRead {
-        exec("BEGIN DEFERRED;")
-        defer { exec("COMMIT;") }
+        exec("SAVEPOINT loadAll;")
+        defer { exec("RELEASE loadAll;") }
 
-        guard case .counted(let stored) = clipCountStatus() else {
-            if case .unavailable(let rc) = clipCountStatus() {
-                return .unavailable(.countUnavailable(rc))
-            }
-            return .unavailable(.countUnavailable(SQLITE_ERROR))
+        // A switch, not a re-interrogating `guard`: the guard called clipCountStatus()
+        // a SECOND time on the failure path, so it reported the second read's rc — and
+        // needed a fabricated SQLITE_ERROR for a case that cannot occur. Exhaustive
+        // matching removes both.
+        let stored: Int
+        switch clipCountStatus() {
+        case .counted(let n): stored = n
+        case .unavailable(let rc): return .unavailable(.countUnavailable(rc))
         }
         let read = loadAllUnchecked()
         guard read.featureRC == SQLITE_DONE else {

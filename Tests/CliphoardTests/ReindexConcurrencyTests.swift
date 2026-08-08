@@ -142,7 +142,13 @@ final class ReindexConcurrencyTests: XCTestCase {
 
     // MARK: 1 — overlapping passes coalesce to a single idle, rebuild-correct end
 
-    func testOverlappingReindexAndReclassifyCoalesceToSinglePass() async {
+    func testOverlappingReindexAndReclassifyCoalesceToSinglePass() async throws {
+        // `reindexStale` now refuses while frozen — the vetoed purges DELETE rows and the
+        // vectors would be computed from ciphertext. On a machine whose keychain is
+        // unreachable every store is frozen, so the pass never starts and the awaits below
+        // would time out. Named skip rather than a weaker production rule, per this repo's
+        // own standard.
+        try skipIfKeychainUnreachable()
         let store = tempStore()
 
         // A pool of already-embedded items → real work for `rebuildTagIndex`.
@@ -203,7 +209,13 @@ final class ReindexConcurrencyTests: XCTestCase {
 
     // MARK: 2 — an add() during a reindex never persists a stale snapshot
 
-    func testConcurrentAddDuringReindexDoesNotWriteStaleSnapshot() async {
+    func testConcurrentAddDuringReindexDoesNotWriteStaleSnapshot() async throws {
+        // `reindexStale` now refuses while frozen — the vetoed purges DELETE rows and the
+        // vectors would be computed from ciphertext. On a machine whose keychain is
+        // unreachable every store is frozen, so the pass never starts and the awaits below
+        // would time out. Named skip rather than a weaker production rule, per this repo's
+        // own standard.
+        try skipIfKeychainUnreachable()
         let store = tempStore()
 
         // A larger stale pool so the reindex spans several yield points, giving
@@ -257,7 +269,13 @@ final class ReindexConcurrencyTests: XCTestCase {
 
     // MARK: 1b — a single reindex pass alone is monotonic and ends exactly once
 
-    func testSingleReindexPassIsMonotonicAndEndsExactlyOnce() async {
+    func testSingleReindexPassIsMonotonicAndEndsExactlyOnce() async throws {
+        // `reindexStale` now refuses while frozen — the vetoed purges DELETE rows and the
+        // vectors would be computed from ciphertext. On a machine whose keychain is
+        // unreachable every store is frozen, so the pass never starts and the awaits below
+        // would time out. Named skip rather than a weaker production rule, per this repo's
+        // own standard.
+        try skipIfKeychainUnreachable()
         let store = tempStore()
         addStale((0..<24).map { "single pass stale \($0) sample text here" }, to: store)
 

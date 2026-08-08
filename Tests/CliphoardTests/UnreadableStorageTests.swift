@@ -204,6 +204,167 @@ final class UnreadableStorageTests: XCTestCase {
                        "a single vanished payload must still drop its row")
     }
 
+    // MARK: - The population the proportion is taken over
+
+    /// Thumbnail coverage is NON-UNIFORM by construction — `writeThumbnail` is
+    /// best-effort and `removePayload` deletes a clip's thumb with its original — so live
+    /// payloads mostly have sidecars and dead ones often do not. Counting FILES therefore
+    /// let the "more than half" rule slide anywhere between a third and two thirds. A
+    /// probe that gives every payload a thumb makes the bug invisible, which is exactly
+    /// what happened: two independent reviewers measured this and reached opposite
+    /// conclusions, and the one who probed uniform coverage called it a non-issue.
+    func testTheSweepCountsPayloadsNotFilesWhenCoverageIsUneven() {
+        // 20 live clips WITH thumbs, 21 dead originals WITHOUT. 21 of 41 files is barely
+        // over half so the file-counted rule refused nothing — but it is 21 of 41
+        // PAYLOADS, which is over half, and must refuse.
+        var onDisk = Set<String>()
+        var referenced = Set<String>()
+        for i in 0..<20 { onDisk.insert("live\(i).png"); onDisk.insert("live\(i)-thumb.png")
+                          referenced.insert("live\(i).png") }
+        for i in 0..<21 { onDisk.insert("dead\(i).png") }
+        XCTAssertNil(HistoryReaper.sweepDecision(onDisk: onDisk, referenced: referenced),
+                     "21 dead payloads of 41 is over half — the file count hid it behind "
+                     + "20 live sidecars")
+
+        // The converse, and the direction that would LOBOTOMISE the sweep: 20 live bare,
+        // 11 dead each carrying a thumb. 22 of 31 FILES reads as disproportionate; 11 of
+        // 31 payloads is ordinary housekeeping and must proceed.
+        var onDisk2 = Set<String>()
+        var referenced2 = Set<String>()
+        for i in 0..<20 { onDisk2.insert("live\(i).png"); referenced2.insert("live\(i).png") }
+        for i in 0..<11 { onDisk2.insert("dead\(i).png"); onDisk2.insert("dead\(i)-thumb.png") }
+        XCTAssertEqual(HistoryReaper.sweepDecision(onDisk: onDisk2, referenced: referenced2)?.count,
+                       22,
+                       "11 dead payloads of 31 is routine housekeeping; the file count "
+                       + "refused it and left 22 stray files forever")
+    }
+
+    /// The FLOOR still counts FILES, and this is the test that stops someone "tidying" it
+    /// into payload counting on both sides. Nine images with thumbs whose database
+    /// truthfully reports zero — the flagship scenario of this entire effort — is 18 files
+    /// but 9 payloads, so a payload-counted floor falls under 10 and deletes all nine.
+    func testTheFloorCountsFilesSoASmallStoreIsStillProtected() {
+        var onDisk = Set<String>()
+        for i in 0..<9 { onDisk.insert("img\(i).png"); onDisk.insert("img\(i)-thumb.png") }
+        XCTAssertNil(HistoryReaper.sweepDecision(onDisk: onDisk, referenced: []),
+                     "a nine-image store facing a truthfully-empty database must refuse; "
+                     + "counting payloads on both sides drops it below the floor and "
+                     + "destroys every image")
+    }
+
+    /// Under UNIFORM coverage the two readings agree exactly — which is why a probe that
+    /// gives every payload a sidecar concludes there is no bug. 15 live + 15 dead, all
+    /// thumbed: 15 of 30 payloads and 30 of 60 files are both exactly half, and half is
+    /// not MORE than half, so both readings sweep. Pinned as a deliberate no-op.
+    func testUniformThumbnailCoverageDecidesIdenticallyEitherWay() {
+        var onDisk = Set<String>()
+        var referenced = Set<String>()
+        for i in 0..<15 { onDisk.insert("a\(i).png"); onDisk.insert("a\(i)-thumb.png")
+                          referenced.insert("a\(i).png") }
+        for i in 0..<15 { onDisk.insert("b\(i).png"); onDisk.insert("b\(i)-thumb.png") }
+        XCTAssertEqual(HistoryReaper.sweepDecision(onDisk: onDisk, referenced: referenced)?.count,
+                       30,
+                       "exactly half is not more than half, under either population — the "
+                       + "agreement here is precisely what hides the non-uniform defect")
+    }
+
+    /// The row pass had the same defect through `max(onDisk.count, rows.count)`: sidecars
+    /// inflated the denominator, so it refused only above two thirds while documenting one
+    /// half.
+    func testRowDeletionCountsRowsNotFiles() {
+        let ids = (0..<20).map { _ in UUID() }
+        var byClip: [UUID: String] = [:]
+        for (i, id) in ids.enumerated() { byClip[id] = "img\(i).png" }
+        // 20 rows, 11 payloads missing. On disk: the 9 survivors plus 21 stray thumbs.
+        var onDisk = Set<String>()
+        for i in 11..<20 { onDisk.insert("img\(i).png") }
+        for i in 0..<21 { onDisk.insert("t\(i)-thumb.png") }
+        XCTAssertNil(HistoryReaper.orphanDecision(onDisk: onDisk, imagePayloadsByClip: byClip),
+                     "11 of 20 image ROWS is over half; the inflated denominator (30 files) "
+                     + "made it read as under a third")
+    }
+
+    // MARK: - The freeze decision, term by term
+
+    /// `safeMode` itself cannot be tested term by term on this machine: the canary term is
+    /// unconditionally true here, so every end-to-end assertion is satisfied by it alone —
+    /// deleting the sqlite term outright survived the entire suite, which is how the gap
+    /// was found. A pure function has no such blind spot.
+    func testEachFreezeTermFiresOnItsOwn() {
+        XCTAssertTrue(ClipStore.shouldFreeze(storageComplete: false, decryptionHealthy: true,
+                                             itemCount: 0, unreadableCount: 0),
+                      "a load that could not be proven complete must freeze ON ITS OWN")
+        XCTAssertTrue(ClipStore.shouldFreeze(storageComplete: true, decryptionHealthy: false,
+                                             itemCount: 0, unreadableCount: 0))
+        XCTAssertTrue(ClipStore.shouldFreeze(storageComplete: true, decryptionHealthy: true,
+                                             itemCount: 12, unreadableCount: 7))
+        XCTAssertFalse(ClipStore.shouldFreeze(storageComplete: true, decryptionHealthy: true,
+                                              itemCount: 12, unreadableCount: 6),
+                       "exactly half is not MORE than half")
+        XCTAssertFalse(ClipStore.shouldFreeze(storageComplete: true, decryptionHealthy: true,
+                                              itemCount: 9, unreadableCount: 9),
+                       "the floor is deliberate, not accidental")
+        XCTAssertFalse(ClipStore.shouldFreeze(storageComplete: true, decryptionHealthy: true,
+                                              itemCount: 0, unreadableCount: 0),
+                       "and the converse, so a fix cannot pass by freezing everything")
+    }
+
+    // MARK: - The scan that never ran
+
+    /// `prepareEach` starts at `SQLITE_ERROR` because a failed prepare never enters the
+    /// loop and must not report the value meaning "reached the end". Nothing asserted it:
+    /// changing the initial value to `SQLITE_DONE` left all 428 tests green while minting
+    /// a COMPLETE history — and a token — from a scan that never ran.
+    ///
+    /// Renames a COLUMN, not the table: `Database.init` runs `CREATE TABLE IF NOT EXISTS`,
+    /// which silently repairs a dropped table and would make this fixture test nothing.
+    func testAScanWhoseStatementWillNotPrepareIsNotACompleteRead() throws {
+        let dir = tempDir()
+        let path = dir.appendingPathComponent("ditto.sqlite").path
+        do {
+            let db = try XCTUnwrap(Database(path: path))
+            db.insert(ClipItem(kind: .text, text: "hello"))
+            XCTAssertEqual(db.clipCountStatus(), .counted(1), "precondition")
+        }
+        var raw: OpaquePointer?
+        XCTAssertEqual(sqlite3_open_v2(path, &raw, SQLITE_OPEN_READWRITE, nil), SQLITE_OK)
+        XCTAssertEqual(sqlite3_exec(raw, "ALTER TABLE embeddings RENAME COLUMN vector TO vector_x;",
+                                    nil, nil, nil), SQLITE_OK)
+        sqlite3_close_v2(raw)
+
+        let db = try XCTUnwrap(Database(path: path))
+        XCTAssertEqual(db.clipCountStatus(), .counted(1), "the clips table is untouched")
+        guard case .unavailable(.embeddingScanStoppedEarly) = db.loadAllStatus() else {
+            return XCTFail("a scan whose statement would not even PREPARE was reported as a "
+                           + "complete read — the reapers are then entitled to delete on it")
+        }
+    }
+
+    // MARK: - Loading inside someone else's transaction
+
+    /// `loadAllStatus` used to `BEGIN`/`COMMIT`. Inside a caller's transaction that
+    /// committed the CALLER's work early and turned its ROLLBACK into "no transaction is
+    /// active", so a write it had decided to discard survived. SAVEPOINT nests legally.
+    /// Nothing reaches this today; the point is that the next caller cannot get it wrong.
+    func testALoadInsideATransactionDoesNotCommitIt() throws {
+        let dir = tempDir()
+        let path = dir.appendingPathComponent("ditto.sqlite").path
+        let db = try XCTUnwrap(Database(path: path))
+        db.insert(ClipItem(kind: .text, text: "before"))
+        let observer = try XCTUnwrap(Database(path: path))
+
+        var seenMidTransaction: Database.CountRead = .unavailable(0)
+        _ = db.transaction {
+            db.insert(ClipItem(kind: .text, text: "in flight"))
+            _ = db.loadAll()
+            seenMidTransaction = observer.clipCountStatus()
+        }
+        XCTAssertEqual(seenMidTransaction, .counted(1),
+                       "a second connection saw the in-flight write, so the load had "
+                       + "already COMMITTED the enclosing transaction — its ROLLBACK would "
+                       + "then discard nothing")
+    }
+
     // MARK: - T4 — the store refuses to treat a failed load as an empty one
 
     /// `storageComplete` is assigned BEFORE the safe-mode early return, which is what

@@ -106,6 +106,12 @@ final class EphemeralKeyTests: XCTestCase {
     /// Known gap: the branch this exists for needs a genuinely ABSENT canary, which a test
     /// cannot arrange without an injectable keychain. Recorded rather than faked.
     func testCanaryCannotReportHealthUnderAnEphemeralKey() throws {
+        // Establish the signal before reading it. `keychainAccessDenied` is set only as a
+        // SIDE EFFECT of a keychain read, so a process that has not performed one sees
+        // `false` and skips — this test skipped claiming "the canary is readable here" in
+        // a process that logged -25320 moments later. Same fix, same reason, as
+        // `FrozenStoreSkip`'s helper.
+        Crypto.verifyCanary()
         try XCTSkipUnless(Crypto.keychainAccessDenied,
                           "the canary is readable here, so verifyCanary takes its .found "
                           + "branch and the ephemerality guard is never consulted — there "
