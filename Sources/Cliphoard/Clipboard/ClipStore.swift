@@ -157,7 +157,15 @@ final class ClipStore: ObservableObject {
     private func reKeyToSecureEnclaveIfNeeded() {
         let flag = "reKeySEv2"
         guard Crypto.usesSecureEnclave, !UserDefaults.standard.bool(forKey: flag) else { return }
-        for item in items { db?.insert(item) }
+        // Same rule as above: stamp only what actually landed. A re-key that wrote nothing
+        // must be retried, not retired.
+        var written = 0
+        for item in items where db?.insert(item) == true { written += 1 }
+        guard written == items.count else {
+            DebugLog.write("migrate: re-key wrote \(written)/\(items.count) rows — NOT "
+                           + "stamping the marker, so a healthy launch retries")
+            return
+        }
         db?.vacuum()
         UserDefaults.standard.set(true, forKey: flag)
     }
@@ -168,7 +176,18 @@ final class ClipStore: ObservableObject {
     private func encryptExistingRowsIfNeeded() {
         let key = "dbEncryptedV1"
         guard !UserDefaults.standard.bool(forKey: key) else { return }
-        for item in items { db?.insert(item) }
+        // Count what actually landed. The marker used to be stamped unconditionally, so a
+        // pass in which EVERY insert refused — which is exactly what happens when the seal
+        // is fail-closed against an ephemeral key — retired the migration permanently.
+        // The rows stay unencrypted forever and no healthy launch ever revisits them.
+        // A one-shot marker must record work done, not merely an attempt made.
+        var written = 0
+        for item in items where db?.insert(item) == true { written += 1 }
+        guard written == items.count else {
+            DebugLog.write("migrate: encrypt-existing wrote \(written)/\(items.count) rows "
+                           + "— NOT stamping the marker, so a healthy launch retries")
+            return
+        }
         db?.vacuum()   // purge stale plaintext from free pages
         UserDefaults.standard.set(true, forKey: key)
     }
@@ -187,6 +206,25 @@ final class ClipStore: ObservableObject {
     private func encryptImagePayloadsIfNeeded() {
         let flag = "imagesEncryptedV1"
         guard !UserDefaults.standard.bool(forKey: flag) else { return }
+
+        // NEVER under an ephemeral key. This pass OVERWRITES each original PNG in place,
+        // and it uses the fail-OPEN seal, which cannot be guarded the way `sealStrict`
+        // is: making it refuse would return plaintext and write cleartext to disk. So the
+        // gate belongs here.
+        //
+        // Without it, one launch with an unreachable keychain turns every image payload
+        // into ciphertext under a key that dies at exit — irreversibly, because the
+        // original bytes are gone — and then stamps the marker so it never retries.
+        //
+        // The stamp is now conditional too: a pass that did nothing must not record
+        // itself as done, or a later healthy launch skips work that was never performed.
+        guard !Crypto.ensureKeyResolved(), Crypto.decryptionHealthy else {
+            DebugLog.write("images: NOT re-sealing payloads — key is ephemeral or "
+                           + "decryption is unhealthy. Marker left unset so a healthy "
+                           + "launch retries.")
+            return
+        }
+
         if let entries = try? FileManager.default.contentsOfDirectory(
             at: dir, includingPropertiesForKeys: nil) {
             for url in entries where url.pathExtension.lowercased() == "png" {

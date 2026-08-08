@@ -62,6 +62,23 @@ enum Crypto {
     /// None of those three had to learn the rule individually.
     private(set) static var keyIsEphemeral = false
 
+    /// Force key resolution, so `keyIsEphemeral` is AUTHORITATIVE rather than eventually
+    /// correct.
+    ///
+    /// The flag is set as a side effect of resolving the key, and the key resolves lazily
+    /// on first use. Every guard that read the flag therefore ran BEFORE the thing that
+    /// set it: the fail-closed seal checked the flag, then called the seal that forced
+    /// resolution — so the FIRST such call in a process sailed through and returned
+    /// ciphertext under a key that would not survive. The app's very first crypto touch
+    /// is the canary, which is exactly the hole this was meant to close.
+    ///
+    /// Every guard calls this first. Cheap: resolution happens once per process.
+    @discardableResult
+    static func ensureKeyResolved() -> Bool {
+        _ = key
+        return keyIsEphemeral
+    }
+
     /// Run `body` as though the active key were ephemeral, then restore.
     ///
     /// A test seam, and a necessary one: the ephemeral state only arises when the
@@ -103,7 +120,7 @@ enum Crypto {
         // key that dies with the process satisfies the old check and guarantees the data
         // is unreadable tomorrow. Fail-closed has to mean "readable later", not
         // "encrypted now".
-        guard !keyIsEphemeral else {
+        guard !ensureKeyResolved() else {
             NSLog("Cliphoard crypto: refusing a fail-closed seal — the key is EPHEMERAL "
                   + "and anything sealed with it is unreadable after this process exits.")
             return nil
@@ -115,7 +132,7 @@ enum Crypto {
     /// Fail-CLOSED seal for blob content (RTF / vectors). `nil` on seal failure;
     /// never returns the plaintext bytes. See `sealStrict(_:String)`.
     static func sealStrict(_ plain: Data) -> Data? {
-        guard !keyIsEphemeral else { return nil }   // see sealStrict(_:String)
+        guard !ensureKeyResolved() else { return nil }   // see sealStrict(_:String)
         guard let out = seal(plain), out.starts(with: markerData) else { return nil }
         return out
     }
@@ -409,7 +426,7 @@ enum Crypto {
             //
             // `sealStrict` now refuses under an ephemeral key, so the store below fails —
             // but the health verdict must be set explicitly, not left to fall through.
-            guard !keyIsEphemeral else {
+            guard !ensureKeyResolved() else {
                 decryptionHealthy = false
                 NSLog("Cliphoard crypto: canary absent AND the key is ephemeral — refusing "
                       + "to establish one, because it would certify a health this process "
@@ -473,7 +490,16 @@ enum Crypto {
         case .absent:
             // Genuinely first run: nothing to destroy.
             let fresh = SymmetricKey(size: .bits256)
-            storeRandomKey(fresh, account: randomAccount)
+            // A minted key that could not be SAVED is ephemeral in fact, whatever the
+            // branch it came from. The store helper can fail in both keychains — it says
+            // so in its own log — and the old code treated the key as durable regardless,
+            // so a first run that could read but not write sealed everything under a key
+            // that died at exit, then minted another next launch.
+            if !storeRandomKey(fresh, account: randomAccount) {
+                keyIsEphemeral = true
+                NSLog("Cliphoard crypto: minted a key but could not persist it — treating "
+                      + "it as EPHEMERAL. Nothing fail-closed will be written with it.")
+            }
             archiveKey(fresh, label: "random-v1")
             return fresh
         }
@@ -518,7 +544,16 @@ enum Crypto {
             // failure whatsoever".
             do {
                 let fresh = try SecureEnclave.P256.KeyAgreement.PrivateKey()
-                storeBlob(fresh.dataRepresentation, account: seAccount)
+                // Same rule as the random-key branch: a key that could not be SAVED is
+                // ephemeral in fact. The store helper can fail in both keychains and
+                // says so in its own log; treating the key as durable regardless is how
+                // a first run that can read but not write seals everything under a key
+                // that dies at exit, then mints another next launch.
+                if !storeBlob(fresh.dataRepresentation, account: seAccount) {
+                    keyIsEphemeral = true
+                    NSLog("Cliphoard crypto: minted a Secure Enclave key but could not "
+                          + "persist its blob — treating it as EPHEMERAL.")
+                }
                 priv = fresh
             } catch {
                 NSLog("Cliphoard crypto: SE key create failed: \(error)")
@@ -538,7 +573,8 @@ enum Crypto {
     // reintroducing the bug, sitting in the file that exists to prevent it. Dead code
     // that encodes a retired mistake is a loaded gun, not clutter.
 
-    private static func storeRandomKey(_ key: SymmetricKey, account: String) {
+    @discardableResult
+    private static func storeRandomKey(_ key: SymmetricKey, account: String) -> Bool {
         storeBlob(key.withUnsafeBytes { Data($0) }, account: account)
     }
 
@@ -726,7 +762,8 @@ enum Crypto {
     /// correctly-signed app reads its own items with no UI, ever. That removes the entire
     /// failure mode rather than working around it: unattended launches, headless
     /// relaunches and clamshell mode all just work.
-    private static func storeBlob(_ data: Data, account: String) {
+    @discardableResult
+    private static func storeBlob(_ data: Data, account: String) -> Bool {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -756,7 +793,7 @@ enum Crypto {
         if status == errSecItemNotFound {
             status = SecItemAdd(query as CFDictionary, nil)
         }
-        if status == errSecSuccess { return }
+        if status == errSecSuccess { return true }
 
         // errSecMissingEntitlement (-34018): the data-protection keychain needs a
         // keychain-access-groups entitlement, which a self-signed local build with no
@@ -785,7 +822,9 @@ enum Crypto {
             DebugLog.write("crypto: storeBlob(\(account)) FAILED in both keychains, "
                            + "OSStatus \(legacyStatus) — this process cannot persist a key. "
                            + "Nothing was deleted; any existing key is still there.")
+            return false
         }
+        return true
     }
 
     /// Set once the modern keychain has refused for want of an entitlement — which is a
