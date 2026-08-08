@@ -138,15 +138,29 @@ final class ImageUnderstandingWiringTests: XCTestCase {
             encoding: .utf8)
         let lines = source.components(separatedBy: .newlines)
 
-        XCTAssertTrue(source.contains("guard !safeMode, Self.imageUnderstandingEnabled"),
+        XCTAssertTrue(source.contains("guard !safeMode"),
                       "scheduleImageUnderstanding lost its safe-mode guard")
 
-        guard let earlyReturn = lines.firstIndex(where: { $0.contains("rebuildUserTagIndex()") }),
-              let scheduleInInit = lines.firstIndex(where: { $0.contains("scheduleImageUnderstanding()") })
-        else { return XCTFail("could not locate the init ordering") }
-        XCTAssertGreaterThan(scheduleInInit, earlyReturn,
-                             "the schedule call moved ABOVE the safe-mode early return, so a "
-                             + "store in safe mode would now start rewriting rows")
+        // Match the CALL, never the declaration. The first version of this used
+        // `firstIndex(where: contains("scheduleImageUnderstanding()"))`, which would have
+        // matched `func scheduleImageUnderstanding() {` if the init call site were deleted
+        // — still below the early return, so the test would keep passing while the very
+        // property it exists to pin had been removed. A review caught that; excluding
+        // `func ` is what makes deletion detectable rather than invisible.
+        let callSites = lines.enumerated().filter {
+            $0.element.contains("scheduleImageUnderstanding()") && !$0.element.contains("func ")
+        }
+        XCTAssertFalse(callSites.isEmpty,
+                       "no call to scheduleImageUnderstanding remains — the pass is dead code")
+
+        guard let earlyReturn = lines.firstIndex(where: { $0.contains("rebuildUserTagIndex()") })
+        else { return XCTFail("could not locate the safe-mode early-return block") }
+        for site in callSites {
+            XCTAssertGreaterThan(site.offset, earlyReturn,
+                                 "a call at line \(site.offset + 1) sits ABOVE the safe-mode "
+                                 + "early return, so a store in safe mode would start "
+                                 + "rewriting rows")
+        }
     }
 
     func testDisabledSettingPerformsNoRecognition() async {

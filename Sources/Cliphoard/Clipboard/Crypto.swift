@@ -277,12 +277,39 @@ enum Crypto {
             archiveKey(k, label: "se-v2")
             return k
         }
-        // No Secure Enclave: keep using the random Keychain key (unchanged).
-        if let existing = readRandomKey(account: randomAccount) { return existing }
-        let fresh = SymmetricKey(size: .bits256)
-        storeRandomKey(fresh, account: randomAccount)
-        archiveKey(fresh, label: "random-v1")
-        return fresh
+        // No Secure Enclave, OR the Enclave key was unreadable and refused to be
+        // replaced — which means this path is now the destination of that refusal and
+        // must carry the same discipline, or the fix above merely relocates the damage.
+        switch readBlobStatus(account: randomAccount) {
+        case .found(let data) where data.count == 32:
+            return SymmetricKey(data: data)
+
+        case .found:
+            // Present but the wrong size. Do not overwrite it — it is somebody's key,
+            // and a length we do not recognise is a reason to stop, not to replace.
+            NSLog("Cliphoard crypto: legacy key present but malformed — refusing to "
+                  + "replace it. Using an EPHEMERAL key for this session; nothing "
+                  + "already stored will be re-sealed.")
+            return SymmetricKey(size: .bits256)
+
+        case .unavailable(let status):
+            // The key almost certainly exists and this process simply cannot read it.
+            // Minting here would delete-then-add over it and orphan every sealed row —
+            // the exact failure that cost 202 clips. Use a session-only key instead: it
+            // seals nothing that matters, because safe mode will refuse to write once it
+            // sees the store is unreadable.
+            NSLog("Cliphoard crypto: legacy key unreadable (OSStatus \(status)) — NOT "
+                  + "first run, so refusing to mint over it. Using an ephemeral session "
+                  + "key; no existing data is touched.")
+            return SymmetricKey(size: .bits256)
+
+        case .absent:
+            // Genuinely first run: nothing to destroy.
+            let fresh = SymmetricKey(size: .bits256)
+            storeRandomKey(fresh, account: randomAccount)
+            archiveKey(fresh, label: "random-v1")
+            return fresh
+        }
     }
 
     /// Load-or-create a Secure-Enclave key-agreement private key and derive a
@@ -290,30 +317,44 @@ enum Crypto {
     /// the operation (we then fall back to the random key).
     private static func secureEnclaveKey() -> SymmetricKey? {
         let priv: SecureEnclave.P256.KeyAgreement.PrivateKey
-        let existingBlob = readBlob(account: seAccount)
 
-        if let blob = existingBlob,
-           let restored = try? SecureEnclave.P256.KeyAgreement.PrivateKey(dataRepresentation: blob) {
-            priv = restored
-        } else if existingBlob != nil {
-            // A key blob EXISTS but will not restore. NEVER mint a replacement
-            // here: `storeBlob` deletes-then-adds, so overwriting would destroy
-            // the only key that can open everything already sealed under it —
-            // silent, total, unrecoverable loss of history (this happened once;
-            // 202 clips were orphaned). Fail closed instead and let the caller
-            // fall back to the legacy random key. Degraded encryption is
-            // recoverable; a destroyed key is not.
-            NSLog("Cliphoard Crypto: SE key blob present but unrestorable — refusing to overwrite it. "
-                  + "Falling back to the legacy key; existing data stays readable.")
+        // Switch on WHICH read outcome occurred. Minting is reachable from exactly one
+        // of the three, and that is the entire safety property of this function.
+        switch readBlobStatus(account: seAccount) {
+
+        case .found(let blob):
+            if let restored = try? SecureEnclave.P256.KeyAgreement.PrivateKey(dataRepresentation: blob) {
+                priv = restored
+            } else {
+                // Present but will not restore. NEVER mint over it: `storeBlob`
+                // deletes-then-adds, so a replacement destroys the only key that opens
+                // everything already sealed. Degraded encryption is recoverable; a
+                // destroyed key is not.
+                NSLog("Cliphoard crypto: SE key blob present but unrestorable — refusing "
+                      + "to overwrite. Falling back to the legacy key; data stays sealed.")
+                return nil
+            }
+
+        case .unavailable(let status):
+            // The key may well be sitting there, perfectly intact, behind a locked
+            // keychain or an ACL this build cannot satisfy. This is the case that
+            // previously looked identical to first run, and minting here is exactly how
+            // a working store becomes unreadable in one launch. Refuse.
+            NSLog("Cliphoard crypto: SE key unreadable (OSStatus \(status)) — this is NOT "
+                  + "first run, so refusing to mint a replacement. Falling back to the "
+                  + "legacy key. Nothing has been overwritten or re-sealed.")
             return nil
-        } else {
-            // No blob at all: first run on this Mac, so minting one destroys nothing.
+
+        case .absent:
+            // Genuinely no item. Only here is minting safe, because there is nothing to
+            // destroy — and `absent` now means precisely errSecItemNotFound, not "any
+            // failure whatsoever".
             do {
                 let fresh = try SecureEnclave.P256.KeyAgreement.PrivateKey()
                 storeBlob(fresh.dataRepresentation, account: seAccount)
                 priv = fresh
             } catch {
-                NSLog("Cliphoard Crypto: SE key create failed: \(error)")
+                NSLog("Cliphoard crypto: SE key create failed: \(error)")
                 return nil
             }
         }
@@ -333,7 +374,30 @@ enum Crypto {
         storeBlob(key.withUnsafeBytes { Data($0) }, account: account)
     }
 
-    private static func readBlob(account: String) -> Data? {
+    /// What a keychain read actually found. The distinction is load-bearing: only
+    /// `.absent` may lead to minting a new key.
+    enum BlobRead {
+        /// The item exists and we read it.
+        case found(Data)
+        /// `errSecItemNotFound` — genuinely not there. This, and ONLY this, means
+        /// first run.
+        case absent
+        /// The item may well exist; this process could not read it (keychain locked,
+        /// access denied, entitlement or ACL mismatch after a re-sign, daemon
+        /// unavailable). Treating this as absence is what destroys a key.
+        case unavailable(OSStatus)
+    }
+
+    /// Reads a key blob, reporting WHICH failure occurred.
+    ///
+    /// This used to collapse every non-success status into `nil`, and that single line
+    /// is how a key gets destroyed. `errSecItemNotFound` and `errSecInteractionNotAllowed`
+    /// became the same value, so a caller asking "is there a key?" could not distinguish
+    /// "no, this is first run" from "yes, but I can't see it right now" — and the mint
+    /// path runs on the first reading while the second means the existing key is about to
+    /// be overwritten. An earlier fix guarded the case where a blob comes back and will
+    /// not restore; it could not guard this one, because here nothing comes back at all.
+    private static func readBlobStatus(account: String) -> BlobRead {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -342,8 +406,26 @@ enum Crypto {
             kSecMatchLimit as String: kSecMatchLimitOne,
         ]
         var out: CFTypeRef?
-        guard SecItemCopyMatching(query as CFDictionary, &out) == errSecSuccess else { return nil }
-        return out as? Data
+        let status = SecItemCopyMatching(query as CFDictionary, &out)
+        switch status {
+        case errSecSuccess:
+            guard let data = out as? Data else { return .unavailable(status) }
+            return .found(data)
+        case errSecItemNotFound:
+            return .absent
+        default:
+            NSLog("Cliphoard crypto: keychain read for \(account) failed with OSStatus "
+                  + "\(status) — treating as PRESENT-BUT-UNREADABLE and refusing to "
+                  + "replace it. Nothing will be re-sealed.")
+            return .unavailable(status)
+        }
+    }
+
+    /// Convenience for callers that genuinely only care about the bytes — never for the
+    /// key-minting decision, which must switch on the status.
+    private static func readBlob(account: String) -> Data? {
+        if case .found(let data) = readBlobStatus(account: account) { return data }
+        return nil
     }
     private static func storeBlob(_ data: Data, account: String) {
         let query: [String: Any] = [

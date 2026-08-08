@@ -93,8 +93,13 @@ final class ClipStore: ObservableObject {
         unreadableClipCount = unreadable
         safeMode = !Crypto.decryptionHealthy || (items.count >= 10 && unreadable * 2 > items.count)
         if safeMode {
-            NSLog("Cliphoard: SAFE MODE — \(unreadable)/\(items.count) clips unreadable. "
-                  + "No migration, re-seal or re-index will run; nothing will be deleted.")
+            let reason = !Crypto.decryptionHealthy
+                ? "the startup canary did not open — this process cannot read what a "
+                  + "previous run wrote"
+                : "\(unreadable)/\(items.count) clips are unreadable"
+            NSLog("Cliphoard: SAFE MODE — \(reason). No migration, re-seal or re-index "
+                  + "will run; nothing will be deleted.")
+            DebugLog.write("SAFE MODE — \(reason)")
             sortStable()
             rebuildTagIndex()
             rebuildUserTagIndex()
@@ -345,8 +350,12 @@ final class ClipStore: ObservableObject {
         item.kind == .image && item.payloadFile != nil && item.ocrText == nil
     }
 
-    /// THE ONLY place `ocrText` is ever assigned. Synchronous from the scan to the
-    /// assignment, with NO `await` between them.
+    /// The only place recognised TEXT is ever assigned. (Two other sites write the empty
+    /// marker — a vetoed clip and an undecryptable payload, both in the pass below — and
+    /// neither has any recognised text to leak; the load initialiser assigns what was
+    /// already stored. Saying "the only assignment" would be false 70 lines down.)
+    ///
+    /// Synchronous from the scan to the assignment, with NO suspension between them.
     ///
     /// That is the whole safety argument, not a style preference. `flags` is mutable and
     /// this is the first thing in the codebase that mutates it after capture; if a
@@ -419,7 +428,20 @@ final class ClipStore: ObservableObject {
         // precisely the bulk mutation safe mode exists to forbid. (Belt and braces: the
         // `init` call site already sits after the safe-mode early return, so this is
         // honoured by construction there — but `add` also schedules.)
-        guard !safeMode, Self.imageUnderstandingEnabled, imageTask == nil else { return }
+        // Logged, because a background pass that silently does nothing is indistinguishable
+        // from a broken one — and counts/reasons are not content, so this is safe to log.
+        func report(_ message: String) {
+            NSLog("Cliphoard images: \(message)")
+            DebugLog.write("images: \(message)")
+        }
+        guard !safeMode else { return report("skipped — SAFE MODE") }
+        guard Self.imageUnderstandingEnabled else {
+            return report("skipped — turned off in Settings")
+        }
+        guard imageTask == nil else { return }   // already running; not worth a line
+        let pending = items.filter(Self.needsImageUnderstanding).count
+        report("pass starting — \(pending) unanalysed of "
+               + "\(items.filter { $0.kind == .image }.count) image clips")
         imageTask = Task { @MainActor [weak self] in
             defer { self?.imageTask = nil; self?.imageProgress = nil }
             // Failures are remembered for THIS LAUNCH only. A transient decrypt failure
@@ -460,6 +482,12 @@ final class ClipStore: ObservableObject {
                     let analyze = ImageUnderstanding.analyze
                     let result = await Task.detached(priority: .utility) { analyze(png) }.value
                     self.applyImageUnderstanding(result, to: item)
+                    // Character COUNT and outcome only — never a character of the text.
+                    // The whole point is that some of this is deliberately not stored;
+                    // logging it would defeat that more thoroughly than storing it.
+                    DebugLog.write("images: \(done + 1)/\(batch.count) — "
+                          + "\((item.ocrText ?? "").isEmpty ? "nothing stored" : "\(item.ocrText!.count) chars")"
+                          + ", print \(result.featurePrint.isEmpty ? "none" : "\(result.featurePrint.count)-d")")
                     await Task.yield()
                 }
             }
@@ -948,14 +976,18 @@ final class ClipStore: ObservableObject {
                 // Recognised image text — this is what lets Exact mode find a screenshot
                 // by a word visible inside it, which is most of the feature's value.
                 //
-                // Note this filter carries NO veto, deliberately and by long-standing
-                // design: a vetoed clip still matches by exact substring, because the veto
-                // is about the MODEL, not about retrieval — the user copied that text and
-                // can see it in the panel. Recognised text is different, because the user
-                // never typed it. What keeps that safe is not a check here but the WRITE:
-                // a withheld result is stored as "" (see ClipItem.ocrText), so this line
-                // can never match one. Gate at the write, and every reader — this one,
-                // `essence`, `smart`, and any future fourth — is safe without knowing why.
+                // This filter carries NO veto, deliberately and by long-standing design:
+                // a vetoed clip still matches by exact substring, because the veto is
+                // about the MODEL, not about retrieval — the user copied that text and can
+                // see it in the panel. Recognised text is different, because the user
+                // never typed it. What keeps it safe is not a check here but the WRITE: a
+                // withheld result is stored as "", and `q` is guaranteed non-empty three
+                // lines up, so `"".contains(q)` is always false.
+                //
+                // Note this reads `ocrText` DIRECTLY, not through `searchText` — unlike
+                // the two ranking paths, which get the same protection via searchText's
+                // empty-to-caption fallback. Same outcome, two different mechanisms; worth
+                // knowing, because changing either one alone would not be obviously wrong.
                 || ($0.ocrText?.lowercased().contains(q) ?? false)
                 || $0.userTags.contains { $0.contains(q) }
             }

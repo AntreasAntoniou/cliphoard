@@ -312,3 +312,16 @@ prompt, with full content — lives in the chronicle ledger; `chron resume` read
 
 - **Why:** {"summary": "stop BLOCKED (no reality verdict)", "plus_ultra": {"mutations": 18}}
 
+
+## [2026-08-08T10:53Z-MQ9D] ARM — Deploy Cliphoard f32cb6a — image understanding (OCR + feature prints) over 7 existing image clips
+
+- **Intent:** First launch adds clips.ocr_text and image_features, then a background pass runs Vision over the 7 existing images, storing recognised text sealed unless the withhold rule refuses it
+- **Reversibility:** R1 — reversible only via a named artifact (snapshot, rollback tag, backup file)
+- **Restore:** `Quit app, copy ~/Documents/Ditto-Rescue-20260807/live-pre-ocr.sqlite over the live store (79 clips, integrity ok). Or in-app: Settings > Forget recognised text. Code: git revert f32cb6a b612e3c`
+- **Verified:** swift test 393/0; snapshot verified ok/79 clips/7 images; withhold rule + purge covered by ImageUnderstandingWiringTests
+
+
+## [2026-08-08T11:09Z-5NVQ] NOTE — plus-ultra: plan verdict recorded
+
+- **Why:** {"summary": "plan verdict recorded", "plus_ultra": {"arbiter": "Athena"}}
+

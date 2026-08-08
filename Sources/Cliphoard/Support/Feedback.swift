@@ -47,7 +47,15 @@ enum DebugLog {
 
     private static let url: URL = {
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        return support.appendingPathComponent("Cliphoard/debug.log")
+        let dir = support.appendingPathComponent("Cliphoard")
+        // The directory was never created, so every write silently failed and the debug
+        // log wrote nowhere — a diagnostic channel that quietly does nothing is worse than
+        // no channel, because it makes absence of evidence look like evidence of absence.
+        // 0700 to match the store directory: this file records what the app was doing.
+        try? FileManager.default.createDirectory(
+            at: dir, withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700])
+        return dir.appendingPathComponent("debug.log")
     }()
 
     static func write(_ message: String) {
