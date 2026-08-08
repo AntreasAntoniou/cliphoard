@@ -466,6 +466,61 @@ final class ClipStore: ObservableObject {
         }
     }
 
+    /// How many clips currently hold recognised text. Drives the Settings count, so the
+    /// user can see what "forget" would actually erase before pressing it.
+    var recognisedImageCount: Int {
+        items.filter { !($0.ocrText ?? "").isEmpty }.count
+    }
+
+    /// Erase every recognised text and print, in memory and on disk.
+    ///
+    /// This is what makes the Settings toggle honest. Turning recognition OFF stops
+    /// future analysis but cannot un-read what was already read; without this button the
+    /// only way to undo it would be deleting the clips themselves.
+    ///
+    /// Rows go back to NULL, not "": if the user re-enables recognition later, they
+    /// should be analysed again rather than being permanently marked "nothing there".
+    func forgetImageUnderstanding() {
+        imageTask?.cancel()
+        imageTask = nil
+        for item in items where item.kind == .image {
+            item.ocrText = nil
+            item.imageFeature = nil
+            // The vector was computed FROM the recognised text, so it has to go too —
+            // otherwise the words remain reachable through semantic search after the
+            // user was told they were forgotten.
+            item.embeddings = [:]
+        }
+        db?.forgetAllImageUnderstanding()
+        for item in items where item.kind == .image {
+            db?.deleteEmbeddings(clipID: item.id)
+        }
+        rebuildTagIndex()
+        imageUnderstandingRevision &+= 1
+        objectWillChange.send()
+    }
+
+    /// Images most visually similar to this one, nearest first.
+    ///
+    /// Cosine on the stored print, which orders the same way as Vision's own distance
+    /// because the print is L2-normalised. Only prints from the SAME revision are
+    /// comparable — revision 1 emits 2048 floats and revision 2 emits 768 — so a
+    /// mismatched row is skipped rather than scored against a different space.
+    func similarImages(to item: ClipItem, limit: Int = 12) -> [ClipItem] {
+        guard let mine = item.imageFeature, !mine.vector.isEmpty else { return [] }
+        return items
+            .filter { $0.id != item.id && !$0.isIndexVetoed }
+            .compactMap { other -> (ClipItem, Float)? in
+                guard let theirs = other.imageFeature,
+                      theirs.revision == mine.revision,
+                      theirs.vector.count == mine.vector.count else { return nil }
+                return (other, ImageUnderstanding.similarity(mine.vector, theirs.vector))
+            }
+            .sorted { $0.1 > $1.1 }
+            .prefix(limit)
+            .map(\.0)
+    }
+
     /// Decrypted image bytes, or nil when the payload is missing or unreadable.
     ///
     /// The nil case is why the caller must store the empty marker explicitly: `Crypto.open`

@@ -180,7 +180,8 @@ struct ContentView: View {
                 focusTags: model.inspectorFocusTags,
                 onPaste: { model.onPaste?(item, false) },
                 onCopy: { model.onCopy?(item) },
-                onClose: { model.closeInspector() }
+                onClose: { model.closeInspector() },
+                onInspectOther: { model.inspect($0) }
             )
         }
     }

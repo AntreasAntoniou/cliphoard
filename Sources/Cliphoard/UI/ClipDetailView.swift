@@ -10,6 +10,9 @@ struct ClipDetailView: View {
     var onPaste: () -> Void
     var onCopy: () -> Void
     var onClose: () -> Void
+    /// Navigate the inspector to another clip. Optional so the "similar images" strip
+    /// degrades to plain thumbnails rather than dead buttons if a caller does not wire it.
+    var onInspectOther: ((ClipItem) -> Void)? = nil
 
     @State private var newTag = ""
 
@@ -33,6 +36,8 @@ struct ClipDetailView: View {
                 VStack(alignment: .leading, spacing: 18) {
                     header
                     content
+                    recognisedText
+                    similarImages
                     metadata
                     tagsSection.id("tags")
                     actions
@@ -98,6 +103,71 @@ struct ClipDetailView: View {
               let stored = try? Data(contentsOf: store.storeDirectory.appendingPathComponent(file)),
               let opened = Crypto.open(stored) else { return nil }
         return NSImage(data: opened)
+    }
+
+    /// If recognised text is searchable, the user must be able to SEE it. A hidden
+    /// derived field that silently governs what search finds is the thing this whole
+    /// feature had to avoid — and someone who can read it can also tell us it is wrong.
+    @ViewBuilder private var recognisedText: some View {
+        if item.kind == .image, let ocr = item.ocrText {
+            GroupBox("Recognised text") {
+                if ocr.isEmpty {
+                    // Says which of the two empty cases this is, because "nothing found"
+                    // and "we refused to store it" mean very different things to a user
+                    // who just screenshotted something sensitive.
+                    Text(item.isIndexVetoed || !item.flags.isDisjoint(with: ClipItem.ocrWithholdFlags)
+                         ? "Not stored — this image looked like it contained a secret, "
+                           + "one-time code, payment detail or address."
+                         : "No text found in this image.")
+                        .font(.caption).foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                    Text(ocr)
+                        .font(.system(size: 12, design: .monospaced))
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder private var similarImages: some View {
+        let similar = store.similarImages(to: item, limit: 8)
+        if !similar.isEmpty {
+            GroupBox("Similar images") {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(similar, id: \.id) { other in
+                            if let onInspectOther {
+                                Button { onInspectOther(other) } label: { thumbnail(for: other) }
+                                    .buttonStyle(.plain)
+                                    .accessibilityLabel(
+                                        "Similar image from \(other.sourceApp ?? "an unknown app"), "
+                                        + "copied \(other.createdAt.formatted(date: .abbreviated, time: .shortened))")
+                            } else {
+                                thumbnail(for: other)
+                                    .accessibilityLabel(
+                                        "Similar image from \(other.sourceApp ?? "an unknown app")")
+                            }
+                        }
+                    }
+                    .padding(.vertical, 2)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder private func thumbnail(for other: ClipItem) -> some View {
+        if let file = other.payloadFile,
+           let stored = try? Data(contentsOf: store.storeDirectory.appendingPathComponent(file)),
+           let opened = Crypto.open(stored), let image = NSImage(data: opened) {
+            Image(nsImage: image).resizable().aspectRatio(contentMode: .fill)
+                .frame(width: 72, height: 72).clipShape(RoundedRectangle(cornerRadius: 6))
+        } else {
+            RoundedRectangle(cornerRadius: 6).fill(Theme.t.tagFill)
+                .frame(width: 72, height: 72)
+                .overlay(Image(systemName: "photo").foregroundStyle(.secondary))
+        }
     }
 
     private var metadata: some View {

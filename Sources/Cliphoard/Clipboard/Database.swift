@@ -445,6 +445,23 @@ final class Database {
         return ok
     }
 
+    /// Erase every recognised text and every perceptual print, then compact.
+    ///
+    /// The VACUUM is not housekeeping: this file's own standard is that content-derived
+    /// bytes must not linger in free pages, and recognised text is content. Without it,
+    /// "forget" would leave the words recoverable in unallocated space — a delete button
+    /// that does not delete, which is worse than no button.
+    ///
+    /// Sets the column to NULL rather than "": NULL means "never analysed", so if the
+    /// user later re-enables recognition the pass picks these up again. "" would mean
+    /// "analysed, nothing there" and would make the erasure permanent in a way the user
+    /// did not ask for.
+    func forgetAllImageUnderstanding() {
+        exec("UPDATE clips SET ocr_text=NULL;")
+        exec("DELETE FROM image_features;")
+        vacuum()
+    }
+
     /// All stored prints, by clip. Read once at load, like the vector cache.
     func loadImageFeatures() -> [String: (revision: Int, vector: [Float])] {
         var out: [String: (revision: Int, vector: [Float])] = [:]

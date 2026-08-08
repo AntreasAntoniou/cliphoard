@@ -14,6 +14,16 @@ final class AppSettings: ObservableObject {
     @Published var historyLimit: Int { didSet { store.historyLimit = historyLimit } }
     @Published var launchAtLogin: Bool { didSet { LoginItem.set(launchAtLogin) } }
     @Published var activateOnSummon: Bool { didSet { UserDefaults.standard.set(activateOnSummon, forKey: "activateOnSummon") } }
+    /// Turning this ON schedules the pass immediately, so the setting takes effect while
+    /// the user is still looking at it. Turning it OFF stops FUTURE recognition but does
+    /// not erase what was already read — that is what "Forget" is for, and PRIVACY.md
+    /// says so explicitly rather than letting the toggle imply more than it does.
+    @Published var imageUnderstanding: Bool {
+        didSet {
+            ClipStore.imageUnderstandingEnabled = imageUnderstanding
+            if imageUnderstanding { store.scheduleImageUnderstanding() }
+        }
+    }
     @Published var themePreset: ThemePreset { didSet { Theme.preset = themePreset } }
     @Published var layoutMode: LayoutMode { didSet { Theme.layout = layoutMode } }
     @Published var searchMode: SearchMode {
@@ -64,6 +74,19 @@ final class AppSettings: ObservableObject {
         if activeBasket == "custom" { store.rebuildTagIndex() }
     }
 
+    /// Shows the user what "Forget" would actually erase, before they press it. A
+    /// destructive button with no stated scope invites either paralysis or regret.
+    var imageUnderstandingStatus: String {
+        let n = store.recognisedImageCount
+        if let progress = store.imageProgress, progress.total > 0 {
+            return "Reading images… \(progress.done)/\(progress.total)"
+        }
+        return n == 0 ? "No text read from images yet"
+                      : "Text read from \(n) image\(n == 1 ? "" : "s")"
+    }
+
+    func forgetImageUnderstanding() { store.forgetImageUnderstanding() }
+
     init(store: ClipStore) {
         self.store = store
         soundEnabled = Feedback.soundEnabled
@@ -72,6 +95,7 @@ final class AppSettings: ObservableObject {
         historyLimit = store.historyLimit
         launchAtLogin = LoginItem.enabled
         activateOnSummon = UserDefaults.standard.bool(forKey: "activateOnSummon")
+        imageUnderstanding = ClipStore.imageUnderstandingEnabled
         themePreset = Theme.preset
         layoutMode = Theme.layout
         searchMode = DeepSearch.mode
@@ -145,6 +169,27 @@ struct SettingsView: View {
                     }
                     Text(settings.layoutMode.subtitle)
                         .font(.system(size: 11)).foregroundStyle(.secondary)
+                }
+
+                section("Images") {
+                    Toggle("Read text in images", isOn: $settings.imageUnderstanding)
+                    // Deliberately says what it does AND what it refuses, because the
+                    // difference is the whole reason this is defensible. Claims nothing
+                    // the code does not deliver — the authenticator-code gap is stated in
+                    // PRIVACY.md rather than glossed here.
+                    Text("Reads text inside your images on this Mac so you can search "
+                         + "screenshots, and finds visually similar images. Stored "
+                         + "encrypted, never sent anywhere. Text that looks like a "
+                         + "password, key, one-time code, card or bank detail, or a "
+                         + "postal address is not stored at all.")
+                        .font(.system(size: 11)).foregroundStyle(.secondary)
+                    HStack {
+                        Text(settings.imageUnderstandingStatus)
+                            .font(.system(size: 11)).foregroundStyle(.secondary)
+                        Spacer()
+                        Button("Forget recognised text") { settings.forgetImageUnderstanding() }
+                            .disabled(store.recognisedImageCount == 0)
+                    }
                 }
 
                 section("Sound") {

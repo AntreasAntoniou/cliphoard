@@ -65,8 +65,13 @@ final class PanelViewModel: ObservableObject {
     ///
     /// The store revision proxy is `(items.count, lastAddedID)`: adds and
     /// removes change the count (and adds also bump `lastAddedID`), so they
-    /// invalidate the cache. Known minor limitation: an in-place mutation that
-    /// leaves both the count and `lastAddedID` untouched is not detected.
+    /// invalidate the cache.
+    ///
+    /// That pair is not sufficient on its own — an in-place mutation touching neither
+    /// goes undetected — and image recognition is exactly such a mutation: it rewrites an
+    /// existing clip's searchable text without adding or removing anything. Without
+    /// `imageRevision` here, a screenshot stays unfindable until the next copy, and the
+    /// whole feature reads as broken. Hence a real counter rather than another proxy.
     private struct ResultsKey: Equatable {
         let query: String
         let activeKind: ClipKind?
@@ -77,6 +82,7 @@ final class PanelViewModel: ObservableObject {
         let mode: SearchMode
         let itemCount: Int
         let lastAddedID: UUID?
+        let imageRevision: Int
     }
 
     private var cachedResultsKey: ResultsKey?
@@ -93,7 +99,8 @@ final class PanelViewModel: ObservableObject {
             userTags: activeUserTags,
             mode: DeepSearch.mode,
             itemCount: store.items.count,
-            lastAddedID: store.lastAddedID
+            lastAddedID: store.lastAddedID,
+            imageRevision: store.imageUnderstandingRevision
         )
         if key == cachedResultsKey { return cachedResults }
 

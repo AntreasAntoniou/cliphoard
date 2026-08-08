@@ -11,12 +11,52 @@ stored **locally** on your Mac, under:
 ```
 ~/Library/Application Support/Ditto/
   ditto.sqlite        clipboard history (text, links, colors, file references), encrypted
+                      — including text read out of images (see below), encrypted
   *.png               image clips and their thumbnails, encrypted at rest
 ```
 
 Semantic-search embeddings are computed **on-device** (Apple CoreML) and stored in
 the same local database. No clipboard content, embedding, or usage data is ever
 transmitted anywhere.
+
+## Reading text inside images
+
+**Cliphoard reads the text inside your images so you can search them.** If you copy a
+screenshot, a chart, or a photo of a document, Cliphoard uses Apple's Vision framework —
+entirely on your Mac, with no network involved — to recognise any text in it. That text
+is then searchable exactly like a text clip, and is stored encrypted alongside it. It
+also computes a *perceptual fingerprint* of the image so it can show you visually similar
+images; that fingerprint is a list of numbers, not a picture and not words, and it is
+encrypted too.
+
+We want to be plain about why this matters, because it is a real change and not a
+cosmetic one. **A screenshot's contents are unreadable to search until they are
+recognised, and searchable afterwards.** If you screenshot a password manager, a banking
+page, or someone else's private message, recognition is what would make those words
+findable. So Cliphoard refuses to store recognised text when it looks like:
+
+- a credential, API key, or private key
+- a high-entropy string that *might* be a secret even if it matches no known format
+- a one-time code
+- payment-card or bank details
+- a full postal address
+
+In those cases the image is still kept, still pastable, still visible in your history —
+Cliphoard simply does not write down what it read, so the words never become searchable
+and never reach the search model. Images copied from apps on your exclusion list are
+never analysed at all.
+
+**Two honest limitations.** First, recognition is imperfect: if a character is misread,
+a credential may no longer match the patterns above, which is why the high-entropy rule
+is deliberately broad. Second, the one-time-code detector cannot recognise the format
+used by authenticator apps (a code shown as two short groups, like `482 913`, with no
+surrounding words), so those are not reliably withheld — treat authenticator screenshots
+as you would any other secret.
+
+You can turn this off entirely in **Settings → Read text in images**, and **Forget
+recognised text** deletes everything that has already been read, in one action. Turning
+it off stops all future recognition; it does not by itself erase what was already read,
+which is what the Forget button is for.
 
 ## Encryption
 
