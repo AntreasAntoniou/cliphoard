@@ -215,7 +215,7 @@ Poll 0.4 s / tolerance 0.1 / `.common`. Panel `barHeight 380`, level `.mainMenu+
 4. **Bundle** (`Scripts/build-app.sh`) — compiles every `tools/models/*.mlpackage` to `.mlmodelc` into `Cliphoard.app/Contents/Resources`, and copies each model's `tokenizer.json`/`config.json`/`tokenizer_config.json` into a `<name>-tokenizer/` folder (remapping `tokenizer_class`→`T5Tokenizer`).
 5. **Load at runtime** — `EmbedderProvider.configure(level:)` resolves `<name>.mlmodelc` + `<name>-tokenizer` from the bundle; on success uses `OgmaEmbedder` (CoreML), else falls back to `HashingEmbedder`. The Swift `OgmaTokenizer` reproduces ogma's Unigram pipeline (metaspace `▁`, `+n_special_tokens` offset) so token ids match the Python reference exactly.
 
-Model tiers: low `axiotic/ogma-micro` (2.3M, 128-dim) · normal `axiotic/ogma-small` (8.6M, 256-dim, default) · high `google/embeddinggemma-300m` (300M, 768-dim, gated). Each `OgmaEmbedder` has a `signature` (`"<name>-<dim>"`); vectors/tags are only comparable within one signature, which is why the per-model cache and the `hashing-256` fallback are kept separate.
+Model tiers: low `axiotic/ogma-micro` (2.3M, 128-dim) · normal `axiotic/ogma-small` (8.6M, 256-dim, default) · high `sentence-transformers/all-MiniLM-L6-v2` (22.7M, 384-dim, Apache-2.0, downloads on demand). A `max` tier on `google/embeddinggemma-300m` was retired on licensing grounds — see THIRD-PARTY-NOTICES.md. Each `OgmaEmbedder` has a `signature` (`"<name>-<dim>"`); vectors/tags are only comparable within one signature, which is why the per-model cache and the `hashing-256` fallback are kept separate.
 
 ---
 

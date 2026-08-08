@@ -93,6 +93,19 @@ final class HFTierTests: XCTestCase {
         XCTAssertEqual(DeepSearch.level, .high)
     }
 
+    /// Rehomed from the deleted Gemma prompt test. These two compiled fine without
+    /// the retired tier and were dropped with it by accident, leaving nothing in the
+    /// suite asserting either property while `DeepSearch.swift` still feeds both into
+    /// `HFEmbedder`. Near-tautological today — every shipped tier is symmetric, so
+    /// both are unconditional `""` — which is exactly the point: if a future
+    /// asymmetric tier sets a prefix, that has to be a deliberate edit here.
+    func testShippedTiersAreSymmetricAndUsePrefixlessPrompts() {
+        for level in DeepSearchLevel.allCases {
+            XCTAssertEqual(level.queryPrefix, "", "\(level.rawValue) grew a query prefix")
+            XCTAssertEqual(level.docPrefix, "", "\(level.rawValue) grew a doc prefix")
+        }
+    }
+
     func testCalibratedFloors() {
         XCTAssertEqual(DeepSearchLevel.high.hfRelevanceFloor, 0.20, accuracy: 0.001)
     }

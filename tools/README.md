@@ -9,7 +9,7 @@ CoreML for on-device deep search. Both ogma models convert with **exact parity**
 |--------|-----------------------------|-------|-----|----------------------|
 | low    | `axiotic/open-ogma-micro`   | 128-d | 384 | raw SP, 30k + byte fallback |
 | normal | `axiotic/open-ogma-small`   | 256-d | 384 | raw SP, 30k + byte fallback |
-| high   | `google/embeddinggemma-300m` (gated) | — | 768 | — |
+| high   | `sentence-transformers/all-MiniLM-L6-v2` (Apache-2.0, downloads on demand) | — | 384 | — |
 
 Both open-ogma packages emit BOTH heads per prediction: `embedding` (384-d
 proj_small, distilled from `BAAI/bge-small-en-v1.5`) and `embedding_large`

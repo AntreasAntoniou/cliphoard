@@ -37,7 +37,10 @@ ROOT="$(cd .. && pwd)"
 # Default set of models to restore. Keep in sync with Scripts/build-app.sh /
 # Sources/Cliphoard/Search/DeepSearch.swift (low → open-ogma-micro,
 # normal → open-ogma-small).
-MODELS="${MODELS:-open-ogma-micro open-ogma-small all-MiniLM-L6-v2 embeddinggemma-300m}"
+# embeddinggemma-300m is deliberately absent: that tier was retired on licensing
+# grounds (see THIRD-PARTY-NOTICES.md). Passing MODELS= explicitly still fetches it
+# for conversion work, but no default path pulls Gemma-licensed weights any more.
+MODELS="${MODELS:-open-ogma-micro open-ogma-small all-MiniLM-L6-v2}"
 HF_REPO_PREFIX="${HF_REPO_PREFIX:-axiotic}"
 
 mkdir -p models

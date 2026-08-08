@@ -44,19 +44,27 @@ fi
 # Deep-search models (best effort). Compile any converted CoreML packages in
 # tools/models to .mlmodelc and bundle them + their tokenizer so on-device
 # embedding works. Absent → the app falls back to the built-in HashingEmbedder.
-# BUNDLE_MODELS: space-separated tier models to bundle (default: all present).
-# Release builds set a lean list — the app AUTO-DOWNLOADS any selected tier
-# whose model isn't bundled (ModelAssets.ensure, GitHub release models-v1).
+# BUNDLE_MODELS: space-separated tier models to bundle. The DEFAULT is the lean
+# MIT set below, deliberately NOT "everything present in tools/models".
+#
+# It used to default to everything, which made the allowlist a per-caller opt-in:
+# Scripts/deploy-local.sh and Scripts/release.sh remembered to set it, `make app`
+# did not, so one target still shipped a 409 MB bundle carrying a model the app no
+# longer even has a tier for. A safety rule that only holds when every caller
+# remembers it is not a safety rule. Defaulting closed means a new caller inherits
+# the safe behaviour and must opt IN to bundling anything heavier.
+#
+# Anything not bundled AUTO-DOWNLOADS on demand when its tier is selected
+# (ModelAssets.ensure), verified against a pinned SHA-256 and refused on mismatch.
+BUNDLE_MODELS="${BUNDLE_MODELS:-open-ogma-small open-ogma-micro}"
 if ls "$ROOT"/tools/models/*.mlpackage >/dev/null 2>&1; then
     echo "▸ Bundling embedding models…"
     for pkg in "$ROOT"/tools/models/*.mlpackage; do
         name="$(basename "$pkg" .mlpackage)"
-        if [ -n "${BUNDLE_MODELS:-}" ]; then
-            case " $BUNDLE_MODELS " in
-                *" $name "*) ;;
-                *) echo "  · $name skipped (not in BUNDLE_MODELS — auto-downloads on demand)"; continue ;;
-            esac
-        fi
+        case " $BUNDLE_MODELS " in
+            *" $name "*) ;;
+            *) echo "  · $name not bundled (downloads on demand if its tier is chosen)"; continue ;;
+        esac
         xcrun coremlcompiler compile "$pkg" "$APP/Contents/Resources" 2>/dev/null \
             && echo "  • $name.mlmodelc"
         # bundle the tokenizer as a folder <name>-tokenizer/ with the two files

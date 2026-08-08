@@ -8,9 +8,16 @@ percentile of non-gold cosines — how cleanly true hits separate from noise
 
 Measured 2026-07-22 on hestia (M-series, CPU, PyTorch fp32).
 
+The EmbeddingGemma row is kept because it is a real measurement and deleting it would
+falsify the record — but that tier was **retired on licensing grounds** and is not
+shipped or redistributed. Note what the numbers actually say: it won top-1, yet
+all-MiniLM-L6-v2 has by far the best *margin* (0.295 vs 0.223) at 7% of the parameters,
+and margin is what the app thresholds on. Dropping the tier cost less than the top-1
+column suggests.
+
 | model | params | dim | top-1 | top-3 | margin | license |
 |---|---|---|---|---|---|---|
-| embeddinggemma-300m | 307.6M | 768 | **20/21** | 21/21 | 0.223 | Gemma ToU |
+| ~~embeddinggemma-300m~~ *(RETIRED — not shipped)* | 307.6M | 768 | **20/21** | 21/21 | 0.223 | Gemma ToU |
 | bge-large-en-v1.5 *(proj_large teacher)* | 335.1M | 1024 | 20/21 | 21/21 | 0.130 | MIT |
 | bge-small-en-v1.5 *(proj_small teacher)* | 33.4M | 384 | 19/21 | 21/21 | 0.113 | MIT |
 | all-MiniLM-L6-v2 | 22.7M | 384 | 19/21 | 21/21 | **0.295** | Apache-2.0 |

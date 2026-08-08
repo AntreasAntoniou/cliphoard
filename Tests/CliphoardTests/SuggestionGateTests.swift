@@ -175,9 +175,11 @@ final class SuggestionGateTests: XCTestCase {
         XCTAssertEqual(SemanticRanker.calibratedRelevanceFloor(forSignature: "all-MiniLM-L6-v2-384-v1"),
                        DeepSearchLevel.high.hfRelevanceFloor, accuracy: 0.001)
         // A store written by a build that still had the Gemma tier keeps vectors
-        // under this signature. It no longer matches any tier, so it must land on
-        // the historical hashing calibration — NOT on zero, which would let stale
-        // vectors match everything, and not on a crash.
+        // under this signature. It no longer matches any tier, so it lands on the
+        // historical hashing calibration. Note honestly which way that moves: the
+        // floor DROPS 0.30 → 0.20, so such vectors become MORE permissive, not less.
+        // What is pinned here is that it lands on a real floor rather than on zero
+        // (which would let stale vectors match everything) or on a crash.
         XCTAssertEqual(SemanticRanker.calibratedRelevanceFloor(forSignature: "embeddinggemma-300m-768-v1"),
                        0.20, accuracy: 0.001)
         XCTAssertEqual(SemanticRanker.calibratedRelevanceFloor(forSignature: "hashing-256"),
