@@ -23,15 +23,17 @@ final class KeychainReadStatusTests: XCTestCase {
         let absent = Crypto.BlobRead.absent
         let unavailable = Crypto.BlobRead.unavailable(errSecInteractionNotAllowed)
 
-        func isMintable(_ r: Crypto.BlobRead) -> Bool {
-            if case .absent = r { return true }
-            return false
-        }
-        XCTAssertTrue(isMintable(absent), "genuine absence is first run and MUST mint")
-        XCTAssertFalse(isMintable(found), "a present key must never be minted over")
-        XCTAssertFalse(isMintable(unavailable),
+        // Calls the PRODUCTION predicate, not a copy of it. A review found that the
+        // earlier version re-declared this switch locally, which meant restoring the
+        // original bug in the real code would have left this file passing.
+        XCTAssertTrue(Crypto.mayMintNewKey(after: absent),
+                      "genuine absence is first run and MUST still mint, or no new user "
+                      + "can ever encrypt anything")
+        XCTAssertFalse(Crypto.mayMintNewKey(after: found),
+                       "a present key must never be minted over")
+        XCTAssertFalse(Crypto.mayMintNewKey(after: unavailable),
                        "an UNREADABLE key must never be minted over — this is the case "
-                       + "that cost 202 clips, twice")
+                       + "that cost 202 clips, and then 8 more")
     }
 
     /// The statuses that mean "present but unreadable" are real and distinct from
@@ -89,15 +91,10 @@ final class KeychainReadStatusTests: XCTestCase {
     /// loss and break every new install, and would pass every test above. This asserts
     /// the mint path is still reachable.
     func testFirstRunCanStillMint() {
-        var minted = false
-        // Mirrors the production switch exactly.
-        switch Crypto.BlobRead.absent {
-        case .found: XCTFail("unreachable")
-        case .unavailable: XCTFail("absence must not be reported as unavailable")
-        case .absent: minted = true
-        }
-        XCTAssertTrue(minted, "first run must still be able to create a key, or no new "
-                      + "user can ever encrypt anything")
+        XCTAssertTrue(Crypto.mayMintNewKey(after: Crypto.classify(errSecItemNotFound, data: nil)),
+                      "first run must still be able to create a key, or no new user can "
+                      + "ever encrypt anything — a fix that refused everything would stop "
+                      + "the data loss and break every new install")
     }
 
     /// The renamed-app case must be treated as RECOVERABLE, not as absence and not as
@@ -109,18 +106,29 @@ final class KeychainReadStatusTests: XCTestCase {
         XCTAssertNotEqual(errSecInteractionNotAllowed, errSecItemNotFound,
                           "if these are ever treated alike, a key gets minted over a live one")
 
-        // Mirrors the production classification.
-        func classify(_ status: OSStatus) -> String {
-            switch status {
-            case errSecSuccess: return "found"
-            case errSecItemNotFound: return "absent"
-            default: return "unavailable"
+        // The PRODUCTION classifier. Every status that is not literally not-found must
+        // classify as unavailable, and unavailable must never be mintable.
+        let bytes = Data(repeating: 9, count: 32)
+        for status in [errSecInteractionNotAllowed, errSecAuthFailed, errSecInDarkWake,
+                       errSecMissingEntitlement, errSecNotAvailable, errSecReadOnly] {
+            let read = Crypto.classify(status, data: nil)
+            guard case .unavailable = read else {
+                return XCTFail("OSStatus \(status) classified as \(read) — anything other "
+                               + "than unavailable puts it on the mint path")
             }
+            XCTAssertFalse(Crypto.mayMintNewKey(after: read),
+                           "OSStatus \(status) became mintable — this is the exact defect")
         }
-        XCTAssertEqual(classify(errSecInteractionNotAllowed), "unavailable")
-        XCTAssertEqual(classify(errSecAuthFailed), "unavailable")
-        XCTAssertEqual(classify(errSecItemNotFound), "absent")
-        XCTAssertEqual(classify(errSecSuccess), "found")
+        guard case .absent = Crypto.classify(errSecItemNotFound, data: nil) else {
+            return XCTFail("not-found must classify as absent, or first run breaks")
+        }
+        guard case .found = Crypto.classify(errSecSuccess, data: bytes) else {
+            return XCTFail("a successful read with data must classify as found")
+        }
+        // Success WITHOUT data is not a find — it is a malformed result, and treating it
+        // as absence would mint.
+        XCTAssertFalse(Crypto.mayMintNewKey(after: Crypto.classify(errSecSuccess, data: nil)),
+                       "a success with no data must not be mintable")
     }
 
     /// The user-facing distinction must exist at all. A frozen, empty window with no

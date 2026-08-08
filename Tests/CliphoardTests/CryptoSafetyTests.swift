@@ -75,6 +75,21 @@ final class CryptoSafetyTests: XCTestCase {
     /// key must not reduce the ring.
     func testArchivingIsAdditiveAndIdempotent() {
         let k = SymmetricKey(size: .bits256)
+        // CLEANS UP AFTER ITSELF. This test writes to the REAL keychain service, and
+        // archive labels now carry a fingerprint of the key material, so every run used
+        // to leave behind a fresh item that nothing ever removed. A review found twenty
+        // of them accumulated — all loaded onto the production recovery ring at every app
+        // launch, and tried against every unreadable row. A test that permanently degrades
+        // the thing it tests is worse than no test.
+        addTeardownBlock {
+            let fingerprint = SHA256.hash(data: k.withUnsafeBytes { Data($0) })
+                .prefix(8).map { String(format: "%02x", $0) }.joined()
+            SecItemDelete([
+                kSecClass as String: kSecClassGenericPassword,
+                kSecAttrService as String: "ai.axiotic.ditto",
+                kSecAttrAccount as String: "db-archived-key-unit-test-key-" + fingerprint,
+            ] as CFDictionary)
+        }
         Crypto.archiveKey(k, label: "unit-test-key")
         Crypto.archiveKey(k, label: "unit-test-key")
         // No crash, no throw, and the live ring still opens current data.
@@ -86,8 +101,25 @@ final class CryptoSafetyTests: XCTestCase {
 
     /// The canary must round-trip under the current key. If this ever fails on a
     /// real machine, safe mode engages and no migration runs.
-    func testCanaryRoundTripsUnderTheCurrentKey() {
-        XCTAssertTrue(Crypto.verifyCanary())
+    func testCanaryRoundTripsUnderTheCurrentKey() throws {
+        // SKIPS, rather than fails, when this process cannot reach the keychain at all —
+        // a Mac in dark wake, a locked keychain, a closed lid, an unattended CI runner.
+        // The canary asks "can I read what a previous run wrote?", and when the keychain
+        // itself is unreachable the honest answer is "unknown", not "no". Asserting a
+        // round-trip there would be asserting something about the environment.
+        //
+        // This distinction is the whole reason `verifyCanary` was changed to report
+        // unhealthy on an unreadable read: it used to overwrite the canary and claim
+        // health in exactly this situation, which is when it mattered most.
+        // Seal/open is NOT a reachability probe — it succeeds with an ephemeral session
+        // key even when the keychain is completely unreachable, which is precisely the
+        // degraded state this needs to detect. The flag the read path sets is the signal.
+        let roundTripped = Crypto.verifyCanary()
+        try XCTSkipIf(Crypto.keychainAccessDenied,
+                      "keychain unreachable in this process (dark wake / locked / lid "
+                      + "closed) — the canary's answer is 'unknown', not 'no'")
+
+        XCTAssertTrue(roundTripped, "the canary must round-trip under the current key")
         XCTAssertTrue(Crypto.decryptionHealthy)
     }
 

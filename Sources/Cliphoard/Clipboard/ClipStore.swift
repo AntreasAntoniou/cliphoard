@@ -91,7 +91,18 @@ final class ClipStore: ObservableObject {
         // not model. Refuse to run migrations rather than guess.
         let unreadable = items.filter { Crypto.isSealed($0.text) }.count
         unreadableClipCount = unreadable
-        safeMode = !Crypto.decryptionHealthy || (items.count >= 10 && unreadable * 2 > items.count)
+        // The canary answers "can this process read what a previous run wrote?" — but it
+        // is evidence ABOUT THIS STORE only when this store actually has something it
+        // cannot read. If every row opens, the key plainly works here, whatever happened
+        // to the canary item itself; freezing then would refuse to run over a keychain
+        // hiccup that demonstrably did not affect the data.
+        //
+        // So the canary gates when it is unhealthy AND at least one row confirms it, and
+        // the ratio gate stays independent for the converse case the canary cannot model:
+        // the canary opens but the rows do not.
+        let canaryContradictedByData = !Crypto.decryptionHealthy && unreadable > 0
+        safeMode = canaryContradictedByData
+            || (items.count >= 10 && unreadable * 2 > items.count)
         if safeMode {
             let reason = !Crypto.decryptionHealthy
                 ? "the startup canary did not open — this process cannot read what a "

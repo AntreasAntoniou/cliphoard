@@ -71,10 +71,40 @@ say "Version $VERSION"
 # 2. Developer ID signing with the Hardened Runtime (required for notarization).
 if [[ -n "$DEVID" ]]; then
     say "Signing with Developer ID + Hardened Runtime…"
+
+    # Expand the keychain access group BEFORE signing.
+    #
+    # The entitlements file carries `$(AppIdentifierPrefix)io.antreas.cliphoard`, which is
+    # an XCODE build-setting substitution. `codesign --entitlements` performs no variable
+    # expansion whatsoever — it embeds the bytes it is given. Signing the file as written
+    # would bake in the literal string `$(AppIdentifierPrefix)…`, which can never match a
+    # real group, so the data-protection keychain would stay unavailable and the app would
+    # silently keep using the legacy keychain. The fix would look applied and do nothing:
+    # exactly the failure family this release is about.
+    TEAM_ID="$(printf '%s' "$DEVID" | sed -n 's/.*(\([A-Z0-9]\{10\}\))$/\1/p')"
+    if [[ -z "$TEAM_ID" ]]; then
+        echo "ERROR: could not extract a 10-character Team ID from signing identity:" >&2
+        echo "         $DEVID" >&2
+        echo "       The keychain-access-group entitlement would be signed as an inert" >&2
+        echo "       placeholder and the data-protection keychain would never activate." >&2
+        echo "       Refusing to ship a signature that silently does nothing." >&2
+        exit 1
+    fi
+    EXPANDED_ENTITLEMENTS="$(mktemp -t cliphoard-entitlements).plist"
+    sed "s/\$(AppIdentifierPrefix)/${TEAM_ID}./g" "$ENTITLEMENTS" > "$EXPANDED_ENTITLEMENTS"
+    plutil -lint "$EXPANDED_ENTITLEMENTS" >/dev/null
+    say "Keychain access group: ${TEAM_ID}.io.antreas.cliphoard"
+
     # Cliphoard is a single Mach-O (static SwiftPM binary); .mlmodelc are data, not code.
     codesign --force --options runtime --timestamp \
-             --entitlements "$ENTITLEMENTS" \
+             --entitlements "$EXPANDED_ENTITLEMENTS" \
              --sign "$DEVID" "$APP"
+    # Prove the expansion actually landed, rather than trusting the sed.
+    if codesign -d --entitlements - "$APP" 2>/dev/null | grep -q 'AppIdentifierPrefix'; then
+        echo "ERROR: the signed bundle still contains an unexpanded \$(AppIdentifierPrefix)." >&2
+        exit 1
+    fi
+    rm -f "$EXPANDED_ENTITLEMENTS"
     codesign --verify --strict --verbose=2 "$APP"
     say "Gatekeeper assessment:"
     spctl --assess --type execute --verbose=4 "$APP" || warn "spctl will pass only AFTER notarization."

@@ -331,9 +331,27 @@ enum Crypto {
     /// BEFORE any migration.
     @discardableResult
     static func verifyCanary() -> Bool {
-        guard let stored = readBlob(account: canaryAccount),
+        // Switch on WHY the read failed. Reading through the collapse-to-nil helper made
+        // this check defeat itself: under a keychain denial the read returned nothing, the
+        // code took the first-run branch, OVERWROTE the canary under whatever key it had,
+        // and declared decryption healthy — in the one situation the canary exists to
+        // detect. A health check that reports health precisely when it cannot see is
+        // worse than no health check, because everything downstream trusts it.
+        let read = readBlobStatus(account: canaryAccount)
+
+        if case .unavailable(let status) = read {
+            decryptionHealthy = false
+            NSLog("Cliphoard crypto: CANARY UNREADABLE (OSStatus \(status)) — this process "
+                  + "cannot reach its own keychain. Entering safe mode; nothing will be "
+                  + "migrated, re-sealed or deleted, and the canary is NOT overwritten.")
+            DebugLog.write("crypto: canary unreadable, OSStatus \(status) — safe mode")
+            return false
+        }
+
+        guard case .found(let stored) = read,
               let sealedText = String(data: stored, encoding: .utf8) else {
-            // First run (or canary lost): establish one under the current key.
+            // Genuinely absent: first run, or the canary was lost. Establishing one now
+            // destroys nothing, because there is nothing there.
             if let sealed = sealStrict(canaryPlaintext),
                let data = sealed.data(using: .utf8) {
                 storeBlob(data, account: canaryAccount)
@@ -448,12 +466,44 @@ enum Crypto {
 
     // MARK: Keychain helpers
 
-    private static func readRandomKey(account: String) -> SymmetricKey? {
-        guard let data = readBlob(account: account), data.count == 32 else { return nil }
-        return SymmetricKey(data: data)
-    }
+    // `readRandomKey` was deleted here. It had no callers, and it carried the exact
+    // collapse-every-failure-to-nil pattern that cost 210 clips — one call site away from
+    // reintroducing the bug, sitting in the file that exists to prevent it. Dead code
+    // that encodes a retired mistake is a loaded gun, not clutter.
+
     private static func storeRandomKey(_ key: SymmetricKey, account: String) {
         storeBlob(key.withUnsafeBytes { Data($0) }, account: account)
+    }
+
+    /// Classify a raw keychain status. Extracted from `readBlobStatus` and made
+    /// `internal` for ONE reason: so a test can assert the real mapping instead of a copy
+    /// of it.
+    ///
+    /// Before this existed, every test on this logic re-declared the switch locally and
+    /// asserted about its own copy — which meant that changing the production `default:`
+    /// branch to report "absent", restoring the exact bug that cost 210 clips, would have
+    /// left the whole file passing. A test that mirrors the code cannot detect the code
+    /// changing.
+    static func classify(_ status: OSStatus, data: Data?) -> BlobRead {
+        switch status {
+        case errSecSuccess:
+            guard let data else { return .unavailable(status) }
+            return .found(data)
+        case errSecItemNotFound:
+            return .absent
+        default:
+            return .unavailable(status)
+        }
+    }
+
+    /// Whether a classification may lead to CREATING and PERSISTING a new key.
+    ///
+    /// The single most consequential predicate in the product, and now callable. Only a
+    /// genuine absence qualifies: an unreadable key is somebody's live key, and minting
+    /// over it is unrecoverable.
+    static func mayMintNewKey(after read: BlobRead) -> Bool {
+        if case .absent = read { return true }
+        return false
     }
 
     /// What a keychain read actually found. The distinction is load-bearing: only
@@ -542,21 +592,24 @@ enum Crypto {
                            + "to mint a replacement.")
         }
 
-        switch status {
-        case errSecSuccess:
-            guard let data = out as? Data else { return .unavailable(status) }
-            // MIGRATE FORWARD where possible: we could read it this time, so copy it into
-            // the data-protection keychain, which needs no prompt and so cannot fail the
-            // way this read just did. Purely additive — the legacy item stays exactly
-            // where it is, so this costs nothing if it fails and an older build still
-            // finds its key. On a self-signed build it WILL fail (no entitlement), and
-            // `storeBlob` falls back to rewriting the legacy item, which is a no-op.
-            storeBlob(data, account: account)
-            return .found(data)
-        case errSecItemNotFound:
+        // Classification lives in `classify` so a test can assert the REAL mapping.
+        let read = Crypto.classify(status, data: out as? Data)
+        switch read {
+        case .found(let data):
+            // MIGRATE FORWARD, but only while it can actually succeed. We read the key
+            // this time, so copying it into the modern keychain means no future launch
+            // depends on being able to ask anyone.
+            //
+            // Skipped entirely once the modern keychain has refused for want of an
+            // entitlement: that is a property of the build and will not change mid-run, so
+            // continuing to attempt it would write to the production keychain once per
+            // account per launch, forever, for nothing.
+            if !dataProtectionUnavailable { storeBlob(data, account: account) }
+            return read
+        case .absent:
             // Absent from BOTH keychains. Only now is this genuinely first run.
-            return .absent
-        default:
+            return read
+        case .unavailable:
             if status == errSecInteractionNotAllowed || status == errSecAuthFailed || status == errSecInDarkWake {
                 // The key is there and we were not permitted to reach it. Record it so
                 // the interface can say something true and actionable instead of leaving
@@ -600,8 +653,24 @@ enum Crypto {
             kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
             kSecUseDataProtectionKeychain as String: true,
         ]
-        SecItemDelete(query as CFDictionary)
-        let status = SecItemAdd(query as CFDictionary, nil)
+        // UPDATE-OR-ADD, never delete-then-add.
+        //
+        // The previous shape deleted first and added second, and that is exactly how a
+        // key is lost: if the add fails after the delete succeeded — a denial, a killed
+        // process, any change in keychain state between the two calls — there is now no
+        // key at all, and everything sealed under it is orphaned. That is the mechanism
+        // behind both losses this week, and it was reintroduced here by the migration
+        // meant to prevent them.
+        //
+        // Updating an existing item, or adding when there is none, never passes through a
+        // state where the key is absent.
+        let attributes: [String: Any] = [kSecValueData as String: data]
+        var lookup = query
+        lookup.removeValue(forKey: kSecValueData as String)
+        var status = SecItemUpdate(lookup as CFDictionary, attributes as CFDictionary)
+        if status == errSecItemNotFound {
+            status = SecItemAdd(query as CFDictionary, nil)
+        }
         if status == errSecSuccess { return }
 
         // errSecMissingEntitlement (-34018): the data-protection keychain needs a
@@ -612,15 +681,30 @@ enum Crypto {
         // first run on any self-signed build would fail to store a key at all and the app
         // would be unable to encrypt anything. The prompt-free path is an improvement
         // where it is available, never a prerequisite.
+        // Remember, for the whole process, that the modern keychain is unavailable. This
+        // is what stops the migrate-forward retrying on every account on every launch —
+        // which is how a per-launch write against the production keychain crept in.
+        if status == errSecMissingEntitlement { dataProtectionUnavailable = true }
         DebugLog.write("crypto: data-protection keychain unavailable for \(account) "
                        + "(OSStatus \(status)) — storing in the legacy keychain instead")
+
         var legacy = query
         legacy.removeValue(forKey: kSecUseDataProtectionKeychain as String)
-        SecItemDelete(legacy as CFDictionary)
-        let legacyStatus = SecItemAdd(legacy as CFDictionary, nil)
+        var legacyLookup = legacy
+        legacyLookup.removeValue(forKey: kSecValueData as String)
+        var legacyStatus = SecItemUpdate(legacyLookup as CFDictionary, attributes as CFDictionary)
+        if legacyStatus == errSecItemNotFound {
+            legacyStatus = SecItemAdd(legacy as CFDictionary, nil)
+        }
         if legacyStatus != errSecSuccess {
             DebugLog.write("crypto: storeBlob(\(account)) FAILED in both keychains, "
-                           + "OSStatus \(legacyStatus) — this process cannot persist a key")
+                           + "OSStatus \(legacyStatus) — this process cannot persist a key. "
+                           + "Nothing was deleted; any existing key is still there.")
         }
     }
+
+    /// Set once the modern keychain has refused for want of an entitlement — which is a
+    /// property of the BUILD, not of the moment, so retrying per account per launch only
+    /// generates writes against the production keychain for no benefit.
+    private static var dataProtectionUnavailable = false
 }
