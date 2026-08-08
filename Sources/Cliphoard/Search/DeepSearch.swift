@@ -617,6 +617,32 @@ enum SemanticRanker {
         }
     }
 
+    /// The ONLY sanctioned way to obtain a clip's vector for RANKING. Cache first,
+    /// then the veto, then the model.
+    ///
+    /// Every ranking mode needs this exact sequence, and each used to carry its own
+    /// copy. That is how the veto was defeated once already: the modes fell back to
+    /// `embedder.embed(searchText(item))` unguarded, so instead of a secret passing
+    /// through the model once at capture it passed through on EVERY keystroke. Three
+    /// copies of a rule means a fourth mode has to remember it.
+    ///
+    /// Deliberately a FUNCTION rather than a "vetted text" wrapper type whose private
+    /// initialiser would make a forgotten guard a compile error. `isIndexVetoed` is
+    /// computed over `flags`, which is a `var` and DOES change after capture — the
+    /// image-understanding pass unions into it. A wrapper value proves a fact about
+    /// one instant; carried across a suspension point while the flags move, it is a
+    /// stale proof that still type-checks. Reading the predicate here, at the moment
+    /// of use, has no such window.
+    ///
+    /// Note this is the READ path. `ClipIndexer.index` keeps its own `guard`, which is
+    /// a different shape — it refuses to PRODUCE a vector, rather than substituting an
+    /// empty one for ranking. Collapsing the two would lose that distinction.
+    static func rankingVector(for item: ClipItem, embedder: TextEmbedder) -> [Float] {
+        if let cached = item.embeddings[embedder.signature]?.vector { return cached }
+        guard !item.isIndexVetoed else { return [] }
+        return embedder.embed(searchText(item))
+    }
+
     static func cosine(_ a: [Float], _ b: [Float]) -> Float {
         guard a.count == b.count, !a.isEmpty else { return 0 }
         var dot: Float = 0
@@ -641,10 +667,7 @@ enum SemanticRanker {
         let qv = embedder.embed(query, query: true)
         let q = query.lowercased()
         let scored = items.map { item -> (ClipItem, Float) in
-            // Never embed a vetoed clip at query time — see `smart` above:
-            // the fallback would push a secret through the model on every search.
-            let vec = item.embeddings[embedder.signature]?.vector
-                ?? (item.isIndexVetoed ? [] : embedder.embed(searchText(item)))
+            let vec = rankingVector(for: item, embedder: embedder)
             let substring = searchText(item).lowercased().contains(q)
             return (item, (substring ? 1 : 0) + cosine(qv, vec))
         }
@@ -661,10 +684,7 @@ enum SemanticRanker {
     static func neural(query: String, items: [ClipItem], embedder: TextEmbedder) -> [ClipItem] {
         let qv = embedder.embed(query, query: true)
         let scored = items.map { item -> (ClipItem, Float) in
-            // Never embed a vetoed clip at query time — see `smart` above:
-            // the fallback would push a secret through the model on every search.
-            let vec = item.embeddings[embedder.signature]?.vector
-                ?? (item.isIndexVetoed ? [] : embedder.embed(searchText(item)))
+            let vec = rankingVector(for: item, embedder: embedder)
             // Confidence-weighted: hub vectors from ultra-short clips must not
             // clear the floor on their unreliable ~0.4 ambient cosine.
             return (item, cosine(qv, vec) * lengthConfidence(item))
@@ -701,13 +721,10 @@ enum SemanticRanker {
 
         let scored = items.map { item -> (item: ClipItem, score: Float, exact: Bool) in
             let emb = item.embeddings[embedder.signature]
-            // A vetoed clip (secret / quarantined) has NO vector by design, and
-            // must never acquire one here. The old `?? embedder.embed(...)`
-            // fallback inverted the whole veto: instead of a secret going through
-            // the model once at capture, it went through on EVERY query. Vetoed
-            // clips still match by exact substring; they just cannot rank
-            // semantically. See ClipItem.isIndexVetoed.
-            let vec = emb?.vector ?? (item.isIndexVetoed ? [] : embedder.embed(searchText(item)))
+            // Vetoed clips still match by exact substring; they just cannot rank
+            // semantically. The veto is about the MODEL, not about retrieval.
+            // See `rankingVector`, which is the only place that rule now lives.
+            let vec = rankingVector(for: item, embedder: embedder)
             let exact = searchText(item).lowercased().contains(q)
             // Confidence-weighted neural leg (see lengthConfidence): an
             // ultra-short clip's cosine AND its vector-derived tags are both
