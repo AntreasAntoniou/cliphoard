@@ -179,8 +179,8 @@ struct SettingsView: View {
                         Text("Embedding model")
                         Spacer()
                         Picker("", selection: $settings.deepSearchLevel) {
-                            // All four tiers ship bundled models: ogma micro/small
-                            // (MIT), MiniLM (Apache-2.0), EmbeddingGemma (8-bit).
+                            // ogma micro/small (MIT) ship bundled; MiniLM (Apache-2.0)
+                            // downloads on demand. Every tier is permissively licensed.
                             ForEach(DeepSearchLevel.allCases) { Text($0.title).tag($0) }
                         }
                         .labelsHidden().frame(width: 200)
@@ -194,10 +194,10 @@ struct SettingsView: View {
                         }
                         .labelsHidden().frame(width: 180)
                         // Head selection exists only on the ogma models; the HF
-                        // tiers (MiniLM/Gemma) have fixed output heads.
+                        // tier (MiniLM) has a fixed output head.
                         .disabled(settings.searchMode == .exact || !settings.deepSearchLevel.isOgma)
                     }
-                    Text("Vector detail (ogma tiers): Full uses the 1024-d bge-large-distilled head — strongest search; Compact stores 2.7× smaller vectors. High/Max run MiniLM (fast, excellent) and EmbeddingGemma (best, ~35× larger). Switching re-indexes in the background.")
+                    Text("Vector detail (ogma tiers): Full uses the 1024-d bge-large-distilled head — strongest search; Compact stores 2.7× smaller vectors. High runs MiniLM (fast, excellent) and downloads on first use. Switching re-indexes in the background.")
                         .font(.system(size: 11)).foregroundStyle(.secondary)
                     embedderStatus
                     Text("Smart = clips containing exactly what you typed first, then the closest in meaning · Exact = only clips containing the typed text, ignoring case · Tag = clips in the auto category (of 100) closest to your query. You can also switch modes from the pill next to the search field. Models run on-device (CoreML).")

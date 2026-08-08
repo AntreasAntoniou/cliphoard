@@ -52,46 +52,48 @@ final class HFEmbedderParityTests: XCTestCase {
         XCTAssertEqual(norm, 1, accuracy: 0.01, "output must be L2-normalised")
     }
 
-    func testGemmaMatchesPyTorchGoldens() async throws {
-        guard let (model, tokenizer) = try await load(name: "embeddinggemma-300m") else {
-            throw XCTSkip("embeddinggemma-300m not present — restore via tools/restore-models.sh")
-        }
-        // Doc-prompt goldens from the ST reference (encode_document).
-        let goldenHead: [Float] = [-0.09701, 0.03663, 0.04911, -0.0391, -0.05679, 0.00286]
-        let embedder = HFEmbedder(modelName: "embeddinggemma-300m", model: model,
-                                  tokenizer: tokenizer, dimension: 768,
-                                  queryPrefix: DeepSearchLevel.max.queryPrefix,
-                                  docPrefix: DeepSearchLevel.max.docPrefix)
-        let v = embedder.embed("the quick brown fox")   // doc path applies the doc prompt
-        XCTAssertEqual(v.count, 768)
-        // 8-bit palettized weights: slightly looser per-component tolerance.
-        for (i, g) in goldenHead.enumerated() {
-            XCTAssertEqual(v[i], g, accuracy: 8e-3, "component \(i) parity mismatch")
-        }
-    }
 }
 
-/// Tier wiring for the new levels.
+/// Tier wiring. The EmbeddingGemma parity + prompt tests were removed with the
+/// `max` tier itself (see THIRD-PARTY-NOTICES.md) — they exercised a model this
+/// project no longer ships or redistributes.
 final class HFTierTests: XCTestCase {
     func testTierModelMapping() {
         XCTAssertEqual(DeepSearchLevel.high.modelName, "all-MiniLM-L6-v2")
         XCTAssertEqual(DeepSearchLevel.high.dimension, 384)
         XCTAssertFalse(DeepSearchLevel.high.isOgma)
-        XCTAssertEqual(DeepSearchLevel.max.modelName, "embeddinggemma-300m")
-        XCTAssertEqual(DeepSearchLevel.max.dimension, 768)
-        XCTAssertFalse(DeepSearchLevel.max.isOgma)
         XCTAssertTrue(DeepSearchLevel.normal.isOgma)
     }
 
-    func testGemmaPromptsAndSymmetricMiniLM() {
-        XCTAssertEqual(DeepSearchLevel.max.queryPrefix, "task: search result | query: ")
-        XCTAssertEqual(DeepSearchLevel.max.docPrefix, "title: none | text: ")
-        XCTAssertEqual(DeepSearchLevel.high.queryPrefix, "")
-        XCTAssertEqual(DeepSearchLevel.high.docPrefix, "")
+    /// Every shipped tier is permissively licensed. This is an assertion about the
+    /// DISTRIBUTED ARTIFACT, not about search quality: re-adding a tier whose model
+    /// carries use restrictions should fail the build, not pass review silently.
+    func testEveryShippedTierIsPermissivelyLicensed() {
+        let permitted: Set<String> = ["open-ogma-micro", "open-ogma-small", "all-MiniLM-L6-v2"]
+        for level in DeepSearchLevel.allCases {
+            guard let name = level.modelName else { continue }
+            XCTAssertTrue(permitted.contains(name),
+                          "tier \(level.rawValue) ships \(name), which is not on the "
+                          + "permissive-licence allowlist — update THIRD-PARTY-NOTICES.md "
+                          + "and this test deliberately, or drop the tier")
+        }
+        XCTAssertNil(DeepSearchLevel(rawValue: "max"), "the Gemma-licensed tier must stay retired")
+    }
+
+    /// Someone who deliberately chose the largest model lands on the next-largest,
+    /// not on the `?? .normal` fallback two tiers down.
+    func testRetiredMaxTierMigratesToHigh() {
+        let defaults = UserDefaults.standard
+        let previous = defaults.string(forKey: "deepSearchLevel")
+        defer {
+            if let previous { defaults.set(previous, forKey: "deepSearchLevel") }
+            else { defaults.removeObject(forKey: "deepSearchLevel") }
+        }
+        defaults.set("max", forKey: "deepSearchLevel")
+        XCTAssertEqual(DeepSearch.level, .high)
     }
 
     func testCalibratedFloors() {
         XCTAssertEqual(DeepSearchLevel.high.hfRelevanceFloor, 0.20, accuracy: 0.001)
-        XCTAssertEqual(DeepSearchLevel.max.hfRelevanceFloor, 0.30, accuracy: 0.001)
     }
 }

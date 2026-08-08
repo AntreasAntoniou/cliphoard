@@ -201,3 +201,41 @@ prompt, with full content — lives in the chronicle ledger; `chron resume` read
 
 - **Why:** {"summary": "plan verdict recorded", "plus_ultra": {"arbiter": "Athena"}}
 
+
+## [2026-08-07T17:16Z-SGA0] ARM — Deploy Cliphoard from rename/cliphoard b50931c to /Applications and launch it
+
+- **Intent:** First Database.init from this tree runs UPDATE tags='' -> ALTER TABLE embeddings DROP COLUMN tags -> VACUUM on the live store, retiring stored tag ids in favour of derived ones
+- **Reversibility:** R1 — reversible only via a named artifact (snapshot, rollback tag, backup file)
+- **Restore:** `Copy ~/Documents/Ditto-Rescue-20260807/live-preflight.sqlite over '~/Library/Application Support/Ditto/ditto.sqlite' with the app quit (61 clips, integrity ok, journal_mode delete, no sidecars). Code revert: git revert b50931c, which leaves the 042116f shim in place to re-add the column, and the marker is cleared by the drop so the reverted migration recomputes.`
+- **Verified:** swift test 361/0; rescue copies verified 231/1237 and 44/44; preflight snapshot verified ok/delete/61; originals chmod 444
+
+
+## [2026-08-07T17:22Z-EDPD] NOTE — plus-ultra: stop BLOCKED (no reality verdict)
+
+- **Why:** {"summary": "stop BLOCKED (no reality verdict)", "plus_ultra": {"mutations": 17}}
+
+
+## [2026-08-07T17:23Z-RFZD] NOTE — plus-ultra: stop BLOCKED (no reality verdict)
+
+- **Why:** {"summary": "stop BLOCKED (no reality verdict)", "plus_ultra": {"mutations": 18}}
+
+
+## [2026-08-07T17:30Z-4HC0] NOTE — plus-ultra: reality verdict recorded
+
+- **Why:** {"summary": "reality verdict recorded", "plus_ultra": {"verifier": "Argus"}}
+
+
+## [2026-08-07T18:00Z-5APX] NOTE — plus-ultra: gate BLOCKED (no plan verdict)
+
+- **Why:** {"summary": "gate BLOCKED (no plan verdict)", "plus_ultra": {"tool": "Bash", "target": "echo \"=== pinned SHAs ===\"; grep -n \"sha256\\|checksums\\|expected\" Sources/Cliphoard/Search/ModelAssets.swift | head -10\necho; echo \"=== does the models-v1 release exist? ===\"; gh release view models-v"}}
+
+
+## [2026-08-07T18:12Z-Y76S] NOTE — plus-ultra: gate BLOCKED (no plan verdict)
+
+- **Why:** {"summary": "gate BLOCKED (no plan verdict)", "plus_ultra": {"tool": "Bash", "target": "mkdir -p /private/tmp/claude-501/-Users-antreas/a3424a85-37ed-435a-88a6-482496e45604/scratchpad/vis && cat > /private/tmp/claude-501/-Users-antreas/a3424a85-37ed-435a-88a6-482496e45604/scratchpad/vis/"}}
+
+
+## [2026-08-08T02:48Z-XH3K] NOTE — plus-ultra: plan verdict recorded
+
+- **Why:** {"summary": "plan verdict recorded", "plus_ultra": {"arbiter": "Athena"}}
+

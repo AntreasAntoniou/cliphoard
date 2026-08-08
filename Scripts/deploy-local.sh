@@ -34,7 +34,12 @@ if [ "$SKIP_TESTS" != "--skip-tests" ]; then
 fi
 
 # 2. Build the universal, signed bundle.
-bash "$ROOT/Scripts/build-app.sh" release
+#
+# Bundle only the two MIT ogma tiers. MiniLM (Apache-2.0) is fetched on demand by
+# ModelAssets.ensure, which verifies it against a pinned SHA-256 and refuses to
+# install on mismatch. Without this the glob in build-app.sh bundles every model
+# present in tools/models, which is what made the .app 409 MB.
+BUNDLE_MODELS="open-ogma-small open-ogma-micro" bash "$ROOT/Scripts/build-app.sh" release
 
 # 3. Quit the running instance (graceful first, then firm) so the binary is replaceable.
 if pgrep -x Cliphoard >/dev/null; then

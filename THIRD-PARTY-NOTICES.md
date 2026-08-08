@@ -20,16 +20,20 @@ inside the distributed `.app`, not Cliphoard's own source code.
 - **Repo:** https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2
 - **License:** Apache-2.0. Bundled as a CoreML conversion.
 
-### EmbeddingGemma (Google) — Max tier
-- **Repo:** https://huggingface.co/google/embeddinggemma-300m
-- **License:** [Gemma Terms of Use](https://ai.google.dev/gemma/terms). Bundled
-  as an 8-bit-palettized CoreML conversion; use of the weights is subject to
-  Google's Gemma terms and the [Gemma prohibited use policy](https://ai.google.dev/gemma/prohibited_use_policy).
-
 ### Tokenizers (swift-transformers)
 - **Repo:** https://github.com/huggingface/swift-transformers — Apache-2.0.
-  Used for the MiniLM/Gemma tokenizers; the ogma tokenizer remains an original
+  Used for the MiniLM tokenizer; the ogma tokenizer remains an original
   implementation in this repo.
+
+## Removed: EmbeddingGemma
+
+A `max` tier backed by [google/embeddinggemma-300m](https://huggingface.co/google/embeddinggemma-300m)
+was removed before release. It was the only component not under a permissive
+license: the [Gemma Terms of Use](https://ai.google.dev/gemma/terms) carry a
+prohibited-use policy and a flow-down obligation, so a recipient of an app
+labelled MIT would have received something materially more restricted. Hosting
+the converted weights for download also made this project their redistributor.
+Removing the tier — rather than merely unbundling it — is what resolves both.
 
 ## System libraries
 

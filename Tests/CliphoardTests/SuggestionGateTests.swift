@@ -174,8 +174,12 @@ final class SuggestionGateTests: XCTestCase {
     func testKnownHFTiersAndUnknownSignaturesResolveSensibly() {
         XCTAssertEqual(SemanticRanker.calibratedRelevanceFloor(forSignature: "all-MiniLM-L6-v2-384-v1"),
                        DeepSearchLevel.high.hfRelevanceFloor, accuracy: 0.001)
+        // A store written by a build that still had the Gemma tier keeps vectors
+        // under this signature. It no longer matches any tier, so it must land on
+        // the historical hashing calibration — NOT on zero, which would let stale
+        // vectors match everything, and not on a crash.
         XCTAssertEqual(SemanticRanker.calibratedRelevanceFloor(forSignature: "embeddinggemma-300m-768-v1"),
-                       DeepSearchLevel.max.hfRelevanceFloor, accuracy: 0.001)
+                       0.20, accuracy: 0.001)
         XCTAssertEqual(SemanticRanker.calibratedRelevanceFloor(forSignature: "hashing-256"),
                        0.20, accuracy: 0.001)
         XCTAssertEqual(SemanticRanker.calibratedRelevanceFloor(forSignature: "who-knows"),

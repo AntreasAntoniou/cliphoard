@@ -28,8 +28,10 @@ enum ModelAssets {
     /// skips the check (logged) rather than failing — add its digest when you add
     /// a new model to the release.
     static let expectedSHA256: [String: String] = [
+        // No embeddinggemma-300m entry: that tier was retired on licensing grounds,
+        // and its asset must also be removed from the models-v1 release — hosting it
+        // is the redistribution, so dropping it from the app alone would not help.
         "all-MiniLM-L6-v2":    "ff202030f35c740193335a2136db6b15df8ef592da92e7dd07e51457dcf81def",
-        "embeddinggemma-300m": "8c37b74be2e0abed5c2a1be2c7ebd07d1d328e52cfc255c40d506a2c19e13804",
         "open-ogma-micro":     "020bc39bb9783cbc298809cdc89ad09be84a2cae6db4cee5e65b15fc58a80cf8",
         "open-ogma-small":     "e06756de8a41a10dc9722f9e8794e57740957569e9c4d0ae57d4cf70b08d4c26",
     ]

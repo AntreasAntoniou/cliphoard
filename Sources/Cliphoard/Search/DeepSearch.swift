@@ -8,8 +8,16 @@ import Tokenizers
 /// Embedding model tier (selects which on-device model produces vectors).
 /// Until a CoreML model is bundled for a tier, the engine falls back to the
 /// dependency-free `HashingEmbedder` so everything still works.
+/// Search tiers. Every model here is permissively licensed — MIT or Apache-2.0 —
+/// so the shipped artifact carries no use restrictions beyond Cliphoard's own MIT.
+///
+/// A `max` tier backed by google/embeddinggemma-300m was removed deliberately.
+/// Not for quality: it was simply the only component under a licence (the Gemma
+/// Terms of Use, with a prohibited-use policy) that a recipient of an "MIT app"
+/// would not expect, and hosting its weights for download made this project their
+/// redistributor. `DeepSearch.level` migrates anyone who had selected it to `high`.
 enum DeepSearchLevel: String, CaseIterable, Identifiable {
-    case off, low, normal, high, max
+    case off, low, normal, high
     var id: String { rawValue }
 
     var title: String {
@@ -18,7 +26,6 @@ enum DeepSearchLevel: String, CaseIterable, Identifiable {
         case .low:    return "Low (open-ogma-micro)"
         case .normal: return "Normal (open-ogma-small)"
         case .high:   return "High (MiniLM)"
-        case .max:    return "Max (EmbeddingGemma)"
         }
     }
 
@@ -26,14 +33,12 @@ enum DeepSearchLevel: String, CaseIterable, Identifiable {
     /// - low → axiotic/open-ogma-micro (MIT, 2.5M)
     /// - normal → axiotic/open-ogma-small (MIT, 8.9M)
     /// - high → sentence-transformers/all-MiniLM-L6-v2 (Apache-2.0, 22.7M)
-    /// - max → google/embeddinggemma-300m (Gemma ToU, 308M, 8-bit weights)
     var modelName: String? {
         switch self {
         case .off:    return nil
         case .low:    return "open-ogma-micro"
         case .normal: return "open-ogma-small"
         case .high:   return "all-MiniLM-L6-v2"
-        case .max:    return "embeddinggemma-300m"
         }
     }
 
@@ -45,7 +50,6 @@ enum DeepSearchLevel: String, CaseIterable, Identifiable {
         case .off:    return 256
         case .low, .normal: return DeepSearch.detail.dimension
         case .high:   return 384
-        case .max:    return 768
         }
     }
 
@@ -53,14 +57,15 @@ enum DeepSearchLevel: String, CaseIterable, Identifiable {
     /// VectorDetail head selection). The HF tiers use HFEmbedder + prompts.
     var isOgma: Bool { self == .low || self == .normal }
 
-    /// Fixed task prompts for asymmetric HF models (EmbeddingGemma's ST config);
-    /// empty for symmetric MiniLM.
-    var queryPrefix: String { self == .max ? "task: search result | query: " : "" }
-    var docPrefix: String { self == .max ? "title: none | text: " : "" }
+    /// Fixed task prompts for asymmetric HF models. Empty for every shipped tier:
+    /// MiniLM is symmetric. Kept as a seam because `HFEmbedder` takes both prefixes
+    /// and a future asymmetric tier would set them here rather than in the embedder.
+    var queryPrefix: String { "" }
+    var docPrefix: String { "" }
 
     /// Calibrated relevance floor for the HF tiers (noise p95 measured on the
-    /// local validation set: 0.169 MiniLM, 0.256 Gemma — see tools/BENCHMARKS.md).
-    var hfRelevanceFloor: Float { self == .max ? 0.30 : 0.20 }
+    /// local validation set: 0.169 MiniLM — see tools/BENCHMARKS.md).
+    var hfRelevanceFloor: Float { 0.20 }
 }
 
 /// Which projection head of the open-ogma models drives search. The converted
@@ -140,7 +145,17 @@ enum SearchMode: String, CaseIterable, Identifiable {
 enum DeepSearch {
     static var level: DeepSearchLevel {
         // Default to ogma-small so semantic search + tagging work out of the box.
-        get { DeepSearchLevel(rawValue: UserDefaults.standard.string(forKey: "deepSearchLevel") ?? "normal") ?? .normal }
+        //
+        // "max" (the retired EmbeddingGemma tier) migrates to `high`, NOT to the
+        // `?? .normal` fallback: someone who deliberately picked the largest model
+        // should land on the next-largest, not be dropped two tiers silently. The
+        // stored value is left alone so this stays a read-time reinterpretation —
+        // the vectors under the old signature are simply stale and get re-indexed.
+        get {
+            let stored = UserDefaults.standard.string(forKey: "deepSearchLevel") ?? "normal"
+            if stored == "max" { return .high }
+            return DeepSearchLevel(rawValue: stored) ?? .normal
+        }
         set { UserDefaults.standard.set(newValue.rawValue, forKey: "deepSearchLevel") }
     }
     static var mode: SearchMode {
