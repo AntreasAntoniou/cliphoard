@@ -26,7 +26,22 @@ enum Crypto {
     /// The active key used for all NEW seals.
     private static let key: SymmetricKey = resolveKey()
     /// The previous random key, kept only to decrypt rows sealed before a re-key.
-    private static let legacyKey: SymmetricKey? = readRandomKey(account: randomAccount)
+    private static let legacyKey: SymmetricKey? = {
+        let read = readBlobStatus(account: randomAccount)
+        switch read {
+        case .found(let d) where d.count == 32:
+            DebugLog.write("crypto: legacy key read OK")
+            return SymmetricKey(data: d)
+        case .found(let d):
+            DebugLog.write("crypto: legacy key wrong size (\(d.count))")
+        case .absent:
+            DebugLog.write("crypto: legacy key absent (errSecItemNotFound)")
+        case .unavailable(let s):
+            DebugLog.write("crypto: legacy key DENIED, OSStatus \(s) — it exists but this "
+                           + "build cannot read it")
+        }
+        return nil
+    }()
 
     /// True when the active key is bound to this Mac's Secure Enclave.
     private(set) static var usesSecureEnclave = false
@@ -181,10 +196,21 @@ enum Crypto {
     /// the newest rows, so it is tried first.
     private static let keyring: [SymmetricKey] = {
         var ring: [SymmetricKey] = [key]
-        for archived in archivedKeys() where !ring.contains(where: { sameKey($0, archived) }) {
-            ring.append(archived)
-        }
+        let archived = archivedKeys()
+        for a in archived where !ring.contains(where: { sameKey($0, a) }) { ring.append(a) }
+        let hadLegacy = legacyKey != nil
         if let lk = legacyKey, !ring.contains(where: { sameKey($0, lk) }) { ring.append(lk) }
+        // Reported once, at the moment it is built. A ring that is silently empty is
+        // indistinguishable from a store with nothing to recover — which is exactly how
+        // two bugs in this mechanism went unnoticed until the day it was needed. Counts
+        // and fingerprints only; no key material.
+        let prints = ring.map { k in
+            SHA256.hash(data: k.withUnsafeBytes { Data($0) }).prefix(4)
+                .map { String(format: "%02x", $0) }.joined()
+        }
+        DebugLog.write("crypto: keyring built — \(ring.count) key(s) "
+                       + "[current + \(archived.count) archived + legacy:\(hadLegacy)] "
+                       + "fingerprints=\(prints.joined(separator: ","))")
         return ring
     }()
 
@@ -217,14 +243,15 @@ enum Crypto {
         var out: CFTypeRef?
         let status = SecItemCopyMatching(listing as CFDictionary, &out)
         guard status == errSecSuccess, let rows = out as? [[String: Any]] else {
-            if status != errSecItemNotFound {
-                NSLog("Cliphoard crypto: could not list archived keys (OSStatus \(status)) "
-                      + "— the recovery ring is EMPTY this session, not absent")
-            }
+            DebugLog.write("crypto: archived-key listing failed, OSStatus \(status) "
+                           + "(\(status == errSecItemNotFound ? "none exist" : "DENIED — keys may exist"))")
             return []
         }
-        let accounts = rows.compactMap { $0[kSecAttrAccount as String] as? String }
-            .filter { $0.hasPrefix(archivedPrefix) }
+        let allAccounts = rows.compactMap { $0[kSecAttrAccount as String] as? String }
+        let accounts = allAccounts.filter { $0.hasPrefix(archivedPrefix) }
+        DebugLog.write("crypto: keychain listing saw \(allAccounts.count) item(s) under this "
+                       + "service [\(allAccounts.sorted().joined(separator: ","))], "
+                       + "\(accounts.count) archived")
         var keys: [SymmetricKey] = []
         for account in accounts {
             switch readBlobStatus(account: account) {

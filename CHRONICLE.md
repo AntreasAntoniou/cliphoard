@@ -325,3 +325,16 @@ prompt, with full content — lives in the chronicle ledger; `chron resume` read
 
 - **Why:** {"summary": "plan verdict recorded", "plus_ultra": {"arbiter": "Athena"}}
 
+
+## [2026-08-08T11:17Z-9V43] NOTE — plus-ultra: plan verdict recorded
+
+- **Why:** {"summary": "plan verdict recorded", "plus_ultra": {"arbiter": "Athena"}}
+
+
+## [2026-08-08T11:17Z-5CQP] ARM — Deploy d9b0c2c — keychain read-status + keyring recovery fix
+
+- **Intent:** Stop the app minting a key whenever a keychain read fails for any reason, and make the append-only recovery ring actually carry archived keys so the 79 currently-unreadable clips reopen
+- **Reversibility:** R1 — reversible only via a named artifact (snapshot, rollback tag, backup file)
+- **Restore:** `Quit, copy ~/Documents/Ditto-Rescue-20260807/live-pre-keyfix.sqlite over the live store (83 clips, integrity ok, standalone). Code: git revert d9b0c2c 821867d`
+- **Verified:** 400 tests green; measured read-only on a copy: ring 1->3 keys, clips opening 0/80 -> 79/80; minting now reachable only from errSecItemNotFound; safe mode still blocks all re-sealing
+
