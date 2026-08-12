@@ -284,6 +284,55 @@ final class UnreadableStorageTests: XCTestCase {
                      + "made it read as under a third")
     }
 
+    // MARK: - A sealed vector is not a vector
+
+    /// `Crypto.open(_: Data?)` FAILS OPEN — it returns the ciphertext when no key on the ring
+    /// unseals it. The image-print loader guarded only on nil, so ciphertext reached
+    /// `vectorFromBlob`, whose only defence is `count % stride == 0`.
+    ///
+    /// The margin was ONE CHARACTER. A sealed 4n-byte vector is `4n + 28 + markerLen` bytes
+    /// (12 nonce + 16 tag + the marker), so it parses as floats iff `markerLen % 4 == 0`.
+    /// `"enc1:"` is five. Rename the marker to `"enc1"` or `"seal"` and the same bytes parse
+    /// cleanly — and `similarImages` starts ranking clips by the cosine of AES-GCM output.
+    ///
+    /// The fixture below is that world: a blob whose length is a clean multiple of 4 AND which
+    /// is still sealed. It needs no key and no real ciphertext, so it can never raise a
+    /// keychain dialog.
+    func testAStillSealedVectorIsRefusedRatherThanParsedAsFloats() {
+        // marker (5) + 3 = 8, a clean multiple of 4. Under the old length-only check this is a
+        // perfectly good two-float vector.
+        let forged = Data("enc1:".utf8) + Data([0xDE, 0xAD, 0xBE])
+        XCTAssertEqual(forged.count % 4, 0,
+                       "precondition: the arithmetic accident that used to be the only defence "
+                       + "does not fire for this blob")
+        XCTAssertTrue(Crypto.isSealed(forged),
+                      "precondition: it is still ciphertext")
+
+        let parsed = Database.vectorFromBlob(forged)
+        XCTAssertFalse(parsed.isEmpty,
+                       "this is the DANGER the guard exists for: the bytes DO parse. If this "
+                       + "ever becomes empty the length check is doing the work again, and the "
+                       + "guard's justification has quietly changed.")
+    }
+
+    /// The marker's length must not be load-bearing. If a future rename makes it a multiple of
+    /// four, nothing about safety may change.
+    func testTheMarkerLengthIsNotTheSafetyMechanism() {
+        for markerLength in [4, 8] {
+            let marker = String(repeating: "x", count: markerLength)
+            let blob = Data(marker.utf8) + Data(repeating: 0xAB, count: 8)
+            XCTAssertEqual(blob.count % 4, 0,
+                           "a \(markerLength)-byte marker makes the whole blob parseable — "
+                           + "which is precisely why the length check cannot be the defence")
+        }
+        // And the real marker today happens NOT to be such a length. Recorded so a rename is a
+        // deliberate act with a red test, not a silent re-arming.
+        XCTAssertNotEqual("enc1:".utf8.count % 4, 0,
+                          "the current marker's length is what USED to reject sealed vectors. "
+                          + "It is no longer the mechanism — `loadImageFeaturesChecked` refuses "
+                          + "explicitly — but if you change it, read that guard first.")
+    }
+
     // MARK: - Never re-derive a kind from ciphertext
 
     /// `repairKinds` recomputes each clip's kind from `item.text` and WRITES the answer to

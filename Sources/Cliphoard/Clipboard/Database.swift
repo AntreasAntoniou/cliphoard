@@ -648,11 +648,38 @@ final class Database {
     private func loadImageFeaturesChecked()
         -> (features: [String: (revision: Int, vector: [Float])], rc: Int32) {
         var out: [String: (revision: Int, vector: [Float])] = [:]
+        var stillSealed = 0
         let rc = prepareEach("SELECT clip_id, revision, vector FROM image_features;") { stmt in
             let id = column(stmt, 0)
             let revision = Int(sqlite3_column_int(stmt, 1))
             guard let blob = Crypto.open(Self.blob(stmt, 2)) else { return }
+            // `Crypto.open` FAILS OPEN: when no key on the ring unseals the blob it hands back
+            // the CIPHERTEXT, not nil. Feeding that to `vectorFromBlob` was caught only by an
+            // arithmetic accident — a sealed 4n-byte vector is 4n+33 bytes (5 marker + 12 nonce
+            // + 16 tag), and 33 is not a multiple of 4, so the length check rejected it.
+            //
+            // The margin is ONE CHARACTER. The total is 4n + 28 + markerLen, so the blob parses
+            // as floats iff `markerLen % 4 == 0`. `"enc1:"` is five. Rename the marker to
+            // "enc1" or "seal" and the SAME bytes parse cleanly, and `similarImages` starts
+            // ranking clips by the cosine of AES-GCM output.
+            //
+            // Worse, the failure would be UNIFORM: every garbage vector is the same length and
+            // carries the same plaintext `revision`, so both guards downstream
+            // (`theirs.revision == mine.revision`, `vector.count == mine.vector.count`) PASS.
+            // The user gets a confident, stable, entirely fictional ordering of unrelated
+            // screenshots, with nothing anywhere saying it is noise.
+            //
+            // Refuse the row explicitly rather than resting on the length of a marker. Skipped
+            // rather than stored as an empty vector: `imageFeature == nil` is the "no print"
+            // state every existing reader already handles.
+            guard !Crypto.isSealed(blob) else { stillSealed += 1; return }
             out[id] = (revision, Self.vectorFromBlob(blob))
+        }
+        // Once, with a count. Per row would emit thousands of lines on a large store, and a log
+        // nobody can read is a log nobody reads.
+        if stillSealed > 0 {
+            NSLog("Cliphoard db: \(stillSealed) image print(s) would not decrypt — skipped "
+                  + "rather than scored as noise")
         }
         return (out, rc)
     }
