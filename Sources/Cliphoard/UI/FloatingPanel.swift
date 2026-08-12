@@ -82,6 +82,13 @@ final class FloatingPanel: NSPanel {
     /// interesting claims (never off the bottom, never taller than the screen,
     /// never below the floor) are all arithmetic.
     static func barFrame(visible: NSRect, contentHeight: CGFloat) -> NSRect {
+        // A DEGENERATE screen rect means the display went away — unplugged, or a stale
+        // `NSScreen` we are still holding. `min(max(h, 380), 0)` is 0, because the clamp is
+        // applied AFTER the floor with nothing beneath it, so the bar would become a 0x0
+        // window at the origin, still key, pinned there by the 30Hz re-fit. Refuse instead:
+        // an unchanged frame is a bar that is still where the user left it, and the next
+        // dismissal recovers normally.
+        guard visible.height > 1, visible.width > 1 else { return .zero }
         let height = min(max(contentHeight, minBarHeight), visible.height)
         return NSRect(x: visible.minX, y: visible.minY, width: visible.width, height: height)
     }
@@ -112,6 +119,9 @@ final class FloatingPanel: NSPanel {
         guard isSettled, let screen = presentedScreen ?? targetScreen() else { return }
         let visible = screen.visibleFrame
         let target = Self.barFrame(visible: visible, contentHeight: contentHeight(width: visible.width))
+        // `.zero` means the screen is gone (see `barFrame`). Leave the bar exactly where it
+        // is rather than resizing it to nothing.
+        guard target != .zero else { return }
         guard abs(target.height - frame.height) > 0.5
             || abs(target.minY - frame.minY) > 0.5
             || abs(target.width - frame.width) > 0.5 else { return }

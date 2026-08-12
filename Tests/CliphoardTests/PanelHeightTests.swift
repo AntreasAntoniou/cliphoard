@@ -18,6 +18,12 @@ import SwiftUI
 /// of which the only landmark is the search field's `NSTextField`) — so a test that
 /// hunts for a card in the view tree cannot fail for the right reason. The geometry
 /// is therefore a pure function, and the chrome cap is a named view.
+/// COVERAGE TRUTH, stated so nobody has to rediscover it: these tests cover two pure statics
+/// (`barFrame`, `offScreenFrame`), the `Theme` constants, and `BoundedChrome`. They do NOT
+/// cover `fit()`, `contentHeight(width:)`, `startFitting()`, `windowDidResize` or
+/// `presentedScreen` — the behavioural half of the panel fix is unpinned, and verifying it
+/// needs a running app. Three tests below measure REPLICAS of the real view and are labelled
+/// as documentation rather than guards.
 @MainActor
 final class PanelHeightTests: XCTestCase {
 
@@ -31,6 +37,8 @@ final class PanelHeightTests: XCTestCase {
     /// The strip must reserve a WHOLE card plus its inset. This is the number the
     /// old 380 was 10pt short of, before a single banner appeared.
     ///
+    /// Weak by construction: `stripHeight` IS `cardHeight + 28`, so this mostly restates the
+    /// implementation. It catches only a shrink of the inset.
     /// Kills: `stripHeight = t.cardHeight` (drops the 14pt top/bottom inset, so the
     /// first and last rows of every card clip), and any return to a constant.
     func testStripReservesAWholeCardPlusItsInset() {
@@ -106,6 +114,26 @@ final class PanelHeightTests: XCTestCase {
         }
     }
 
+    /// A display can be unplugged while the bar is up. `presentedScreen` is a strong
+    /// `NSScreen` that is never revalidated, and nothing observes
+    /// `didChangeScreenParametersNotification` — so a stale screen can hand back a zero rect.
+    /// The clamp is applied AFTER the floor (`min(max(h, 380), 0)` is 0), which would make the
+    /// bar a 0x0 window at the origin, still key, held there by the 30Hz re-fit until dismissal.
+    ///
+    /// Kills: removing the degenerate-rect guard, or reordering the clamp so `min` runs first.
+    func testADisappearedScreenDoesNotCollapseTheBarToNothing() {
+        for gone in [NSRect.zero,
+                     NSRect(x: 0, y: 0, width: 1440, height: 0),
+                     NSRect(x: 0, y: 0, width: 0, height: 900)] {
+            XCTAssertEqual(FloatingPanel.barFrame(visible: gone, contentHeight: 390), .zero,
+                           "a degenerate screen rect must be refused, not turned into a "
+                           + "zero-height bar the re-fit timer then holds in place")
+        }
+        // The converse, so the guard cannot pass by refusing everything.
+        let real = NSRect(x: 0, y: 0, width: 1440, height: 900)
+        XCTAssertEqual(FloatingPanel.barFrame(visible: real, contentHeight: 390).height, 390)
+    }
+
     // MARK: - The chrome cap
 
     /// An empty chrome group costs the strip nothing. The cap is on the common
@@ -164,7 +192,11 @@ final class PanelHeightTests: XCTestCase {
     /// so a banner that wraps on a narrow display is measured unwrapped and the bar
     /// comes up exactly one text line too short. Which is the original bug, back.
     ///
-    /// Kills: `contentHeight` using `view.fittingSize.height`.
+    /// Does NOT kill `contentHeight` switching to `fittingSize` — that method is private and
+    /// is never invoked here; this measures a hand-built tree. It is DOCUMENTATION of the
+    /// platform fact the implementation rests on, and it is recorded as such rather than
+    /// claimed as a guard: a test whose stated mutation it cannot actually catch is worse
+    /// than no test, because the next reader stops looking for real coverage.
     func testTheContentMeasurementIsWidthAware() {
         let wrapping = VStack(spacing: 0) {
             Text("Your clips are safe — macOS wouldn’t unlock the key just now, usually "
@@ -186,7 +218,9 @@ final class PanelHeightTests: XCTestCase {
     /// the wrong one it already has. A pinned body region makes the answer a
     /// constant, so the window converges in one step.
     ///
-    /// Kills: restoring `maxHeight: .infinity` on the body region in `ContentView`.
+    /// Does NOT kill restoring `maxHeight: .infinity` in `ContentView` — this builds a
+    /// replica and never instantiates the real view. Documentation of why the body region is
+    /// pinned, not a guard on its being pinned. Stated plainly for the same reason as above.
     func testTheMeasuredHeightDoesNotDependOnTheHeightOffered() {
         let pinned = VStack(spacing: 0) {
             Color.clear.frame(height: 70)

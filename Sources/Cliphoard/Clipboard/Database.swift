@@ -302,12 +302,34 @@ final class Database {
         let featuresByClip = features.features
         // 1. Embeddings grouped by clip id.
         var embByClip: [String: [String: ModelEmbedding]] = [:]
+        var sealedEmbeddings = 0
         let embeddingRC = prepareEach("SELECT clip_id, model, vector FROM embeddings;") { stmt in
             let clipID = column(stmt, 0)
             let model = column(stmt, 1)
             // Decrypt at-rest embedding columns (legacy plaintext passes through).
-            let vec = Self.vectorFromBlob(Crypto.open(Self.blob(stmt, 2)))
-            embByClip[clipID, default: [:]][model] = ModelEmbedding(vector: vec)
+            guard let blob = Crypto.open(Self.blob(stmt, 2)) else { return }
+            // The SAME fail-open as the image prints below, at the same distance from the
+            // same parser — and it was left unguarded when that one was fixed, while the
+            // commit message, the code comment and the test all said the marker length was
+            // no longer the mechanism. For THIS loader it still was. Closing one mouth of a
+            // hole and documenting the whole hole as closed is worse than closing neither,
+            // because the next reader stops looking.
+            //
+            // `upsertEmbedding` seals via `sealStrict`, so the shape is identical:
+            // `4n + 28 + markerLen`, parseable as floats iff `markerLen % 4 == 0`, and
+            // "enc1:" is five. The consequence differs from the image case only in which
+            // feature lies: `DeepSearch.suggestedUserTags` guards on `!isEmpty` and then
+            // filters members by matching count — and the garbage is UNIFORM, so every
+            // vector has the same count, passes that filter, and builds a centroid over
+            // AES-GCM output. Tag suggestions from noise.
+            guard !Crypto.isSealed(blob) else { sealedEmbeddings += 1; return }
+            embByClip[clipID, default: [:]][model] = ModelEmbedding(vector: Self.vectorFromBlob(blob))
+        }
+        // Once with a count, not the per-row NSLog `vectorFromBlob` would otherwise emit —
+        // the same flood the image loader deliberately avoids.
+        if sealedEmbeddings > 0 {
+            NSLog("Cliphoard db: \(sealedEmbeddings) embedding(s) would not decrypt — skipped "
+                  + "rather than scored as noise")
         }
         // 2. Clips.
         var result: [ClipItem] = []
