@@ -123,20 +123,33 @@ struct ContentView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            safeModeBanner
+            BoundedChrome { safeModeBanner }
             toolbar
             Divider().opacity(0.5)
-            if let message = pasteStatus.blockedMessage { pasteBlockedBanner(message) }
-            if let progress = store.indexing { indexingBar(progress) }
-            if model.showSettings {
-                SettingsView(settings: settings, store: store)
-            } else {
-                switch settings.layoutMode {
-                case .strip:     cards
-                case .spotlight: spotlightLayout
-                case .list:      listLayout
+            BoundedChrome {
+                if let message = pasteStatus.blockedMessage { pasteBlockedBanner(message) }
+                if let progress = store.indexing { indexingBar(progress) }
+            }
+            // Pinned, not `maxHeight: .infinity`. A flexible body region makes
+            // the panel's height circular — the content answers "how tall are
+            // you?" with whatever height it was offered, so feeding that back
+            // into the window is a fixed point at any value, including the wrong
+            // one. Pinned, the answer is a constant and the window converges in
+            // one step. It also stops a vertical layout (Settings, list,
+            // spotlight) from reporting its entire scrollable content — measured
+            // at 1992pt for a settings pane — and inflating the bar to match.
+            Group {
+                if model.showSettings {
+                    SettingsView(settings: settings, store: store)
+                } else {
+                    switch settings.layoutMode {
+                    case .strip:     cards
+                    case .spotlight: spotlightLayout
+                    case .list:      listLayout
+                    }
                 }
             }
+            .frame(height: Theme.stripHeight)
             footer
         }
         .background(Theme.barBackground())

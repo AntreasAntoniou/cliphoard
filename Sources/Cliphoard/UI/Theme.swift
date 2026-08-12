@@ -202,6 +202,24 @@ enum Theme {
     static var pin: Color { t.pin }
     static var cardWidth: CGFloat { t.cardWidth }
     static var cardHeight: CGFloat { t.cardHeight }
+
+    /// The card strip's viewport: one whole card plus the strip's vertical
+    /// inset. The strip is this tall or a card is clipped — `ClipCardView` is a
+    /// fixed size and never squeezes — so this is the height the panel must
+    /// reserve for the card area before any chrome gets a say.
+    static var stripHeight: CGFloat { t.cardHeight + 28 }
+
+    /// Ceiling on each optional-chrome group above the card strip. Past this the
+    /// chrome scrolls; the card strip never gives up a point.
+    ///
+    /// Chosen to BOUND the bar rather than to fit any particular banner: 112pt of
+    /// fixed chrome + `stripHeight` + two capped groups = 590pt, which clears the
+    /// ~615pt visible frame of the shortest Mac display (1024x640, menu bar out).
+    /// Every real row today sits far below it — the safe-mode banner measures 42,
+    /// the paste-blocked banner 34, the indexing bar 49 — so nothing scrolls until
+    /// several rows stack at once, which is exactly when the bar would otherwise
+    /// have started eating cards.
+    static let chromeMaxHeight: CGFloat = 100
     static var cornerRadius: CGFloat { t.cornerRadius }
 
     /// The bar's background — vibrancy material or a flat themed fill.
@@ -294,5 +312,26 @@ struct VisualEffectBackground: NSViewRepresentable {
     func updateNSView(_ nsView: NSVisualEffectView, context: Context) {
         nsView.material = material
         nsView.blendingMode = blending
+    }
+}
+
+/// Wraps a group of optional chrome rows so it can never take height from the
+/// card strip.
+///
+/// Measured to render exactly 0pt when the group is empty, its natural height
+/// under `Theme.chromeMaxHeight`, and to scroll beyond it — so the common case
+/// pays nothing, and the pathological case (every banner up at once, plus
+/// whatever row is added next) costs the chrome a scrollbar instead of costing
+/// the user the bottom row of every card.
+///
+/// A named view rather than a private helper so the two claims above can be
+/// asserted directly, with no hosting window and no walk of an NSView tree that
+/// a SwiftUI card never appears in.
+struct BoundedChrome<Content: View>: View {
+    @ViewBuilder let content: Content
+    var body: some View {
+        ScrollView(.vertical) { VStack(spacing: 0) { content } }
+            .frame(maxHeight: Theme.chromeMaxHeight)
+            .fixedSize(horizontal: false, vertical: true)
     }
 }
