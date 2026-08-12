@@ -19,7 +19,87 @@ import Security
 enum Crypto {
     private static let marker = "enc1:"
     private static let markerData = Data("enc1:".utf8)
-    private static let service = "ai.axiotic.ditto"
+    /// The one true keychain service. NEVER derived from the bundle id and never renamed:
+    /// every key the user owns is filed under this exact string, and the bundle id has
+    /// ALREADY moved (`ai.axiotic.ditto` → `io.antreas.cliphoard`) without it, deliberately.
+    static let productionService = "ai.axiotic.ditto"
+
+    /// Test namespaces live under this. Deliberately a DIFFERENT first character from
+    /// `productionService`, so no `hasPrefix` over either literal can ever match the other —
+    /// the sweep below deletes whole services, and a prefix that could reach production would
+    /// be the single worst bug in this file.
+    static let testServicePrefix = "io.antreas.cliphoard.tests."
+
+    private static let productionBundleID = "io.antreas.cliphoard"
+
+    /// WHERE keychain items live. Production unless this process is PROVABLY a test harness.
+    ///
+    /// Keychain items are keyed by service across processes — unlike `UserDefaults`, which
+    /// macOS scopes per bundle id for free. So a single shared constant handed the test target
+    /// write access to the user's real secrets, and it took it: twenty `db-archived-key-unit-
+    /// test-key*` items in a live login keychain, and a `db-canary-v1` that a test process
+    /// could overwrite while the app's freeze depended on it.
+    ///
+    /// The failure to design against is the OPPOSITE one: a shipping app silently resolving to
+    /// a test namespace would find no keys and tell the user their history is empty. So the
+    /// default is production and the test case needs a CONJUNCTION — XCTest loaded AND the
+    /// bundle id not ours — i.e. two independent failures, not one.
+    ///
+    /// Rejected: `#if DEBUG` (`Scripts/build-app.sh` accepts `debug` and yields an INSTALLABLE
+    /// .app, so this would ship); an env var (an exported shell var reconfigures the app, and a
+    /// forgotten one reconfigures the tests — wrong in both directions, both silent); a package
+    /// trait or `.define` (this file compiles into the `Cliphoard` target, so settings on the
+    /// test target never reach it and the flag would have to ship).
+    static let service: String = {
+        let name = serviceName(
+            xctestLoaded: NSClassFromString("XCTestCase") != nil
+                || Bundle.main.bundlePath.hasSuffix(".xctest")
+                || ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil,
+            bundleID: Bundle.main.bundleIdentifier)
+        // Sweep here rather than from a test hook. SwiftPM offers no bundle-start seam — no
+        // settable NSPrincipalClass, and Swift forbids `+load` — so the alternatives were a
+        // base-class `setUp` (opt-in, i.e. the same discipline that already failed) or this.
+        // Resolution happens exactly once, before any item can be written, and a new test file
+        // inherits it without knowing it exists.
+        if name != productionService { purgeStaleTestNamespaces(keeping: name) }
+        return name
+    }()
+
+    /// The decision as a PURE function, so a test can assert the SHIPPING direction — which it
+    /// can never observe live, because a test process is by definition the other case.
+    static func serviceName(xctestLoaded: Bool, bundleID: String?) -> String {
+        guard xctestLoaded, bundleID != productionBundleID else { return productionService }
+        // A PER-RUN namespace, not a fixed test one. A fixed test service accumulates items
+        // across runs, each written by a differently ad-hoc-signed `xctest` binary whose code
+        // identity is already gone — so the next run needs a confirmation dialog for every one
+        // of them. That is the trap relocated, not escaped, and it is literally how the twenty
+        // junk items accumulated. A namespace nothing has ever seen cannot prompt: every item
+        // in it was written by this very process.
+        return testServicePrefix
+            + "\(ProcessInfo.processInfo.processIdentifier)-\(UUID().uuidString)"
+    }
+
+    /// Delete every test namespace this machine has accumulated except the live one.
+    ///
+    /// At the START of a run, not the end: the runs that strand items are exactly the ones
+    /// killed before a teardown, which is why the existing per-item teardown in
+    /// `CryptoSafetyTests` did not prevent any of this.
+    private static func purgeStaleTestNamespaces(keeping current: String) {
+        var out: CFTypeRef?
+        // ATTRIBUTES ONLY — no `kSecReturnData`, so this listing can never raise an ACL dialog.
+        let status = SecItemCopyMatching([
+            kSecClass as String: kSecClassGenericPassword,
+            kSecMatchLimit as String: kSecMatchLimitAll,
+            kSecReturnAttributes as String: true,
+        ] as CFDictionary, &out)
+        guard status == errSecSuccess, let rows = out as? [[String: Any]] else { return }
+        let stale = Set(rows.compactMap { $0[kSecAttrService as String] as? String })
+            .filter { $0.hasPrefix(testServicePrefix) && $0 != current }
+        for svc in stale {
+            SecItemDelete([kSecClass as String: kSecClassGenericPassword,
+                           kSecAttrService as String: svc] as CFDictionary)
+        }
+    }
     private static let randomAccount = "db-key-v1"        // legacy/random key
     private static let seAccount = "db-se-key-v2"         // Secure-Enclave key blob
 
@@ -166,8 +246,12 @@ enum Crypto {
             guard current.hasPrefix(marker),
                   let data = Data(base64Encoded: String(current.dropFirst(marker.count)))
             else { return current }
-            // Try EVERY key on the ring, not just the current one — see `keyring`.
-            guard let s = keyring.lazy.compactMap({ decryptString(data, with: $0) }).first
+            // PRIMARY first, archived only on a miss. `??` is @autoclosure, so `archivedRing`
+            // — and the keychain reads that build it — is forced only when the key in use and
+            // the legacy key have both already failed on real ciphertext. A healthy row never
+            // reaches it. Still tries EVERY key before giving up; only the ORDER changed.
+            guard let s = primaryRing.lazy.compactMap({ decryptString(data, with: $0) }).first
+                    ?? archivedRing.lazy.compactMap({ decryptString(data, with: $0) }).first
             else { return current }
             current = s
         }
@@ -237,7 +321,8 @@ enum Crypto {
         for _ in 0..<maxUnsealRounds {
             guard current.starts(with: markerData) else { return current }
             let body = current.dropFirst(markerData.count)
-            guard let d = keyring.lazy.compactMap({ decryptData(body, with: $0) }).first
+            guard let d = primaryRing.lazy.compactMap({ decryptData(body, with: $0) }).first
+                    ?? archivedRing.lazy.compactMap({ decryptData(body, with: $0) }).first
             else { return current }
             current = d
         }
@@ -277,25 +362,55 @@ enum Crypto {
     ///
     /// Order matters only for speed, never for correctness — the newest key opens
     /// the newest rows, so it is tried first.
-    private static let keyring: [SymmetricKey] = {
+    /// The keys a HEALTHY launch ever touches: the key in use, plus the legacy random key.
+    /// Both are already resolved, so this costs no extra keychain traffic and cannot prompt.
+    private static let primaryRing: [SymmetricKey] = {
         var ring: [SymmetricKey] = [key]
-        let archived = archivedKeys()
-        for a in archived where !ring.contains(where: { sameKey($0, a) }) { ring.append(a) }
-        let hadLegacy = legacyKey != nil
         if let lk = legacyKey, !ring.contains(where: { sameKey($0, lk) }) { ring.append(lk) }
-        // Reported once, at the moment it is built. A ring that is silently empty is
-        // indistinguishable from a store with nothing to recover — which is exactly how
-        // two bugs in this mechanism went unnoticed until the day it was needed. Counts
-        // and fingerprints only; no key material.
-        let prints = ring.map { k in
+        return ring
+    }()
+
+    /// The archived keys — read LAZILY, only after every primary key has failed on a real
+    /// payload.
+    ///
+    /// Eager was wrong for a reason worth stating. The archive exists for RECOVERY, recovery is
+    /// rare, and on this platform every archived item can cost a keychain round-trip and, in the
+    /// legacy keychain, a confirmation dialog each. The user's own log shows 3-to-5 second gaps
+    /// between consecutive archived reads — a human clicking through them — to open a canary
+    /// that the CURRENT key opens on the first try. Paying the recovery cost on every launch of
+    /// a healthy store turned an append-only ring, a mechanism designed to cost nothing, into
+    /// the most expensive thing the app does at startup.
+    ///
+    /// Deferring changes WHEN these are read, never WHICH. Capping or pruning the ring was
+    /// rejected outright: a cap silently drops the one key that opens an old row, and
+    /// append-only is the property this ring exists to enforce.
+    private static let archivedRing: [SymmetricKey] = {
+        let archived = archivedKeys()
+        var ring: [SymmetricKey] = []
+        for a in archived where !primaryRing.contains(where: { sameKey($0, a) })
+            && !ring.contains(where: { sameKey($0, a) }) { ring.append(a) }
+        // Reported once, at the moment it is built — now meaning "the moment recovery was
+        // actually attempted". A ring that is silently empty is indistinguishable from a store
+        // with nothing to recover, which is exactly how two bugs in this mechanism went
+        // unnoticed until the day it was needed. Counts and fingerprints only; no key material.
+        let prints = (primaryRing + ring).map { k in
             SHA256.hash(data: k.withUnsafeBytes { Data($0) }).prefix(4)
                 .map { String(format: "%02x", $0) }.joined()
         }
-        DebugLog.write("crypto: keyring built — \(ring.count) key(s) "
-                       + "[current + \(archived.count) archived + legacy:\(hadLegacy)] "
+        DebugLog.write("crypto: recovery ring built — \(primaryRing.count + ring.count) key(s) "
+                       + "[\(primaryRing.count) primary + \(ring.count) archived] "
                        + "fingerprints=\(prints.joined(separator: ","))")
         return ring
     }()
+
+    /// Every key, primary first. Forces the recovery half — diagnostics only, never a hot path.
+    static var keyring: [SymmetricKey] { primaryRing + archivedRing }
+
+    /// How many archived keys this process has read. A healthy launch must leave this at ZERO;
+    /// it is the only way to assert the lazy split, because the observable symptom of getting it
+    /// wrong is a dialog, which no test can catch.
+    private(set) static var archivedReadCount = 0
+    static func resetArchivedReadCount() { archivedReadCount = 0 }
 
     private static func sameKey(_ a: SymmetricKey, _ b: SymmetricKey) -> Bool {
         a.withUnsafeBytes { ab in b.withUnsafeBytes { bb in ab.elementsEqual(bb) } }
@@ -337,6 +452,7 @@ enum Crypto {
                        + "\(accounts.count) archived")
         var keys: [SymmetricKey] = []
         for account in accounts {
+            archivedReadCount += 1
             switch readBlobStatus(account: account) {
             case .found(let data) where data.count == 32:
                 keys.append(SymmetricKey(data: data))
@@ -371,6 +487,22 @@ enum Crypto {
     /// identifies without revealing, and 64 bits is ample when the set is a handful of
     /// keys on one Mac.
     static func archiveKey(_ k: SymmetricKey, label: String) {
+        // A test process must never add an item to the PRODUCTION service. Orthogonal to the
+        // resolver above rather than redundant with it: that catches a RESOLUTION anomaly, this
+        // catches a CALLER anomaly, and this is the only function in the program that creates
+        // an archive item — so there is no list to keep and nothing for a test author to
+        // remember.
+        //
+        // Logs and returns rather than trapping. A `precondition` would crash a running
+        // clipboard manager over a namespace inconsistency, converting something contained into
+        // a lost session, in a product whose whole doctrine is that degraded is recoverable and
+        // destroyed is not. Returning fails CLOSED — the write does not happen — and leaves the
+        // app alive to say so.
+        if service == productionService, NSClassFromString("XCTestCase") != nil {
+            NSLog("Cliphoard crypto: refusing to archive into the PRODUCTION keychain service "
+                  + "from a test process — nothing was written.")
+            return
+        }
         let raw = k.withUnsafeBytes { Data($0) }
         let fingerprint = SHA256.hash(data: raw).prefix(8)
             .map { String(format: "%02x", $0) }.joined()
@@ -570,7 +702,7 @@ enum Crypto {
                 // says so in its own log; treating the key as durable regardless is how
                 // a first run that can read but not write seals everything under a key
                 // that dies at exit, then mints another next launch.
-                if !storeBlob(fresh.dataRepresentation, account: seAccount) {
+                if !storeBlob(fresh.dataRepresentation, account: seAccount).isDurable {
                     keyIsEphemeral = true
                     NSLog("Cliphoard crypto: minted a Secure Enclave key but could not "
                           + "persist its blob — treating it as EPHEMERAL.")
@@ -596,7 +728,9 @@ enum Crypto {
 
     @discardableResult
     private static func storeRandomKey(_ key: SymmetricKey, account: String) -> Bool {
-        storeBlob(key.withUnsafeBytes { Data($0) }, account: account)
+        // `.legacyFallback` counts as stored: the key is persisted and readable, it simply
+        // lives in the keychain that may ask for a confirmation later.
+        storeBlob(key.withUnsafeBytes { Data($0) }, account: account).isDurable
     }
 
     /// Classify a raw keychain status. Extracted from `readBlobStatus` and made
@@ -746,18 +880,38 @@ enum Crypto {
             // entitlement: that is a property of the build and will not change mid-run, so
             // continuing to attempt it would write to the production keychain once per
             // account per launch, forever, for nothing.
-            if !dataProtectionUnavailable { storeBlob(data, account: account) }
+            if !dataProtectionUnavailable {
+                // Bind the result. Discarding it is how a caller comes to believe a copy-forward
+                // happened when it did not — `storeBlob` now says which keychain took the item,
+                // and that is the entire question this call exists to answer.
+                let moved = migrateForward(data, account: account)
+                DebugLog.write("crypto: \(account) read from the legacy keychain; copy-forward "
+                               + (moved
+                                  ? "SUCCEEDED — no future launch needs a confirmation for it"
+                                  : "did NOT reach the data-protection keychain, so the next "
+                                    + "launch needs the same confirmation again"))
+            }
             return read
         case .absent:
             // Absent from BOTH keychains. Only now is this genuinely first run.
             return read
         case .unavailable:
-            if status == errSecInteractionNotAllowed || status == errSecAuthFailed || status == errSecInDarkWake {
-                // The key is there and we were not permitted to reach it. Record it so
-                // the interface can say something true and actionable instead of leaving
-                // a user staring at a frozen, empty window.
-                keychainAccessDenied = true
-            }
+            // EVERY `.unavailable`, not an enumerated subset. The key is there and we were
+            // not permitted to reach it, and that is precisely what the case MEANS — deriving
+            // the flag from the case makes the two impossible to disagree.
+            //
+            // The list this replaced was `errSecInteractionNotAllowed || errSecAuthFailed ||
+            // errSecInDarkWake`, and `errSecUserCanceled` (-128) was not on it — a user
+            // pressing Cancel, which is the most retryable case there is. The user's own log
+            // carries it twice. The consequence was not a mint (the classification held) but a
+            // banner that said the wrong one of its two things, and a test helper that failed
+            // instead of skipping in exactly the state it was written to skip in.
+            //
+            // The data-protection branch above already sets this unconditionally; only the
+            // legacy branch enumerated. Making it total is a strict simplification, and a
+            // hand-maintained list of OS error codes in a data-safety path is the shape that
+            // has been breached in this file three rounds running.
+            keychainAccessDenied = true
             NSLog("Cliphoard crypto: keychain read for \(account) failed with OSStatus "
                   + "\(status) — treating as PRESENT-BUT-UNREADABLE and refusing to "
                   + "replace it. Nothing will be re-sealed.")
@@ -783,8 +937,36 @@ enum Crypto {
     /// correctly-signed app reads its own items with no UI, ever. That removes the entire
     /// failure mode rather than working around it: unattended launches, headless
     /// relaunches and clamshell mode all just work.
+    /// WHERE a write actually landed.
+    ///
+    /// A `Bool` could not express this, and that is what let a false report be written: "stored
+    /// in the legacy keychain" and "stored in the prompt-free keychain" are BOTH success, while
+    /// the entire purpose of the migrate-forward path is to tell them apart. The build deployed
+    /// on 2026-08-08 logged "migrated … future launches need no prompt" immediately after this
+    /// returned `errSecMissingEntitlement` — a failure consumed as a success, in the DIAGNOSTIC
+    /// channel, which is the one place it misleads whoever is trying to find the failure.
+    ///
+    /// Returning the fact means the log text is DERIVED from the outcome at a single site, so a
+    /// success line after a failed write is not something a caller can write.
+    enum KeychainWrite: Equatable {
+        /// Landed in the data-protection keychain: no ACL, so no future launch prompts for it.
+        case dataProtection
+        /// The data-protection keychain refused with this status; the legacy write succeeded.
+        /// Still DURABLE — first run on any self-signed build depends on this being success.
+        case legacyFallback(OSStatus)
+        /// Neither keychain took it. Nothing was deleted; any existing item is still there.
+        case failed(OSStatus)
+
+        /// The only question most callers have: is the key persisted AT ALL? Both success
+        /// cases are durable — treating `.legacyFallback` as failure would stop first run on
+        /// any self-signed build from persisting a key, which is far worse than the prompt it
+        /// is trying to avoid.
+        var isDurable: Bool { !isFailure }
+        var isFailure: Bool { if case .failed = self { return true }; return false }
+    }
+
     @discardableResult
-    private static func storeBlob(_ data: Data, account: String) -> Bool {
+    private static func storeBlob(_ data: Data, account: String) -> KeychainWrite {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -814,7 +996,7 @@ enum Crypto {
         if status == errSecItemNotFound {
             status = SecItemAdd(query as CFDictionary, nil)
         }
-        if status == errSecSuccess { return true }
+        if status == errSecSuccess { return .dataProtection }
 
         // errSecMissingEntitlement (-34018): the data-protection keychain needs a
         // keychain-access-groups entitlement, which a self-signed local build with no
@@ -827,9 +1009,17 @@ enum Crypto {
         // Remember, for the whole process, that the modern keychain is unavailable. This
         // is what stops the migrate-forward retrying on every account on every launch —
         // which is how a per-launch write against the production keychain crept in.
-        if status == errSecMissingEntitlement { dataProtectionUnavailable = true }
-        DebugLog.write("crypto: data-protection keychain unavailable for \(account) "
-                       + "(OSStatus \(status)) — storing in the legacy keychain instead")
+        // ANY data-protection refusal, not just errSecMissingEntitlement. The flag's
+        // documented meaning is "the modern keychain has refused", and every refusal is a
+        // refusal — with the narrower condition, any OTHER DP failure left the flag false, so
+        // the migrate-forward below fell through to the legacy update-or-add and REWROTE THE
+        // LEGACY ITEM ONTO ITSELF, per account, per launch, forever. Exactly what the comment
+        // at the call site claims this prevents; it prevented it for one status out of many.
+        dataProtectionUnavailable = true
+        // NO log here. This used to announce "storing in the legacy keychain instead" as a
+        // statement of fact BEFORE attempting it — true most of the time, and a lie in exactly
+        // the case a reader is debugging. One log site, at the end, deriving its words from
+        // what happened.
 
         var legacy = query
         legacy.removeValue(forKey: kSecUseDataProtectionKeychain as String)
@@ -839,13 +1029,57 @@ enum Crypto {
         if legacyStatus == errSecItemNotFound {
             legacyStatus = SecItemAdd(legacy as CFDictionary, nil)
         }
-        if legacyStatus != errSecSuccess {
-            DebugLog.write("crypto: storeBlob(\(account)) FAILED in both keychains, "
-                           + "OSStatus \(legacyStatus) — this process cannot persist a key. "
-                           + "Nothing was deleted; any existing key is still there.")
-            return false
+        let outcome: KeychainWrite = legacyStatus == errSecSuccess
+            ? .legacyFallback(status)
+            : .failed(legacyStatus)
+        DebugLog.write("crypto: storeBlob(\(account)) — " + describe(outcome))
+        return outcome
+    }
+
+    /// Copy an item that was READ FROM THE LEGACY KEYCHAIN into the data-protection one.
+    ///
+    /// Deliberately has NO legacy fallback, and that is the whole point of it being a separate
+    /// function rather than a call to `storeBlob`. The source is already in the legacy keychain,
+    /// so falling back there rewrites the item onto itself: a production keychain write, per
+    /// account, per launch, achieving precisely nothing. Refusing to migrate is the correct
+    /// outcome; retrying the place it already lives is not.
+    ///
+    /// Returns whether it landed. `storeBlob` keeps its fallback and its durability semantics
+    /// untouched — the three key-minting sites depend on a legacy write counting as stored, and
+    /// on a self-signed build the legacy keychain is the ONLY place a key ever persists.
+    @discardableResult
+    private static func migrateForward(_ data: Data, account: String) -> Bool {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+            kSecValueData as String: data,
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
+            kSecUseDataProtectionKeychain as String: true,
+        ]
+        var lookup = query
+        lookup.removeValue(forKey: kSecValueData as String)
+        var status = SecItemUpdate(lookup as CFDictionary,
+                                   [kSecValueData as String: data] as CFDictionary)
+        if status == errSecItemNotFound { status = SecItemAdd(query as CFDictionary, nil) }
+        if status != errSecSuccess { dataProtectionUnavailable = true }
+        return status == errSecSuccess
+    }
+
+    /// The single place a write outcome becomes words. Exhaustive over the enum, so a new case
+    /// cannot be added without deciding what it says.
+    private static func describe(_ outcome: KeychainWrite) -> String {
+        switch outcome {
+        case .dataProtection:
+            return "stored in the data-protection keychain — no future launch prompts for it"
+        case .legacyFallback(let dpStatus):
+            return "the data-protection keychain refused (OSStatus \(dpStatus)), stored in the "
+                 + "LEGACY keychain — readable, but a build with a different code identity will "
+                 + "need a confirmation for it"
+        case .failed(let status):
+            return "FAILED in both keychains (OSStatus \(status)) — this process cannot persist "
+                 + "a key. Nothing was deleted; any existing key is still there."
         }
-        return true
     }
 
     /// Set once the modern keychain has refused for want of an entitlement — which is a

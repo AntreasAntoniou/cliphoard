@@ -431,6 +431,21 @@ final class ClipStore: ObservableObject {
     /// and for "I could not stat it".
     private func repairKinds() {
         for item in items where item.kind != .image {
+            // NEVER re-derive a kind from CIPHERTEXT. For a row this process cannot open,
+            // `item.text` IS the sealed `enc1:…` string, so `detectKind` classifies base64 —
+            // and the answer is written to disk by `updateMeta` below.
+            //
+            // The timing is what makes this urgent rather than theoretical. `repairKinds` is
+            // called AFTER the safe-mode early return, so it is inert while the store is
+            // frozen and fires on the FIRST HEALTHY LAUNCH — which is to say, the instant
+            // anyone clears a poisoned canary to recover a store. The rows it would rewrite
+            // are exactly the ones already hurt, and a link or a colour silently becomes
+            // `.text` with its `colorHex` dropped, permanently, destroying the metadata a
+            // future key recovery was meant to restore whole.
+            //
+            // `updateMeta` writes only kind/last_used_at/pinned/use_count, so the ciphertext
+            // itself is never at risk — this is metadata loss, and it is still irreversible.
+            guard !Crypto.isSealed(item.text) else { continue }
             guard item.payloadFile == nil, item.filePath == nil else { continue }
             let correct = ClipboardMonitor.detectKind(for: item.text)
             guard correct != item.kind else { continue }

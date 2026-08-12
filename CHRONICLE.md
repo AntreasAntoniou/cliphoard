@@ -563,3 +563,28 @@ prompt, with full content — lives in the chronicle ledger; `chron resume` read
 
 - **Why:** {"summary": "plan verdict recorded", "plus_ultra": {"arbiter": "Athena"}}
 
+
+## [2026-08-08T15:56Z-0Y8X] NOTE — plus-ultra: reality verdict recorded
+
+- **Why:** {"summary": "reality verdict recorded", "plus_ultra": {"verifier": "self-mutation"}}
+
+
+## [2026-08-08T17:15Z-HN7F] NOTE — plus-ultra: gate BLOCKED (no plan verdict)
+
+- **Why:** {"summary": "gate BLOCKED (no plan verdict)", "plus_ultra": {"tool": "Bash", "target": "swift test 2>&1 | tee /private/tmp/claude-501/-Users-antreas/a3424a85-37ed-435a-88a6-482496e45604/scratchpad/lidopen.log | grep -E \"Executed [0-9]+ tests, with\" | tail -2; echo \"EXIT=${PIPESTATUS[0]}\""}}
+
+
+## [2026-08-10T13:23Z-Q60E] NOTE — plus-ultra: gate BLOCKED (no plan verdict)
+
+- **Why:** {"summary": "gate BLOCKED (no plan verdict)", "plus_ultra": {"tool": "Bash", "target": "osascript -e 'tell application \"Cliphoard\" to quit' 2>/dev/null; sleep 1; pgrep -x Cliphoard >/dev/null && { kill 84065 2>/dev/null; sleep 1; }; pgrep -x Cliphoard >/dev/null && echo \"STILL RUNNING\" |"}}
+
+
+## [2026-08-10T13:26Z-Z6QJ] NOTE — plus-ultra: gate BLOCKED (no plan verdict)
+
+- **Why:** {"summary": "gate BLOCKED (no plan verdict)", "plus_ultra": {"tool": "Bash", "target": "security dump-keychain 2>/dev/null | grep -oE '\"acct\"<blob>=\"db-archived-key-[^\"]+' | sed 's/.*=\"//' | sort -u > /private/tmp/claude-501/-Users-antreas/a3424a85-37ed-435a-88a6-482496e45604/scratchpad/"}}
+
+
+## [2026-08-12T01:48Z-HNNR] NOTE — plus-ultra: plan verdict recorded
+
+- **Why:** {"summary": "plan verdict recorded", "plus_ultra": {"arbiter": "Athena"}}
+

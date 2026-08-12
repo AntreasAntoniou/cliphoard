@@ -284,6 +284,46 @@ final class UnreadableStorageTests: XCTestCase {
                      + "made it read as under a third")
     }
 
+    // MARK: - Never re-derive a kind from ciphertext
+
+    /// `repairKinds` recomputes each clip's kind from `item.text` and WRITES the answer to
+    /// disk. For a row this process cannot open, `item.text` IS the sealed `enc1:` string — so
+    /// it classifies base64 and permanently overwrites a link's or a colour's kind with
+    /// `.text`, dropping `colorHex`.
+    ///
+    /// The timing is what makes this the highest-value guard in the file rather than a nicety:
+    /// `repairKinds` runs AFTER the safe-mode early return, so it is inert while a store is
+    /// frozen and fires on the FIRST HEALTHY LAUNCH — which is exactly the moment someone
+    /// clears a poisoned canary to recover a store. The rows it rewrites are precisely the ones
+    /// already damaged, and it destroys the metadata a future key recovery was meant to restore.
+    func testAnUnreadableRowKeepsItsKindThroughRepair() throws {
+        let dir = tempDir()
+        let path = dir.appendingPathComponent("ditto.sqlite").path
+        _ = try XCTUnwrap(Database(path: path), "create the schema")
+
+        // A row whose stored text is ciphertext this process cannot open, recorded as a LINK.
+        // Raw SQL because `Database.insert` would seal with the key this process actually holds.
+        var raw: OpaquePointer?
+        XCTAssertEqual(sqlite3_open_v2(path, &raw, SQLITE_OPEN_READWRITE, nil), SQLITE_OK)
+        defer { sqlite3_close_v2(raw) }
+        let id = UUID().uuidString
+        XCTAssertEqual(sqlite3_exec(raw, """
+            INSERT INTO clips (id, kind, text, created_at, last_used_at, pinned, use_count)
+            VALUES ('\(id)', 'link',
+                    'enc1:bm90LWEtcmVhbC1jaXBoZXJ0ZXh0LWp1c3Qtc2VhbGVk', 0, 0, 0, 0);
+            """, nil, nil, nil), SQLITE_OK)
+
+        // Load through the real path. Frozen or not, the row's kind must survive.
+        let store = ClipStore(directory: dir)
+        let row = try XCTUnwrap(store.items.first { $0.id.uuidString == id },
+                                "precondition: the row loaded")
+        XCTAssertTrue(Crypto.isSealed(row.text), "precondition: this process cannot open it")
+        XCTAssertEqual(row.kind, .link,
+                       "an unreadable row was re-classified from its CIPHERTEXT. `enc1:…` "
+                       + "detects as plain text, and the answer is written to disk — "
+                       + "permanently, for exactly the rows a key recovery would restore.")
+    }
+
     // MARK: - The freeze decision, term by term
 
     /// `safeMode` itself cannot be tested term by term on this machine: the canary term is
