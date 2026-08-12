@@ -11,16 +11,39 @@ source-only and compile; **the test suite was not run**, for a reason given in �
 
 ## 0. Read this first — the one-paragraph state of the world
 
-Your store is **not damaged**. 84 of 93 clips decrypt fine; the app is frozen because a
-single sentinel keychain item (`db-canary-v1`) cannot be opened, and the app correctly
-refuses to touch anything it cannot verify. That sentinel was sealed on **2026-08-08 at
-11:34:55Z**, during a dark-wake launch, under an ephemeral session key with fingerprint
-`bc5c6b58` — a key that appears in exactly one line of your entire debug log and has not
-existed since that process exited. There is no key to find. Clearing the sentinel is the
-only recovery, and it costs nothing, because the thing it protects is already gone.
+Your store is **not damaged**. The overwhelming majority of clips decrypt fine; the app is
+frozen because a single sentinel keychain item (`db-canary-v1`) cannot be opened, and the app
+correctly refuses to touch anything it cannot verify.
 
-**Nine clips are permanently unreadable** and no code change recovers them. At least one is
-dated 2026-08-08 11:35:46 — written 51 seconds into that same ephemeral session.
+**Do not use a fixed clip count as your success criterion.** The store held 93 rows when the
+banner was screenshotted, 103 by 02:00, and it is **still growing** — the installed binary
+predates "stop writes in safe mode" and keeps writing (§1). Judge success by *the banner
+clearing*, not by a number.
+
+**The sentinel is unrecoverable, and that much is proven.** Your complete 23-key ring was
+built on 2026-08-11 with **every archived key read successfully** — zero `archived key …
+unreadable` lines in the whole log — and it opens neither the canary nor the unreadable
+clips. There is no key to find, so clearing the sentinel costs nothing.
+
+**What sealed it is *not* fully proven, and the guide previously overstated this.** Two
+candidate events:
+
+- **2026-08-08T11:34:55Z**, a dark-wake launch that read all three keychain items as
+  unavailable and wrote the canary anyway, under a lone session key `bc5c6b58` — a
+  fingerprint appearing in exactly one line of your log and never again.
+- **2026-08-08T17:19:26Z**, which is the canary's *actual* keychain modification date. Nothing
+  in the app's log covers it (the log is silent from 11:39 until Aug 10), and `CHRONICLE.md`
+  records a blocked `swift test` at 17:15Z — three minutes earlier. Two other keychain items
+  were written unlogged in the same window.
+
+The second is the likelier author, and if so it is **a test process overwriting the app's
+canary** — exactly the defect §3 row 2 fixes. Later launches ran the same migrate-forward code
+and did *not* bump that date, so 17:19:26Z was a real content write by a process holding a key
+that is not among the 23.
+
+**Either way the conclusion is identical:** the sealing key is gone and clearing is the only
+recovery. Some clips are permanently unreadable and no code change recovers them; at least one
+is dated 2026-08-08 11:35:46.
 
 ---
 
@@ -30,9 +53,12 @@ dated 2026-08-08 11:35:46 — written 51 seconds into that same ephemeral sessio
 > current `HEAD` in the same sitting.**
 
 This is not housekeeping. The app you are running was built on **2026-08-08 12:34** from a
-working tree that was **never committed** — provably: the string `future launches need no
-prompt` appears twice in that binary and in *zero* commits on any branch, while `HEAD`'s own
-failure string appears zero times in the binary. Seven crypto commits land after it.
+working tree that was **never committed**. Provably, in both directions: `HEAD`'s own strings
+`FAILED in both keychains` and `no future launch prompts for it` appear **zero** times in that
+binary, while the binary's `future launches need no prompt` appears in **no commit up to and
+including `ceac8d6`**. (It now appears in `1c624d4` — inside a doc comment quoting the old log
+line — so run that grep against `ceac8d6`, not `HEAD`, or it looks like a match.) Seven crypto
+commits land after the build.
 
 That binary predates the guards that make recovery safe. Clearing the canary against it
 re-runs pre-guard code: one dark-wake launch or one cancelled dialog mints another ephemeral
@@ -124,8 +150,11 @@ grep -E "SAFE MODE|keyring built|recovery ring|canary" \
   ~/Library/Application\ Support/Cliphoard/debug.log | tail -8
 ```
 
-**Success looks like:** no new `SAFE MODE` line, the banner gone, 84 clips readable, and the
-9 sealed ones still showing their original kinds.
+**Success looks like:** no new `SAFE MODE` line and the banner gone. Do **not** check for a
+particular clip count — the store is still growing, and a stale number is exactly what would
+make a correct recovery look like a failure at the moment you are deciding whether to trust it.
+The still-sealed rows should keep their original kinds (that is what the `repairKinds` guard is
+for).
 
 **If `SAFE MODE — the startup canary did not open` reappears:** stop. The replacement canary
 was written under a key that did not survive. Nothing has been re-sealed, your backup is
@@ -152,20 +181,28 @@ All source-only. Undo everything with `git checkout -- Sources/ Tests/`.
 | 8 | `dataProtectionUnavailable` latches on **any** DP refusal | It only latched on one status, so any *other* failure left it false and re-armed (7). |
 | 9 | Keyring split into `primaryRing` + lazy `archivedRing` | Archived keys are read only after the current and legacy keys have both failed on real ciphertext. Your log shows 3–5 second gaps between consecutive archived reads — you, clicking dialogs — to open a canary the current key would have opened first. |
 
-**Deliberately NOT changed:** prompt suppression stays **off by default** (it's a seam plus a
-`--recover-keys` opt-in, not a behaviour change); the ring is never capped or pruned (a cap
-silently drops the one key an old row needs); `ModelAssets` still writes to your real store
-dir under a test — logged, not fixed.
+**Deliberately NOT changed:** prompt suppression was not added at all — it stays exactly as it
+is today, because the API it would rely on is unverified on this OS version (§5); the ring is
+never capped or pruned (a cap silently drops the one key an old row needs); `ModelAssets` still
+writes to your real store dir under a test — logged, not fixed.
+
+**Known latent gap, not live on your machine.** Three other init-time passes —
+`backfillDetectorFlagsIfNeeded`, `encryptExistingRowsIfNeeded`, `reKeyToSecureEnclaveIfNeeded`
+— also derive from `item.text` and rewrite rows, and did **not** get the guard from row 1. On
+your Mac all three are one-shot and already spent (`detectorBackfillV1`, `dbEncryptedV1`,
+`reKeySEv2` are all set), so your recovery is unaffected. It matters for a fresh install or if
+those defaults are ever reset.
 
 ---
 
 ## 4. Two decisions that are yours
 
-**D1 — Clear `db-canary-v1`?** *Recommended, strictly after Step 3.* The evidence is as
-strong as it gets: your complete 23-key ring was assembled with every archived key read
-**successfully**, and it opens neither the canary nor the 9 rows. It is ciphertext under a
-key that has not existed since 2026-08-08. Clearing it loses nothing except the forensic
-artifact that caught the incident — which is the only reason this is a question.
+**D1 — Clear `db-canary-v1`?** *Recommended, strictly after Step 3.* The evidence for
+*unrecoverability* is as strong as it gets, and it does not depend on knowing which event
+sealed it: your complete 23-key ring was assembled with every archived key read
+**successfully**, and it opens neither the canary nor the sealed rows. It is ciphertext under a
+key that no longer exists. Clearing it loses nothing except the forensic artifact that caught
+the incident — which is the only reason this is a question at all.
 
 **D2 — Accept the 9 clips as permanently unreadable?** Their key does not exist. No code
 change recovers them. The Step 1 backup preserves their ciphertext indefinitely against a key
@@ -178,13 +215,23 @@ that will not arrive. This is a data decision, not an engineering one.
 **Do not run `swift test` until the fixed binary is deployed and the junk keys are gone** —
 on the current state it will prompt you again.
 
-Three tests are written and marked **VERIFY WHEN AWAKE**, because their failure mode *is* a
-dialog: the zero-archived-reads assertion, the namespace sweep, and the suppression path. Run
-them in one supervised pass.
+**There is a second, larger prompt hazard nobody has resolved.** Your login keychain holds
+**133 stale test services (266 items)** under `io.antreas.cliphoard.tests.`, left by
+`KeyringRecoveryTests` across runs on 2026-08-08. The new start-of-run sweep will issue **133
+`SecItemDelete` calls** on the first `swift test`. Whether a legacy-keychain delete raises an
+authorization dialog is **untested** — it could not be tested without risking exactly the
+dialog storm this work exists to stop. Settle that before you type `swift test`: delete those
+services via Keychain Access first (search `io.antreas.cliphoard.tests`, multi-select, one
+authorization), or accept that the first run may prompt.
 
-One unverified assumption, stated plainly: nobody has confirmed that
+Nine tests were added tonight, all pure — they assert decisions, never the keychain, so none
+can raise a dialog. What is **not** covered, stated plainly rather than left to be discovered:
+nothing asserts the lazy-ring split (`archivedReadCount` exists and has no consumer), and
+nothing exercises the sweep. Both need a supervised run.
+
+One unverified assumption: nobody has confirmed that
 `SecKeychainSetUserInteractionAllowed(false)` still suppresses legacy ACL prompts on Darwin
-25.6. Nothing tonight depends on it — that is why suppression is off by default.
+25.6. Nothing here depends on it.
 
 ---
 

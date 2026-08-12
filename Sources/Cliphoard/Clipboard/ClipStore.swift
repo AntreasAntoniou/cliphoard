@@ -232,10 +232,21 @@ final class ClipStore: ObservableObject {
                            + "complete — NOT stamping re-key")
             return
         }
+        // Skip rows this process cannot open. `Database.insert` re-seals `item.text`, so a row
+        // already holding ciphertext would be sealed AGAIN — recoverable (`open` unwraps up to
+        // `maxUnsealRounds`) but it burns rounds for nothing, and re-persisting bytes we cannot
+        // read is not what this migration is for.
+        //
+        // The tally compares against ELIGIBLE, not `items.count`. Comparing against the whole
+        // list would make the guard unsatisfiable the moment a single row is unreadable, so the
+        // marker would never stamp and this pass would run on every launch forever — trading a
+        // double-seal for an unretirable migration.
+        let eligible = items.filter { !Crypto.isSealed($0.text) }
         var written = 0
-        for item in items where db.insert(item) { written += 1 }
-        guard written == items.count else {
-            DebugLog.write("migrate: re-key wrote \(written)/\(items.count) rows — NOT "
+        for item in eligible where db.insert(item) { written += 1 }
+        guard written == eligible.count else {
+            DebugLog.write("migrate: re-key wrote \(written)/\(eligible.count) eligible rows "
+                           + "(\(items.count - eligible.count) unreadable, skipped) — NOT "
                            + "stamping the marker, so a healthy launch retries")
             return
         }
@@ -270,11 +281,16 @@ final class ClipStore: ObservableObject {
                            + "complete — NOT stamping encrypt-existing")
             return
         }
+        // Same rule and the same tally correction as the re-key pass above: skip rows this
+        // process cannot open, and compare against ELIGIBLE rather than `items.count`, or one
+        // unreadable row makes the guard unsatisfiable and the migration unretirable.
+        let eligible = items.filter { !Crypto.isSealed($0.text) }
         var written = 0
-        for item in items where db.insert(item) { written += 1 }
-        guard written == items.count else {
-            DebugLog.write("migrate: encrypt-existing wrote \(written)/\(items.count) rows "
-                           + "— NOT stamping the marker, so a healthy launch retries")
+        for item in eligible where db.insert(item) { written += 1 }
+        guard written == eligible.count else {
+            DebugLog.write("migrate: encrypt-existing wrote \(written)/\(eligible.count) "
+                           + "eligible rows (\(items.count - eligible.count) unreadable, "
+                           + "skipped) — NOT stamping the marker, so a healthy launch retries")
             return
         }
         db.vacuum()   // purge stale plaintext from free pages
@@ -346,7 +362,17 @@ final class ClipStore: ObservableObject {
     /// whereas a false negative would leave a secret unscanned, and therefore in
     /// the CoreML index, forever.
     static func needsDetectorBackfill(_ item: ClipItem) -> Bool {
-        item.flags.isEmpty && item.shape == nil
+        // NEVER scan a row whose text is CIPHERTEXT. `Detectors.scan` would classify base64,
+        // the verdict is persisted by `db.insert`, and a false `.secret` PURGES that clip's
+        // vectors and image print irreversibly. Same defect as `repairKinds`, same window —
+        // this pass also runs on the first healthy launch, over the same unreadable rows,
+        // which is to say the instant anyone recovers a store by clearing a poisoned canary.
+        //
+        // Also correct on its own terms: `flags.isEmpty && shape == nil` means "never
+        // scanned", and a row this process cannot open has not been scanned and cannot be.
+        // Deferring leaves it for a launch that can actually read it.
+        guard !Crypto.isSealed(item.text) else { return false }
+        return item.flags.isEmpty && item.shape == nil
     }
 
     /// One-time backfill: compute `flags` + `shape` for every clip captured
