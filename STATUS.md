@@ -1,7 +1,8 @@
 # Cliphoard — Release Readiness Status
 
-**Last updated:** 2026-08-08 · **Branch:** `rename/cliphoard`
+**Last updated:** 2026-08-12 · **Branch:** `rename/cliphoard`
 **Verdict: NOT-READY for wide distribution — gated only by human-only steps.**
+**Local install currently FROZEN — see [`PUBLICATION.md`](PUBLICATION.md) before doing anything.**
 
 The codebase is release-quality. What stands between here and a public v1.0 is **not
 code**: it is an Apple Developer ID certificate, a published Homebrew tap, and a
@@ -37,10 +38,37 @@ why that fallback is load-bearing rather than a nicety. So:
   `DARK WAKE` or `-34018` lines. `defaults write io.antreas.cliphoard debugLog -bool YES`.
 
 
+## Local-install incident, 2026-08-08 → 2026-08-12 — read before running anything
+
+The maintainer's own install is in safe mode and the test suite is temporarily unrunnable
+without a dialog storm. Neither is a defect in the shipping product; both are worth reading
+because the fixes are in this branch.
+
+- **The store is frozen, and the store is fine.** 84 of 93 clips decrypt. `db-canary-v1` — a
+  single sentinel item — was sealed on 2026-08-08T11:34:55Z during a dark-wake launch under
+  an ephemeral session key (fingerprint `bc5c6b58`, present in exactly one line of the debug
+  log and never seen again). The freeze is the app correctly refusing to touch data it cannot
+  verify. **Nine clips are permanently unreadable**; their key does not exist.
+- **The test target was writing to the real keychain.** `Crypto.service` was one constant
+  shared by the app and `swift test`, and keychain items are keyed by service *across
+  processes* — so the suite inherited write access to production secrets. 20 junk
+  `db-archived-key-unit-test-key*` items accumulated in a live login keychain, each carrying
+  an ACL for a test binary whose code identity is gone, hence one confirmation dialog per item
+  per launch. Fixed in `1c624d4` (per-process namespace, conjunction-guarded, plus a
+  start-of-run sweep).
+- **Recovery has an ordering constraint**, documented in `PUBLICATION.md`: the app must be
+  rebuilt from HEAD *before* the canary is cleared. The installed binary was built
+  2026-08-08 12:34 from an uncommitted tree and predates the ephemeral-key guards.
+
 ## Test + build state
 
-- `swift build` clean; `swift test` → **403 tests, 0 failures** on `rename/cliphoard`
-  (verified 2026-08-08, including image understanding and the crypto hardening; 2026-08-05 release-candidate pass, including real-model parity/retrieval).
+- `swift build` clean. `swift test` → **442 tests, 0 failures, 28 skips** as of `ceac8d6`
+  (2026-08-08, lid closed). **Not re-run since `1c624d4`** — on a machine with the junk keys
+  still present it raises a keychain dialog per archived key. Run it after the cleanup in
+  `PUBLICATION.md` §2, and expect three tests marked VERIFY-WHEN-AWAKE to need a supervised
+  pass.
+- A run with the lid OPEN is the one that matters: 26 of the 28 skips are keychain-gated, so
+  a green lid-closed suite is necessary and not sufficient.
 - On-device model path (ogma CoreML) proven cert-free in CI (`.github/workflows/models.yml`),
   conversion stack pinned (`torch==2.7.1`, `coremltools==9.0`, `numpy<2`).
 
