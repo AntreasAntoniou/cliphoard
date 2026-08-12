@@ -92,9 +92,12 @@ sqlite3 "$B/ditto-consistent.sqlite" 'PRAGMA integrity_check; SELECT count(*) FR
 ciphertext verbatim plus the image bytes, needs no key and no canary, and is a strict
 superset of what the in-app archive tool would produce.
 
-> The obvious alternative — `--archive-unreadable` — **does not work right now.** It refuses
-> on `!decryptionHealthy` and prints "cannot reach the keychain", which is false: the
-> keychain is reachable, the canary is poisoned. Fixing that is a follow-up, not a blocker.
+> `--archive-unreadable` used to refuse outright here — it bailed on `!decryptionHealthy` and
+> printed "cannot reach the keychain", which on your machine is simply false: the keychain is
+> reachable, the sentinel is dead. **Fixed tonight.** It now warns, writes the archive anyway
+> (preserving ciphertext is never destructive), and refuses only `--delete`. The `cp -a` +
+> `sqlite3 .backup` above is still the better instrument — it captures every row plus the image
+> bytes and needs no keychain at all — so use it as the primary and treat the tool as optional.
 
 ### Step 2 — Quit Cliphoard.
 
@@ -260,8 +263,8 @@ impossible. Cut releases with `Scripts/release.sh` (it passes `--entitlements`),
 
 ## 7. Follow-ups, logged not started
 
-- `TagAudit`'s keychain guard refuses the non-destructive dry run — same defect shape as the
-  completeness guard fixed earlier, through a different disjunct.
+- ~~`TagAudit`'s keychain guard refuses the non-destructive dry run~~ — **fixed tonight**; it
+  now warns and archives, refusing only the delete.
 - `ModelAssets.storeDir` writes to the real Application Support under a test.
 - The xctest `UserDefaults` domain persists between runs, so one run's migration markers
   decide the next run's behaviour. (It does **not** reach the app — verified.)

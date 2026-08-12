@@ -119,13 +119,32 @@ enum TagAudit {
         // resolution, so reading it directly can see a stale false — and this is the one
         // tool that DELETES rows. It happened to be safe only because the other two
         // disjuncts caught the case; correct by over-determination is not correct.
-        if Crypto.ensureKeyResolved() || !Crypto.decryptionHealthy || Crypto.keychainAccessDenied {
-            err("REFUSING: this process cannot reach the keychain, so EVERY clip looks "
-                + "unreadable — that is a property of this process, not of your data. "
-                + "Running with --delete here would destroy your whole history. Try again "
-                + "on an awake, unlocked Mac; if clips are still unreadable then, the "
-                + "diagnosis is real.")
-            stop(.refusedKeychainUnreachable)
+        // The SAME asymmetry as `archivePlan`, applied to the process-health question rather
+        // than the read-completeness one — and it had to be, because this guard refused BOTH
+        // halves of the tool on any one of three disjuncts.
+        //
+        // That is the dry-run bug again, through a different door. Preserving ciphertext is
+        // the SAFE half and it is the half a degraded machine needs MOST; refusing it because
+        // the process is unhealthy is "I could not read it" wearing a safety hat. Worse, the
+        // refusal text asserted "cannot reach the keychain", which on a store with a poisoned
+        // canary is simply FALSE — the keychain is fine, the sentinel is dead — and a false
+        // diagnosis in a recovery tool sends someone looking in the wrong place.
+        //
+        // So: compute the health facts here, refuse only the DELETE on them (below), and let
+        // the archive run and say it is partial.
+        //
+        // `ensureKeyResolved()` rather than the raw `keyIsEphemeral`: the flag is set as a
+        // side effect of key resolution, so reading it directly can see a stale false.
+        let processDegraded = Crypto.ensureKeyResolved()
+            || !Crypto.decryptionHealthy
+            || Crypto.keychainAccessDenied
+        if processDegraded {
+            err("WARNING: this process is degraded (ephemeral key, unhealthy canary, or a "
+                + "keychain it could not reach), so clips may look unreadable for reasons "
+                + "that have nothing to do with your data. The archive below will be written "
+                + "anyway — preserving ciphertext is never destructive — but --delete is "
+                + "REFUSED. Re-run on an awake, unlocked Mac; if clips are still unreadable "
+                + "then, the diagnosis is real.")
         }
 
         guard let db = Database(path: dbPath) else { err("cannot open DB"); stop(.environment) }
@@ -205,6 +224,11 @@ enum TagAudit {
 
         guard delete else { print("dry run: no rows deleted (pass --delete to remove them)"); return }
         // The token, consumed at the ONLY line in this file that destroys anything.
+        guard !processDegraded else {
+            err("REFUSING TO DELETE: this process is degraded, so \"unreadable\" is a property "
+                + "of this process and not of your data. The archive above has been kept.")
+            stop(.refusedKeychainUnreachable)
+        }
         guard let proof else {
             err("REFUSING TO DELETE: the stored history could not be read in full. The "
                 + "archive above is PARTIAL and has been kept. A partial read cannot tell "

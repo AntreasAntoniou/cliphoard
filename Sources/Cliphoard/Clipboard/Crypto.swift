@@ -363,7 +363,12 @@ enum Crypto {
     /// Order matters only for speed, never for correctness — the newest key opens
     /// the newest rows, so it is tried first.
     /// The keys a HEALTHY launch ever touches: the key in use, plus the legacy random key.
-    /// Both are already resolved, so this costs no extra keychain traffic and cannot prompt.
+    ///
+    /// Honest about the cost: `legacyKey` is its own lazy static and performs a `db-key-v1`
+    /// read, which on a Secure-Enclave Mac `resolveKey` never otherwise touches — so building
+    /// this ring can cost ONE keychain read, and that read can prompt. The win is that it is
+    /// one rather than N, which is the difference between a launch and a dialog queue. An
+    /// earlier version of this comment claimed it "cannot prompt"; that was wrong.
     private static let primaryRing: [SymmetricKey] = {
         var ring: [SymmetricKey] = [key]
         if let lk = legacyKey, !ring.contains(where: { sameKey($0, lk) }) { ring.append(lk) }
@@ -996,7 +1001,14 @@ enum Crypto {
         if status == errSecItemNotFound {
             status = SecItemAdd(query as CFDictionary, nil)
         }
-        if status == errSecSuccess { return .dataProtection }
+        if status == errSecSuccess {
+            // Log the success too. The early return used to skip the single log site entirely,
+            // so the one outcome worth knowing about — the item landed somewhere that will
+            // never prompt again — was the only one that said nothing. A diagnostic channel
+            // that is silent on success cannot be used to confirm a fix.
+            DebugLog.write("crypto: storeBlob(\(account)) — " + describe(.dataProtection))
+            return .dataProtection
+        }
 
         // errSecMissingEntitlement (-34018): the data-protection keychain needs a
         // keychain-access-groups entitlement, which a self-signed local build with no
