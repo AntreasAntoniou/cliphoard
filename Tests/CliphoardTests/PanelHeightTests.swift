@@ -41,9 +41,26 @@ final class PanelHeightTests: XCTestCase {
     /// implementation. It catches only a shrink of the inset.
     /// Kills: `stripHeight = t.cardHeight` (drops the 14pt top/bottom inset, so the
     /// first and last rows of every card clip), and any return to a constant.
-    func testStripReservesAWholeCardPlusItsInset() {
+    func testStripReservesAWholeCardPlusItsInset() throws {
+        // `Theme` reads `NSApp.effectiveAppearance`, which is nil in a bare test process — so
+        // this asserts nothing unless AppKit is up, and says so rather than crashing whichever
+        // test happens to run first. That fragility is real and was found the hard way: making
+        // `barFrame` read `Theme` turned a pure arithmetic helper into an order-dependent crash.
+        try XCTSkipIf(NSApp == nil, "no NSApplication — Theme cannot resolve its tokens")
         XCTAssertGreaterThanOrEqual(Theme.stripHeight, Theme.cardHeight + 28,
             "The strip must hold a whole card and both 14pt insets, or the card is clipped.")
+    }
+
+    /// The numbers hard-coded in the tests above must match what `Theme` actually says, or the
+    /// suite is asserting against a fiction. Skipped rather than crashed when AppKit is absent.
+    ///
+    /// Kills: changing `cardHeight`, `chromeMaxHeight` or the strip inset without updating the
+    /// literals the geometry tests use.
+    func testTheLayoutCeilingMatchesItsConstituents() throws {
+        try XCTSkipIf(NSApp == nil, "no NSApplication — Theme cannot resolve its tokens")
+        XCTAssertEqual(Theme.stripHeight, 278, accuracy: 0.5)
+        XCTAssertEqual(Theme.chromeMaxHeight, 100, accuracy: 0.5)
+        XCTAssertEqual(FloatingPanel.layoutCeiling, 278 + 200 + 180, accuracy: 0.5)
     }
 
     /// The clean bar — no banner, no indexing — is taller than the constant it
@@ -53,8 +70,11 @@ final class PanelHeightTests: XCTestCase {
     /// Kills: `minBarHeight` being treated as the resting height rather than a floor.
     func testTheCleanBarIsTallerThanTheConstantItReplaced() {
         let fixedChrome: CGFloat = 8 + 70 + 1 + 33   // top pad, toolbar, divider, footer
+        // 278 rather than `Theme.stripHeight`: `Theme` touches `NSApp.effectiveAppearance`,
+        // nil in a test process. Cross-checked by `testTheLayoutCeilingMatchesItsConstituents`.
         let clean = FloatingPanel.barFrame(visible: visible,
-                                           contentHeight: fixedChrome + Theme.stripHeight)
+                                           contentHeight: fixedChrome + 278,
+                                           ceiling: .greatestFiniteMagnitude)
         XCTAssertEqual(clean.height, 390, accuracy: 0.5)
         XCTAssertGreaterThan(clean.height, 380,
             "A clean bar at the old constant clipped the strip by 10pt before any chrome existed.")
@@ -70,7 +90,7 @@ final class PanelHeightTests: XCTestCase {
     /// keeping `maxY` fixed.
     func testTheBarIsAnchoredAtTheScreenBottomAtEveryHeight() {
         for content in [CGFloat(200), 380, 390, 512, 630, 5000] {
-            let f = FloatingPanel.barFrame(visible: visible, contentHeight: content)
+            let f = FloatingPanel.barFrame(visible: visible, contentHeight: content, ceiling: .greatestFiniteMagnitude)
             XCTAssertEqual(f.minY, visible.minY, accuracy: 0.5,
                            "content height \(content) moved the bar off the screen edge")
             XCTAssertEqual(f.minX, visible.minX, accuracy: 0.5)
@@ -82,7 +102,7 @@ final class PanelHeightTests: XCTestCase {
     ///
     /// Kills: dropping the `min(_, visible.height)` clamp.
     func testTheBarNeverOutgrowsTheScreen() {
-        let f = FloatingPanel.barFrame(visible: visible, contentHeight: 5000)
+        let f = FloatingPanel.barFrame(visible: visible, contentHeight: 5000, ceiling: .greatestFiniteMagnitude)
         XCTAssertEqual(f.height, visible.height, accuracy: 0.5)
         XCTAssertLessThanOrEqual(f.maxY, visible.maxY + 0.5)
     }
@@ -92,7 +112,7 @@ final class PanelHeightTests: XCTestCase {
     /// Kills: dropping the `max(_, minBarHeight)` clamp — which would let a
     /// mis-measured tree (an unpinned body region reports 141pt) collapse the bar.
     func testTheBarNeverCollapsesBelowItsFloor() {
-        let f = FloatingPanel.barFrame(visible: visible, contentHeight: 10)
+        let f = FloatingPanel.barFrame(visible: visible, contentHeight: 10, ceiling: .greatestFiniteMagnitude)
         XCTAssertEqual(f.height, FloatingPanel.minBarHeight, accuracy: 0.5)
     }
 
@@ -107,7 +127,7 @@ final class PanelHeightTests: XCTestCase {
     func testTheDismissedBarFullyClearsTheScreenAtEveryHeight() {
         for content in [CGFloat(380), 390, 512, 630] {
             let off = FloatingPanel.offScreenFrame(visible: visible, contentHeight: content)
-            let on = FloatingPanel.barFrame(visible: visible, contentHeight: content)
+            let on = FloatingPanel.barFrame(visible: visible, contentHeight: content, ceiling: .greatestFiniteMagnitude)
             XCTAssertLessThanOrEqual(off.maxY, visible.minY + 0.5,
                 "a \(on.height)pt bar left \(off.maxY - visible.minY)pt on screen after sliding out")
             XCTAssertEqual(off.height, on.height, accuracy: 0.5)
@@ -125,13 +145,49 @@ final class PanelHeightTests: XCTestCase {
         for gone in [NSRect.zero,
                      NSRect(x: 0, y: 0, width: 1440, height: 0),
                      NSRect(x: 0, y: 0, width: 0, height: 900)] {
-            XCTAssertEqual(FloatingPanel.barFrame(visible: gone, contentHeight: 390), .zero,
+            XCTAssertEqual(FloatingPanel.barFrame(visible: gone, contentHeight: 390, ceiling: .greatestFiniteMagnitude), .zero,
                            "a degenerate screen rect must be refused, not turned into a "
                            + "zero-height bar the re-fit timer then holds in place")
         }
         // The converse, so the guard cannot pass by refusing everything.
         let real = NSRect(x: 0, y: 0, width: 1440, height: 900)
-        XCTAssertEqual(FloatingPanel.barFrame(visible: real, contentHeight: 390).height, 390)
+        XCTAssertEqual(FloatingPanel.barFrame(visible: real, contentHeight: 390, ceiling: .greatestFiniteMagnitude).height, 390)
+    }
+
+    /// A runaway measurement must not be obeyed.
+    ///
+    /// The re-fit timer was registered in `.common` mode, so it fired while an NSMenu was
+    /// tracking; `sizeThatFits` measured a perturbed tree and every fire grew the bar, walking
+    /// it up off the screen when the search-mode picker was opened. Moving the timer to
+    /// `.default` removes THAT trigger — this removes the consequence for every trigger,
+    /// including the ones nobody has found yet.
+    ///
+    /// The ceiling is derived from the layout's own constants, not invented: the body region is
+    /// pinned to `stripHeight`, each of the two chrome groups is capped at `chromeMaxHeight`,
+    /// and the always-present rows are bounded by `fixedChromeAllowance`.
+    ///
+    /// Kills: clamping only to `visible.height`, which lets a bad measurement fill the display.
+    func testARunawayMeasurementCannotWalkTheBarOffTheScreen() {
+        // Stated numerically, NOT read from `Theme`: `Theme.tokens` touches
+        // `NSApp.effectiveAppearance`, which is nil in a test process, so reading it here makes
+        // the test crash or pass depending on which test ran first and happened to initialise
+        // AppKit. `testTheLayoutCeilingMatchesItsConstituents` cross-checks the number.
+        let ceiling: CGFloat = 278 + 2 * 100 + 180
+        // A tall screen, so `visible.height` cannot be doing the clamping for us.
+        let tall = NSRect(x: 0, y: 0, width: 1440, height: 4000)
+        for absurd in [CGFloat(1_000), 4_000, 100_000] {
+            let f = FloatingPanel.barFrame(visible: tall, contentHeight: absurd, ceiling: ceiling)
+            XCTAssertLessThanOrEqual(f.height, ceiling,
+                "a content height of \(absurd) produced a \(f.height)pt bar — a measurement "
+                + "fault must be refused, not rendered")
+        }
+        // The converse: every height the layout can legitimately want is still honoured.
+        for real in [CGFloat(390), 432, 466, 515, 590] {
+            XCTAssertEqual(FloatingPanel.barFrame(visible: tall, contentHeight: real,
+                                                  ceiling: ceiling).height,
+                           real, accuracy: 0.5,
+                           "the ceiling must not clip a legitimate layout")
+        }
     }
 
     // MARK: - The chrome cap

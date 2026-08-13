@@ -15,6 +15,20 @@ final class FloatingPanel: NSPanel {
     /// tree has ever been measured. Not the resting height — see `fit`.
     static let minBarHeight: CGFloat = 380
 
+    /// Generous allowance for the rows that are always present — toolbar, divider, footer and
+    /// the outer top pad, measured at 112pt together. Used only to bound a runaway measurement
+    /// (see `barFrame`), so it is deliberately loose: it must never clip a legitimate layout,
+    /// only refuse an impossible one.
+    static let fixedChromeAllowance: CGFloat = 180
+
+    /// The tallest the layout can legitimately be, derived from its own constants: the body
+    /// region is pinned to `stripHeight`, each of the two chrome groups is capped at
+    /// `chromeMaxHeight`, and the always-present rows are bounded by `fixedChromeAllowance`.
+    /// Reads `Theme`, so it must only be evaluated where `NSApp` exists.
+    static var layoutCeiling: CGFloat {
+        Theme.stripHeight + 2 * Theme.chromeMaxHeight + fixedChromeAllowance
+    }
+
     var onResignKey: (() -> Void)?
 
     /// Stored hosting controller so the SwiftUI tree can be re-evaluated on every
@@ -81,7 +95,7 @@ final class FloatingPanel: NSPanel {
     /// Pure, and static, so the geometry can be asserted without a window — the
     /// interesting claims (never off the bottom, never taller than the screen,
     /// never below the floor) are all arithmetic.
-    static func barFrame(visible: NSRect, contentHeight: CGFloat) -> NSRect {
+    static func barFrame(visible: NSRect, contentHeight: CGFloat, ceiling: CGFloat) -> NSRect {
         // A DEGENERATE screen rect means the display went away — unplugged, or a stale
         // `NSScreen` we are still holding. `min(max(h, 380), 0)` is 0, because the clamp is
         // applied AFTER the floor with nothing beneath it, so the bar would become a 0x0
@@ -89,15 +103,23 @@ final class FloatingPanel: NSPanel {
         // an unchanged frame is a bar that is still where the user left it, and the next
         // dismissal recovers normally.
         guard visible.height > 1, visible.width > 1 else { return .zero }
-        let height = min(max(contentHeight, minBarHeight), visible.height)
+        // `ceiling` is what the LAYOUT can legitimately need — see `layoutCeiling`. Clamping
+        // only to the screen is how one bad measurement walked the bar off the top of it.
+        //
+        // Taken as a PARAMETER rather than read here, and this is not fussiness: `Theme` reads
+        // `NSApp.effectiveAppearance`, which is nil in a test process, so touching it from this
+        // function made a pure arithmetic helper crash depending on which test ran first. The
+        // geometry stays pure; the app supplies the number.
+        let height = min(max(contentHeight, minBarHeight), min(ceiling, visible.height))
         return NSRect(x: visible.minX, y: visible.minY, width: visible.width, height: height)
     }
 
     /// Where the bar waits before sliding in and returns to after sliding out:
     /// the same frame pushed exactly its own height below the screen edge, so a
     /// taller bar still clears the screen completely.
-    static func offScreenFrame(visible: NSRect, contentHeight: CGFloat) -> NSRect {
-        let onScreen = barFrame(visible: visible, contentHeight: contentHeight)
+    static func offScreenFrame(visible: NSRect, contentHeight: CGFloat,
+                               ceiling: CGFloat = .greatestFiniteMagnitude) -> NSRect {
+        let onScreen = barFrame(visible: visible, contentHeight: contentHeight, ceiling: ceiling)
         return NSRect(x: onScreen.minX, y: visible.minY - onScreen.height,
                       width: onScreen.width, height: onScreen.height)
     }
@@ -118,7 +140,9 @@ final class FloatingPanel: NSPanel {
     func fit() {
         guard isSettled, let screen = presentedScreen ?? targetScreen() else { return }
         let visible = screen.visibleFrame
-        let target = Self.barFrame(visible: visible, contentHeight: contentHeight(width: visible.width))
+        let target = Self.barFrame(visible: visible,
+                                   contentHeight: contentHeight(width: visible.width),
+                                   ceiling: Self.layoutCeiling)
         // `.zero` means the screen is gone (see `barFrame`). Leave the bar exactly where it
         // is rather than resizing it to nothing.
         guard target != .zero else { return }
@@ -131,9 +155,15 @@ final class FloatingPanel: NSPanel {
     private func startFitting() {
         stopFitting()
         let timer = Timer(timeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in self?.fit() }
-        // .common so the bar keeps tracking its content during menu and scroll
-        // tracking loops, which is exactly when the indexing bar tends to appear.
-        RunLoop.main.add(timer, forMode: .common)
+        // `.default`, NOT `.common`. This was `.common` — "so the bar keeps tracking its
+        // content during menu and scroll tracking loops" — and that reasoning was exactly
+        // backwards. `.common` includes `.eventTracking`, so the timer fired while an NSMenu
+        // was open, `sizeThatFits` was measured against a perturbed tree, and every fire grew
+        // the bar: opening the search-mode picker walked the panel up until it filled the
+        // screen. A tracking loop is precisely when the window must NOT be resized out from
+        // under the menu the user is reading. Default mode does not fire during tracking, and
+        // the first fire afterwards catches up.
+        RunLoop.main.add(timer, forMode: .default)
         fitTimer = timer
     }
 
@@ -176,8 +206,10 @@ final class FloatingPanel: NSPanel {
         presentedScreen = screen
         let visible = screen.visibleFrame
         let height = contentHeight(width: visible.width)
-        let onScreen = Self.barFrame(visible: visible, contentHeight: height)
-        let offScreen = Self.offScreenFrame(visible: visible, contentHeight: height)
+        let onScreen = Self.barFrame(visible: visible, contentHeight: height,
+                                     ceiling: Self.layoutCeiling)
+        let offScreen = Self.offScreenFrame(visible: visible, contentHeight: height,
+                                            ceiling: Self.layoutCeiling)
 
         setFrame(offScreen, display: false)
         alphaValue = 1

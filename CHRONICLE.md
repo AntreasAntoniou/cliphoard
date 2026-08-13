@@ -603,3 +603,18 @@ prompt, with full content — lives in the chronicle ledger; `chron resume` read
 
 - **Why:** {"summary": "plan verdict recorded", "plus_ultra": {"arbiter": "Athena"}}
 
+
+## [2026-08-12T03:35Z-ZCAV] NOTE — plus-ultra: reality verdict recorded
+
+- **Why:** {"summary": "reality verdict recorded", "plus_ultra": {"verifier": "Argus18"}}
+
+
+## [2026-08-12T21:10Z-RR5Q] NOTE — plus-ultra: plan verdict recorded
+
+- **Why:** {"summary": "plan verdict recorded", "plus_ultra": {"arbiter": "Athena"}}
+
+
+## [2026-08-13T14:04Z-35R7] NOTE — plus-ultra: plan verdict recorded
+
+- **Why:** {"summary": "plan verdict recorded", "plus_ultra": {"arbiter": "Athena"}}
+
