@@ -101,8 +101,18 @@ final class FrozenControlsTests: XCTestCase {
         XCTAssertTrue(store.updateUserTags(item, to: ["invoice"]),
                       "tagging must still WORK")
         XCTAssertEqual(item.userTags, ["invoice"])
-        XCTAssertFalse(store.filtered(kind: nil, query: "#invoice", pinnedOnly: false).isEmpty,
-                       "and the label must reach the index, not just the object")
+        // The INDEX, via the lookup that actually serves user tags. My first version asserted
+        // `filtered(query: "#invoice")` — a contract that function has never had: it is the
+        // exact-SUBSTRING path over text/filePath/colorHex/ocrText, and a "#tag" query matches
+        // nothing there. It passed review and CI for two weeks because it always SKIPPED: the
+        // keychain was unreachable, so `tempStore()` was frozen and the guard above fired every
+        // time. The first honest run failed it immediately.
+        XCTAssertFalse(store.items(withUserTag: "invoice").isEmpty,
+                       "the label must reach the user-tag INDEX, not just the object")
+        XCTAssertFalse(store.filtered(kind: nil, query: "", pinnedOnly: false,
+                                      userTags: ["invoice"]).isEmpty,
+                       "and it must be reachable through the filter's userTags parameter, "
+                       + "which is how the panel's tag chips actually query")
     }
 
     // MARK: - The mechanism the section gate rests on

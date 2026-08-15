@@ -376,8 +376,20 @@ struct ClipCardView: View {
         VStack(alignment: .leading, spacing: 0) {
             header
             Divider().opacity(0.4)
-            content
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            // The slot states the invariant next to the fixed size that depends
+            // on it: content never displaces chrome. `Color.clear` accepts any
+            // proposal, so this VStack's size comes from the chrome plus what is
+            // left, never from what `content` decided it wanted.
+            //
+            // A backstop, not the fix. Every current content kind renders
+            // byte-identically with and without it, and no test requires it,
+            // because what it prevents is a content kind nobody has written yet.
+            // It must not become load-bearing: on its own — with the image site
+            // reverted — it re-anchors every photo crop to top-leading, which
+            // `ClipCardChromeTests.testTheCropStaysCentredOnThePicture` refuses.
+            Color.clear
+                .overlay(alignment: .topLeading) { content }
+                .clipped()
             tagRow
             footer
         }
@@ -406,7 +418,12 @@ struct ClipCardView: View {
         .accessibilityElement(children: .combine)
         .accessibilityLabel(accessibilityLabelText)
         .accessibilityValue(item.characterCountLabel)
-        .accessibilityHint("Press Return to paste, Command-C to copy")
+        // Command-Return is named here because `accessibilityElement(children:
+        // .combine)` above folds the expand button into this one element, so a
+        // VoiceOver user cannot reach the button itself. The shortcut is the
+        // route that remains (AppDelegate routes ⌘-Return to `inspectSelection`).
+        .accessibilityHint("Press Return to paste, Command-C to copy, "
+                           + "Command-Return to inspect")
         .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
     }
 
@@ -452,6 +469,13 @@ struct ClipCardView: View {
                         .font(.system(size: 9, weight: .semibold))
                 }
                 .buttonStyle(.plain)
+                // The bare 9pt glyph is an 11x11pt target (121pt²) on a card in
+                // a dense strip. This makes it 22x14 (308pt²) for nothing: 14 is
+                // under the header's 28pt, and the `Spacer` absorbs the width.
+                // The obvious alternative, `.padding(5)`, grows the header to
+                // 35pt and takes 7pt out of every card's image slot forever.
+                .frame(width: 22, height: 14)
+                .contentShape(Rectangle())
                 .help("Inspect clip (Command-Return)")
                 .accessibilityLabel("Inspect clip")
             }
@@ -470,10 +494,25 @@ struct ClipCardView: View {
         case .image:
             if let file = item.payloadFile,
                let nsImage = cachedImage(for: file) {
-                Image(nsImage: nsImage)
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                // `Color.clear` is the size authority here, not the picture. An
+                // aspect-FILL image REPORTS its filled size — it exceeds the
+                // proposal on one axis by construction — and a flexible frame
+                // with an infinite maximum does not clamp that: it reports
+                // `max(proposal, childSize)`. So the picture, not the chrome,
+                // used to size the card's VStack, the fixed frame below CENTRED
+                // the oversized stack, and `clipShape` cut the header and footer
+                // off. (`.clipped()` never helped: it clipped the image to its
+                // own oversized bounds.) Sizing the slot from a view that accepts
+                // any proposal, and hanging the picture off it as an overlay,
+                // keeps the overshoot inside the overlay where `.clipped()` can
+                // actually cut it. The overlay is centred, which is what makes
+                // this a centre crop rather than a top-left one.
+                Color.clear
+                    .overlay(
+                        Image(nsImage: nsImage)
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                    )
                     .clipped()
             } else {
                 placeholder(symbol: "photo")
@@ -558,6 +597,24 @@ struct ClipCardView: View {
                 }
                 Spacer(minLength: 0)
             }
+            // Chips are `.fixedSize()`, so a full row can want more width than
+            // the card has: "command" + "Google Chrome" + "fresh" measures 225pt
+            // against the 200pt available. That widened the same VStack and slid
+            // every row on the card 12pt left — on TEXT cards as much as image
+            // ones, and from data the user does not control (a detector flag, the
+            // source app's name). The clamp keeps the row's REPORTED width at
+            // what the card can offer; the overhang is cut by the card's own
+            // `clipShape`.
+            //
+            // What that gives up is bounded by the row's own ordering: chips are
+            // certainty-descending and `+N` always takes the last slot, so the
+            // element left overhanging is the least certain chip, or the trailing
+            // curve of the `+N` capsule (6pt of it on the widest protective row
+            // this vocabulary can build). Never a protective chip, and nothing
+            // becomes unreachable — `+N` opens the supercard.
+            //
+            // Coupled to the horizontal padding below: change one, change both.
+            .frame(maxWidth: Theme.cardWidth - 20, alignment: .leading)
             .padding(.horizontal, 10)
             .padding(.bottom, 4)
         }
