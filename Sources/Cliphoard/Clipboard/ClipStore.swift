@@ -680,6 +680,20 @@ final class ClipStore: ObservableObject {
         }
         imageTask?.cancel()
         imageTask = nil
+        // ORDER IS THE POINT: every delete must happen BEFORE
+        // `forgetAllImageUnderstanding()`, whose last act is `vacuum()`.
+        //
+        // This loop used to run AFTER that call. The rows were deleted correctly and every
+        // assertion about them passed — `SELECT count(*)` returns 0 either way — but they
+        // were freed into pages the VACUUM had already compacted, so the bytes stayed in
+        // unallocated space. That is precisely the failure `forgetAllImageUnderstanding`'s
+        // own doc comment exists to prevent: "content-derived bytes must not linger in free
+        // pages ... a delete button that does not delete, which is worse than no button."
+        // The compaction was there; the deletions simply arrived after it.
+        //
+        // Merged into one loop so the ordering is structural rather than remembered. A
+        // second loop below the vacuum call is the shape of the bug, and it reads as
+        // harmless tidying — which is why it survived review.
         for item in items where item.kind == .image {
             item.ocrText = nil
             item.imageFeature = nil
@@ -687,11 +701,9 @@ final class ClipStore: ObservableObject {
             // otherwise the words remain reachable through semantic search after the
             // user was told they were forgotten.
             item.embeddings = [:]
-        }
-        db?.forgetAllImageUnderstanding()
-        for item in items where item.kind == .image {
             db?.deleteEmbeddings(clipID: item.id)
         }
+        db?.forgetAllImageUnderstanding()
         rebuildTagIndex()
         imageUnderstandingRevision &+= 1
         objectWillChange.send()
