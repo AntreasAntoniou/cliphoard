@@ -79,7 +79,13 @@ final class DatabaseTests: XCTestCase {
         let blob = Database.blob(fromVector: v)
         XCTAssertEqual(blob.count, v.count * 4, "Float32 = 4 bytes/element (portable; universal build)")
         // Float32 storage → exact round-trip (Float16 was unavailable on x86_64 macOS).
-        XCTAssertEqual(Database.vectorFromBlob(blob), v)
+        // Read back through the funnel, which is now the only way in; the parser itself is
+        // private so that no loader can reach it without decrypting and refusing ciphertext
+        // first. See VectorFunnelTests.
+        guard case .vector(let out) = Database.openVectorBlob(blob) else {
+            return XCTFail("a plaintext vector blob must read back as a vector")
+        }
+        XCTAssertEqual(out, v)
     }
 
     func testOpeningLegacyDatabaseAddsUserTagsColumn() {

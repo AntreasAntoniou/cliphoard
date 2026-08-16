@@ -7,7 +7,12 @@ DerivedData/
 *.icns
 
 # Model artifacts (produced by tools/, bundled at build time)
-tools/models/
+# No trailing slash: with one, this matches a DIRECTORY only, and the worktree links
+# tools/models as a SYMLINK — which slipped past the rule and got committed once.
+tools/models
 *.mlpackage
 *.mlmodelc
 __pycache__/
+
+# Sibling worktrees (Athena step 0). In-repo per house rule; never committed.
+.worktrees/

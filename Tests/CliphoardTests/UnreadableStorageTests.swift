@@ -308,11 +308,21 @@ final class UnreadableStorageTests: XCTestCase {
         XCTAssertTrue(Crypto.isSealed(forged),
                       "precondition: it is still ciphertext")
 
-        let parsed = Database.vectorFromBlob(forged)
-        XCTAssertFalse(parsed.isEmpty,
-                       "this is the DANGER the guard exists for: the bytes DO parse. If this "
-                       + "ever becomes empty the length check is doing the work again, and the "
-                       + "guard's justification has quietly changed.")
+        // The parser is now private behind `openVectorBlob`, so this asserts the same fact
+        // one step out — and arguably better, because it names the mechanism rather than
+        // observing a symptom. The length check CANNOT be what refuses this blob: its
+        // length is a clean multiple of 4, asserted above. So if the funnel refuses it,
+        // the seal guard is the only thing that can have done so.
+        //
+        // The original form called the parser directly and asserted the bytes DID parse,
+        // which demonstrated the danger vividly but required the parser to be reachable —
+        // i.e. it required the exact hole the funnel closes.
+        guard case .unreadable = Database.openVectorBlob(forged) else {
+            return XCTFail("still-sealed bytes were parsed into a vector. Note the "
+                           + "precondition above: this blob's length IS a multiple of 4, so "
+                           + "the length check passed it and only the seal guard can refuse "
+                           + "it. If this fails, that guard is gone.")
+        }
     }
 
     /// The marker's length must not be load-bearing. If a future rename makes it a multiple of

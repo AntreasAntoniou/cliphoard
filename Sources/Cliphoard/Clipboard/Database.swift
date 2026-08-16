@@ -306,24 +306,23 @@ final class Database {
         let embeddingRC = prepareEach("SELECT clip_id, model, vector FROM embeddings;") { stmt in
             let clipID = column(stmt, 0)
             let model = column(stmt, 1)
-            // Decrypt at-rest embedding columns (legacy plaintext passes through).
-            guard let blob = Crypto.open(Self.blob(stmt, 2)) else { return }
-            // The SAME fail-open as the image prints below, at the same distance from the
-            // same parser — and it was left unguarded when that one was fixed, while the
+            // Decrypt, refuse ciphertext, parse — all three, in `openVectorBlob`, which is
+            // the only place they exist. This loader is why the funnel exists: it carried
+            // the same fail-open as the image prints below, at the same distance from the
+            // same parser, and was left unguarded when that one was fixed — while the
             // commit message, the code comment and the test all said the marker length was
-            // no longer the mechanism. For THIS loader it still was. Closing one mouth of a
-            // hole and documenting the whole hole as closed is worse than closing neither,
-            // because the next reader stops looking.
+            // no longer the mechanism. For THIS loader it still was.
             //
-            // `upsertEmbedding` seals via `sealStrict`, so the shape is identical:
-            // `4n + 28 + markerLen`, parseable as floats iff `markerLen % 4 == 0`, and
-            // "enc1:" is five. The consequence differs from the image case only in which
-            // feature lies: `DeepSearch.suggestedUserTags` guards on `!isEmpty` and then
-            // filters members by matching count — and the garbage is UNIFORM, so every
-            // vector has the same count, passes that filter, and builds a centroid over
-            // AES-GCM output. Tag suggestions from noise.
-            guard !Crypto.isSealed(blob) else { sealedEmbeddings += 1; return }
-            embByClip[clipID, default: [:]][model] = ModelEmbedding(vector: Self.vectorFromBlob(blob))
+            // What the garbage would have done here, had "enc1:" been four characters
+            // instead of five: `DeepSearch.suggestedUserTags` guards on `!isEmpty` then
+            // filters members by matching count, and AES-GCM output is UNIFORM in length,
+            // so every vector passes that filter and the centroid is built over ciphertext.
+            // Tag suggestions from noise, stable and confident.
+            guard case .vector(let vec) = Self.openVectorBlob(Self.blob(stmt, 2)) else {
+                sealedEmbeddings += 1
+                return
+            }
+            embByClip[clipID, default: [:]][model] = ModelEmbedding(vector: vec)
         }
         // Once with a count, not the per-row NSLog `vectorFromBlob` would otherwise emit —
         // the same flood the image loader deliberately avoids.
@@ -674,28 +673,28 @@ final class Database {
         let rc = prepareEach("SELECT clip_id, revision, vector FROM image_features;") { stmt in
             let id = column(stmt, 0)
             let revision = Int(sqlite3_column_int(stmt, 1))
-            guard let blob = Crypto.open(Self.blob(stmt, 2)) else { return }
-            // `Crypto.open` FAILS OPEN: when no key on the ring unseals the blob it hands back
-            // the CIPHERTEXT, not nil. Feeding that to `vectorFromBlob` was caught only by an
-            // arithmetic accident — a sealed 4n-byte vector is 4n+33 bytes (5 marker + 12 nonce
-            // + 16 tag), and 33 is not a multiple of 4, so the length check rejected it.
+            // Through the funnel, which refuses ciphertext rather than resting on the length
+            // of a marker. The original guard here was correct but load-bearing in a way
+            // nobody could see: a sealed 4n-byte vector is 4n+33 bytes (5 marker + 12 nonce
+            // + 16 tag), and it was rejected only because 33 is not a multiple of 4.
             //
-            // The margin is ONE CHARACTER. The total is 4n + 28 + markerLen, so the blob parses
-            // as floats iff `markerLen % 4 == 0`. `"enc1:"` is five. Rename the marker to
-            // "enc1" or "seal" and the SAME bytes parse cleanly, and `similarImages` starts
-            // ranking clips by the cosine of AES-GCM output.
+            // The margin was ONE CHARACTER. The total is 4n + 28 + markerLen, so the blob
+            // parses as floats iff `markerLen % 4 == 0`, and `"enc1:"` is five. Rename the
+            // marker to "enc1" or "seal" and the SAME bytes parse cleanly.
             //
-            // Worse, the failure would be UNIFORM: every garbage vector is the same length and
-            // carries the same plaintext `revision`, so both guards downstream
+            // Worse, the failure would be UNIFORM: every garbage vector is the same length
+            // and carries the same plaintext `revision`, so both downstream guards
             // (`theirs.revision == mine.revision`, `vector.count == mine.vector.count`) PASS.
-            // The user gets a confident, stable, entirely fictional ordering of unrelated
-            // screenshots, with nothing anywhere saying it is noise.
+            // A confident, stable, entirely fictional ordering of unrelated screenshots,
+            // with nothing anywhere saying it is noise.
             //
-            // Refuse the row explicitly rather than resting on the length of a marker. Skipped
-            // rather than stored as an empty vector: `imageFeature == nil` is the "no print"
-            // state every existing reader already handles.
-            guard !Crypto.isSealed(blob) else { stillSealed += 1; return }
-            out[id] = (revision, Self.vectorFromBlob(blob))
+            // Skipped rather than stored as an empty vector: `imageFeature == nil` is the
+            // "no print" state every existing reader already handles.
+            guard case .vector(let vec) = Self.openVectorBlob(Self.blob(stmt, 2)) else {
+                stillSealed += 1
+                return
+            }
+            out[id] = (revision, vec)
         }
         // Once, with a count. Per row would emit thousands of lines on a large store, and a log
         // nobody can read is a log nobody reads.
@@ -914,7 +913,53 @@ extension Database {
 
     /// Float32 BLOB → [Float]. Accepts already-decrypted `Data` so callers can
     /// `Crypto.open` the column before parsing.
-    static func vectorFromBlob(_ data: Data?) -> [Float] {
+    /// What a stored vector column yielded. There is no third state, and that is the point:
+    /// a caller cannot accidentally treat "I could not read this" as "there is nothing here"
+    /// because it never receives a `[Float]` it did not earn.
+    enum VectorRead {
+        case vector([Float])
+        /// The bytes could not be turned into a vector we are entitled to score. Either
+        /// `Crypto.open` refused outright, or it FAILED OPEN and handed back ciphertext.
+        ///
+        /// The two were distinguishable before this funnel existed and were treated
+        /// differently — one returned silently, the other incremented a counter. That
+        /// distinction bought nothing: both mean the row must not be scored, and keeping
+        /// them apart is what let one loader be fixed while the other kept parsing
+        /// ciphertext for weeks. Collapsed deliberately, and the log line now says
+        /// "unreadable" rather than "would not decrypt" because it covers both.
+        case unreadable
+    }
+
+    /// THE ONLY WAY to turn a stored vector column into a vector.
+    ///
+    /// Every vector-bearing table — `embeddings`, `image_features`, and anything added
+    /// later — reads through here. The sequence decrypt → refuse-if-still-sealed → parse is
+    /// written once, so a new table cannot be added with two of the three steps.
+    ///
+    /// This exists because that is exactly what happened, twice. `Crypto.open` fails OPEN:
+    /// when no key on the ring unseals a blob it returns the CIPHERTEXT rather than nil. A
+    /// sealed 4n-byte vector is 4n + 28 + markerLen bytes, which parses as floats iff
+    /// `markerLen % 4 == 0`. `"enc1:"` is five characters, so the length check rejected it
+    /// by an accident worth exactly one character — rename the marker to "enc1" or "seal"
+    /// and the same bytes parse cleanly. Both loaders were one rename away from ranking
+    /// clips by the cosine of AES-GCM output, and the failure would have been UNIFORM, so
+    /// every downstream count and revision guard would have passed.
+    ///
+    /// The image loader was fixed first; the embeddings loader was left open while the
+    /// commit message, the code comment and the test all said the marker length was no
+    /// longer the mechanism. It still was. A funnel is the only fix that cannot be
+    /// half-applied.
+    static func openVectorBlob(_ raw: Data?) -> VectorRead {
+        guard let opened = Crypto.open(raw) else { return .unreadable }
+        guard !Crypto.isSealed(opened) else { return .unreadable }
+        return .vector(vectorFromBlob(opened))
+    }
+
+    /// PRIVATE ON PURPOSE. Parsing is the last of the three steps, and reaching it directly
+    /// skips the two that matter. Go through `openVectorBlob`.
+    /// `VectorFunnelTests` fails the build if a production call site reintroduces a direct
+    /// call — prose asking people not to do this is what we had before.
+    private static func vectorFromBlob(_ data: Data?) -> [Float] {
         guard let data else { return [] }
         let stride = MemoryLayout<Float>.stride
         guard data.count % stride == 0 else {   // malformed blob → treat as no vector
