@@ -148,3 +148,43 @@ final class ForgetOrderingTests: XCTestCase {
         return sqlite3_step(stmt) == SQLITE_ROW ? Int(sqlite3_column_int(stmt, 0)) : -1
     }
 }
+
+/// An image clip must sign the SAME before and after a round trip through the database.
+///
+/// `imageHash` has no column, so it is nil on every reloaded item. When `signature`
+/// preferred it, a captured item signed "img:<hash>" and its own reloaded row signed
+/// "img:<hash>.png" — so the dedup check never matched and the same picture could be
+/// stored twice, but only if the app had restarted in between. That timing is why it went
+/// unnoticed: within one session, dedup worked perfectly.
+@MainActor
+final class ImageSignatureStabilityTests: XCTestCase {
+
+    func testAnImageSignsIdenticallyBeforeAndAfterReload() {
+        let hash = String(repeating: "a", count: 64)
+
+        // As captured: both fields set.
+        let fresh = ClipItem(kind: .image, text: "Image 100×100")
+        fresh.payloadFile = "\(hash).png"
+        fresh.imageHash = hash
+
+        // As reloaded: `imageHash` is gone because no column carries it.
+        let reloaded = ClipItem(kind: .image, text: "Image 100×100")
+        reloaded.payloadFile = "\(hash).png"
+        reloaded.imageHash = nil
+
+        XCTAssertEqual(fresh.signature, reloaded.signature,
+                       "the same image signed differently before and after a database "
+                       + "round trip, so dedup cannot match it and copying the same "
+                       + "picture after a restart stores a second copy")
+    }
+
+    /// The signature must still SEPARATE different images — a fix that returned a constant
+    /// would pass the test above and collapse every picture into one.
+    func testDifferentImagesStillSignDifferently() {
+        let a = ClipItem(kind: .image, text: "Image 100×100")
+        a.payloadFile = "\(String(repeating: "a", count: 64)).png"
+        let b = ClipItem(kind: .image, text: "Image 100×100")
+        b.payloadFile = "\(String(repeating: "b", count: 64)).png"
+        XCTAssertNotEqual(a.signature, b.signature)
+    }
+}
