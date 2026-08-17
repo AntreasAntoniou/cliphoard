@@ -289,7 +289,20 @@ final class ClipItem: Codable, Identifiable {
     /// A stable signature used to deduplicate consecutive identical copies.
     var signature: String {
         switch kind {
-        case .image: return "img:" + (imageHash ?? payloadFile ?? text)
+        // PAYLOAD FILE FIRST, and the order is the whole point. `imageHash` is NOT a
+        // column — it survives only in memory — so a freshly-captured item signed
+        // "img:<hash>" while the SAME row reloaded from disk signed
+        // "img:<hash>.png", and the two never matched.
+        //
+        // The consequence was silent duplication that only appeared across a restart:
+        // copy an image, quit, copy it again, get two rows. It surfaced at scale during
+        // a bulk import, which re-added all 560 images on a second run, but the defect
+        // was always there in ordinary use.
+        //
+        // `payloadFile` is "<sha256>.png", so it is exactly as unique as the hash, and it
+        // is the field that actually persists. Preferring it makes a fresh item and a
+        // reloaded one agree — which is the only property a dedup key needs.
+        case .image: return "img:" + (payloadFile ?? imageHash ?? text)
         case .file:  return "file:" + (filePath ?? text)
         case .color: return "color:" + (colorHex ?? text)
         default:     return "text:" + text

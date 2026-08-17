@@ -152,7 +152,7 @@ final class RankingVectorGuardTests: XCTestCase {
     /// embedder is never asked. Proves the rule, where the greps only protect it.
     func testVetoedClipIsNeverOfferedToTheEmbedder() {
         let spy = SpyEmbedder()
-        let secret = ClipItem(kind: .text, text: "AKIA" + "IOSFODNN7EXAMPLE")
+        let secret = ClipItem(kind: .text, text: "AKIAIOSFODNN7EXAMPLE")
         secret.flags = [.secret]
         XCTAssertTrue(secret.isIndexVetoed, "precondition: .secret must veto indexing")
 

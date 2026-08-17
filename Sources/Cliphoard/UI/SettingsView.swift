@@ -56,6 +56,16 @@ final class AppSettings: ObservableObject {
             store.rebuildTagIndex()     // synchronous: ids are derived, not stored
         }
     }
+
+    /// Every specialist basket layered on General, in selection order. Replaces the single
+    /// `activeBasket` overlay; that property is kept because "custom" still selects the flat
+    /// pool as a whole basket rather than composing onto General.
+    @Published var overlayBaskets: [String] {
+        didSet {
+            TagBaskets.overlayIDs = overlayBaskets
+            store.rebuildTagIndex()
+        }
+    }
     @Published var assignmentThreshold: Double {
         didSet {
             TagSpace.assignmentThreshold = Float(assignmentThreshold)
@@ -102,6 +112,7 @@ final class AppSettings: ObservableObject {
         deepSearchLevel = DeepSearch.level
         vectorDetail = DeepSearch.detail
         activeBasket = TagBaskets.overlayID ?? "general"
+        overlayBaskets = TagBaskets.overlayIDs
         assignmentThreshold = Double(TagSpace.assignmentThreshold)
         customTagsText = TagBaskets.custom.tags.joined(separator: "\n")
     }
@@ -250,13 +261,45 @@ struct SettingsView: View {
                 }
 
                 section("Tags") {
-                    HStack {
-                        Text("Basket")
+                    HStack(alignment: .top) {
+                        Text("Baskets")
                         Spacer()
-                        Picker("", selection: $settings.activeBasket) {
-                            ForEach(TagBaskets.all) { Text($0.name).tag($0.id) }
+                        // MULTI-SELECT. One overlay forced a false choice: a developer who
+                        // also keeps receipts had to pick which half of their clipboard got
+                        // classified. Dimensions merge by name, so stacking is well defined
+                        // and later selections win a collision.
+                        //
+                        // A Menu of toggles rather than a multi-select list: the set is
+                        // small, the choice is rare, and this keeps the row one line tall
+                        // while showing the current selection in the label — which a list
+                        // does not, once it scrolls.
+                        Menu {
+                            ForEach(TagBaskets.all.filter { $0.id != "general" }) { basket in
+                                Toggle(isOn: Binding(
+                                    get: { settings.overlayBaskets.contains(basket.id) },
+                                    set: { on in
+                                        var next = settings.overlayBaskets
+                                        if on {
+                                            if !next.contains(basket.id) { next.append(basket.id) }
+                                        } else {
+                                            next.removeAll { $0 == basket.id }
+                                        }
+                                        settings.overlayBaskets = next
+                                    })) {
+                                        Text(basket.name)
+                                    }
+                            }
+                        } label: {
+                            Text(settings.overlayBaskets.isEmpty
+                                 ? "General only"
+                                 : ([TagBaskets.general.name]
+                                    + settings.overlayBaskets.compactMap { id in
+                                        TagBaskets.all.first { $0.id == id }?.name
+                                    }).joined(separator: " + "))
+                                .lineLimit(2)
+                                .multilineTextAlignment(.trailing)
                         }
-                        .labelsHidden().frame(width: 170)
+                        .frame(width: 190)
                     }
                     Text(basketSummary)
                         .font(.system(size: 11)).foregroundStyle(.secondary)

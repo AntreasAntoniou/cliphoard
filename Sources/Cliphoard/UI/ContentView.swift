@@ -294,6 +294,7 @@ struct ContentView: View {
                     // would hide them.
                     filtersMenu
                     searchModePicker
+                    referenceImagePicker
                     HStack(spacing: 6) {
                         Image(systemName: "magnifyingglass")
                             .foregroundStyle(.secondary).font(.system(size: 12))
@@ -376,7 +377,16 @@ struct ContentView: View {
         HStack(spacing: 5) {
             Text("Search:").font(.system(size: 11)).foregroundStyle(.secondary)
             Picker("Search mode", selection: $settings.searchMode) {
-                ForEach(SearchMode.allCases) { mode in
+                // `.image` is OFFERED ONLY IF IT CAN RUN. The joint towers are a separate,
+                // independently-absent model from the text tiers, so a build without them
+                // would otherwise show a mode that silently returns nothing — the exact
+                // "control that looks live and does nothing" defect FrozenControlsTests
+                // exists to catch. The currently-selected mode is always listed, so a
+                // persisted `.image` selection cannot leave the picker showing a blank.
+                ForEach(SearchMode.allCases.filter {
+                    !$0.usesImageModel || store.clipEmbedder != nil
+                        || settings.searchMode == $0
+                }) { mode in
                     Label(mode.title, systemImage: mode.symbol).tag(mode)
                 }
             }
@@ -385,8 +395,66 @@ struct ContentView: View {
             .fixedSize()
             .tint(Theme.accent)
         }
-        .help("Search mode — Smart, Exact, or Tag")
+        .help("Search mode — Smart, Exact, Tag, Neural, or Image (pictures only)")
         .accessibilityLabel("Search mode: \(settings.searchMode.title)")
+    }
+
+    /// Choose a picture from disk and search BY it.
+    ///
+    /// Only in Image mode, and only when the towers loaded — offering it otherwise would be
+    /// a control that opens a file panel and then silently does nothing, which is worse than
+    /// no control. Once a reference is set the button becomes a chip showing the filename
+    /// with an X, because a search that is silently filtered by an invisible picture is the
+    /// most confusing state this feature could have.
+    @ViewBuilder
+    private var referenceImagePicker: some View {
+        if settings.searchMode == .image && store.clipEmbedder != nil {
+            if let reference = model.referenceImage {
+                HStack(spacing: 4) {
+                    Image(systemName: "photo.fill")
+                        .font(.system(size: 10))
+                    Text(reference.name)
+                        .font(.system(size: 11))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .frame(maxWidth: 130)
+                    Button {
+                        model.referenceImage = nil
+                    } label: {
+                        Image(systemName: "xmark.circle.fill").font(.system(size: 10))
+                    }
+                    .buttonStyle(.plain)
+                    .help("Stop searching by this picture")
+                }
+                .padding(.horizontal, 7).padding(.vertical, 3)
+                .background(Capsule().fill(Theme.accent.opacity(0.18)))
+                .accessibilityLabel("Searching by image \(reference.name). Activate the "
+                                    + "clear button to stop.")
+            } else {
+                Button {
+                    chooseReferenceImage()
+                } label: {
+                    Label("Match image…", systemImage: "photo.badge.plus")
+                        .font(.system(size: 11))
+                }
+                .buttonStyle(.plain)
+                .help("Pick a picture from your Mac and find clips that look like it")
+            }
+        }
+    }
+
+    /// Reads the bytes rather than keeping the URL, so the search survives the file being
+    /// moved or deleted while the panel is open.
+    private func chooseReferenceImage() {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.allowedContentTypes = [.image]
+        panel.prompt = "Match"
+        panel.message = "Pick a picture — Cliphoard will find clips that look like it."
+        guard panel.runModal() == .OK, let url = panel.url,
+              let data = try? Data(contentsOf: url) else { return }
+        model.referenceImage = (name: url.lastPathComponent, data: data)
     }
 
     /// Time filter — pick when a clip was copied with plain words, or a custom

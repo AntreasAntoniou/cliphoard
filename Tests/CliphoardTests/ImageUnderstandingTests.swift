@@ -123,7 +123,7 @@ final class ImageUnderstandingTests: XCTestCase {
     /// server and would make this untestable headlessly. Asserts CONTAINMENT: exact
     /// equality would be a test of Apple's recognizer, not of this code.
     func testRealVisionReadsRenderedText() throws {
-        let needle = "AKIA" + "IOSFODNN7EXAMPLE"
+        let needle = "AKIAIOSFODNN7EXAMPLE"
         guard let png = Self.renderPNG(text: needle) else {
             throw XCTSkip("could not render a fixture image without a window server")
         }

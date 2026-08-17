@@ -112,7 +112,7 @@ enum VectorDetail: String, CaseIterable, Identifiable {
 ///   and rank first, then the rest are ordered by a blend of neural cosine and
 ///   shared-tag topic agreement.
 enum SearchMode: String, CaseIterable, Identifiable {
-    case exact, tag, neural, smart
+    case exact, tag, neural, smart, image
     var id: String { rawValue }
     var title: String {
         switch self {
@@ -120,6 +120,7 @@ enum SearchMode: String, CaseIterable, Identifiable {
         case .tag:    return "Tag"
         case .neural: return "Neural"
         case .smart:  return "Smart"
+        case .image:  return "Image"
         }
     }
     var blurb: String {
@@ -128,6 +129,10 @@ enum SearchMode: String, CaseIterable, Identifiable {
         case .tag:    return "By auto category"
         case .neural: return "Pure meaning, by the model"
         case .smart:  return "Exact, tag & neural — combined"
+        // Names the LIMIT, not just the capability. This mode hides every text, link,
+        // colour and file clip, which is a surprise worth stating in the menu rather than
+        // leaving the user to infer it from an empty-looking result set.
+        case .image:  return "Pictures only, by what they look like"
         }
     }
     var symbol: String {
@@ -136,10 +141,17 @@ enum SearchMode: String, CaseIterable, Identifiable {
         case .tag:    return "tag"
         case .neural: return "brain"
         case .smart:  return "sparkles"
+        case .image:  return "photo"
         }
     }
     /// True for modes that need the embedding model / vectors (everything but exact).
     var usesModel: Bool { self != .exact }
+
+    /// Searches the PIXELS rather than any text. Separate from `usesModel` because it needs
+    /// a different model entirely — the joint OpenVision towers, not the text embedder —
+    /// and the two are independently absent: the text tiers can be ready while the image
+    /// towers are missing, and the UI must not offer a mode that cannot run.
+    var usesImageModel: Bool { self == .image }
 }
 
 enum DeepSearch {

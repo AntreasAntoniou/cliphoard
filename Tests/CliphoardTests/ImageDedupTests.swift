@@ -103,7 +103,14 @@ final class ImageDedupTests: XCTestCase {
         let data = try JSONEncoder().encode(item)
         let decoded = try JSONDecoder().decode(ClipItem.self, from: data)
         XCTAssertEqual(decoded.imageHash, "deadbeef")
-        XCTAssertEqual(decoded.signature, "img:deadbeef")
+        // "img:deadbeef.png", NOT "img:deadbeef". This assertion used to expect the hash
+        // form, and the very next test in this file expects the FILE form for the same
+        // image without one — so the suite pinned two different signatures for one picture
+        // and called both correct. Since `imageHash` has no database column, every reloaded
+        // row takes the second path, and dedup could never match a fresh capture against
+        // its own stored row. `payloadFile` is "<sha256>.png" and always persists, so
+        // preferring it makes the two agree. See ImageSignatureStabilityTests.
+        XCTAssertEqual(decoded.signature, "img:deadbeef.png")
     }
 
     func testLegacyJSONWithoutImageHashDecodes() throws {
