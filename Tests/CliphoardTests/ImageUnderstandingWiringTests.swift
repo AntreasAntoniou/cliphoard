@@ -46,7 +46,7 @@ final class ImageUnderstandingWiringTests: XCTestCase {
         let item = imageClip()
         store.add(item)
 
-        store.applyImageUnderstanding(result("AKIA" + "IOSFODNN7EXAMPLE"), to: item)
+        store.applyImageUnderstanding(result("AKIAIOSFODNN7EXAMPLE"), to: item)
 
         XCTAssertTrue(item.flags.contains(.secret), "the detector must fire on the recognised text")
         XCTAssertEqual(item.ocrText, "", "a withheld result stores the empty marker, never the text")
@@ -57,7 +57,7 @@ final class ImageUnderstandingWiringTests: XCTestCase {
         // the caption when the marker is empty. So none of them can see it.
         XCTAssertEqual(SemanticRanker.searchText(item), "Image 1920×1080")
         XCTAssertFalse(SemanticRanker.searchText(item).lowercased().contains("akia"))
-        XCTAssertTrue(store.filtered(kind: nil, query: "AKIA" + "IOSFODNN7EXAMPLE", pinnedOnly: false).isEmpty,
+        XCTAssertTrue(store.filtered(kind: nil, query: "AKIAIOSFODNN7EXAMPLE", pinnedOnly: false).isEmpty,
                       "exact substring search must not surface a withheld screenshot")
     }
 

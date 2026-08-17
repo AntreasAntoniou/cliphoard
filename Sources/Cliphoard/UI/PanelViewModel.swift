@@ -29,6 +29,17 @@ final class PanelViewModel: ObservableObject {
     /// Whether the inspector should scroll directly to its tag editor.
     @Published var inspectorFocusTags: Bool = false
 
+    /// A picture chosen from disk to search BY, rather than a typed query. Holds the file's
+    /// bytes, not a URL: the reference must survive the file being moved or deleted while
+    /// the panel is open, and re-reading it per keystroke would be absurd.
+    ///
+    /// Deliberately NOT persisted. A reference image is a question you are asking right now,
+    /// not a filter you want to find still applied tomorrow — and silently restoring one on
+    /// launch would make the panel look broken for the same reason a stuck search box does.
+    @Published var referenceImage: (name: String, data: Data)? {
+        didSet { cachedResultsKey = nil; objectWillChange.send() }
+    }
+
     let store: ClipStore
 
     /// Forwards `store.objectWillChange` so that `results` (a plain computed
@@ -83,6 +94,9 @@ final class PanelViewModel: ObservableObject {
         let itemCount: Int
         let lastAddedID: UUID?
         let imageRevision: Int
+        /// Byte count is a sufficient proxy — two different references almost never
+        /// share a size, and a full hash per read would cost more than the recompute.
+        let referenceBytes: Int
     }
 
     private var cachedResultsKey: ResultsKey?
@@ -100,7 +114,8 @@ final class PanelViewModel: ObservableObject {
             mode: DeepSearch.mode,
             itemCount: store.items.count,
             lastAddedID: store.lastAddedID,
-            imageRevision: store.imageUnderstandingRevision
+            imageRevision: store.imageUnderstandingRevision,
+            referenceBytes: referenceImage?.data.count ?? 0
         )
         if key == cachedResultsKey { return cachedResults }
 
@@ -131,6 +146,19 @@ final class PanelViewModel: ObservableObject {
             let scoped = store.filtered(kind: .image, query: "", pinnedOnly: pinnedOnly,
                                         facets: activeFacets, userTags: activeUserTags,
                                         time: time)
+            // A REFERENCE IMAGE outranks a typed query: the user went and picked a file,
+            // which is a much more deliberate act than leaving text in the search box.
+            // Both at once would need a fusion weight nobody has measured.
+            if let reference = referenceImage {
+                let allowed = Set(scoped.map(\.id))
+                let ranked = store.imagesSimilar(toReferenceImage: reference.data, limit: 200)
+                    .filter { allowed.contains($0.0.id) }
+                    .map(\.0)
+                // Falling back to the unranked scope rather than showing nothing: an empty
+                // result here would read as "no matches" when the real cause is that the
+                // model could not read the file at all.
+                return ranked.isEmpty ? scoped : ranked
+            }
             guard !q.isEmpty else { return scoped }
             let allowed = Set(scoped.map(\.id))
             let ranked = store.imagesMatching(q, limit: 200)

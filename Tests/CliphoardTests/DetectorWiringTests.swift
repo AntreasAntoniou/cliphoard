@@ -22,7 +22,7 @@ final class DetectorWiringTests: XCTestCase {
     /// A syntactically-shaped AWS access key id (AKIA + 16 uppercase alnum).
     /// Copied on its own, which is how a key reaches a clipboard — the signature
     /// only ever matches at a token start, by design.
-    private static let awsKey = "AKIA" + "IOSFODNN7EXAMPLE"
+    private static let awsKey = "AKIAIOSFODNN7EXAMPLE"
 
     private func tempPath() -> String {
         let dir = FileManager.default.temporaryDirectory

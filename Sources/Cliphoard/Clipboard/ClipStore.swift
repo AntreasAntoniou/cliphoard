@@ -776,6 +776,55 @@ final class ClipStore: ObservableObject {
             .map { $0 }
     }
 
+    /// Rank clips against a REFERENCE IMAGE from anywhere on disk.
+    ///
+    /// `similarImages(to:)` already does clip-to-clip, but only between things you have
+    /// already copied. This takes any file — a photo you were just sent, a screenshot you
+    /// have not copied, a picture from a folder — and asks which of your clips look like it.
+    /// The reference never enters the store; it is embedded, compared and discarded.
+    ///
+    /// Both sides are centred by the CORPUS mean, and note that this is the same mean on
+    /// both sides — unlike the text path, which centres the query by a shipped constant and
+    /// the images by the corpus. Here the reference IS an image, so it belongs in the same
+    /// space as the clips and must be centred the same way. Centring a reference by the text
+    /// mean would be a category error that still returns a confident, meaningless ordering.
+    func imagesSimilar(toReferenceImage data: Data, limit: Int = 24) -> [(ClipItem, Float)] {
+        guard let clip = clipEmbedder else { return [] }
+        let raw = clip.embed(imageData: data)
+        guard !raw.isEmpty else { return [] }
+
+        let candidates = items.filter {
+            $0.kind == .image && !$0.isIndexVetoed
+                && ($0.embeddings[CLIPEmbedder.signature]?.vector.count ?? 0) == raw.count
+        }
+        guard candidates.count >= 2 else { return [] }
+
+        var mean = [Float](repeating: 0, count: raw.count)
+        for item in candidates {
+            let v = item.embeddings[CLIPEmbedder.signature]!.vector
+            for i in 0..<raw.count { mean[i] += v[i] }
+        }
+        for i in 0..<mean.count { mean[i] /= Float(candidates.count) }
+
+        let query = CLIPEmbedder.centred(raw, by: mean)
+        guard !query.isEmpty else { return [] }
+
+        // NO relevance floor here, unlike the text path. "Show me clips like this picture"
+        // is a ranking question, not a matching one — the user supplied the reference and
+        // wants the closest things to it, even if nothing is a strong match. A floor tuned
+        // for free text would silently return nothing for a perfectly reasonable reference.
+        return candidates
+            .compactMap { item -> (ClipItem, Float)? in
+                let stored = item.embeddings[CLIPEmbedder.signature]!.vector
+                let centred = CLIPEmbedder.centred(stored, by: mean)
+                guard !centred.isEmpty else { return nil }
+                return (item, CLIPEmbedder.similarity(query, centred))
+            }
+            .sorted { $0.1 > $1.1 }
+            .prefix(limit)
+            .map { $0 }
+    }
+
     /// Tags for an image, derived from its PIXELS.
     ///
     /// `tags(of:)` cannot do this. It reads `item.embeddings[EmbedderProvider.active
