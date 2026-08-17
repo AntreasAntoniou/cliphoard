@@ -6,9 +6,9 @@
 <title>Cliphoard — a clipboard manager for macOS</title>
 <link rel="icon" type="image/png" href="img/icon.png">
 <link rel="apple-touch-icon" href="img/icon@512.png">
-<meta name="description" content="Cliphoard is a fast, private, open-source clipboard manager for macOS. Press ⌃⌥⌘V and your history slides up — with on-device semantic search, themes, and zero telemetry.">
+<meta name="description" content="Cliphoard is a fast, private, open-source clipboard manager for macOS. Press ⌃⌥⌘V and your history slides up — search text AND pictures by meaning, entirely on-device, with open models, AES-GCM encryption and zero telemetry.">
 <meta property="og:title" content="Cliphoard — a clipboard manager for macOS">
-<meta property="og:description" content="Fast, private, open-source clipboard history with on-device semantic search.">
+<meta property="og:description" content="Fast, private, open-source clipboard history. Find a screenshot by describing it — text and image search, on-device, open models, encrypted at rest.">
 <meta property="og:image" content="https://raw.githubusercontent.com/AntreasAntoniou/cliphoard/main/docs/img/logo.png">
 <meta property="og:url" content="https://antreas.io/cliphoard/">
 <link rel="canonical" href="https://antreas.io/cliphoard/">
@@ -68,6 +68,9 @@
   .lead{text-align:center;color:var(--mut);max-width:640px;margin:0 auto 40px}
 
   .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+  /* The four search-direction cards pair naturally (text->x, image->x); a
+     3-column grid would strand the fourth alone on its own row. */
+  .grid.pairs{grid-template-columns:repeat(2,1fr)}
   .card{background:linear-gradient(180deg,var(--bg2),var(--panel));border:1px solid var(--line);border-radius:14px;padding:22px}
   .card .ic{width:38px;height:38px;border-radius:10px;background:rgba(97,175,239,.12);border:1px solid rgba(97,175,239,.22);
     display:flex;align-items:center;justify-content:center;font-size:19px;margin-bottom:14px}
@@ -110,7 +113,7 @@
   footer .wrap{display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px;align-items:center}
   footer a{color:var(--mut)} footer a:hover{color:var(--fg)}
 
-  @media(max-width:760px){.grid{grid-template-columns:1fr}.themes{grid-template-columns:1fr}.secgrid{grid-template-columns:1fr}}
+  @media(max-width:760px){.grid,.grid.pairs{grid-template-columns:1fr}.themes{grid-template-columns:1fr}.secgrid{grid-template-columns:1fr}}
   @media(max-width:640px){.navlinks{display:none}}
 </style>
 </head>
@@ -132,15 +135,16 @@
 <header class="hero wrap">
   <img src="img/icon.png" alt="Cliphoard — a smiling hoard-bag mascot" width="100" height="100" style="border-radius:22px;margin-bottom:20px;box-shadow:0 20px 50px -20px rgba(0,0,0,.8)">
   <br>
-  <span class="pill">Open source · On-device · No telemetry</span>
+  <span class="pill">Free &amp; open source · On-device · No telemetry</span>
   <h1>Copy anything.<br><span class="grad">Hoard everything.</span></h1>
   <p class="sub">Cliphoard is a fast, private clipboard manager for macOS. Press <b>⌃⌥⌘V</b> and your
-    history slides up from the bottom — searchable by <i>meaning</i>, not just exact text, entirely on your Mac.</p>
+    history slides up from the bottom — searchable by <i>meaning</i>, including your screenshots
+    and photos. Free, open source, and every model runs on your Mac.</p>
   <div class="cta">
     <a class="btn primary" href="https://github.com/AntreasAntoniou/cliphoard/releases/latest">↓ Download for macOS</a>
     <a class="btn ghost" href="https://github.com/AntreasAntoniou/cliphoard">View source</a>
   </div>
-  <div class="req">Free &amp; open source · macOS 13+ · Apple Silicon &amp; Intel</div>
+  <div class="req">Free forever · MIT licensed · macOS 13+ · Apple Silicon &amp; Intel</div>
   <div class="shot"><img src="img/bar-oneDark.png" alt="The Cliphoard clipboard bar showing recent clips" loading="lazy"></div>
 </header>
 
@@ -150,12 +154,14 @@
   <p class="lead">A native Swift app — no Electron, no account, no cloud. Just a fast bar for everything you copy.</p>
   <div class="grid">
     <div class="card"><div class="ic">⌨️</div><h3>Summon from anywhere</h3><p>A global ⌃⌥⌘V hotkey brings the bar up over any app. Pick a clip and it pastes straight back where you were.</p></div>
-    <div class="card"><div class="ic">✨</div><h3>Semantic search</h3><p>On-device AI (CoreML) finds clips by what they mean — four swappable model tiers, up to EmbeddingGemma. Search "that database query" and get it — no exact words needed.</p></div>
+    <div class="card"><div class="ic">✨</div><h3>Semantic search</h3><p>On-device AI (CoreML) finds clips by what they <i>mean</i> — three swappable tiers, two of them models we trained and released ourselves. Search “that database query” and get it, no exact words needed.</p></div>
     <div class="card"><div class="ic">🔒</div><h3>Private by design</h3><p>Everything stays on your Mac. No network calls, no telemetry, no account. Password managers are skipped automatically.</p></div>
     <div class="card"><div class="ic">🎨</div><h3>17 themes</h3><p>From a clean Swiss greyscale to One Dark, Dracula, Tokyo Night, Catppuccin and more — plus light themes. Follows your system appearance.</p></div>
     <div class="card"><div class="ic">🧱</div><h3>Three layouts</h3><p>A horizontal card strip, a dense compact list, or a Spotlight-style palette with a live preview. Your call.</p></div>
     <div class="card"><div class="ic">🖼️</div><h3>Text, links, colors, images</h3><p>Cliphoard recognises what you copy — rich text, URLs, hex colors, files and images — and keeps thumbnails for fast browsing.</p></div>
-    <div class="card"><div class="ic">🧭</div><h3>Filter by dimension &amp; time</h3><p>Every clip is auto-classified along 10 meaning dimensions. Combine filters like <i>credential</i> + <i>terminal</i>, then narrow to <i>yesterday</i> — or type <code>when:today</code> in the bar.</p></div>
+    <div class="card"><div class="ic">🧭</div><h3>Tag baskets you stack</h3><p>Pick the vocabularies that match your work — Developer, Designer, Finance, Photos — and <b>tick as many as you like</b>. Each adds its own axes; none overwrite each other. Combine <i>credential</i> + <i>terminal</i>, then narrow to <i>yesterday</i>, or type <code>when:today</code>.</p></div>
+    <div class="card"><div class="ic">🔎</div><h3>Search your pictures</h3><p>Describe a screenshot and find it — “the receipt”, “a dark terminal”, “the photo Maria sent”. Or pick any image on your Mac and find clips that <i>look like it</i>. All four directions, all on-device.</p></div>
+    <div class="card"><div class="ic">📥</div><h3>Bring your history</h3><p>Migrating? Import years of clips from Paste and other macOS clipboard managers, timestamps and source apps intact — each batch tagged so it stays reversible.</p></div>
   </div>
 </section>
 
@@ -168,28 +174,38 @@
     <div class="theme"><img src="img/search-smart.png" alt="Smart search: the query 'catchy' returns the tagline 'Copy anything. Hoard everything.'" loading="lazy"><div class="cap"><b>Smart</b><span>“catchy” → “Copy anything. Hoard everything.”</span></div></div>
   </div>
   <div style="height:34px"></div>
-  <h2 style="font-size:28px">Four model tiers. You pick the trade-off.</h2>
-  <p class="lead">From a 2.5M-parameter featherweight to EmbeddingGemma — all on-device, all swappable in Settings. Heavier tiers install themselves the moment you pick them; nothing to download by hand. Benchmarked on a clipboard-realistic retrieval set (<a href="https://github.com/AntreasAntoniou/cliphoard/blob/main/tools/BENCHMARKS.md" style="color:var(--accent)">methodology</a>).</p>
+  <h2 style="font-size:28px">Words find pictures. Pictures find pictures.</h2>
+  <p class="lead">Most clipboard managers can only match the characters inside a clip. Cliphoard reads your screenshots and understands your photos, so all four directions work — and none of it leaves your Mac.</p>
+  <div class="grid pairs">
+    <div class="card"><div class="ic">🔤</div><h3>Text → text</h3><p>The classic case, done by meaning. “revert my last commit” finds <code>git reset --soft HEAD~1</code> without sharing a single word.</p></div>
+    <div class="card"><div class="ic">🖼️</div><h3>Text → image</h3><p>Describe what a picture <i>looks like</i> and get it. “a dark terminal”, “the receipt”, “a photo of a dog” — even when the image contains no readable text at all.</p></div>
+    <div class="card"><div class="ic">👁️</div><h3>Image → text</h3><p>Every screenshot is read on-device with Apple's Vision framework, so the words inside it become searchable like any other clip.</p></div>
+    <div class="card"><div class="ic">🧲</div><h3>Image → image</h3><p>“More like this” on any clip — or pick a picture from anywhere on your Mac and find the clips that resemble it, even ones you never copied.</p></div>
+  </div>
+  <div style="height:34px"></div>
+  <h2 style="font-size:28px">Open models. Two of them ours.</h2>
+  <p class="lead">Every model that ships is permissively licensed, so an MIT app stays an MIT app all the way down. <b>open-ogma</b> is our own — trained, distilled and released by us under MIT, small enough to be instant and good enough to be the default. Heavier tiers install themselves the moment you pick them; nothing to download by hand. Benchmarked on a clipboard-realistic retrieval set (<a href="https://github.com/AntreasAntoniou/cliphoard/blob/main/tools/BENCHMARKS.md" style="color:var(--accent)">methodology</a>).</p>
   <table class="cmp">
     <thead>
       <tr><th>Tier</th><th>Model</th><th>Params</th><th>Retrieval (top-1)</th><th>License</th></tr>
     </thead>
     <tbody>
-      <tr><td>Low</td><td>open-ogma-micro</td><td>2.5M</td><td>13/21</td><td>MIT</td></tr>
-      <tr><td><b>Normal</b> <small>default</small></td><td>open-ogma-small <small>1024-d head, distilled from bge-large</small></td><td>8.9M</td><td>15/21</td><td>MIT</td></tr>
+      <tr><td>Low</td><td>open-ogma-micro <small>ours</small></td><td>2.5M</td><td>13/21</td><td>MIT</td></tr>
+      <tr><td><b>Normal</b> <small>default</small></td><td>open-ogma-small <small>ours — 1024-d head, distilled from bge-large</small></td><td>8.9M</td><td>15/21</td><td>MIT</td></tr>
       <tr><td>High</td><td>all-MiniLM-L6-v2</td><td>22.7M</td><td>19/21</td><td>Apache-2.0</td></tr>
-      <tr><td>Max</td><td>EmbeddingGemma-300m <small>8-bit, auto-downloads on first use</small></td><td>308M</td><td>20/21</td><td>Gemma ToU</td></tr>
+      <tr><td>Images</td><td>OpenVision-Tiny <small>joint text+pixel space, patch8/224</small></td><td>17.1M</td><td>—</td><td>Apache-2.0</td></tr>
     </tbody>
   </table>
+  <p class="lead" style="font-size:14px">We removed a 308M EmbeddingGemma tier that used to sit at the top of this table. Not for quality — it was the one component whose licence (Google's Gemma Terms of Use, with a prohibited-use policy) a person downloading an MIT app would not expect to inherit, and hosting the weights made us its redistributor. Nothing we ship now carries restrictions beyond our own MIT licence.</p>
   <div style="height:34px"></div>
   <h2 style="font-size:28px">Slice your hoard by meaning — and by time.</h2>
-  <p class="lead">Every clip is classified along <b>10 dimensions</b> (content type, domain, intent, sensitivity, source…) with 10 values each — filter any combination instantly. And time reads like you think: <i>Today</i>, <i>Yesterday</i>, <i>This week</i>, a custom range, or just type <code>when:yesterday</code> or <code>when:2026-07-01..2026-07-15</code> straight into the search bar.</p>
+  <p class="lead">Clips are auto-classified against <b>tag baskets</b> — vocabularies built for the way you work. Run Developer and Finance and Photos together if that is what your day looks like: baskets <b>stack</b>, each contributing its own 8-tag axes, and adding one never removes another's. The Photos basket is scored against the <i>pixels</i>, so a picture with no readable text still gets labelled. And time reads like you think: <i>Today</i>, <i>Yesterday</i>, <i>This week</i>, a custom range, or just type <code>when:yesterday</code> or <code>when:2026-07-01..2026-07-15</code> straight into the search bar.</p>
 </section>
 
 <section id="compare" class="wrap">
   <div class="eyebrow">How it compares</div>
   <h2>Cliphoard vs. the field.</h2>
-  <p class="lead">Clipboard managers are a well-loved category. Cliphoard is the one that's free, open-source, fully on-device, <i>and</i> searches by meaning.</p>
+  <p class="lead">Clipboard managers are a well-loved category. Cliphoard is the one that's free, open-source, fully on-device — and the one that can find a screenshot because you described what it looks like.</p>
   <table class="cmp">
     <thead>
       <tr><th>&nbsp;</th><th class="me">Cliphoard</th><th>Typical free manager</th><th>Typical paid manager</th></tr>
@@ -202,6 +218,11 @@
       <tr><td>Stays on your Mac<small>no cloud, no account, no telemetry</small></td><td class="me y">✓</td><td class="y">usually</td><td class="n">cloud sync</td></tr>
       <tr><td>Themes &amp; layouts</td><td class="me y">17 + 3</td><td class="p">minimal</td><td class="p">polished</td></tr>
       <tr><td>Text, links, colors, images</td><td class="me y">✓</td><td class="y">✓</td><td class="y">✓</td></tr>
+      <tr><td>Search <i>pictures</i> by describing them<small>text → image, on-device</small></td><td class="me y">✓</td><td class="n">—</td><td class="n">—</td></tr>
+      <tr><td>Reads text inside screenshots<small>image → text, searchable</small></td><td class="me y">✓</td><td class="n">—</td><td class="p">sometimes</td></tr>
+      <tr><td>Find visually similar clips<small>image → image, from a clip or any file</small></td><td class="me y">✓</td><td class="n">—</td><td class="n">—</td></tr>
+      <tr><td>Import your old history<small>from Paste and other managers</small></td><td class="me y">✓</td><td class="n">—</td><td class="p">rare</td></tr>
+      <tr><td>Open-weight models<small>permissive licences, nothing proprietary</small></td><td class="me y">✓ MIT / Apache-2.0</td><td class="n">n/a</td><td class="n">closed</td></tr>
     </tbody>
   </table>
   <p class="lead" style="margin-top:22px;font-size:13px">No cross-device sync — <a href="https://github.com/AntreasAntoniou/cliphoard/blob/main/PRIVACY.md" style="color:var(--accent)">on purpose</a>. Your clipboard holds passwords and tokens; it should never touch a network.</p>
@@ -215,8 +236,10 @@
     <div class="secitem"><div class="ic">🔐</div><div><h3>Encrypted at rest</h3><p>Every clip — text, rich text, file paths, colors, images <i>and</i> the semantic search index — is sealed with authenticated <b>AES-GCM</b> before it's written to disk. Run <code>strings</code> on the database and you get nothing.</p></div></div>
     <div class="secitem"><div class="ic">🔒</div><div><h3>Key sealed in the Secure Enclave</h3><p>The key is derived from a P-256 key generated <i>inside</i> your Mac's Secure Enclave — its material can't be extracted. Copy the database to another machine and it's undecryptable; only this Mac can re-derive the key. No Touch ID prompt.</p></div></div>
     <div class="secitem"><div class="ic">🙈</div><div><h3>Secrets skipped at capture</h3><p>Copies from password managers, and pasteboards marked transient or concealed, are never stored in the first place — and you can add your own apps to the skip list.</p></div></div>
-    <div class="secitem"><div class="ic">📵</div><div><h3>Your clips never touch a network</h3><p>No telemetry, no account, no cloud, no phone-home. The app's only network call is fetching an <i>optional</i> search model from GitHub when you pick a heavier tier — a one-time, download-only request that carries none of your data.</p></div></div>
+    <div class="secitem"><div class="ic">📵</div><div><h3>Your clips never touch a network</h3><p>No telemetry, no account, no cloud, no phone-home. The app's only network call is fetching an <i>optional</i> model from GitHub — a one-time, download-only request that carries none of your data. Every search, every screenshot read, every image embedding runs on your Mac; nothing you copy is ever uploaded, to us or to anyone.</p></div></div>
     <div class="secitem"><div class="ic">🗝️</div><div><h3>Owner-only on disk</h3><p>The store lives in your Application Support folder with <code>0700</code>/<code>0600</code> permissions — other user accounts on the Mac can't read it.</p></div></div>
+    <div class="secitem"><div class="ic">🖼️</div><div><h3>Your screenshots are read <i>here</i></h3><p>Text recognition and image embedding both run on-device, through Apple's Vision framework and a bundled CoreML model. Recognised text is encrypted like any other clip — and there is a switch to turn it off entirely, plus a button that erases everything already read. The erase deletes before it compacts, so the bytes really do leave the file.</p></div></div>
+    <div class="secitem"><div class="ic">🚫</div><div><h3>Nothing is read that shouldn't be</h3><p>The same detectors that skip password managers also <b>veto</b> a clip from every index — no embedding, no tags, no recognition. A screenshot the detector withholds is not analysed at all; its pixels are never even decoded.</p></div></div>
     <div class="secitem"><div class="ic">🔎</div><div><h3>Open source, auditable</h3><p>MIT-licensed. Don't take our word for it — <a href="https://github.com/AntreasAntoniou/cliphoard/blob/main/Sources/Cliphoard/Clipboard/Crypto.swift">read <code>Crypto.swift</code></a> yourself.</p></div></div>
   </div>
 </section>
