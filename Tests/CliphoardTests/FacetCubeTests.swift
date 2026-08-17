@@ -109,7 +109,10 @@ final class DimensionalTagTests: XCTestCase {
     /// and the tag list is still exactly "axes then topical". The exact per-basket
     /// axis counts (and that each one went DOWN) are pinned in `RetiredAxisTests`.
     func testEveryBuiltInBasketUsesTheHybridShape() {
-        XCTAssertEqual(TagBaskets.builtIn.count, 11)
+        // 12 since `photo` joined: the first basket classified against PIXELS rather
+        // than recognised text. Counted rather than derived on purpose — a basket
+        // appearing or vanishing should be a deliberate edit here, not a silent one.
+        XCTAssertEqual(TagBaskets.builtIn.count, 12)
         for basket in TagBaskets.builtIn {
             XCTAssertTrue(basket.isDimensional, basket.name)
             XCTAssertLessThan(basket.dimensions.count, 4,

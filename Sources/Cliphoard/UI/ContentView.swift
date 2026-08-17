@@ -376,7 +376,16 @@ struct ContentView: View {
         HStack(spacing: 5) {
             Text("Search:").font(.system(size: 11)).foregroundStyle(.secondary)
             Picker("Search mode", selection: $settings.searchMode) {
-                ForEach(SearchMode.allCases) { mode in
+                // `.image` is OFFERED ONLY IF IT CAN RUN. The joint towers are a separate,
+                // independently-absent model from the text tiers, so a build without them
+                // would otherwise show a mode that silently returns nothing — the exact
+                // "control that looks live and does nothing" defect FrozenControlsTests
+                // exists to catch. The currently-selected mode is always listed, so a
+                // persisted `.image` selection cannot leave the picker showing a blank.
+                ForEach(SearchMode.allCases.filter {
+                    !$0.usesImageModel || store.clipEmbedder != nil
+                        || settings.searchMode == $0
+                }) { mode in
                     Label(mode.title, systemImage: mode.symbol).tag(mode)
                 }
             }
@@ -385,7 +394,7 @@ struct ContentView: View {
             .fixedSize()
             .tint(Theme.accent)
         }
-        .help("Search mode — Smart, Exact, or Tag")
+        .help("Search mode — Smart, Exact, Tag, Neural, or Image (pictures only)")
         .accessibilityLabel("Search mode: \(settings.searchMode.title)")
     }
 

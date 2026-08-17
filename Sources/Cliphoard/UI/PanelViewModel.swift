@@ -119,6 +119,29 @@ final class PanelViewModel: ObservableObject {
         let time = parsed.filter ?? timeFilter
         let q = parsed.rest.trimmingCharacters(in: .whitespacesAndNewlines)
 
+        // Pictures only, ranked by what they LOOK like. Deliberately not folded into the
+        // other modes: this one CHANGES THE CORPUS as well as the ranking, hiding every
+        // text, link, colour and file clip. That is the whole point — with 19 images among
+        // 169 clips, a picture that matches weakly still loses to text that matches
+        // strongly, so the only reliable way to search pictures is to search only pictures.
+        //
+        // An empty query lists every image rather than nothing, so the mode doubles as a
+        // browse-my-pictures view and never looks broken before you have typed anything.
+        if DeepSearch.mode == .image {
+            let scoped = store.filtered(kind: .image, query: "", pinnedOnly: pinnedOnly,
+                                        facets: activeFacets, userTags: activeUserTags,
+                                        time: time)
+            guard !q.isEmpty else { return scoped }
+            let allowed = Set(scoped.map(\.id))
+            let ranked = store.imagesMatching(q, limit: 200)
+                .filter { allowed.contains($0.0.id) }
+                .map(\.0)
+            // Below-floor images are DROPPED, not appended. In every other mode a weak
+            // result costs nothing because strong ones sit above it; here there is nothing
+            // above it, so padding the list would present noise as the answer.
+            return ranked
+        }
+
         // Exact (or empty query) → substring filter, scoped by kind/pin/time/facets.
         if DeepSearch.mode == .exact || q.isEmpty {
             return store.filtered(kind: activeKind, query: q, pinnedOnly: pinnedOnly,
@@ -129,7 +152,10 @@ final class PanelViewModel: ObservableObject {
                                     facets: activeFacets, userTags: activeUserTags, time: time)
         let embedder = EmbedderProvider.active
         switch DeepSearch.mode {
-        case .exact:
+        case .exact, .image:
+            // `.image` returned above; listed here so the switch stays EXHAUSTIVE without a
+            // `default:`. A default would silently absorb any future mode into the text
+            // path, which is how a new mode ships doing something plausible and wrong.
             return scoped
         case .tag:
             // Explicit user labels win over inferred automatic categories.
@@ -145,11 +171,44 @@ final class PanelViewModel: ObservableObject {
             return scoped.filter { ids.contains($0.id) }
         case .neural:
             // Pure model-based semantic ranking (cosine only, no substring/tags).
-            return SemanticRanker.neural(query: q, items: scoped, embedder: embedder)
+            return withPixelMatches(for: q, into:
+                SemanticRanker.neural(query: q, items: scoped, embedder: embedder),
+                scoped: scoped)
         case .smart:
             // Clever hybrid: exact hits first, then blended neural + shared-tag topic.
-            return SemanticRanker.smart(query: q, items: scoped, embedder: embedder)
+            return withPixelMatches(for: q, into:
+                SemanticRanker.smart(query: q, items: scoped, embedder: embedder),
+                scoped: scoped)
         }
+    }
+
+    /// Fold joint text-pixel matches into a text ranking, APPENDING rather than reordering.
+    ///
+    /// The two scores live in different spaces and are not comparable — a 192-d OpenVision
+    /// cosine and a 1024-d ogma cosine calibrate differently, which is exactly why
+    /// `relevanceFloor` travels with each embedder. Interleaving them would require a
+    /// fusion weight nobody has measured, and the most likely outcome of guessing one is
+    /// that a mediocre pixel match outranks a correct OCR hit. That is the single most
+    /// plausible way this feature ships and quietly makes search WORSE, so it does not
+    /// happen here: the text ranking is preserved intact, and pixel-only matches are added
+    /// underneath it.
+    ///
+    /// What this buys is the whole point of the model. An image with no recognised text
+    /// cannot appear in the text ranking at ALL — there is nothing to match — so anything
+    /// this appends is a clip that was previously unreachable by typing. On the reference
+    /// store that is five clips, 28% of the images.
+    private func withPixelMatches(for query: String, into ranked: [ClipItem],
+                                  scoped: [ClipItem]) -> [ClipItem] {
+        let matches = store.imagesMatching(query)
+        guard !matches.isEmpty else { return ranked }
+        // Respect the active scope (kind/pin/time/facets) — the pixel index is not a way
+        // around a filter the user set.
+        let allowed = Set(scoped.map(\.id))
+        let already = Set(ranked.map(\.id))
+        let extra = matches
+            .filter { allowed.contains($0.0.id) && !already.contains($0.0.id) }
+            .map(\.0)
+        return ranked + extra
     }
 
     func resetSelection() { selection = 0 }

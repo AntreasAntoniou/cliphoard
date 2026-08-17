@@ -297,9 +297,40 @@ enum TagBaskets {
         ("Doc", ["clause", "id", "reference", "date", "form", "letter", "notice", "statement"]),
     ], ["case-no", "statute", "clause", "date", "deadline", "signature", "reference-no", "ni-number", "passport", "jurisdiction", "party", "exhibit", "form", "notice", "docket"])
 
+    /// Tags for PICTURES, scored against the pixels rather than any recognised text.
+    ///
+    /// Every other basket classifies a clip through the TEXT embedder, so an image is
+    /// classified by whatever OCR found in it. For a screenshot of a terminal that works
+    /// well. For a photo it fails completely — five of the reference store's eighteen
+    /// images hold no recognised text at all, so they carry no tags, appear under no chip,
+    /// and no basket in this file could ever describe them.
+    ///
+    /// This one is matched against the OpenVision image vector instead (see
+    /// `ClipStore.photoTags`), which is only possible because the text and image towers
+    /// share a 192-d space: the tag WORDS go through the text tower, the clip goes through
+    /// the image tower, and they are directly comparable.
+    ///
+    /// The vocabulary is chosen for what a clipboard actually accumulates and for what a
+    /// small CLIP can actually see. Concrete, visually distinct nouns — "receipt", "chart",
+    /// "food" — not abstractions like "important" or "work", which have no consistent
+    /// appearance and would produce confident nonsense. "Medium" separates the two things
+    /// people most often want to tell apart at a glance: a photograph of the world versus a
+    /// capture of a screen.
+    static let photo = hybrid("photo", "Photos / Screenshots", [
+        // EXACTLY EIGHT, like every other dimension — `TagBasket.dimensionSize` is a hard
+        // invariant the facet cube's id arithmetic depends on, not a style preference.
+        ("Medium", ["photo", "screenshot", "diagram", "drawing",
+                    "map", "slide", "scan", "poster"]),
+        ("Subject", ["person", "animal", "food", "product", "vehicle", "building",
+                     "landscape", "document"]),
+        ("Screen", ["chat", "terminal", "code editor", "spreadsheet", "web page",
+                    "dashboard", "form", "error message"]),
+    ], ["receipt", "invoice", "ticket", "whiteboard", "handwriting", "chart", "graph",
+        "logo", "meme", "selfie", "group photo", "night", "text heavy"])
+
     static let builtIn: [TagBasket] = [
         general, developer, writer, designer, researcher, finance,
-        personal, marketing, data, devops, legal,
+        personal, marketing, data, devops, legal, photo,
     ]
 
     /// User-editable flat basket, persisted in UserDefaults (defaults to the
@@ -339,16 +370,41 @@ enum TagBaskets {
     /// memoized `composed` basket; every read of `composed` re-checks the stored
     /// id anyway, so an out-of-band write can't leave a stale cube behind.
     static var overlayID: String? {
+        get { overlayIDs.first }
+        set { overlayIDs = newValue.map { [$0] } ?? [] }
+    }
+
+    /// EVERY specialist basket layered on top of General, in selection order.
+    ///
+    /// Was a single id. One overlay forced a false choice — a developer who also keeps
+    /// receipts had to pick which half of their clipboard got classified, and the answer
+    /// was always "the half I am not currently looking at". Dimensions merge by NAME, so
+    /// stacking is well defined: two baskets that both describe "topic" produce one
+    /// "topic" dimension with the later one winning, and dimensions unique to each are
+    /// simply carried through.
+    ///
+    /// MIGRATION: reads the old scalar `overlayBasket` key when the new one is absent, so
+    /// an existing selection survives the upgrade instead of silently resetting to General.
+    /// The old key is left in place rather than deleted — a downgrade should not lose it.
+    static var overlayIDs: [String] {
         get {
-            guard let raw = UserDefaults.standard.string(forKey: "overlayBasket"),
-                  !raw.isEmpty else { return nil }
-            return raw
+            if let stored = UserDefaults.standard.array(forKey: "overlayBaskets") as? [String] {
+                return stored.filter { !$0.isEmpty }
+            }
+            guard let legacy = UserDefaults.standard.string(forKey: "overlayBasket"),
+                  !legacy.isEmpty else { return [] }
+            return [legacy]
         }
         set {
-            if let newValue, !newValue.isEmpty {
-                UserDefaults.standard.set(newValue, forKey: "overlayBasket")
-            } else {
+            let cleaned = newValue.filter { !$0.isEmpty }
+            if cleaned.isEmpty {
+                UserDefaults.standard.removeObject(forKey: "overlayBaskets")
                 UserDefaults.standard.removeObject(forKey: "overlayBasket")
+            } else {
+                UserDefaults.standard.set(cleaned, forKey: "overlayBaskets")
+                // Keep the legacy scalar coherent rather than stale: anything still
+                // reading it gets the first selection, not a value from three changes ago.
+                UserDefaults.standard.set(cleaned[0], forKey: "overlayBasket")
             }
             cachedComposed = nil
         }
@@ -358,11 +414,19 @@ enum TagBaskets {
     /// is selected, when the stored id no longer exists (a basket was renamed or
     /// dropped between versions), or when it points at General itself — General
     /// is always the base, never its own overlay.
-    static var overlay: TagBasket? {
+    static var overlay: TagBasket? { overlays.first }
+
+    /// Every resolved overlay, in selection order. Ids that no longer exist (a basket
+    /// renamed or dropped between versions) are skipped rather than failing the whole
+    /// selection — losing one specialist is recoverable, losing all of them looks like the
+    /// setting reset itself.
+    static var overlays: [TagBasket] {
         // General is the base (never its own overlay); "custom" is the flat pool,
         // selected as a whole basket via `active`, not composed onto General.
-        guard let oid = overlayID, oid != general.id, oid != "custom" else { return nil }
-        return all.first { $0.id == oid && $0.isDimensional }
+        overlayIDs.compactMap { oid in
+            guard oid != general.id, oid != "custom" else { return nil }
+            return all.first { $0.id == oid && $0.isDimensional }
+        }
     }
 
     /// Memoized derived basket, keyed by the overlay id it was built from.
@@ -389,20 +453,47 @@ enum TagBaskets {
     /// Derived, not stored: no clip is re-embedded when the overlay changes, the
     /// tags are simply recomputed from the cached vectors.
     static var composed: TagBasket {
-        guard let overlay else { return general }
-        if let (key, basket) = cachedComposed, key == overlay.id { return basket }
-        let overlayByName = Dictionary(overlay.dimensions.map { ($0.name, $0) },
-                                       uniquingKeysWith: { first, _ in first })
-        let generalNames = Set(general.dimensions.map { $0.name })
-        let mergedDimensions = general.dimensions.map { overlayByName[$0.name] ?? $0 }
-            + overlay.dimensions.filter { !generalNames.contains($0.name) }
+        let layers = overlays
+        guard !layers.isEmpty else { return general }
+        // Keyed by the FULL ordered selection, not just the first id — with one overlay the
+        // id was a sufficient cache key, with several it is not, and a stale cube here
+        // would classify every clip against a basket the user had already changed.
+        let key = layers.map(\.id).joined(separator: "+")
+        if let (cachedKey, basket) = cachedComposed, cachedKey == key { return basket }
+
+        // ADDITIVE. Every ticked basket contributes ITS OWN groups; nothing replaces
+        // anything. An earlier version merged dimensions by name with last-write-wins, and
+        // it silently destroyed tag space: three name collisions exist among the built-ins
+        // — Artifact (Developer, DevOps), Asset (Designer, Marketing), Doc (Finance,
+        // Legal) — so ticking Developer AND DevOps kept one Artifact axis and threw the
+        // other's eight tags away with no indication. Ticking a second basket must never
+        // subtract from the first.
+        //
+        // Collisions are disambiguated by SUFFIXING the basket name, and only when they
+        // actually collide, so anyone running a single overlay sees the labels unchanged.
+        var dimensions = general.dimensions
+        var topical = general.topical
+        for layer in layers {
+            for dim in layer.dimensions {
+                let taken = dimensions.contains { $0.name == dim.name }
+                dimensions.append(taken
+                    ? TagDimension(name: "\(dim.name) (\(layer.name))", tags: dim.tags)
+                    : dim)
+            }
+            topical += layer.topical
+        }
+        // Topical words DO dedupe: they are a flat pool of loose terms, and two baskets
+        // both listing "api" mean the same thing. Dimensions are different — they are
+        // named groups whose membership is the point, so two groups called Artifact are
+        // two distinct classification axes, not one word repeated.
         var seenTopical = Set<String>()
-        let mergedTopical = (general.topical + overlay.topical).filter { seenTopical.insert($0).inserted }
-        let basket = TagBasket(id: "composed:\(overlay.id)",
-                               name: "\(general.name) + \(overlay.name)",
-                               dimensions: mergedDimensions,
+        let mergedTopical = topical.filter { seenTopical.insert($0).inserted }
+
+        let basket = TagBasket(id: "composed:\(key)",
+                               name: ([general.name] + layers.map(\.name)).joined(separator: " + "),
+                               dimensions: dimensions,
                                topical: mergedTopical)
-        cachedComposed = (overlay.id, basket)
+        cachedComposed = (key, basket)
         return basket
     }
 

@@ -39,7 +39,10 @@ fi
 # ModelAssets.ensure, which verifies it against a pinned SHA-256 and refuses to
 # install on mismatch. Without this the glob in build-app.sh bundles every model
 # present in tools/models, which is what made the .app 409 MB.
-BUNDLE_MODELS="open-ogma-small open-ogma-micro" bash "$ROOT/Scripts/build-app.sh" release
+# OpenVision's two towers ride along: 34.6 MB total, and the joint text-pixel index
+# is the only way an image carrying no recognised text is reachable by typing at all.
+BUNDLE_MODELS="open-ogma-small open-ogma-micro openvision-tiny-p8-image openvision-tiny-p8-text" \
+    bash "$ROOT/Scripts/build-app.sh" release
 
 # 3. Quit the running instance (graceful first, then firm) so the binary is replaceable.
 if pgrep -x Cliphoard >/dev/null; then

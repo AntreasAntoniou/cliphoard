@@ -615,8 +615,14 @@ final class ClipStore: ObservableObject {
             var attempted: Set<UUID> = []
             while !Task.isCancelled {
                 guard let self else { return }
+                // EITHER product may be missing independently. Every image already in the
+                // store has been through Vision but has no pixel vector, so a batch keyed
+                // only on `needsImageUnderstanding` would never reach them and the feature
+                // would appear to work while indexing nothing but new clips.
                 let batch = self.items.filter {
-                    Self.needsImageUnderstanding($0) && !attempted.contains($0.id)
+                    (Self.needsImageUnderstanding($0)
+                        || (self.clipEmbedder != nil && Self.needsCLIPVector($0)))
+                    && !attempted.contains($0.id)
                 }
                 guard !batch.isEmpty else { break }   // drains clips added mid-pass
                 var done = 0
@@ -644,19 +650,193 @@ final class ClipStore: ObservableObject {
                         continue
                     }
                     // Vision OFF the main actor: the panel must never stall behind it.
-                    let analyze = ImageUnderstanding.analyze
-                    let result = await Task.detached(priority: .utility) { analyze(png) }.value
-                    self.applyImageUnderstanding(result, to: item)
+                    // Skipped when this clip is here only for its pixel vector — re-running
+                    // recognition would rewrite `ocr_text` for no gain, and on a clip the
+                    // detector deliberately withheld it could overwrite the empty marker.
+                    if Self.needsImageUnderstanding(item) {
+                        let analyze = ImageUnderstanding.analyze
+                        let result = await Task.detached(priority: .utility) { analyze(png) }.value
+                        self.applyImageUnderstanding(result, to: item)
+                    }
+
+                    // The CLIP vector rides the SAME decrypted payload, in the same loop.
+                    // Not a second pass on purpose: a separate one would decrypt every
+                    // image a second time and double the window in which plaintext pixels
+                    // are in memory, to compute something from bytes we already hold.
+                    //
+                    // Off the main actor for the same reason as Vision — this is ~6x the
+                    // inference of a patch16 tower, which is affordable ONLY because it is
+                    // background work that happens once per image, ever. The user never
+                    // waits for it; the query path is the text tower, which is untouched.
+                    if let clip = self.clipEmbedder, !item.isIndexVetoed {
+                        let vector = await Task.detached(priority: .utility) {
+                            clip.embed(imageData: png)
+                        }.value
+                        self.applyCLIPVector(vector, to: item)
+                    }
                     // Character COUNT and outcome only — never a character of the text.
                     // The whole point is that some of this is deliberately not stored;
                     // logging it would defeat that more thoroughly than storing it.
+                    // Read back off the ITEM rather than off a result value, so this reports
+                    // what was actually stored regardless of which halves of the pass ran.
+                    let printDim = item.imageFeature?.vector.count ?? 0
+                    let clipDim = item.embeddings[CLIPEmbedder.signature]?.vector.count ?? 0
                     DebugLog.write("images: \(done + 1)/\(batch.count) — "
                           + "\((item.ocrText ?? "").isEmpty ? "nothing stored" : "\(item.ocrText!.count) chars")"
-                          + ", print \(result.featurePrint.isEmpty ? "none" : "\(result.featurePrint.count)-d")")
+                          + ", print \(printDim == 0 ? "none" : "\(printDim)-d")"
+                          + ", clip \(clipDim == 0 ? "none" : "\(clipDim)-d")")
                     await Task.yield()
                 }
             }
         }
+    }
+
+    // MARK: - Joint text/pixel search (OpenVision)
+
+    /// Loaded once, lazily, and allowed to be nil forever. Every call site treats a missing
+    /// embedder as "this feature is not available", never as an error: the app must work
+    /// exactly as it did before if the towers are absent, because for most of its life they
+    /// were. `load()` is all-or-nothing across both towers and the tokenizer.
+    private(set) lazy var clipEmbedder: CLIPEmbedder? = {
+        guard Self.imageUnderstandingEnabled else { return nil }
+        let loaded = CLIPEmbedder.load()
+        DebugLog.write("clip: embedder \(loaded == nil ? "unavailable" : "ready")")
+        return loaded
+    }()
+
+    /// An image clip that has been through Vision but carries no vector in the CURRENT
+    /// signature. Signature-scoped rather than a boolean, so bumping the model version
+    /// re-indexes rather than leaving stale vectors that look fresh.
+    static func needsCLIPVector(_ item: ClipItem) -> Bool {
+        item.kind == .image
+            && !item.isIndexVetoed
+            && (item.embeddings[CLIPEmbedder.signature]?.vector.isEmpty ?? true)
+    }
+
+    /// Store a pixel vector, in memory and on disk. Empty vectors are DROPPED rather than
+    /// persisted: `CLIPEmbedder` returns `[]` on any failure, and writing that would cache
+    /// a permanent "already done, scores zero against everything" state that never retries.
+    func applyCLIPVector(_ vector: [Float], to item: ClipItem) {
+        guard !vector.isEmpty else { return }
+        guard !safeMode else { return }   // frozen store: never persist
+        item.embeddings[CLIPEmbedder.signature] = ModelEmbedding(vector: vector)
+        db?.upsertEmbedding(clipID: item.id, model: CLIPEmbedder.signature,
+                            embedding: ModelEmbedding(vector: vector))
+    }
+
+    /// Free-text query against the PIXELS of image clips — the thing OCR cannot do.
+    ///
+    /// Returns [] when the embedder is absent or the query does not embed, so a caller can
+    /// fall back to the existing text paths without special-casing. Results below the
+    /// embedder's own relevance floor are dropped: with 19 images, every query would
+    /// otherwise "match" all of them in some order, and a confident ranking of irrelevant
+    /// results is worse than an empty one.
+    /// BOTH SIDES ARE MEAN-CENTRED, and the feature does not work without it. Raw cosine in
+    /// this space returned the same handful of images for every query — measured, not
+    /// feared — because all text embeddings share one direction and whichever pictures lie
+    /// nearest it win everything. See `CLIPTextMean`.
+    ///
+    /// The two means are obtained differently on purpose. The TEXT mean is a shipped
+    /// constant computed from generic vocabulary, so a query means the same thing on every
+    /// machine. The IMAGE mean is the user's own corpus mean, recomputed here: it is the
+    /// centre of *this* collection, so centring by it asks "what makes this picture unlike
+    /// my other pictures", which is the right question for a clipboard.
+    func imagesMatching(_ query: String, limit: Int = 24) -> [(ClipItem, Float)] {
+        guard let clip = clipEmbedder else { return [] }
+        let raw = clip.embed(text: query)
+        guard !raw.isEmpty else { return [] }
+        let q = CLIPEmbedder.centred(raw, by: CLIPTextMean.vector)
+        guard !q.isEmpty else { return [] }
+
+        let candidates = items.filter {
+            $0.kind == .image && !$0.isIndexVetoed
+                && ($0.embeddings[CLIPEmbedder.signature]?.vector.count ?? 0) == q.count
+        }
+        // Fewer than two vectors makes a corpus mean meaningless — centring one vector by
+        // itself yields zero. Fall back to uncentred rather than returning nothing.
+        guard candidates.count >= 2 else { return [] }
+
+        var mean = [Float](repeating: 0, count: q.count)
+        for item in candidates {
+            let v = item.embeddings[CLIPEmbedder.signature]!.vector
+            for i in 0..<q.count { mean[i] += v[i] }
+        }
+        for i in 0..<mean.count { mean[i] /= Float(candidates.count) }
+
+        return candidates
+            .compactMap { item -> (ClipItem, Float)? in
+                let stored = item.embeddings[CLIPEmbedder.signature]!.vector
+                let centred = CLIPEmbedder.centred(stored, by: mean)
+                guard !centred.isEmpty else { return nil }
+                let score = CLIPEmbedder.similarity(q, centred)
+                return score >= CLIPEmbedder.relevanceFloor ? (item, score) : nil
+            }
+            .sorted { $0.1 > $1.1 }
+            .prefix(limit)
+            .map { $0 }
+    }
+
+    /// Tags for an image, derived from its PIXELS.
+    ///
+    /// `tags(of:)` cannot do this. It reads `item.embeddings[EmbedderProvider.active
+    /// .signature]` — the text embedder's vector, which for an image comes from OCR. A
+    /// photo carrying no recognised text has no such vector, so it gets no tags, appears
+    /// under no chip, and is invisible to every basket in `TagBaskets`.
+    ///
+    /// This scores the tag WORDS through the CLIP text tower against the clip's image
+    /// vector. Both live in the same 192-d space, which is the entire reason this is
+    /// possible at all, and both are mean-centred for the reason `imagesMatching` documents:
+    /// uncentred, every tag scores about the same against every picture.
+    ///
+    /// Returns tags above the floor, strongest first. Empty is a legitimate and common
+    /// answer — a small CLIP genuinely cannot name everything, and inventing a label for a
+    /// picture it does not recognise is worse than saying nothing.
+    func photoTags(for item: ClipItem, limit: Int = 4) -> [String] {
+        guard item.kind == .image, !item.isIndexVetoed,
+              let clip = clipEmbedder,
+              let raw = item.embeddings[CLIPEmbedder.signature]?.vector,
+              !raw.isEmpty else { return [] }
+
+        // The photo basket's own vocabulary — NOT the composed basket. Photo tags describe
+        // appearance; folding in Developer's "schema" or Finance's "invoice-number" would
+        // ask the image tower to rank words that have no visual form, and it would answer.
+        let vocabulary = TagBaskets.photo.tags
+        guard !vocabulary.isEmpty else { return [] }
+
+        let others = items.compactMap {
+            $0.kind == .image && !$0.isIndexVetoed
+                ? $0.embeddings[CLIPEmbedder.signature]?.vector : nil
+        }.filter { $0.count == raw.count }
+        guard others.count >= 2 else { return [] }
+
+        var mean = [Float](repeating: 0, count: raw.count)
+        for v in others { for i in 0..<v.count { mean[i] += v[i] } }
+        for i in 0..<mean.count { mean[i] /= Float(others.count) }
+
+        let centred = CLIPEmbedder.centred(raw, by: mean)
+        guard !centred.isEmpty else { return [] }
+
+        return vocabulary
+            .compactMap { tag -> (String, Float)? in
+                let text = clip.embed(text: "a photo of \(tag)")
+                guard !text.isEmpty else { return nil }
+                let q = CLIPEmbedder.centred(text, by: CLIPTextMean.vector)
+                guard !q.isEmpty else { return nil }
+                let score = CLIPEmbedder.similarity(q, centred)
+                return score >= CLIPEmbedder.relevanceFloor ? (tag, score) : nil
+            }
+            .sorted { $0.1 > $1.1 }
+            .prefix(limit)
+            .map(\.0)
+    }
+
+    /// How many image clips carry a pixel vector in the current signature. Drives the
+    /// Settings readout, so "semantic image search" cannot claim to be on while nothing
+    /// is indexed.
+    var clipIndexedImageCount: Int {
+        items.filter {
+            $0.kind == .image && !($0.embeddings[CLIPEmbedder.signature]?.vector.isEmpty ?? true)
+        }.count
     }
 
     /// How many clips currently hold recognised text. Drives the Settings count, so the
