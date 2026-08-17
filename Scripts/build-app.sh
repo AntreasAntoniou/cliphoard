@@ -59,7 +59,10 @@ fi
 # refused on mismatch — but note the mechanism is fail-OPEN: a tier absent from
 # ModelAssets.expectedSHA256 SKIPS verification with only a log line. So adding a
 # tier without also adding its digest silently buys an unverified download.
-BUNDLE_MODELS="${BUNDLE_MODELS:-open-ogma-small open-ogma-micro}"
+# Default: the OpenVision towers only. ogma moved to HuggingFace (see
+# ModelAssets.sources) so its download stats reflect real usage; MiniLM has always
+# been download-on-demand. Defaulting CLOSED still holds — this is the lean set.
+BUNDLE_MODELS="${BUNDLE_MODELS:-openvision-tiny-p8-image openvision-tiny-p8-text}"
 if ls "$ROOT"/tools/models/*.mlpackage >/dev/null 2>&1; then
     echo "▸ Bundling embedding models…"
     for pkg in "$ROOT"/tools/models/*.mlpackage; do

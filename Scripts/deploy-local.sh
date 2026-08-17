@@ -41,7 +41,9 @@ fi
 # present in tools/models, which is what made the .app 409 MB.
 # OpenVision's two towers ride along: 34.6 MB total, and the joint text-pixel index
 # is the only way an image carrying no recognised text is reachable by typing at all.
-BUNDLE_MODELS="open-ogma-small open-ogma-micro openvision-tiny-p8-image openvision-tiny-p8-text" \
+# ogma is NOT bundled: it is served from HuggingFace so its download stats reflect real
+# usage of a model we released. Bundling it would make that adoption invisible.
+BUNDLE_MODELS="openvision-tiny-p8-image openvision-tiny-p8-text" \
     bash "$ROOT/Scripts/build-app.sh" release
 
 # 3. Quit the running instance (graceful first, then firm) so the binary is replaceable.

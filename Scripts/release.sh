@@ -64,7 +64,14 @@ for m in open-ogma-micro open-ogma-small all-MiniLM-L6-v2; do
     [ -d "tools/models/$m.mlpackage" ] || { echo "::error::missing model $m — release aborted" >&2; exit 1; }
 done
 say "Building Cliphoard.app…"
-BUNDLE_MODELS="open-ogma-micro open-ogma-small all-MiniLM-L6-v2" bash Scripts/build-app.sh release
+# The SHIPPED set. Previously this bundled ogma AND MiniLM — the latter directly
+# contradicting README/site copy saying "MiniLM downloads on first selection", so the
+# release did not match its own documentation. Now: OpenVision only.
+#   ogma    -> HuggingFace on demand (stats reflect real adoption of our model)
+#   MiniLM  -> GitHub release on demand (as always documented)
+#   OpenVision -> bundled: image search is the differentiator and should work on
+#                 first launch with no network.
+BUNDLE_MODELS="openvision-tiny-p8-image openvision-tiny-p8-text" bash Scripts/build-app.sh release
 VERSION="$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$APP/Contents/Info.plist")"
 say "Version $VERSION"
 

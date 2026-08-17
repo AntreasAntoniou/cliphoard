@@ -84,7 +84,9 @@ folder as sensitive and use the exclusion list for apps where you copy secrets.
 
 - ❌ No network requests carrying your data. Cliphoard sends your clips to no
   server — ours or anyone else's. Its single outbound call is an *optional*,
-  user-initiated, download-only fetch of a search model from GitHub Releases
+  user-initiated, download-only fetch of a search model — the ogma models from
+  HuggingFace (`huggingface.co/axiotic/ogma-*`), everything else from our GitHub
+  Releases. Nothing about you is sent: these are plain GETs for public files
   when you select a tier that isn't bundled (nothing about you or your
   clipboard is sent; just an HTTPS file download).
 - ❌ No telemetry, analytics, crash reporting, or usage tracking.

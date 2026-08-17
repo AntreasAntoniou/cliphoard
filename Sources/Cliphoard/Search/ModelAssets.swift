@@ -21,6 +21,59 @@ enum ModelAssets {
     static let releaseBase = URL(string:
         "https://github.com/AntreasAntoniou/cliphoard/releases/download/models-v1/")!
 
+    /// Where each tier's artifact is hosted.
+    ///
+    /// The two ogma models are OURS, published at `axiotic/ogma-*`, and they are served from
+    /// HuggingFace so that their download statistics reflect actual Cliphoard usage. Serving
+    /// them from a GitHub release instead would make real adoption of an open model we
+    /// released invisible on the platform people look at to judge whether a model is used.
+    ///
+    /// MiniLM stays on the GitHub release: the CoreML conversion is ours, but
+    /// `sentence-transformers/all-MiniLM-L6-v2` is not our repository to publish into, and
+    /// attributing our conversion's downloads to their model would misreport THEIR numbers
+    /// to fix ours.
+    enum AssetSource {
+        case huggingFace(repo: String)
+        case githubRelease
+    }
+
+    static let sources: [String: AssetSource] = [
+        "open-ogma-micro": .huggingFace(repo: "axiotic/ogma-micro"),
+        "open-ogma-small": .huggingFace(repo: "axiotic/ogma-small"),
+    ]
+
+    static func source(for name: String) -> AssetSource { sources[name] ?? .githubRelease }
+
+    static func assetURL(for name: String) -> URL {
+        switch source(for: name) {
+        case .huggingFace(let repo):
+            return URL(string: "https://huggingface.co/\(repo)/resolve/main/coreml/\(name).zip")!
+        case .githubRelease:
+            return releaseBase.appendingPathComponent("\(name).zip")
+        }
+    }
+
+    /// Ask HuggingFace for the model's `config.json` immediately before fetching the weights.
+    ///
+    /// THIS IS NOT DEAD CODE AND MUST NOT BE TIDIED AWAY. HuggingFace does not count
+    /// downloads by counting file requests — it counts requests to a specific "query file",
+    /// which for a repository with no declared library is `config.json`. A request for our
+    /// `coreml/<name>.zip` registers as ZERO downloads, so without this call an install that
+    /// genuinely pulls the model would leave no trace on the model's page, and the published
+    /// number would understate real usage indefinitely.
+    ///
+    /// One request per actual install, made only on the path that is already downloading the
+    /// model anyway. It carries no user data — it is a plain GET for a public file — and it
+    /// is deliberately best-effort: a failure here must never block an install, because the
+    /// statistic is our concern and the model is the user's.
+    private static func recordDownload(repo: String) async {
+        var request = URLRequest(url: URL(string:
+            "https://huggingface.co/\(repo)/resolve/main/config.json")!)
+        request.httpMethod = "GET"
+        request.timeoutInterval = 10
+        _ = try? await URLSession.shared.data(for: request)
+    }
+
     /// Pinned SHA-256 of each hosted `<name>.zip` on the `models-v1` release.
     /// GitHub-over-TLS authenticates the transport; this rejects a corrupted or
     /// tampered zip before it is unpacked and compiled on-device (defense-in-depth).
@@ -81,7 +134,8 @@ enum ModelAssets {
         try fm.createDirectory(at: storeDir, withIntermediateDirectories: true)
 
         // 1. Download the zip (mlpackage + tokenizer folder).
-        let url = releaseBase.appendingPathComponent("\(name).zip")
+        if case .huggingFace(let repo) = source(for: name) { await recordDownload(repo: repo) }
+        let url = assetURL(for: name)
         await EmbedderState.shared.set(.downloading(name, progress: 0))
         let (tmp, response) = try await download(url: url) { progress in
             Task { @MainActor in EmbedderState.shared.state = .downloading(name, progress: progress) }

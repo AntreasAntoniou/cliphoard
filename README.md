@@ -26,7 +26,9 @@ cloud.** Everything you copy stays on your Mac.
 - **🔎 Smart search, on-device.** The default **Smart** mode shows your exact matches
   first, then the semantically closest clips — find "that database query" by meaning
   *and* still get the literal token you typed. Switch modes (Smart / Exact / Tag)
-  right from the pill next to the search field. Three model tiers (ogma micro/small, MiniLM) — the ogma models ship inside the app, MiniLM downloads on first selection. Every model is permissively licensed (MIT or Apache-2.0). No account; your clips never touch a network.
+  right from the pill next to the search field. Three model tiers (ogma micro/small, MiniLM), each installed on first use — the ogma
+  models from [HuggingFace](https://huggingface.co/axiotic/ogma-small) so their download
+  numbers reflect real usage of a model we released, MiniLM from our GitHub release. Every model is permissively licensed (MIT or Apache-2.0). No account; your clips never touch a network.
 - **🔒 Private, and provably so.** Nothing ever leaves your Mac. Every clip is
   **encrypted at rest** with a key bound to the **Secure Enclave** (where available) —
   text, rich text and metadata in the database, and image clips and their thumbnails on
