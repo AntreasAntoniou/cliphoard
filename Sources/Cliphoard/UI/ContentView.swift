@@ -408,7 +408,10 @@ struct ContentView: View {
     /// most confusing state this feature could have.
     @ViewBuilder
     private var referenceImagePicker: some View {
-        if settings.searchMode == .image && store.clipEmbedder != nil {
+        // EVERY mode, not just Image. Searching by a picture is a thing you decide to do,
+        // not a thing you first have to reconfigure the search for — and hiding it behind a
+        // mode nobody has selected yet meant nobody found it.
+        if store.clipEmbedder != nil {
             if let reference = model.referenceImage {
                 HStack(spacing: 4) {
                     Image(systemName: "photo.fill")
@@ -434,14 +437,33 @@ struct ContentView: View {
                 Button {
                     chooseReferenceImage()
                 } label: {
-                    Label("Match image…", systemImage: "photo.badge.plus")
-                        .font(.system(size: 11))
+                    Image(systemName: Self.matchImageSymbol)
+                        .font(.system(size: 14))
+                        .foregroundStyle(Theme.accent)
                 }
                 .buttonStyle(.plain)
-                .help("Pick a picture from your Mac and find clips that look like it")
+                // The label is gone from the button, so the tooltip and the accessibility
+                // label carry the whole meaning. An icon-only control with no accessible
+                // name is a control VoiceOver users cannot identify at all.
+                .help("Search by image — pick a picture and find clips that look like it")
+                .accessibilityLabel("Search by image")
+                .accessibilityHint("Opens a file picker. Clips will be ranked by how much "
+                                   + "they resemble the picture you choose.")
             }
         }
     }
+
+    /// "Photo + magnifying glass" says *search by image* more directly than anything else,
+    /// but it is SF Symbols 5 (macOS 14) and this app ships to macOS 13, where an unavailable
+    /// symbol renders as EMPTY SPACE rather than failing — an invisible button, which is the
+    /// worst possible outcome for a control we just made icon-only. Resolved once at startup
+    /// with a fallback to `camera.viewfinder`, which has existed since SF Symbols 1 and is the
+    /// established visual-search idiom anyway.
+    static let matchImageSymbol: String = {
+        let preferred = "photo.badge.magnifyingglass"
+        return NSImage(systemSymbolName: preferred, accessibilityDescription: nil) != nil
+            ? preferred : "camera.viewfinder"
+    }()
 
     /// Reads the bytes rather than keeping the URL, so the search survives the file being
     /// moved or deleted while the panel is open.
@@ -455,6 +477,13 @@ struct ContentView: View {
         guard panel.runModal() == .OK, let url = panel.url,
               let data = try? Data(contentsOf: url) else { return }
         model.referenceImage = (name: url.lastPathComponent, data: data)
+        // SWITCH TO IMAGE MODE, visibly. The reference only ranks image clips, so leaving the
+        // user in Exact or Tag would give them a file picker that changes nothing — the
+        // "control that looks live and does nothing" defect FrozenControlsTests exists for.
+        // Changing the mode is the honest option: it does what was asked AND shows that it
+        // did, because the mode picker updates in front of them.
+        settings.searchMode = .image
+        model.resetSelection()
     }
 
     /// Time filter — pick when a clip was copied with plain words, or a custom
