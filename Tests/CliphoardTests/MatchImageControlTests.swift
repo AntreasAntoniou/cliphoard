@@ -60,7 +60,13 @@ final class MatchImageControlTests: XCTestCase {
         guard let start = source.range(of: "private func chooseReferenceImage()") else {
             return XCTFail("chooseReferenceImage was renamed — move this test with it")
         }
-        let body = String(source[start.upperBound...].prefix(1400))
+        // Bounded by the NEXT declaration, not by a character count. The first version took
+        // a fixed 1400-char prefix and started failing the moment the function grew — a
+        // `defer` block was added above the assertion it was looking for, pushing it out of
+        // the window. The code was correct; the test's idea of "the function" was not.
+        let rest = source[start.upperBound...]
+        let end = rest.range(of: "\n    private ") ?? rest.range(of: "\n    var ")
+        let body = String(rest[..<(end?.lowerBound ?? rest.endIndex)])
         XCTAssertTrue(body.contains("model.referenceImage = "),
                       "the picker no longer stores the chosen image")
         XCTAssertTrue(body.contains("settings.searchMode = .image"),

@@ -474,6 +474,16 @@ struct ContentView: View {
         panel.allowedContentTypes = [.image]
         panel.prompt = "Match"
         panel.message = "Pick a picture — Cliphoard will find clips that look like it."
+        // Suppress hide-on-resign for as long as the picker is up, and put it back down
+        // afterwards on EVERY path — including cancel and unreadable-file — or the panel
+        // becomes permanently un-dismissable by clicking away.
+        model.isPresentingSystemPanel = true
+        defer {
+            model.isPresentingSystemPanel = false
+            // The panel stayed visible but lost key focus to the modal; without this the
+            // results are on screen and the keyboard is dead.
+            model.onRequestFocus?()
+        }
         guard panel.runModal() == .OK, let url = panel.url,
               let data = try? Data(contentsOf: url) else { return }
         model.referenceImage = (name: url.lastPathComponent, data: data)

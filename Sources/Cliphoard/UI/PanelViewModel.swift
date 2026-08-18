@@ -56,6 +56,23 @@ final class PanelViewModel: ObservableObject {
     /// Invoked to copy a clip onto the system clipboard without pasting (⌘C/⌃C).
     var onCopy: ((ClipItem) -> Void)?
 
+    /// True while WE have deliberately put a system window above the panel — currently the
+    /// `NSOpenPanel` behind "search by image".
+    ///
+    /// The panel hides when it resigns key, which is right for "user clicked away" and wrong
+    /// for "user opened the file picker we just offered them". Without this, choosing a
+    /// reference image dismissed the whole interface and the results only appeared after
+    /// summoning it again — the search worked, but nobody could see it happen.
+    ///
+    /// The inspector sheet already needed the same exemption (`inspectedItem != nil`). This
+    /// is the second case, which is why it is a NAMED flag rather than a third ad-hoc
+    /// condition bolted onto the resign handler.
+    var isPresentingSystemPanel = false
+
+    /// Ask the panel to take key focus back. Needed after a modal closes: the panel is still
+    /// on screen but no longer key, so the results are visible and the keyboard does nothing.
+    var onRequestFocus: (() -> Void)?
+
     init(store: ClipStore) {
         self.store = store
         // Republish store changes so the two-object observation collapses into

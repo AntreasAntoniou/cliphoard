@@ -199,7 +199,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             // keep the panel up while the inspector is open (dismissing the sheet
             // returns key focus here, and normal hide-on-resign resumes).
             if self.model.inspectedItem != nil { return }
+            // Same reason, different window: an NSOpenPanel we opened ourselves takes key,
+            // and dismissing the interface underneath the picker the user just asked for is
+            // never what they meant.
+            if self.model.isPresentingSystemPanel { return }
             self.hide(paste: false)
+        }
+        model.onRequestFocus = { [weak self] in
+            guard let self, self.isVisible else { return }
+            NSApp.activate(ignoringOtherApps: true)
+            self.panel.makeKeyAndOrderFront(nil)
         }
         pasteStatus.onOpenAccessibility = { [weak self] in self?.openAccessibilitySettings() }
         panel.setContent { [model, store, pasteStatus] in
