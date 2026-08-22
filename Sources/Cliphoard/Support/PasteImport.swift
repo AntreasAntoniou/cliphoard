@@ -161,13 +161,14 @@ enum PasteImport {
 
     private static func read(dbPath: String, limit: Int?, since: Date?,
                              log: (String) -> Void) -> [Row] {
-        // Read-only AND immutable: this is a hot copy of someone else's Core Data store,
-        // with its own -wal that we must not touch. `immutable=1` normally UNDER-REPORTS a
-        // WAL database, which cost a wrong count earlier in this project — here it is
-        // correct precisely because the export is frozen and must stay that way.
+        // Through the shared WAL-honouring open. This used to hardcode `immutable=1` with a
+        // comment arguing it was correct "precisely because the export is frozen" — true of
+        // the export, and false of the other path this very adapter advertises: the
+        // catalogue also points at a LIVE Paste install, whose recent clips live in a -wal
+        // that immutable mode ignores. The argument was sound about one input and was
+        // applied to both.
         var db: OpaquePointer?
-        let uri = "file:\(dbPath)?mode=ro&immutable=1"
-        guard sqlite3_open_v2(uri, &db, SQLITE_OPEN_READONLY | SQLITE_OPEN_URI, nil) == SQLITE_OK else {
+        guard ClipImporters.openReadOnly(dbPath, &db) else {
             log("cannot open \(dbPath)")
             return []
         }

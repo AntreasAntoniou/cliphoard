@@ -115,3 +115,79 @@ final class AssetSourceTests: XCTestCase {
                       + "install it is supposed to be incidental to")
     }
 }
+
+/// Reading another app's live database means reading its WAL.
+///
+/// The Maccy adapter returned ZERO clips from a database holding seven. Not a crash, not an
+/// error — a successful query over an empty result set, reported as "0 clips to import".
+/// The shared open used `immutable=1`, which tells SQLite the file cannot change and so to
+/// ignore the -wal sidecar entirely. Maccy's WAL held 296KB: everything.
+///
+/// The flag arrived by copy from the Paste importer, where it is genuinely correct — that
+/// source is a frozen export with no live writer. A justification true of one input, applied
+/// to every input.
+///
+/// This is the THIRD time WAL handling has produced a confident wrong answer in this project
+/// (a corpus count, an archive that would not open, and now an import), which is why the
+/// rule now lives in one function instead of at each call site.
+final class WALHandlingTests: XCTestCase {
+
+    /// The open must prefer `mode=ro`, which reads the WAL, and use `immutable=1` only as a
+    /// fallback — not the other way round.
+    func testTheReadOnlyOpenPrefersWALAwareMode() throws {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let source = try String(
+            contentsOf: root.appendingPathComponent("Sources/Cliphoard/Support/ClipImporters.swift"),
+            encoding: .utf8)
+        guard let start = source.range(of: "static func openReadOnly(") else {
+            return XCTFail("openReadOnly was renamed — move this test with it")
+        }
+        let body = String(source[start.upperBound...].prefix(1200))
+        guard let ro = body.range(of: "?mode=ro\""),
+              let immutable = body.range(of: "immutable=1") else {
+            return XCTFail("expected both a WAL-aware attempt and an immutable fallback")
+        }
+        XCTAssertLessThan(ro.lowerBound, immutable.lowerBound,
+                          "immutable=1 is tried FIRST, so a live app's WAL is ignored and the "
+                          + "import silently under-reports — the exact defect this exists to "
+                          + "prevent")
+    }
+
+    /// Falling back must be announced. An incomplete import that reports a confident total
+    /// is worse than one that says it might be missing recent clips.
+    func testTheImmutableFallbackIsAnnounced() throws {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let source = try String(
+            contentsOf: root.appendingPathComponent("Sources/Cliphoard/Support/ClipImporters.swift"),
+            encoding: .utf8)
+        guard let start = source.range(of: "static func openReadOnly(") else { return }
+        let body = String(source[start.upperBound...].prefix(1200))
+        XCTAssertTrue(body.contains("NSLog"),
+                      "the fallback is silent; a user would get an undercount with nothing "
+                      + "indicating the WAL was skipped")
+        XCTAssertTrue(body.lowercased().contains("may be missing"),
+                      "the warning must say what the consequence IS, not merely that a "
+                      + "fallback happened")
+    }
+
+    /// No adapter may re-introduce a hardcoded immutable open. This is the copy-paste that
+    /// caused the bug, and it is the copy-paste most likely to happen again.
+    func testNoAdapterOpensAStoreDirectly() throws {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        for file in ["Sources/Cliphoard/Support/ClipImporters.swift",
+                     "Sources/Cliphoard/Support/PasteImport.swift"] {
+            let source = try String(contentsOf: root.appendingPathComponent(file), encoding: .utf8)
+            // sqlite3_open_v2 belongs ONLY inside openReadOnly.
+            let opens = source.components(separatedBy: "sqlite3_open_v2(").count - 1
+            let expected = file.hasSuffix("ClipImporters.swift") ? 2 : 0
+            XCTAssertEqual(opens, expected,
+                           "\(file) calls sqlite3_open_v2 \(opens) time(s); expected "
+                           + "\(expected). Every store must be opened through openReadOnly, "
+                           + "or the WAL rule has to be remembered per call site — which is "
+                           + "how a live database came back empty.")
+        }
+    }
+}

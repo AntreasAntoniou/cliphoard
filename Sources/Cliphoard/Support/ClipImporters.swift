@@ -69,10 +69,17 @@ enum ClipImporters {
                read: PasteImport.stage),
 
         Source(id: "maccy", name: "Maccy",
-               candidatePaths: ["~/Library/Application Support/Maccy/Storage.sqlite"],
-               confidence: .fromSource,
-               note: "SwiftData. Storage.swift pins the path; HistoryItemContent is "
-                   + "(type: UTI string, value: Data). Tables ZHISTORYITEM / ZHISTORYITEMCONTENT.",
+               // The CONTAINER path first. Storage.swift says
+               // `URL.applicationSupportDirectory.appending(path: "Maccy/Storage.sqlite")`,
+               // which is correct — but inside a sandbox that resolves into the app's
+               // container, and the App Store / Homebrew build IS sandboxed. Reading the
+               // source gave the right expression and the wrong real-world path; only
+               // installing it showed the difference.
+               candidatePaths: ["~/Library/Containers/org.p0deje.Maccy/Data/Library/Application Support/Maccy/Storage.sqlite",
+                                "~/Library/Application Support/Maccy/Storage.sqlite"],
+               confidence: .verified,
+               note: "SwiftData -> ZHISTORYITEM / ZHISTORYITEMCONTENT(ZTYPE=UTI, ZVALUE=bytes). "
+                   + "Verified against a real install.",
                read: stageMaccy),
 
         Source(id: "alfred", name: "Alfred (Powerpack)",
@@ -82,11 +89,24 @@ enum ClipImporters {
                read: stageAlfred),
 
         Source(id: "flycut", name: "Flycut",
-               candidatePaths: ["~/Library/Preferences/com.generalarcade.flycut.plist",
-                                "~/Library/Containers/com.generalarcade.flycut/Data/Library/Preferences/com.generalarcade.flycut.plist"],
-               confidence: .documented,
-               note: "Preferences plist, `store` -> `jcList` array of {Contents, Type, Application}. "
-                   + "Text only by design — Flycut never stored images.",
+               // The CONTAINER plist first — the Homebrew/App Store build is sandboxed.
+               //
+               // Read the FILE, not the preferences domain. Both were tried: while Flycut is
+               // RUNNING its store lives in cfprefsd and the file holds only settings, so
+               // `defaults read` sees the clips and the file does not. Reading the domain
+               // instead looks like the fix and is not — `CFPreferencesCopyAppValue` from
+               // another process returns nil for a sandboxed app, because `defaults`
+               // redirects to the container and a plain CFPreferences read does not.
+               //
+               // On quit, cfprefsd flushes and the file becomes complete and readable. So the
+               // file is the reliable source, with one honest caveat recorded in `note`:
+               // clips copied since Flycut last flushed may not be in it yet.
+               candidatePaths: ["~/Library/Containers/com.generalarcade.flycut/Data/Library/Preferences/com.generalarcade.flycut.plist",
+                                "~/Library/Preferences/com.generalarcade.flycut.plist"],
+               confidence: .verified,
+               note: "Preferences plist, `store` -> `jcList` of {Contents, Type, Timestamp, "
+                   + "AppLocalizedName}. Text only by design. QUIT FLYCUT FIRST — it flushes "
+                   + "its store on quit. Verified against a real install.",
                read: stageFlycut),
 
         Source(id: "raycast", name: "Raycast",
@@ -174,8 +194,10 @@ enum ClipImporters {
     /// useful part — which columns actually hold bytes worth importing, with a sample.
     static func probe(path: String) {
         var db: OpaquePointer?
-        guard sqlite3_open_v2("file:\(path)?mode=ro&immutable=1", &db,
-                              SQLITE_OPEN_READONLY | SQLITE_OPEN_URI, nil) == SQLITE_OK else {
+        // Same WAL rule as forEachRow: a prober that ignores the WAL reports "0 rows" for
+        // a live app's table and sends whoever is writing the next adapter looking in the
+        // wrong place entirely.
+        guard openReadOnly(path, &db) else {
             return print("cannot open \(path) as sqlite")
         }
         defer { sqlite3_close(db) }
@@ -322,13 +344,19 @@ enum ClipImporters {
                   !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                 tally.skippedEmpty += 1; continue
             }
-            // Flycut keeps no timestamp per entry. Ordering is all it preserves, so the
-            // list position becomes a synthetic descending time — stated rather than hidden,
-            // because "imported clips all share one date" surprises people otherwise.
-            let created = Date().addingTimeInterval(-Double(out.count) * 60)
+            // REAL timestamps. An earlier version asserted "Flycut keeps no timestamp per
+            // entry" and synthesised descending fake dates from the list position, so every
+            // imported clip would have carried a fabricated creation time that looked
+            // entirely plausible. Flycut records `Timestamp` in UNIX seconds. Only running
+            // the real app showed it.
+            let created = (entry["Timestamp"] as? NSNumber)
+                .map { Date(timeIntervalSince1970: $0.doubleValue) } ?? Date()
+            // And provenance is `AppLocalizedName`. The earlier key, `Application`, does not
+            // exist in the file at all — so source app came through nil for every row while
+            // looking like a field we handled.
+            let app = entry["AppLocalizedName"] as? String
             out.append(Staged(kind: ClipboardMonitor.detectKind(for: text), text: text,
-                              created: created,
-                              sourceApp: entry["Application"] as? String,
+                              created: created, sourceApp: app,
                               filePath: nil, colorHex: nil, imageData: nil))
         }
         return out
@@ -340,10 +368,44 @@ enum ClipImporters {
         Date(timeIntervalSince1970: 978_307_200).addingTimeInterval(interval)
     }
 
+    /// Open a store read-only, HONOURING ITS WAL.
+    ///
+    /// This is the bug that made the Maccy adapter return zero clips from a database
+    /// containing seven. The helper opened every source with `immutable=1`, which tells
+    /// SQLite the file cannot change and therefore to IGNORE the -wal sidecar entirely. A
+    /// live app keeps recent writes there — Maccy's WAL held 296KB, i.e. everything — so the
+    /// query ran, succeeded, and returned an empty result set. No error, no warning, a
+    /// perfectly plausible "0 clips to import".
+    ///
+    /// The flag was copied here from the Paste importer, where it is CORRECT: that source is
+    /// a frozen export with no live writer, and immutability is what stops us disturbing a
+    /// snapshot. Correct in one place, silently destructive in the general one.
+    ///
+    /// So: `mode=ro` first, which reads the WAL. Fall back to `immutable=1` only if that
+    /// cannot open — a WAL database needs to create a -shm file, which fails on a read-only
+    /// volume or an unwritable directory — and SAY SO when falling back, because in that
+    /// case the results genuinely may be incomplete and the user deserves to know rather
+    /// than receive a confident undercount.
+    @discardableResult
+    static func openReadOnly(_ path: String, _ db: inout OpaquePointer?) -> Bool {
+        let ro = "file:\(path)?mode=ro"
+        if sqlite3_open_v2(ro, &db, SQLITE_OPEN_READONLY | SQLITE_OPEN_URI, nil) == SQLITE_OK {
+            return true
+        }
+        sqlite3_close(db); db = nil
+        let immutable = "file:\(path)?mode=ro&immutable=1"
+        if sqlite3_open_v2(immutable, &db, SQLITE_OPEN_READONLY | SQLITE_OPEN_URI, nil) == SQLITE_OK {
+            NSLog("Cliphoard import: %@ could not be opened with its WAL; falling back to "
+                  + "immutable. Recent clips may be missing from this import.", path)
+            return true
+        }
+        sqlite3_close(db); db = nil
+        return false
+    }
+
     static func forEachRow(_ path: String, _ sql: String, _ body: (OpaquePointer?) -> Void) {
         var db: OpaquePointer?
-        guard sqlite3_open_v2("file:\(path)?mode=ro&immutable=1", &db,
-                              SQLITE_OPEN_READONLY | SQLITE_OPEN_URI, nil) == SQLITE_OK else { return }
+        guard openReadOnly(path, &db) else { return }
         defer { sqlite3_close(db) }
         var stmt: OpaquePointer?
         guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
