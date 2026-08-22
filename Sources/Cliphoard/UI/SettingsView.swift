@@ -132,6 +132,9 @@ final class AppSettings: ObservableObject {
 struct SettingsView: View {
     @ObservedObject var settings: AppSettings
     @ObservedObject var store: ClipStore
+    /// Owns the import scan/preview/commit flow. StateObject rather than a plain
+    /// property so a preview survives the view re-rendering while the user reads it.
+    @StateObject private var importModel = ImportModel()
     /// Embedder lifecycle (ready / downloading N% / installing / failed) for the
     /// live status line — auto-install progress renders here.
     @ObservedObject private var embedderState = EmbedderState.shared
@@ -366,6 +369,10 @@ struct SettingsView: View {
                             Button("Apply tags") { settings.applyCustomTags() }.controlSize(.small)
                         }
                     }
+                }
+
+                section("Import") {
+                    ImportSection(model: importModel, store: store)
                 }
 
                 section("History") {
