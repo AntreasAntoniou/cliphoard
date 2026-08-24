@@ -10,7 +10,7 @@
 #    converted to Python scalars" (numpy 2.0 made int(array) an error).
 # This pair (coremltools 9.0 + torch 2.7.1 + numpy 1.26.4) matches the metadata
 # of the originally-shipped .mlpackage. Re-run models.yml after any bump.
-torch==2.7.1
+torch==2.13.0
 coremltools==9.0
 numpy==1.26.4
 transformers==5.12.1
