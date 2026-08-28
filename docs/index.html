@@ -10,6 +10,10 @@
 <meta property="og:title" content="Cliphoard — a clipboard manager for macOS">
 <meta property="og:description" content="Fast, private, open-source clipboard history. Find a screenshot by describing it — text and image search, on-device, open models, encrypted at rest.">
 <meta property="og:image" content="https://raw.githubusercontent.com/AntreasAntoniou/cliphoard/main/docs/img/logo.png">
+<!-- SITE URL — change BOTH of these together when the custom domain lands, plus the
+     two raw.githubusercontent og:image/twitter:image refs above if the assets move, and
+     add a CNAME file in docs/. A canonical that disagrees with og:url splits how the page
+     is indexed and shared. -->
 <meta property="og:url" content="https://antreas.io/cliphoard/">
 <link rel="canonical" href="https://antreas.io/cliphoard/">
 <meta property="og:type" content="website">
@@ -161,7 +165,7 @@
     <div class="card"><div class="ic">🖼️</div><h3>Text, links, colors, images</h3><p>Cliphoard recognises what you copy — rich text, URLs, hex colors, files and images — and keeps thumbnails for fast browsing.</p></div>
     <div class="card"><div class="ic">🧭</div><h3>Tag baskets you stack</h3><p>Pick the vocabularies that match your work — Developer, Designer, Finance, Photos — and <b>tick as many as you like</b>. Each adds its own axes; none overwrite each other. Combine <i>credential</i> + <i>terminal</i>, then narrow to <i>yesterday</i>, or type <code>when:today</code>.</p></div>
     <div class="card"><div class="ic">🔎</div><h3>Search your pictures</h3><p>Describe a screenshot and find it — “the receipt”, “a dark terminal”, “the photo Maria sent”. Or pick any image on your Mac and find clips that <i>look like it</i>. All four directions, all on-device.</p></div>
-    <div class="card"><div class="ic">📥</div><h3>Bring your history</h3><p>Migrating? Import years of clips from Paste and other macOS clipboard managers, timestamps and source apps intact — each batch tagged so it stays reversible.</p></div>
+    <div class="card"><div class="ic">📥</div><h3>Bring your history</h3><p>Migrating? <b>Settings → Import</b> finds the clipboard managers already on your Mac and brings years of clips across — timestamps and source apps intact. It shows you exactly what it found <i>before</i> writing anything, and tags each batch so you can undo the whole import.</p></div>
   </div>
 </section>
 
@@ -221,7 +225,7 @@
       <tr><td>Search <i>pictures</i> by describing them<small>text → image, on-device</small></td><td class="me y">✓</td><td class="n">—</td><td class="n">—</td></tr>
       <tr><td>Reads text inside screenshots<small>image → text, searchable</small></td><td class="me y">✓</td><td class="n">—</td><td class="p">sometimes</td></tr>
       <tr><td>Find visually similar clips<small>image → image, from a clip or any file</small></td><td class="me y">✓</td><td class="n">—</td><td class="n">—</td></tr>
-      <tr><td>Import your old history<small>from Paste and other managers</small></td><td class="me y">✓</td><td class="n">—</td><td class="p">rare</td></tr>
+      <tr><td>Import your old history<small>Paste, Maccy, Flycut verified; more in progress</small></td><td class="me y">✓</td><td class="n">—</td><td class="p">rare</td></tr>
       <tr><td>Open-weight models<small>permissive licences, nothing proprietary</small></td><td class="me y">✓ MIT / Apache-2.0</td><td class="n">n/a</td><td class="n">closed</td></tr>
     </tbody>
   </table>
@@ -266,7 +270,7 @@
     <div style="height:26px"></div>
     <div class="specs">
       <span>macOS 13 Ventura +</span><span>Universal (Apple Silicon &amp; Intel)</span>
-      <span>~80 MB download</span><span>MIT licensed</span><span>No telemetry</span>
+      <span>~50 MB download</span><span>MIT licensed</span><span>No telemetry</span>
     </div>
   </div>
 </section>
