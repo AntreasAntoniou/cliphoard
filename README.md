@@ -27,7 +27,7 @@ cloud.** Everything you copy stays on your Mac.
   first, then the semantically closest clips — find "that database query" by meaning
   *and* still get the literal token you typed. Switch modes (Smart / Exact / Tag)
   right from the pill next to the search field. Three model tiers (ogma micro/small, MiniLM), each installed on first use — the ogma
-  models from [HuggingFace](https://huggingface.co/axiotic/ogma-small) so their download
+  models from [HuggingFace](https://huggingface.co/axiotic/open-ogma-small) so their download
   numbers reflect real usage of a model we released, MiniLM from our GitHub release. Every model is permissively licensed (MIT or Apache-2.0). No account; your clips never touch a network.
 - **🔒 Private, and provably so.** Nothing ever leaves your Mac. Every clip is
   **encrypted at rest** with a key bound to the **Secure Enclave** (where available) —
@@ -130,8 +130,11 @@ Models run locally via **CoreML**:
 
 | Tier | Model | Dim |
 | --- | --- | --- |
-| Low | [`axiotic/ogma-micro`](https://huggingface.co/axiotic/ogma-micro) | 128 |
-| Normal (default) | [`axiotic/ogma-small`](https://huggingface.co/axiotic/ogma-small) | 256 |
+| Low | [`axiotic/open-ogma-micro`](https://huggingface.co/axiotic/open-ogma-micro) | 384 / 1024 |
+| Normal (default) | [`axiotic/open-ogma-small`](https://huggingface.co/axiotic/open-ogma-small) | 384 / 1024 |
+
+Each ogma model carries two projection heads — 384-d and 1024-d — and the app uses the
+1024-d one by default (Settings → Vector detail).
 
 The tag taxonomy and confidence threshold are configurable in **Settings → Tags**
 (curated baskets or your own). Open a clip's detail card to inspect automatic labels

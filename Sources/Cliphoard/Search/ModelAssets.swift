@@ -40,17 +40,19 @@ enum ModelAssets {
     /// The MIT repos, and this mapping is load-bearing rather than cosmetic.
     ///
     /// These tiers used to be fetched from `axiotic/ogma-micro` / `axiotic/ogma-small`, which
-    /// declare **CC-BY-NC-4.0** — they inherited a NonCommercial restriction from the teacher
-    /// they were distilled against. Every document said MIT. The app was shipping the
-    /// NonCommercial weights under an MIT banner, and it went unnoticed because the only
-    /// place the two names differed was this table.
+    /// DECLARE **CC-BY-NC-4.0**. Every document said MIT.
     ///
-    /// The permissive models always existed (`tools/BENCHMARKS.md`: "open-ogma-small (1024)
-    /// <- app default | 8.9M | 1024 | 15/21 | MIT", and the 1024-d head "fully recovers the
-    /// legacy CC-BY-NC model"). What was missing was a CoreML build of them, which is why the
-    /// code reached for the NC repo. That build now exists — converted from the MIT weights
-    /// with `tools/convert_ogma_libre.py`, parity_cosine 1.00000 on both heads — and lives in
-    /// the MIT repos. The published claim and the shipped bytes finally agree.
+    /// Be precise about what was wrong, because the first version of this comment was not:
+    /// the ARTIFACT in those repos was already the permissive model — its `config.json` says
+    /// `"model_type": "ogma-libre"` and its weights are byte-identical to a fresh conversion
+    /// of the MIT checkpoint. So the app was never shipping NonCommercial *weights*. It was
+    /// fetching permissive weights from a repo whose declared licence said NonCommercial,
+    /// which is a redistribution and provenance problem, not a model problem. Smaller than it
+    /// first looked, and still not something an MIT app should do: what a downloader is
+    /// entitled to rely on is the licence the source repo declares.
+    ///
+    /// The fix was to publish the same build to the repos that declare MIT and point here.
+    /// Nothing about search quality changed, and nothing could have — same weights.
     ///
     /// If you ever repoint these, check the target repo's declared licence FIRST.
     static let sources: [String: AssetSource] = [
@@ -101,7 +103,9 @@ enum ModelAssets {
         // and its asset must also be removed from the models-v1 release — hosting it
         // is the redistribution, so dropping it from the app alone would not help.
         "all-MiniLM-L6-v2":    "ff202030f35c740193335a2136db6b15df8ef592da92e7dd07e51457dcf81def",
-        // The MIT CoreML builds, recomputed from the published files after upload.
+        // The MIT-repo CoreML builds, recomputed from the published files after upload.
+        // Same weights as the artifacts they replace — only the toolchain metadata and one
+        // config field differ — so these digests change while behaviour does not.
         // These MUST move together with `sources` above: a digest that still describes the
         // old NonCommercial artifact fails closed, so every install would refuse the model.
         "open-ogma-micro":     "9163037e51596ab6b17c4bc51d7e2b4b4533ca6f205b7988504774e78925ac39",

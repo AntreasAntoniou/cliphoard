@@ -11,19 +11,38 @@ inside the distributed `.app`, not Cliphoard's own source code.
 - **Repos:** https://huggingface.co/axiotic/open-ogma-micro ·
   https://huggingface.co/axiotic/open-ogma-small
 - **License:** MIT.
-- **Provenance:** distilled from `BAAI/bge-small-en-v1.5` (384-d head, the one
-  bundled) and `BAAI/bge-large-en-v1.5` — both MIT-licensed — so the entire
-  supply chain of the bundled weights is permissive. The CoreML conversions are
-  bundled inside the distributed Cliphoard binary and may be used commercially.
+- **Provenance:** distilled from `BAAI/bge-small-en-v1.5` (the 384-d head) and
+  `BAAI/bge-large-en-v1.5` (the 1024-d head, which the app uses by default) —
+  both MIT-licensed — so the entire supply chain is permissive.
+- **How it reaches you:** NOT bundled. Downloaded from the repos above on first
+  use and verified against a pinned SHA-256. Serving them from HuggingFace is
+  deliberate: it is what makes real adoption of a model we released visible.
 
 ### all-MiniLM-L6-v2 (sentence-transformers) — High tier
 - **Repo:** https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2
-- **License:** Apache-2.0. Bundled as a CoreML conversion.
+- **License:** Apache-2.0.
+- **How it reaches you:** NOT bundled. Our CoreML conversion is fetched on demand
+  from our GitHub release by `ModelAssets.ensure`, which verifies it against a
+  pinned SHA-256 and refuses to install on mismatch.
+
+### OpenVision-Tiny (UCSC-VLAA) — image understanding
+- **Repo:** https://github.com/UCSC-VLAA/OpenVision
+- **License:** Apache-2.0.
+- **How it reaches you:** **BUNDLED.** Both towers (`openvision-tiny-p8-image`
+  and `openvision-tiny-p8-text`, 34.6 MB together) ship inside the distributed
+  `.app` — see `Scripts/deploy-local.sh`. It is the joint text-and-pixel space
+  that lets you find a picture by describing it, including images carrying no
+  recognisable text.
+- **Attribution:** this is the only model shipped inside the binary, so it is the
+  one whose Apache-2.0 attribution obligation this file discharges. It was
+  omitted from these notices until 2026-09-01, while the two models named above
+  were incorrectly described as bundled.
 
 ### Tokenizers (swift-transformers)
 - **Repo:** https://github.com/huggingface/swift-transformers — Apache-2.0.
-  Used for the MiniLM tokenizer; the ogma tokenizer remains an original
-  implementation in this repo.
+  Used for the MiniLM tokenizer and by the OpenVision text tower
+  (`CLIPEmbedder` constructs an `AutoTokenizer`); the ogma tokenizer remains an
+  original implementation in this repo.
 
 ## Removed: EmbeddingGemma
 

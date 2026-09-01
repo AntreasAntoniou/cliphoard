@@ -8,7 +8,7 @@
 > account, no telemetry). History persists in a **SQLite** DB (`ditto.sqlite`,
 > WAL) with image payloads as PNG sidecars. Beyond exact substring search it does
 > fully **on-device semantic search** ("Tag" and "Essence" modes) via CoreML
-> embedding models (`axiotic/ogma-micro`/`ogma-small`), with a dependency-free
+> embedding models (`axiotic/open-ogma-micro`/`open-ogma-small`), with a dependency-free
 > `HashingEmbedder` fallback so search always works. The whole app is `@MainActor`;
 > `ClipStore` is the single source of truth and the UI is a projection of it.
 
@@ -215,7 +215,7 @@ Poll 0.4 s / tolerance 0.1 / `.common`. Panel `barHeight 380`, level `.mainMenu+
 4. **Bundle** (`Scripts/build-app.sh`) — compiles every `tools/models/*.mlpackage` to `.mlmodelc` into `Cliphoard.app/Contents/Resources`, and copies each model's `tokenizer.json`/`config.json`/`tokenizer_config.json` into a `<name>-tokenizer/` folder (remapping `tokenizer_class`→`T5Tokenizer`).
 5. **Load at runtime** — `EmbedderProvider.configure(level:)` resolves `<name>.mlmodelc` + `<name>-tokenizer` from the bundle; on success uses `OgmaEmbedder` (CoreML), else falls back to `HashingEmbedder`. The Swift `OgmaTokenizer` reproduces ogma's Unigram pipeline (metaspace `▁`, `+n_special_tokens` offset) so token ids match the Python reference exactly.
 
-Model tiers: low `axiotic/ogma-micro` (2.3M, 128-dim) · normal `axiotic/ogma-small` (8.6M, 256-dim, default) · high `sentence-transformers/all-MiniLM-L6-v2` (22.7M, 384-dim, Apache-2.0, downloads on demand). A `max` tier on `google/embeddinggemma-300m` was retired on licensing grounds — see THIRD-PARTY-NOTICES.md. Each `OgmaEmbedder` has a `signature` (`"<name>-<dim>"`); vectors/tags are only comparable within one signature, which is why the per-model cache and the `hashing-256` fallback are kept separate.
+Model tiers: low `axiotic/open-ogma-micro` (2.5M, 384/1024-dim) · normal `axiotic/open-ogma-small` (8.9M, 384/1024-dim, 1024 default) · high `sentence-transformers/all-MiniLM-L6-v2` (22.7M, 384-dim, Apache-2.0, downloads on demand). A `max` tier on `google/embeddinggemma-300m` was retired on licensing grounds — see THIRD-PARTY-NOTICES.md. Each `OgmaEmbedder` has a `signature` (`"<name>-<dim>"`); vectors/tags are only comparable within one signature, which is why the per-model cache and the `hashing-256` fallback are kept separate.
 
 ---
 
