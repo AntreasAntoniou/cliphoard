@@ -56,7 +56,7 @@ final class AssetSourceTests: XCTestCase {
     func testHuggingFaceURLsPointAtTheCoreMLArtifact() {
         let url = ModelAssets.assetURL(for: "open-ogma-small")
         XCTAssertEqual(url.absoluteString,
-                       "https://huggingface.co/axiotic/ogma-small/resolve/main/coreml/open-ogma-small.zip",
+                       "https://huggingface.co/axiotic/open-ogma-small/resolve/main/coreml/open-ogma-small.zip",
                        "the resolve path must match where the artifact was actually uploaded; "
                        + "a wrong path is a 404 on first run for every new user")
         XCTAssertEqual(url.scheme, "https", "model downloads must never be plaintext")
@@ -189,5 +189,62 @@ final class WALHandlingTests: XCTestCase {
                            + "or the WAL rule has to be remembered per call site — which is "
                            + "how a live database came back empty.")
         }
+    }
+}
+
+/// The shipped weights must come from the repos whose licence we advertise.
+///
+/// This is the test that was missing when it mattered. The tiers named `open-ogma-*` were
+/// fetched from `axiotic/ogma-micro` and `axiotic/ogma-small`, which declare **CC-BY-NC-4.0**,
+/// while every document — the site, the README, THIRD-PARTY-NOTICES, and this file's own
+/// header — said MIT. The app shipped NonCommercial weights under an MIT banner for as long
+/// as that mapping stood, and nothing caught it: the code built, the tests passed, the markup
+/// validated. The only place the two names differed was one dictionary.
+///
+/// The permissive models were never missing. `tools/BENCHMARKS.md` lists
+/// "open-ogma-small (1024) <- app default | 8.9M | 1024 | 15/21 | MIT" and records that the
+/// 1024-d head "fully recovers the legacy CC-BY-NC model". What was missing was a CoreML build
+/// of them, which is why the code reached for the NC repo — a convenience that quietly became
+/// a licensing claim.
+@MainActor
+final class OgmaLicenceSourceTests: XCTestCase {
+
+    /// The ogma tiers must resolve to the `open-ogma-*` repos. The bare `ogma-*` repos are
+    /// CC-BY-NC and must never be the source for an MIT app.
+    func testTheOgmaTiersComeFromThePermissiveRepos() {
+        for tier in ["open-ogma-micro", "open-ogma-small"] {
+            guard case .huggingFace(let repo) = ModelAssets.source(for: tier) else {
+                return XCTFail("\(tier) is no longer served from HuggingFace")
+            }
+            XCTAssertEqual(repo, "axiotic/\(tier)",
+                           "\(tier) resolves to '\(repo)'. The repos named axiotic/ogma-micro "
+                           + "and axiotic/ogma-small declare CC-BY-NC-4.0 — pointing an "
+                           + "MIT-licensed app at them ships NonCommercial weights under a "
+                           + "permissive banner, which is exactly the defect this pins.")
+            XCTAssertFalse(repo == "axiotic/ogma-micro" || repo == "axiotic/ogma-small",
+                           "the NonCommercial repo is back")
+        }
+    }
+
+    /// The digests must match the artifacts actually published to those repos. They move
+    /// together with `sources`: a digest left describing the old NC artifact fails closed, so
+    /// every install would silently refuse the model and fall back to the weak embedder.
+    func testTheDigestsMatchThePublishedMITArtifacts() {
+        XCTAssertEqual(ModelAssets.expectedSHA256["open-ogma-micro"],
+                       "9163037e51596ab6b17c4bc51d7e2b4b4533ca6f205b7988504774e78925ac39")
+        XCTAssertEqual(ModelAssets.expectedSHA256["open-ogma-small"],
+                       "179517c6925914ec37a734c4f0aa2971b9b93ecee9e8d6e98aa4f66a17709135")
+    }
+
+    /// The file's own prose must not point at the NonCommercial repos either — the header
+    /// claiming `axiotic/ogma-*` is what made the wrong mapping look intentional.
+    func testTheDocCommentDoesNotAdvertiseTheNonCommercialRepos() throws {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let source = try String(
+            contentsOf: root.appendingPathComponent("Sources/Cliphoard/Search/ModelAssets.swift"),
+            encoding: .utf8)
+        XCTAssertFalse(source.contains("`axiotic/ogma-*`"),
+                       "the header still advertises the CC-BY-NC repos as ours-and-permissive")
     }
 }

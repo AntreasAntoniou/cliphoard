@@ -23,7 +23,7 @@ enum ModelAssets {
 
     /// Where each tier's artifact is hosted.
     ///
-    /// The two ogma models are OURS, published at `axiotic/ogma-*`, and they are served from
+    /// The two ogma models are OURS, published at `axiotic/open-ogma-*`, and they are served from
     /// HuggingFace so that their download statistics reflect actual Cliphoard usage. Serving
     /// them from a GitHub release instead would make real adoption of an open model we
     /// released invisible on the platform people look at to judge whether a model is used.
@@ -37,9 +37,25 @@ enum ModelAssets {
         case githubRelease
     }
 
+    /// The MIT repos, and this mapping is load-bearing rather than cosmetic.
+    ///
+    /// These tiers used to be fetched from `axiotic/ogma-micro` / `axiotic/ogma-small`, which
+    /// declare **CC-BY-NC-4.0** — they inherited a NonCommercial restriction from the teacher
+    /// they were distilled against. Every document said MIT. The app was shipping the
+    /// NonCommercial weights under an MIT banner, and it went unnoticed because the only
+    /// place the two names differed was this table.
+    ///
+    /// The permissive models always existed (`tools/BENCHMARKS.md`: "open-ogma-small (1024)
+    /// <- app default | 8.9M | 1024 | 15/21 | MIT", and the 1024-d head "fully recovers the
+    /// legacy CC-BY-NC model"). What was missing was a CoreML build of them, which is why the
+    /// code reached for the NC repo. That build now exists — converted from the MIT weights
+    /// with `tools/convert_ogma_libre.py`, parity_cosine 1.00000 on both heads — and lives in
+    /// the MIT repos. The published claim and the shipped bytes finally agree.
+    ///
+    /// If you ever repoint these, check the target repo's declared licence FIRST.
     static let sources: [String: AssetSource] = [
-        "open-ogma-micro": .huggingFace(repo: "axiotic/ogma-micro"),
-        "open-ogma-small": .huggingFace(repo: "axiotic/ogma-small"),
+        "open-ogma-micro": .huggingFace(repo: "axiotic/open-ogma-micro"),
+        "open-ogma-small": .huggingFace(repo: "axiotic/open-ogma-small"),
     ]
 
     static func source(for name: String) -> AssetSource { sources[name] ?? .githubRelease }
@@ -85,8 +101,11 @@ enum ModelAssets {
         // and its asset must also be removed from the models-v1 release — hosting it
         // is the redistribution, so dropping it from the app alone would not help.
         "all-MiniLM-L6-v2":    "ff202030f35c740193335a2136db6b15df8ef592da92e7dd07e51457dcf81def",
-        "open-ogma-micro":     "020bc39bb9783cbc298809cdc89ad09be84a2cae6db4cee5e65b15fc58a80cf8",
-        "open-ogma-small":     "e06756de8a41a10dc9722f9e8794e57740957569e9c4d0ae57d4cf70b08d4c26",
+        // The MIT CoreML builds, recomputed from the published files after upload.
+        // These MUST move together with `sources` above: a digest that still describes the
+        // old NonCommercial artifact fails closed, so every install would refuse the model.
+        "open-ogma-micro":     "9163037e51596ab6b17c4bc51d7e2b4b4533ca6f205b7988504774e78925ac39",
+        "open-ogma-small":     "179517c6925914ec37a734c4f0aa2971b9b93ecee9e8d6e98aa4f66a17709135",
     ]
 
     /// Streaming SHA-256 of a file (1 MiB chunks) so a ~300 MB model zip is never
