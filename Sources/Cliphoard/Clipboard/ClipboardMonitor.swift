@@ -32,6 +32,16 @@ final class ClipboardMonitor {
     /// When we write to the pasteboard ourselves (on paste) we bump this so the
     /// next poll doesn't re-capture our own write.
     private var ignoreChangeCount: Int = -1
+    /// A screenshot awaiting its web-safe rewrite, and the changeCount it was captured at.
+    ///
+    /// The rewrite is DEFERRED one poll tick rather than done in the capture tick, because
+    /// `changeCount` can increment before the writing app has finished publishing its
+    /// representations: debug.log line 1817 recorded `types=[]` at the top of `poll()` while
+    /// `capture()` found an image microseconds later in the SAME tick. Clearing into that
+    /// window would destroy representations that had not been written yet. Waiting a full
+    /// interval and requiring the count to be unmoved means we only ever rewrite a board
+    /// that has settled.
+    private var pendingWebSafe: (changeCount: Int, image: NSImage)?
 
     init(store: ClipStore) {
         self.store = store
@@ -63,14 +73,57 @@ final class ClipboardMonitor {
         if let activity { ProcessInfo.processInfo.endActivity(activity); self.activity = nil }
     }
 
-    /// Tell the monitor to skip the change we are about to cause ourselves.
-    func suppressNextChange() {
-        ignoreChangeCount = NSPasteboard.general.changeCount + 1
+    /// Mark the pasteboard's CURRENT state as our own write, so `poll()` does not
+    /// re-capture it.
+    ///
+    /// Call this AFTER writing, never before. It used to be `suppressNextChange()` and
+    /// predicted the post-write value (`changeCount + 1`) from the call site, which was
+    /// wrong twice over:
+    ///
+    ///   * Both callers armed it BEFORE the write, so when the write failed the pasteboard
+    ///     never changed and the prediction stayed live — to be matched by the user's NEXT
+    ///     real copy, which `poll()` then discarded as "our own paste". A failed paste
+    ///     silently swallowed the following clip.
+    ///   * A prediction is only correct if exactly one change lands. Reading the value the
+    ///     write actually produced cannot drift, whatever the pasteboard did.
+    /// Reads `.general` specifically. `Paster.writeToPasteboard` gained a `to pb:`
+    /// parameter for tests, so the two are no longer structurally tied: suppressing a
+    /// write that went to some OTHER pasteboard would record the general board's count
+    /// and suppress an unrelated change. Both production callers use the default, and
+    /// only tests pass anything else — but if that ever stops being true, this must take
+    /// the pasteboard it is suppressing.
+    func suppressOwnWrite() {
+        ignoreChangeCount = NSPasteboard.general.changeCount
     }
 
     private func poll() {
         let pb = NSPasteboard.general
         let count = pb.changeCount
+
+        // Deliberately BEFORE the no-change guard: a settled board is exactly the case where
+        // nothing has moved since the capture tick.
+        if let pending = pendingWebSafe {
+            pendingWebSafe = nil
+            if pending.changeCount == count {
+                switch WebPaste.makeWebSafe(pb, image: pending.image) {
+                case .rewritten(let newCount):
+                    DebugLog.write("  → added public.png for web apps "
+                                   + "(types now [\((pb.types ?? []).map(\.rawValue).joined(separator: ","))])")
+                    lastChangeCount = newCount
+                    ignoreChangeCount = newCount
+                    return
+                case .restored:
+                    DebugLog.write("  → web-safe rewrite FAILED; original restored")
+                case .lost:
+                    NSLog("Cliphoard: web-safe rewrite failed AND restore failed — "
+                          + "the clipboard may be empty")
+                    DebugLog.write("  → web-safe rewrite LOST the pasteboard")
+                case .notNeeded, .unsalvageable:
+                    break
+                }
+            }
+        }
+
         guard count != lastChangeCount else { return }
         lastChangeCount = count
 
@@ -100,6 +153,14 @@ final class ClipboardMonitor {
         }
         item.sourceApp = NSWorkspace.shared.frontmostApplication?.localizedName
         DebugLog.write("  → captured \(item.kind.rawValue)")
+        // A screenshot arrives with `public.heic` alone on pasteboard item 0, which WebKit
+        // will not expose to JavaScript — so pasting into a Safari Web App (Messenger) does
+        // nothing. Queue a web-safe rewrite for the next settled tick. See WebPaste.
+        if item.kind == .image,
+           WebPaste.needsWebSafeCopy(types: types),
+           let image = pb.readImage() {
+            pendingWebSafe = (changeCount: count, image: image)
+        }
         store.add(item)
     }
 

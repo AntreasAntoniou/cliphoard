@@ -36,6 +36,14 @@ enum Feedback {
         guard soundEnabled else { return }
         play(named: soundName)
     }
+
+    /// A failed pick. The system beep deliberately, NOT `soundName` — the capture tick is
+    /// the sound of success, and a failure that sounds identical to a success is how a
+    /// silent no-op passes for a working paste.
+    static func playFailure() {
+        guard soundEnabled else { return }
+        NSSound.beep()
+    }
 }
 
 /// Lightweight append-only diagnostics, written next to the history so we can

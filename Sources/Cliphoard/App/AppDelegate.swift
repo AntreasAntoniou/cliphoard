@@ -239,6 +239,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         model.pinnedOnly = false
         model.activeUserTags = []
         model.showSettings = false
+        // Clear any banner left over from a previous summon. `show()` reset every other
+        // piece of per-summon state but not this one, so a failure message could surface on
+        // an unrelated later open — stale state presented as if it described what the user
+        // is doing right now.
+        pasteStatus.blockedMessage = nil
         model.resetSelection()
         model.presentToken &+= 1
         isVisible = true
@@ -272,11 +277,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// - Parameter plain: when `true` (Option held at commit), write the clip
     ///   as plain text only — strip the RTF representation before pasting.
     private func commit(_ item: ClipItem, plain: Bool = false) {
+        // Branch on the WRITE before branching on Accessibility. They are different
+        // failures and must not behave alike: a failed write means nothing happened, while
+        // an untrusted-Accessibility "failure" still leaves the clip on the clipboard.
+        let outcome = Paster.writeToPasteboard(item, store: store, plain: plain)
+        guard outcome.succeeded else {
+            // KEEP THE PANEL OPEN. The flow the user has learned is "pick -> panel vanishes
+            // -> paste", so a panel that does NOT vanish is the loudest signal available,
+            // and it arrives at the moment of the mistake rather than later. It also leaves
+            // them in the one place where they can pick something else.
+            //
+            // The previous attempt at this fix set the banner and then immediately called
+            // hide(), which slides the panel away over 0.2s — so the message was on screen
+            // only mid-dismissal, and `show()` did not clear it, meaning it surfaced on some
+            // LATER summon instead. That traded a loud data-destroying bug for a quiet
+            // do-nothing one.
+            pasteStatus.blockedMessage = Self.failureMessage(for: outcome)
+            Feedback.playFailure()
+            // Deliberately NOT: markUsed (the clip was not used), suppressOwnWrite (nothing
+            // was written, and arming it would make poll() swallow the user's next real
+            // copy), or hide.
+            return
+        }
+        // Only now is the clip genuinely used, and only now is there a write to suppress.
         store.markUsed(item)
-        monitor.suppressNextChange()
-        Paster.writeToPasteboard(item, store: store, plain: plain)
-        // The clip is now on the system pasteboard regardless. Only the ⌘V
-        // keystroke needs Accessibility.
+        monitor.suppressOwnWrite()
+        // The clip is on the pasteboard. Only the ⌘V keystroke needs Accessibility.
         let canPaste = AXIsProcessTrusted()
         if canPaste {
             // Success: clear any stale guidance and flash a brief confirmation so
@@ -298,12 +324,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         hide(paste: canPaste)
     }
 
+    /// What to tell the user about a failed pick — and crucially, whether their clipboard
+    /// survived. AppKit requires `clearContents()` before a type can be declared, so a write
+    /// that fails AT THE PASTEBOARD has already emptied it; one that fails while loading the
+    /// payload never touched it. Promising "unchanged" in the first case would be a lie.
+    static func failureMessage(for outcome: Paster.WriteOutcome) -> String {
+        switch outcome {
+        case .wrote:
+            return ""
+        case .payloadUnreadable:
+            return "Couldn't read that clip's data — your clipboard is unchanged. "
+                 + "Pick another clip or press Esc."
+        case .pasteboardRefused:
+            return "The system clipboard refused that clip. Pick another clip or press Esc."
+        }
+    }
+
     /// Copy a clip onto the system clipboard without pasting, then dismiss so the
     /// chosen clip is ready to paste manually elsewhere.
     private func copyToClipboard(_ item: ClipItem) {
+        let outcome = Paster.writeToPasteboard(item, store: store)
+        guard outcome.succeeded else {
+            // See `commit`: nothing was written, so stay open and say so.
+            pasteStatus.blockedMessage = Self.failureMessage(for: outcome)
+            Feedback.playFailure()
+            return
+        }
         store.markUsed(item)
-        monitor.suppressNextChange()
-        Paster.writeToPasteboard(item, store: store)
+        monitor.suppressOwnWrite()
         Feedback.playCapture()
         hide(paste: false)
     }

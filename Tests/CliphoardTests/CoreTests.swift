@@ -298,15 +298,26 @@ final class ClipStoreTests: XCTestCase {
 
 @MainActor
 final class PasterTests: XCTestCase {
+    /// A NAMED pasteboard, never `.general`. These two tests wrote to the real system
+    /// clipboard on every `swift test`, destroying whatever the developer had on it — and
+    /// making themselves order-dependent against every other pasteboard test in the suite.
+    /// This repo is about to be public; contributors should not lose their clipboard to a
+    /// test run.
+    private func scratchPasteboard() -> NSPasteboard {
+        NSPasteboard(name: .init("io.antreas.cliphoard.tests.core.\(UUID().uuidString)"))
+    }
+
     func testPlainStripsRTF() {
         let store = ClipStore(directory: FileManager.default.temporaryDirectory
             .appendingPathComponent("DittoTests-paste-\(UUID().uuidString)"))
         let item = ClipItem(kind: .text, text: "styled")
         item.rtf = "{\\rtf1 styled}".data(using: .utf8)
 
-        Paster.writeToPasteboard(item, store: store, plain: true)
-        XCTAssertEqual(NSPasteboard.general.string(forType: .string), "styled")
-        XCTAssertNil(NSPasteboard.general.data(forType: .rtf), "plain paste must omit RTF")
+        let pb = scratchPasteboard()
+        defer { pb.releaseGlobally() }
+        Paster.writeToPasteboard(item, store: store, plain: true, to: pb)
+        XCTAssertEqual(pb.string(forType: .string), "styled")
+        XCTAssertNil(pb.data(forType: .rtf), "plain paste must omit RTF")
     }
 
     func testRichKeepsRTF() {
@@ -315,8 +326,10 @@ final class PasterTests: XCTestCase {
         let item = ClipItem(kind: .text, text: "styled")
         item.rtf = "{\\rtf1 styled}".data(using: .utf8)
 
-        Paster.writeToPasteboard(item, store: store, plain: false)
-        XCTAssertEqual(NSPasteboard.general.string(forType: .string), "styled")
-        XCTAssertNotNil(NSPasteboard.general.data(forType: .rtf), "rich paste must keep RTF")
+        let pb = scratchPasteboard()
+        defer { pb.releaseGlobally() }
+        Paster.writeToPasteboard(item, store: store, plain: false, to: pb)
+        XCTAssertEqual(pb.string(forType: .string), "styled")
+        XCTAssertNotNil(pb.data(forType: .rtf), "rich paste must keep RTF")
     }
 }
