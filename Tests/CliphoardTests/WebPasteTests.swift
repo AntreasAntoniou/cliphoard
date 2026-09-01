@@ -460,3 +460,75 @@ final class WebPasteResidualTests: XCTestCase {
                       + "Anything slow there re-opens the race the guard exists to close.")
     }
 }
+
+/// The rewrite is opt-in, and the default is load-bearing.
+///
+/// Everything else Cliphoard does to the clipboard is passive. This is the one feature that
+/// rewrites what another app put there — macOS requires owning the pasteboard to add a
+/// flavour, and owning it means `clearContents()`. It first shipped default-ON with no
+/// toggle, which for a product whose pitch is "we only observe" was the wrong default.
+/// These tests exist so it cannot quietly become the default again.
+@MainActor
+final class WebPasteOptInTests: XCTestCase {
+    private var original: Any?
+    override func setUp() {
+        super.setUp()
+        original = UserDefaults.standard.object(forKey: "webSafeScreenshots")
+    }
+    override func tearDown() {
+        UserDefaults.standard.set(original, forKey: "webSafeScreenshots")
+        super.tearDown()
+    }
+
+    func testItIsOffWhenTheUserHasNeverChosen() {
+        UserDefaults.standard.removeObject(forKey: "webSafeScreenshots")
+        XCTAssertFalse(WebPaste.isEnabled,
+                       "a fresh install must NOT rewrite the user's clipboard. Ownership has "
+                       + "measured costs — TIFF consumers drop to standard range, and the "
+                       + "clipboard's owner becomes Cliphoard — and that is a trade the user "
+                       + "makes, not one they inherit.")
+    }
+
+    func testTheToggleRoundTrips() {
+        WebPaste.isEnabled = true
+        XCTAssertTrue(WebPaste.isEnabled)
+        WebPaste.isEnabled = false
+        XCTAssertFalse(WebPaste.isEnabled)
+    }
+
+    /// The setting is consulted BEFORE any work, so a user who has not opted in pays nothing:
+    /// no type scan, no image read.
+    func testTheCapturePathChecksTheSettingFirst() throws {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let source = try String(
+            contentsOf: root.appendingPathComponent("Sources/Cliphoard/Clipboard/ClipboardMonitor.swift"),
+            encoding: .utf8)
+        guard let gate = source.range(of: "if WebPaste.isEnabled,") else {
+            return XCTFail("the capture path no longer gates on the setting — the rewrite "
+                           + "would run for users who never asked for it")
+        }
+        let after = String(source[gate.upperBound...].prefix(300))
+        guard let kind = after.range(of: "item.kind == .image"),
+              let scan = after.range(of: "WebPaste.needsWebSafeCopy") else {
+            return XCTFail("the gate no longer precedes the kind check and the type scan")
+        }
+        XCTAssertLessThan(kind.lowerBound, scan.lowerBound,
+                          "cheapest first: setting, then kind, then scan")
+    }
+
+    /// A user consenting to a clipboard rewrite must be told what they give up, not just what
+    /// they gain.
+    func testTheSettingsCopyStatesTheCost() throws {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let ui = try String(
+            contentsOf: root.appendingPathComponent("Sources/Cliphoard/UI/SettingsView.swift"),
+            encoding: .utf8)
+        XCTAssertTrue(ui.contains("take ownership of the clipboard"),
+                      "the copy must say plainly that Cliphoard takes ownership — that is the "
+                      + "thing being consented to")
+        XCTAssertTrue(ui.contains("standard-range"),
+                      "and that TIFF consumers get an SDR image, the measured cost")
+    }
+}

@@ -185,7 +185,10 @@ final class ClipboardMonitor {
         // A screenshot arrives with `public.heic` alone on pasteboard item 0, which WebKit
         // will not expose to JavaScript — so pasting into a Safari Web App (Messenger) does
         // nothing. Queue a web-safe rewrite for the next settled tick. See WebPaste.
-        if item.kind == .image,
+        // Opt-in, and checked FIRST so a user who has not enabled it pays nothing — not the
+        // type scan, not the image read. See WebPaste.isEnabled for why this is off by default.
+        if WebPaste.isEnabled,
+           item.kind == .image,
            WebPaste.needsWebSafeCopy(types: types),
            let image = pb.readImage() {
             pendingWebSafe = (changeCount: count, image: image)

@@ -24,6 +24,11 @@ final class AppSettings: ObservableObject {
             if imageUnderstanding { store.scheduleImageUnderstanding() }
         }
     }
+    /// See `WebPaste.isEnabled`. Off by default: it is the only feature that rewrites what
+    /// another app put on the clipboard, and macOS requires taking ownership to do it.
+    @Published var webSafeScreenshots: Bool {
+        didSet { WebPaste.isEnabled = webSafeScreenshots }
+    }
     @Published var themePreset: ThemePreset { didSet { Theme.preset = themePreset } }
     @Published var layoutMode: LayoutMode { didSet { Theme.layout = layoutMode } }
     @Published var searchMode: SearchMode {
@@ -106,6 +111,7 @@ final class AppSettings: ObservableObject {
         launchAtLogin = LoginItem.enabled
         activateOnSummon = UserDefaults.standard.bool(forKey: "activateOnSummon")
         imageUnderstanding = ClipStore.imageUnderstandingEnabled
+        webSafeScreenshots = WebPaste.isEnabled
         themePreset = Theme.preset
         layoutMode = Theme.layout
         searchMode = DeepSearch.mode
@@ -204,6 +210,23 @@ struct SettingsView: View {
                         Button("Forget recognised text") { settings.forgetImageUnderstanding() }
                             .disabled(store.recognisedImageCount == 0 || store.safeMode)
                     }
+
+                    Divider().padding(.vertical, 2)
+
+                    Toggle("Make screenshots pasteable in web apps",
+                           isOn: $settings.webSafeScreenshots)
+                    // Says what it COSTS, not just what it does. This is the only feature
+                    // that rewrites what another app put on the clipboard, and the user is
+                    // being asked to accept that — so the downsides go here, not in a footnote.
+                    Text("macOS puts screenshots on the clipboard in a format browsers "
+                         + "cannot read, so pasting one into Messenger, Gmail or any web "
+                         + "app silently does nothing. This adds a format they understand.\n"
+                         + "To do that Cliphoard has to take ownership of the clipboard and "
+                         + "rewrite it — macOS offers no other way. Your screenshot is "
+                         + "preserved, but apps that ask for TIFF get a standard-range "
+                         + "image instead of a wide-gamut one, and the clipboard's owner "
+                         + "shows as Cliphoard. Off unless you turn it on.")
+                        .font(.system(size: 11)).foregroundStyle(.secondary)
                 }
 
                 section("Sound") {

@@ -40,6 +40,26 @@ import AppKit
 /// item is fully built.
 @MainActor
 enum WebPaste {
+    /// OPT-IN. Default OFF, deliberately.
+    ///
+    /// Everything else Cliphoard does to the clipboard is passive: it reads, and it writes
+    /// only when you pick a clip. This is the one feature that reaches out and REWRITES what
+    /// another app put there, and macOS offers no gentler way — adding a flavour requires
+    /// owning the pasteboard, and owning it requires `clearContents()` (HIServices
+    /// Pasteboard.h: `notPasteboardOwnerErr = -25135 /* client did not clear the pasteboard
+    /// */`). Measured: `addTypes` on a board we do not own returns -1 and `setData` returns
+    /// false, silently.
+    ///
+    /// So the trade is real and the user should make it rather than inherit it: apps asking
+    /// for `public.tiff` receive an 8-bit sRGB image where they previously received 16-bit
+    /// Display P3, and pasteboard-owner provenance shows Cliphoard rather than the app that
+    /// took the screenshot. Off by default keeps "Cliphoard only observes your clipboard"
+    /// true for anyone who has not asked otherwise.
+    static var isEnabled: Bool {
+        get { UserDefaults.standard.bool(forKey: "webSafeScreenshots") }   // absent => false
+        set { UserDefaults.standard.set(newValue, forKey: "webSafeScreenshots") }
+    }
+
     /// The legacy alias always accompanies `public.png` on a real board; treat either as
     /// "already pasteable" so we never rewrite a board that does not need it.
     static let pngTypes: Set<String> = ["public.png", "Apple PNG pasteboard type"]

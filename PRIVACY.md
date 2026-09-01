@@ -70,6 +70,34 @@ the chip, so copying the database (or the payload files) to another machine is
 useless, and no Touch ID prompt is required. On Macs without a Secure Enclave the key
 lives in your login Keychain.
 
+## Making screenshots pasteable in web apps — off by default
+
+macOS puts a screenshot on the clipboard in a format browsers cannot read, so pasting one
+into Messenger, Gmail or any other web app silently does nothing. Cliphoard can fix that by
+adding a format they understand.
+
+**It is off unless you turn it on, and here is exactly what it does when you do.**
+
+To add a format to the clipboard, macOS requires you to *own* it, and taking ownership means
+clearing it first — there is no API to add a format in place. (`addTypes` on a clipboard you
+do not own returns `-1` and writes nothing; the Pasteboard Manager's own error is
+`notPasteboardOwnerErr` — "client did not clear the pasteboard".) So Cliphoard reads every
+format already there, builds a replacement carrying all of them plus a standard PNG, and
+writes it back. If that write fails, the original is restored from what was read.
+
+Three consequences, none of them hidden:
+
+- **Cliphoard becomes the clipboard's owner.** Anything that inspects the owner to see where
+  content came from will see Cliphoard rather than the app that produced it.
+- **Apps that ask for TIFF get a standard-range image.** Measured on an HDR screenshot: the
+  TIFF goes from 16-bit Display P3 to 8-bit sRGB. The original is still there in its own
+  format, byte for byte, for anything that asks for it.
+- **The clipboard is rewritten at all**, which is the only time Cliphoard does anything to it
+  other than read, or write the clip you picked.
+
+It never runs on a clipboard marked transient, concealed or auto-generated, on an app you
+have excluded, or on anything that is not an image. Leave it off and Cliphoard only observes.
+
 The only data that is *not* encrypted is what cannot be: the live system pasteboard
 and the in-memory copy of the clip you are pasting, which are plaintext by necessity
 while in use. Every value Cliphoard writes to disk going forward is sealed before it
