@@ -223,9 +223,11 @@ struct SettingsView: View {
                          + "app silently does nothing. This adds a format they understand.\n"
                          + "To do that Cliphoard has to take ownership of the clipboard and "
                          + "rewrite it — macOS offers no other way. Your screenshot is "
-                         + "preserved, but apps that ask for TIFF get a standard-range "
+                         + "carried across, but apps that ask for TIFF get a standard-range "
                          + "image instead of a wide-gamut one, and the clipboard's owner "
-                         + "shows as Cliphoard. Off unless you turn it on.")
+                         + "shows as Cliphoard. If the rewrite fails the original is put "
+                         + "back; if that also fails the clipboard is left empty, which is "
+                         + "unlikely but possible. Off unless you turn it on.")
                         .font(.system(size: 11)).foregroundStyle(.secondary)
                 }
 

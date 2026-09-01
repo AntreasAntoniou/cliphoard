@@ -504,7 +504,14 @@ final class WebPasteOptInTests: XCTestCase {
         let source = try String(
             contentsOf: root.appendingPathComponent("Sources/Cliphoard/Clipboard/ClipboardMonitor.swift"),
             encoding: .utf8)
-        guard let gate = source.range(of: "if WebPaste.isEnabled,") else {
+        // Anchor to the CAPTURE site. There is now a second `WebPaste.isEnabled` check in the
+        // pending-apply branch (added so withdrawing consent cancels queued work), and it
+        // appears earlier in the file — searching for the bare string finds the wrong one.
+        guard let captureSite = source.range(of: "DebugLog.write(\"  → captured") else {
+            return XCTFail("the capture log line moved — re-anchor this test")
+        }
+        guard let gate = source.range(of: "if WebPaste.isEnabled,",
+                                      range: captureSite.upperBound..<source.endIndex) else {
             return XCTFail("the capture path no longer gates on the setting — the rewrite "
                            + "would run for users who never asked for it")
         }
@@ -530,5 +537,66 @@ final class WebPasteOptInTests: XCTestCase {
                       + "thing being consented to")
         XCTAssertTrue(ui.contains("standard-range"),
                       "and that TIFF consumers get an SDR image, the measured cost")
+    }
+}
+
+/// Withdrawing consent must take effect immediately, including for work already queued.
+///
+/// The rewrite is queued on the capture tick and applied on a later one. The queue is filled
+/// under the `WebPaste.isEnabled` gate — but the branch that CONSUMES it did not re-check, so
+/// turning the feature off within one 0.4s poll tick still let a rewrite through. The user had
+/// withdrawn consent and their clipboard was seized anyway, which is the wrong failure
+/// direction for an opt-in privacy control.
+@MainActor
+final class WebPasteConsentWithdrawalTests: XCTestCase {
+    func testAQueuedRewriteIsAbandonedIfTheSettingIsTurnedOff() throws {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let source = try String(
+            contentsOf: root.appendingPathComponent("Sources/Cliphoard/Clipboard/ClipboardMonitor.swift"),
+            encoding: .utf8)
+
+        guard let start = source.range(of: "if let pending = pendingWebSafe {") else {
+            return XCTFail("the pending-rewrite block was renamed — move this test with it")
+        }
+        // Bounded by the guard that ends the block, not a character count: fixed windows have
+        // broken tests in this repo twice.
+        let rest = source[start.upperBound...]
+        let end = rest.range(of: "guard count != lastChangeCount")
+        let body = String(rest[..<(end?.lowerBound ?? rest.endIndex)])
+
+        XCTAssertTrue(body.contains("WebPaste.isEnabled"),
+                      "the branch that APPLIES a queued rewrite does not re-check the setting. "
+                      + "The queue is filled under the gate, but a user can turn the feature "
+                      + "off between the capture tick and this one — and consent withdrawn a "
+                      + "moment ago is still withdrawn.")
+
+        // And it must be checked as a precondition of acting, not merely mentioned.
+        guard let gate = body.range(of: "WebPaste.isEnabled"),
+              let apply = body.range(of: "WebPaste.makeWebSafe") ?? body.range(of: "applyWebSafe") else {
+            return XCTFail("could not locate both the gate and the apply call")
+        }
+        XCTAssertLessThan(gate.lowerBound, apply.lowerBound,
+                          "the setting must be consulted BEFORE the rewrite is applied")
+    }
+
+    /// The documents must not promise a guarantee the code does not make. `apply()` has a
+    /// `.lost` outcome where the restore itself fails and the clipboard ends up empty; a
+    /// privacy document that enumerates consequences must include that one.
+    func testTheDocsAdmitTheClipboardCanBeLeftEmpty() throws {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let privacy = try String(
+            contentsOf: root.appendingPathComponent("PRIVACY.md"), encoding: .utf8)
+        XCTAssertTrue(privacy.contains("left empty"),
+                      "PRIVACY.md claims the original is restored if the write fails, but "
+                      + "WebPaste has a third outcome (.lost) where the restore ALSO fails. "
+                      + "Omitting it is exactly what this document exists not to do.")
+        let settings = try String(
+            contentsOf: root.appendingPathComponent("Sources/Cliphoard/UI/SettingsView.swift"),
+            encoding: .utf8)
+        XCTAssertFalse(settings.contains("Your screenshot is preserved"),
+                       "the Settings copy promised preservation unconditionally, which the "
+                       + "code does not guarantee")
     }
 }

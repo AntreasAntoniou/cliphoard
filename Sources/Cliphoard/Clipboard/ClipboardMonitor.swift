@@ -139,7 +139,12 @@ final class ClipboardMonitor {
         // nothing has moved since the capture tick.
         if let pending = pendingWebSafe {
             pendingWebSafe = nil
-            if pending.changeCount == count {
+            // Re-check the setting, not just the changeCount. The queue is filled under the
+            // gate, but a user can turn the feature off in the interval between the capture
+            // tick and this one — and a consent withdrawn a moment ago is still withdrawn.
+            // Without this, flipping the toggle off within a poll tick still let one rewrite
+            // through, which is the wrong failure direction for an opt-in privacy control.
+            if WebPaste.isEnabled, pending.changeCount == count {
                 // Render OFF the main actor. It is superlinear — 51ms at 1200x800, 268ms at
                 // 2880x1800, 1200ms at 6016x3384 — so doing it inline froze the UI for about
                 // a second on every full-screen grab on a 5K/6K display. The pasteboard work

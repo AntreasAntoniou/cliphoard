@@ -82,10 +82,18 @@ To add a format to the clipboard, macOS requires you to *own* it, and taking own
 clearing it first — there is no API to add a format in place. (`addTypes` on a clipboard you
 do not own returns `-1` and writes nothing; the Pasteboard Manager's own error is
 `notPasteboardOwnerErr` — "client did not clear the pasteboard".) So Cliphoard reads every
-format already there, builds a replacement carrying all of them plus a standard PNG, and
-writes it back. If that write fails, the original is restored from what was read.
+format on the clipboard, builds a replacement carrying them plus a standard PNG, and writes it
+back. Legacy aliases from the NeXT era are the one exception: macOS rejects them as invalid
+identifiers when writing, and re-creates them from the modern format afterwards, so they come
+back on their own.
 
-Three consequences, none of them hidden:
+If that write fails, the original is put back from what was read. **And if that restore also
+fails, the clipboard is left empty.** That is the one way this feature can lose something you
+had. It is unlikely — nothing fallible happens between reading the originals and writing them
+back — but it is possible, the app logs it loudly when it happens, and a document that exists
+to hide nothing should not omit it.
+
+Four consequences, none of them hidden:
 
 - **Cliphoard becomes the clipboard's owner.** Anything that inspects the owner to see where
   content came from will see Cliphoard rather than the app that produced it.
@@ -94,6 +102,8 @@ Three consequences, none of them hidden:
   format, byte for byte, for anything that asks for it.
 - **The clipboard is rewritten at all**, which is the only time Cliphoard does anything to it
   other than read, or write the clip you picked.
+- **It can, rarely, be left empty** — only if both the rewrite and the restore fail. Logged
+  loudly when it happens.
 
 It never runs on a clipboard marked transient, concealed or auto-generated, on an app you
 have excluded, or on anything that is not an image. Leave it off and Cliphoard only observes.
