@@ -87,6 +87,7 @@ enum WebPaste {
         case rewritten(Int)       // success; the post-write changeCount
         case restored             // write failed and the original was put back
         case lost                 // write failed AND restore failed — must be logged loudly
+        case movedOn              // the user copied again mid-flight; board left untouched
     }
 
     /// Legacy NeXT-era pasteboard names are not valid UTIs, so `setData` refuses them
@@ -127,50 +128,60 @@ enum WebPaste {
     /// wiped the user's clipboard whenever a payload failed to load; that bug outlived the
     /// audit that named it (AUDIT.md:164). Not repeating it here.
     @discardableResult
-    static func makeWebSafe(_ pb: NSPasteboard, image: NSImage) -> Outcome {
-        // ITEM level, not pasteboard level, for two independent reasons.
+    static func makeWebSafe(_ pb: NSPasteboard, image: NSImage, expecting: Int) -> Outcome {
+        // EVERY item, not just the first.
         //
-        // CORRECTNESS: `pb.types` is a superset containing flavours the translation layer
-        // synthesises on demand. Gating on it would let a synthesised PNG report "already
-        // pasteable" for a board whose ITEM carries only heic — masking the exact bug this
-        // exists to fix, since WebKit reads at item level.
-        //
-        // COST: reading `pb.data(forType: .tiff)` on a heic item MATERIALISES the synthesised
-        // TIFF — measured at 12.5 MB from a 31 KB item. Salvaging at pasteboard level would
-        // force that expansion and then write it back, on the 0.4s poll path, for every
-        // screenshot. The item carries only what the writer actually wrote, and the
-        // synthesised flavours regenerate for free after our write.
-        guard let source = pb.pasteboardItems?.first else { return .notNeeded }
-        let declared = source.types
-        guard needsWebSafeCopy(types: declared.map(\.rawValue)) else { return .notNeeded }
+        // An earlier version salvaged `pasteboardItems.first` and then wrote a single item
+        // back — which DESTROYED items 1..n. A pasteboard can hold many items (a multi-file
+        // copy, an app offering alternatives), the gate passes on such a board, and the
+        // pre-change behaviour was merely to observe. Deleting the user's clipboard is a
+        // strictly worse outcome than the bug being fixed, and no test covered item count.
+        guard let items = pb.pasteboardItems, let first = items.first else { return .notNeeded }
+        guard needsWebSafeCopy(types: first.types.map(\.rawValue)) else { return .notNeeded }
 
-        // Salvage FIRST. A nil read means a live promise we cannot reproduce — abort whole.
-        var salvaged: [(NSPasteboard.PasteboardType, Data)] = []
-        for type in declared {
-            guard let data = source.data(forType: type) else { return .unsalvageable }
-            salvaged.append((type, data))
+        // Salvage FIRST, every item. A nil read means a live promise we cannot reproduce.
+        var salvaged: [[(NSPasteboard.PasteboardType, Data)]] = []
+        for item in items {
+            var flavours: [(NSPasteboard.PasteboardType, Data)] = []
+            for type in item.types {
+                guard let data = item.data(forType: type) else { return .unsalvageable }
+                flavours.append((type, data))
+            }
+            salvaged.append(flavours)
         }
+        // Rendering is the slow part — measured at 113ms for 1200x800 and 258ms for
+        // 2880x1800 — so it happens BEFORE we touch anything, and the changeCount is
+        // re-checked after it.
         guard let png = webSafePNG(from: image) else { return .unsalvageable }
 
-        // `setData` reports whether the flavour was accepted. Ignoring it would let a type
-        // be silently dropped while the outcome still read `.rewritten`.
-        let item = NSPasteboardItem()
-        var dropped: [String] = []
-        for (type, data) in salvaged where isWritableUTI(type) {
-            if !item.setData(data, forType: type) { dropped.append(type.rawValue) }
-        }
-        guard item.setData(png, forType: .png) else { return .unsalvageable }
-        if !dropped.isEmpty {
-            NSLog("Cliphoard: pasteboard flavours dropped during rewrite: \(dropped.joined(separator: ","))")
+        func rebuild(addingPNG: Bool) -> [NSPasteboardItem] {
+            salvaged.enumerated().map { index, flavours in
+                let item = NSPasteboardItem()
+                var dropped: [String] = []
+                for (type, data) in flavours where isWritableUTI(type) {
+                    if !item.setData(data, forType: type) { dropped.append(type.rawValue) }
+                }
+                if addingPNG && index == 0 { _ = item.setData(png, forType: .png) }
+                if !dropped.isEmpty {
+                    NSLog("Cliphoard: pasteboard flavours dropped during rewrite: "
+                          + dropped.joined(separator: ","))
+                }
+                return item
+            }
         }
 
-        pb.clearContents()
-        if pb.writeObjects([item]) { return .rewritten(pb.changeCount) }
+        let replacement = rebuild(addingPNG: true)
+        guard replacement.first?.data(forType: .png) != nil else { return .unsalvageable }
 
-        // Cleared but could not write: put the original back rather than leave them empty.
-        let fallback = NSPasteboardItem()
-        for (type, data) in salvaged where isWritableUTI(type) { fallback.setData(data, forType: type) }
+        // LAST possible moment. Salvage and render together take long enough that a copy can
+        // land in between; overwriting it with the older screenshot would be its own data
+        // loss. If the board moved, leave it entirely alone.
+        guard pb.changeCount == expecting else { return .movedOn }
+
         pb.clearContents()
-        return pb.writeObjects([fallback]) ? .restored : .lost
+        if pb.writeObjects(replacement) { return .rewritten(pb.changeCount) }
+
+        pb.clearContents()
+        return pb.writeObjects(rebuild(addingPNG: false)) ? .restored : .lost
     }
 }

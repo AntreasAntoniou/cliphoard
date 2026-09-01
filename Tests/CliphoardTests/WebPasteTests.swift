@@ -84,7 +84,7 @@ final class WebPasteTests: XCTestCase {
         XCTAssertTrue(pb.writeObjects([item]))
 
         let before = pb.changeCount
-        let outcome = WebPaste.makeWebSafe(pb, image: image())
+        let outcome = WebPaste.makeWebSafe(pb, image: image(), expecting: pb.changeCount)
 
         guard case .rewritten = outcome else {
             return XCTFail("expected a rewrite, got \(outcome)")
@@ -109,7 +109,7 @@ final class WebPasteTests: XCTestCase {
         XCTAssertTrue(pb.writeObjects([item]))
         let before = pb.changeCount
 
-        XCTAssertEqual(WebPaste.makeWebSafe(pb, image: image()), .notNeeded)
+        XCTAssertEqual(WebPaste.makeWebSafe(pb, image: image(), expecting: pb.changeCount), .notNeeded)
         XCTAssertEqual(pb.changeCount, before, "an untouched board must not change count")
         XCTAssertEqual(pb.data(forType: .png), Data("png".utf8), "and must keep its own PNG")
     }
@@ -235,9 +235,12 @@ final class WebPasteItemLevelTests: XCTestCase {
             return XCTFail("makeWebSafe was renamed")
         }
         let body = String(source[start.upperBound...])
-        XCTAssertTrue(body.contains("pb.pasteboardItems?.first"),
-                      "the gate and salvage must read the ITEM; reading pb.types lets a "
+        XCTAssertTrue(body.contains("pb.pasteboardItems"),
+                      "the gate and salvage must read ITEMS; reading pb.types lets a "
                       + "synthesised PNG mask the bug and forces a 12.5MB TIFF expansion")
+        XCTAssertTrue(body.contains("for item in items"),
+                      "and it must walk EVERY item — salvaging only the first destroyed "
+                      + "items 1..n, which is worse than the bug being fixed")
         guard let salvage = body.range(of: "salvaged.append(") else {
             return XCTFail("no salvage loop")
         }
@@ -279,7 +282,7 @@ final class WebPasteFidelityTests: XCTestCase {
         let img = NSImage(size: .init(width: 12, height: 12))
         img.lockFocus(); NSColor.systemIndigo.setFill()
         NSRect(x: 0, y: 0, width: 12, height: 12).fill(); img.unlockFocus()
-        guard case .rewritten = WebPaste.makeWebSafe(pb, image: img) else {
+        guard case .rewritten = WebPaste.makeWebSafe(pb, image: img, expecting: pb.changeCount) else {
             return XCTFail("expected a rewrite")
         }
 
@@ -303,5 +306,85 @@ final class WebPasteFidelityTests: XCTestCase {
                       + "found by a verifier after the original claim shipped, not before")
         XCTAssertTrue(source.contains("re-synthesised"),
                       "the doc must say pasteboard-level flavours are re-derived, not kept")
+    }
+}
+
+/// Defects found by a blind verifier AFTER the fix was pushed. Each is reachable, and the
+/// first was data loss strictly worse than the bug being fixed.
+@MainActor
+final class WebPasteHazardTests: XCTestCase {
+    private var pb: NSPasteboard!
+    override func setUp() {
+        super.setUp()
+        pb = NSPasteboard(name: .init("io.antreas.cliphoard.tests.hz.\(UUID().uuidString)"))
+    }
+    override func tearDown() { pb.releaseGlobally(); pb = nil; super.tearDown() }
+
+    private func img() -> NSImage {
+        let i = NSImage(size: .init(width: 10, height: 10))
+        i.lockFocus(); NSColor.systemBrown.setFill()
+        NSRect(x: 0, y: 0, width: 10, height: 10).fill(); i.unlockFocus()
+        return i
+    }
+
+    /// The first version salvaged `pasteboardItems.first` and wrote ONE item back, deleting
+    /// items 1..n. A pasteboard routinely holds several (a multi-file copy, an app offering
+    /// alternatives), and the gate passes on such a board — so Cliphoard could destroy a
+    /// user's clipboard where before it merely observed.
+    func testEveryItemSurvivesNotJustTheFirst() throws {
+        pb.clearContents()
+        let a = NSPasteboardItem(); a.setData(Data("heic-a".utf8), forType: .init("public.heic"))
+        let b = NSPasteboardItem(); b.setData(Data("second".utf8), forType: .string)
+        let c = NSPasteboardItem(); c.setData(Data("third".utf8), forType: .string)
+        XCTAssertTrue(pb.writeObjects([a, b, c]))
+        XCTAssertEqual(pb.pasteboardItems?.count, 3)
+
+        guard case .rewritten = WebPaste.makeWebSafe(pb, image: img(), expecting: pb.changeCount) else {
+            return XCTFail("expected a rewrite")
+        }
+        XCTAssertEqual(pb.pasteboardItems?.count, 3,
+                       "items 1..n were destroyed — the user's other clipboard entries are "
+                       + "gone, which is worse than the paste bug this code exists to fix")
+        XCTAssertEqual(pb.pasteboardItems?[1].data(forType: .string), Data("second".utf8))
+        XCTAssertEqual(pb.pasteboardItems?[2].data(forType: .string), Data("third".utf8))
+        XCTAssertNotNil(pb.pasteboardItems?[0].data(forType: .png),
+                        "and the PNG goes on item 0, where WebKit reads it")
+    }
+
+    /// Salvage plus render takes 113–258ms depending on size. A copy landing in that window
+    /// must not be overwritten by the older screenshot.
+    func testACopyArrivingMidFlightIsNotClobbered() throws {
+        pb.clearContents()
+        let item = NSPasteboardItem()
+        item.setData(Data("heic".utf8), forType: .init("public.heic"))
+        XCTAssertTrue(pb.writeObjects([item]))
+
+        // Simulate the race: the caller's expectation is already stale.
+        let stale = pb.changeCount - 1
+        XCTAssertEqual(WebPaste.makeWebSafe(pb, image: img(), expecting: stale), .movedOn,
+                       "the board moved between the caller's check and the write; rewriting "
+                       + "would silently replace whatever the user just copied")
+        XCTAssertEqual(pb.pasteboardItems?.first?.data(forType: .init("public.heic")),
+                       Data("heic".utf8), "and the board must be left exactly as found")
+        XCTAssertNil(pb.data(forType: .png), "nothing written on the abandoned path")
+    }
+
+    /// The recovery paths must record the changeCount their own write produced, or the next
+    /// poll sees a changed board and captures the restored content as a duplicate clip.
+    func testRecoveryPathsUpdateTheMonitorsBookkeeping() throws {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let source = try String(
+            contentsOf: root.appendingPathComponent("Sources/Cliphoard/Clipboard/ClipboardMonitor.swift"),
+            encoding: .utf8)
+        for arm in ["case .restored:", "case .lost:"] {
+            guard let start = source.range(of: arm) else {
+                return XCTFail("\(arm) is gone — move this test with it")
+            }
+            let body = String(source[start.upperBound...].prefix(500))
+            XCTAssertTrue(body.contains("lastChangeCount = pb.changeCount"),
+                          "\(arm) does not record the changeCount its restore produced, so "
+                          + "the next tick re-captures the restored board as a new clip")
+        }
     }
 }

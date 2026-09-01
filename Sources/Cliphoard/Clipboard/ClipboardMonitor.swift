@@ -105,7 +105,7 @@ final class ClipboardMonitor {
         if let pending = pendingWebSafe {
             pendingWebSafe = nil
             if pending.changeCount == count {
-                switch WebPaste.makeWebSafe(pb, image: pending.image) {
+                switch WebPaste.makeWebSafe(pb, image: pending.image, expecting: count) {
                 case .rewritten(let newCount):
                     DebugLog.write("  → added public.png for web apps "
                                    + "(types now [\((pb.types ?? []).map(\.rawValue).joined(separator: ","))])")
@@ -113,11 +113,23 @@ final class ClipboardMonitor {
                     ignoreChangeCount = newCount
                     return
                 case .restored:
-                    DebugLog.write("  → web-safe rewrite FAILED; original restored")
+                    // The restore bumped the real changeCount. Recording it matters: without
+                    // it, `guard count != lastChangeCount` below sees equality and returns
+                    // without updating, so the NEXT tick treats the restored board as new
+                    // content and captures a duplicate clip.
+                    lastChangeCount = pb.changeCount
+                    ignoreChangeCount = pb.changeCount
+                    DebugLog.write("  → web-safe rewrite failed; pasteboard restored")
+                    return
                 case .lost:
+                    lastChangeCount = pb.changeCount
+                    ignoreChangeCount = pb.changeCount
                     NSLog("Cliphoard: web-safe rewrite failed AND restore failed — "
                           + "the clipboard may be empty")
                     DebugLog.write("  → web-safe rewrite LOST the pasteboard")
+                    return
+                case .movedOn:
+                    DebugLog.write("  → web-safe rewrite abandoned (a new copy arrived)")
                 case .notNeeded, .unsalvageable:
                     break
                 }
