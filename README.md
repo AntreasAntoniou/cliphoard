@@ -92,12 +92,18 @@ MIT licensed. No paid tier, no locked features, no crippled build — everyone g
 and `make install` above gives you the same app as the download.
 
 If it earns a place on your Mac, you can [sponsor the
-research](https://github.com/sponsors/AntreasAntoniou) it came out of. That is closer to
-Patreon than to a shop: you are not buying software you already have, you are funding the work
-behind it. Cliphoard's semantic search runs **ogma** — models I trained from scratch, small
-enough to run on your Mac while you use it, built around how much capability you can get per
-parameter rather than how much you can get by making everything bigger. Not sponsoring is
-completely fine.
+work](https://github.com/sponsors/AntreasAntoniou). That is closer to Patreon than to a shop:
+you are not buying software you already have, you are funding the mission behind it —
+**local-first, secure tools that are genuinely useful and a pleasure to use**.
+
+Part of that mission is research, and some of it ships here: searching your clips *by meaning*
+runs on **ogma**, text models I trained from scratch and released under MIT (2.5M and 8.9M
+parameters), built around how much capability you can get per parameter rather than how much
+you can get by making everything bigger. Credit where due — reading text inside screenshots is
+Apple's Vision framework, and finding images from a description uses OpenVision-Tiny, openly
+licensed and not mine.
+
+Not sponsoring is completely fine.
 
 ## Privacy
 
