@@ -98,8 +98,10 @@ because the fixes are in this branch.
   Per-clip user tags are normalized, indexed, searchable, filterable, and sealed at
   rest. The detail supercard exposes content, metadata, automatic facets, and user-tag
   editing without sending clip data off-device.
-- **Rebrand + legal.** Product surface fully Cliphoard; CC-BY-NC ogma attribution
-  consistent across `LICENSE`, `THIRD-PARTY-NOTICES.md`, in-app About. Bundle id
+- **Rebrand + legal.** Product surface fully Cliphoard; attribution consistent
+  across `LICENSE`, `LICENSE-Apache-2.0.txt` and `THIRD-PARTY-NOTICES.md`. Every
+  component is permissive; OpenVision (Apache-2.0) is the only bundled model. There is
+  no in-app About licence screen — the texts ship as files in `Resources`. Bundle id
   `ai.axiotic.ditto` and the `yank.db.v2` KDF salt are deliberately unchanged (Keychain
   scoping + decryption of existing at-rest data).
 

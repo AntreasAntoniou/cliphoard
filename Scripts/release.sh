@@ -71,7 +71,8 @@ say "Building Cliphoard.app…"
 #   MiniLM  -> GitHub release on demand (as always documented)
 #   OpenVision -> bundled: image search is the differentiator and should work on
 #                 first launch with no network.
-BUNDLE_MODELS="openvision-tiny-p8-image openvision-tiny-p8-text" bash Scripts/build-app.sh release
+STRICT_BUNDLE=1 BUNDLE_MODELS="openvision-tiny-p8-image openvision-tiny-p8-text" \
+    bash Scripts/build-app.sh release
 VERSION="$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$APP/Contents/Info.plist")"
 say "Version $VERSION"
 
@@ -141,9 +142,15 @@ rm -rf "$STAGE" "$DMG"
 mkdir -p "$STAGE"
 cp -R "$APP" "$STAGE/Cliphoard.app"
 # Ship the license + attribution next to the app so a user who mounts the DMG
-# sees them (the bundled CC-BY-NC ogma models require this on redistribution).
+# sees them (Apache-2.0 requires the licence text travel with the bundled OpenVision towers).
 cp "LICENSE" "$STAGE/"
+cp "LICENSE-Apache-2.0.txt" "$STAGE/"
 cp "THIRD-PARTY-NOTICES.md" "$STAGE/"
+# The DMG root is a distribution channel of its own: Apache-2.0 s4(a) is about
+# what the RECIPIENT receives, not what the repo contains.
+STRICT_BUNDLE=1 BUNDLE_MODELS="openvision-tiny-p8-image openvision-tiny-p8-text" \
+    bash Scripts/verify-bundle.sh "$STAGE/Cliphoard.app" "$(pwd)" "$STAGE"
+
 ln -s /Applications "$STAGE/Applications"
 hdiutil create -volname "Cliphoard $VERSION" -srcfolder "$STAGE" -ov -format UDZO "$DMG" >/dev/null
 rm -rf "$STAGE"

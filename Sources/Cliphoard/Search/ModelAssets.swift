@@ -178,7 +178,16 @@ enum ModelAssets {
                     NSLocalizedDescriptionKey: "model checksum mismatch (\(name)) — refusing to install"])
             }
         } else {
-            NSLog("Cliphoard ModelAssets: no pinned checksum for \(name) — skipping verification")
+            // FAIL CLOSED. This used to log and install anyway, which meant an unpinned tier
+            // silently accepted whatever bytes the network returned — the integrity guarantee
+            // the pin exists to provide, quietly voided by the branch that handles its own
+            // absence. Every name that can reach here is pinned today
+            // (`DeepSearchLevel.allCases`, checked by `DistributionLicenceTests`), so this is
+            // behaviour-preserving; it stays that way because adding a tier without a pin now
+            // fails loudly instead of downgrading everyone who installs it.
+            try? fm.removeItem(at: tmp)
+            throw CocoaError(.fileReadCorruptFile, userInfo: [
+                NSLocalizedDescriptionKey: "no pinned checksum for \(name) — refusing to install"])
         }
 
         // 2. Unpack next to the store (ditto preserves the package structure).

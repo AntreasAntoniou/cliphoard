@@ -76,5 +76,6 @@ hands it back the instant you need it. Press **⌃⌥⌘V**.
 
 ---
 
-*Liner notes: all ten are CC-BY for Cliphoard's own use; the bundled ogma models,
-however, remain CC-BY-NC (see THIRD-PARTY-NOTICES.md). 🎸*
+*Liner notes: all ten are CC-BY for Cliphoard's own use. (This note used to
+add that the bundled ogma models remain CC-BY-NC — superseded: ogma is MIT and is not
+bundled. See LICENSE and THIRD-PARTY-NOTICES.md.) 🎸*

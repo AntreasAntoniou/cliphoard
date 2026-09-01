@@ -35,7 +35,8 @@ fi
 
 # 2. Build the universal, signed bundle.
 #
-# Bundle only the two MIT ogma tiers. MiniLM (Apache-2.0) is fetched on demand by
+# Bundle only the two OpenVision towers (Apache-2.0) — the same set release.sh
+# ships. ogma (MIT) and MiniLM (Apache-2.0) are fetched on demand by
 # ModelAssets.ensure, which verifies it against a pinned SHA-256 and refuses to
 # install on mismatch. Without this the glob in build-app.sh bundles every model
 # present in tools/models, which is what made the .app 409 MB.

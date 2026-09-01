@@ -165,8 +165,8 @@ Scriptable toggle without the hotkey/Accessibility: post the Darwin notification
 Model pipeline (see `tools/README.md`):
 ```bash
 cd tools
-python3 _dl.py axiotic/ogma-small && python3 convert_ogma.py models/ogma-small
-python3 _dl.py axiotic/ogma-micro && python3 convert_ogma.py models/ogma-micro
+python3 _dl.py axiotic/open-ogma-small && python3 convert_ogma_libre.py models/open-ogma-small
+python3 _dl.py axiotic/open-ogma-micro && python3 convert_ogma_libre.py models/open-ogma-micro
 cd .. && make app   # build-app.sh compiles + bundles the .mlpackage(s) automatically
 ```
 

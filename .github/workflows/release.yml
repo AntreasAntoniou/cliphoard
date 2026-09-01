@@ -12,7 +12,7 @@ name: Release
 #   APPLE_TEAM_ID         your 10-char Team ID
 #   APPLE_APP_PASSWORD    an app-specific password from appleid.apple.com
 #
-# NOTE: the bundled ogma CoreML models are gitignored (.mlpackage files are large
+# NOTE: the bundled OpenVision CoreML towers are gitignored (.mlpackage files are large
 # binaries produced locally). For CI to build a working app, the "Restore on-device
 # models" step below downloads the public ogma PyTorch weights from HuggingFace and
 # converts them to CoreML via tools/restore-models.sh — BEFORE Scripts/release.sh

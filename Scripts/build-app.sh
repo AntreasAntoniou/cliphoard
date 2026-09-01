@@ -96,11 +96,16 @@ if ls "$ROOT"/tools/models/*.mlpackage >/dev/null 2>&1; then
     done
 fi
 
-# License + attribution. The bundled open-ogma CoreML models are MIT (distilled
-# from MIT-licensed BGE teachers); ship the license + notices with the bundle so
-# attribution travels with every redistribution.
+# Licence + attribution. Ship them with the bundle so attribution travels with
+# every redistribution. THIRD-PARTY-NOTICES.md is the SINGLE source of truth for
+# what is bundled and what is linked — do not restate any of it here or in
+# LICENSE. Two copies of that fact is what produced the CC-BY-NC defect.
+# Apache-2.0 s4(a) requires recipients receive a copy of the licence: the
+# OpenVision towers bundled above and swift-transformers linked into the binary
+# are both Apache-2.0, so naming the licence is not on its own sufficient.
 echo "▸ Bundling license + attribution…"
 cp "$ROOT/LICENSE" "$APP/Contents/Resources/"
+cp "$ROOT/LICENSE-Apache-2.0.txt" "$APP/Contents/Resources/"
 cp "$ROOT/THIRD-PARTY-NOTICES.md" "$APP/Contents/Resources/"
 
 # Code-sign the bundle. Prefer the stable, self-signed "Ditto Local Signing"
@@ -121,3 +126,8 @@ else
 fi
 
 echo "✓ Built $APP"
+
+# Prove the assembled bundle matches what the licence documents claim. This runs on
+# EVERY build path (make app, deploy-local.sh, release.sh) because the .app is what
+# reaches a user, and release.yml runs no unit tests at all.
+BUNDLE_MODELS="$BUNDLE_MODELS" bash "$ROOT/Scripts/verify-bundle.sh" "$APP" "$ROOT"

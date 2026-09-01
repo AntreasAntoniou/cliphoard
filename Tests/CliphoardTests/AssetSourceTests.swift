@@ -197,15 +197,18 @@ final class WALHandlingTests: XCTestCase {
 /// This is the test that was missing when it mattered. The tiers named `open-ogma-*` were
 /// fetched from `axiotic/ogma-micro` and `axiotic/ogma-small`, which declare **CC-BY-NC-4.0**,
 /// while every document — the site, the README, THIRD-PARTY-NOTICES, and this file's own
-/// header — said MIT. The app shipped NonCommercial weights under an MIT banner for as long
-/// as that mapping stood, and nothing caught it: the code built, the tests passed, the markup
+/// header — said MIT. Nothing caught it: the code built, the tests passed, the markup
 /// validated. The only place the two names differed was one dictionary.
 ///
-/// The permissive models were never missing. `tools/BENCHMARKS.md` lists
-/// "open-ogma-small (1024) <- app default | 8.9M | 1024 | 15/21 | MIT" and records that the
-/// 1024-d head "fully recovers the legacy CC-BY-NC model". What was missing was a CoreML build
-/// of them, which is why the code reached for the NC repo — a convenience that quietly became
-/// a licensing claim.
+/// WHAT THE DEFECT ACTUALLY WAS, since the first version of this comment got it wrong and a
+/// verifier caught it: NOT that NonCommercial weights shipped. The `coreml/` artifact inside
+/// the NC-declared repos was ALREADY the permissive model — byte-identical `weight.bin`
+/// (`c4a35d6d…` for small), `model_type: "ogma-libre"`. The defect was PROVENANCE: an MIT app
+/// fetching from a repo whose declared licence said NonCommercial. What a downloader is
+/// entitled to rely on is the licence the source repo declares, so that is the thing this
+/// pins. The claim "a CoreML build was missing" was also false — one had been live since
+/// 2026-08-17.
+///
 @MainActor
 final class OgmaLicenceSourceTests: XCTestCase {
 
@@ -226,14 +229,29 @@ final class OgmaLicenceSourceTests: XCTestCase {
         }
     }
 
-    /// The digests must match the artifacts actually published to those repos. They move
-    /// together with `sources`: a digest left describing the old NC artifact fails closed, so
-    /// every install would silently refuse the model and fall back to the weak embedder.
-    func testTheDigestsMatchThePublishedMITArtifacts() {
-        XCTAssertEqual(ModelAssets.expectedSHA256["open-ogma-micro"],
-                       "9163037e51596ab6b17c4bc51d7e2b4b4533ca6f205b7988504774e78925ac39")
-        XCTAssertEqual(ModelAssets.expectedSHA256["open-ogma-small"],
-                       "179517c6925914ec37a734c4f0aa2971b9b93ecee9e8d6e98aa4f66a17709135")
+    /// Every model that can reach `ensure` must have a pinned digest.
+    ///
+    /// This replaces a test that asserted `expectedSHA256["open-ogma-micro"]` equalled a
+    /// hardcoded copy of that same literal. Two copies of an answer agreeing tells you nothing
+    /// about the world: it would have passed just as green with both copies wrong. Derive from
+    /// the set of names that actually reach the loader instead.
+    ///
+    /// `DeepSearchLevel.allCases`, NOT `ModelAssets.sources.keys` — `all-MiniLM-L6-v2` is not
+    /// in `sources` (it falls through to `.githubRelease`), so keying off `sources` would
+    /// leave the MiniLM pin unguarded, which is exactly the gap that lets an unpinned tier
+    /// exist in the first place.
+    func testEveryReachableTierIsPinned() {
+        let reachable = DeepSearchLevel.allCases.compactMap(\.modelName)
+        XCTAssertFalse(reachable.isEmpty, "no tier names — the enum changed shape")
+        for name in reachable {
+            XCTAssertNotNil(ModelAssets.expectedSHA256[name],
+                            "'\(name)' can be requested by DeepSearch but has no pinned "
+                            + "SHA-256. `ensure` now refuses to install an unpinned model, so "
+                            + "this tier would fail at runtime rather than silently accept "
+                            + "whatever the network returned — but it must not ship at all.")
+            XCTAssertEqual(ModelAssets.expectedSHA256[name]?.count, 64,
+                           "'\(name)' has a digest that is not a 64-char SHA-256 hex string")
+        }
     }
 
     /// The file's own prose must not point at the NonCommercial repos either — the header
