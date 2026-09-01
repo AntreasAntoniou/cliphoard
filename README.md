@@ -86,6 +86,19 @@ make run          # builds Cliphoard.app and launches it
 
 Other targets: `make app` (build `build/Cliphoard.app`) · `make install` (copy to /Applications) · `make build` (debug binary) · `make clean`.
 
+## Free, and staying that way
+
+MIT licensed. No paid tier, no locked features, no crippled build — everyone gets everything,
+and `make install` above gives you the same app as the download.
+
+If it earns a place on your Mac, you can [sponsor the
+research](https://github.com/sponsors/AntreasAntoniou) it came out of. That is closer to
+Patreon than to a shop: you are not buying software you already have, you are funding the work
+behind it. Cliphoard's semantic search runs **ogma** — models I trained from scratch, small
+enough to run on your Mac while you use it, built around how much capability you can get per
+parameter rather than how much you can get by making everything bigger. Not sponsoring is
+completely fine.
+
 ## Privacy
 
 Everything is stored **locally** and **encrypted at rest** — text clips in the database

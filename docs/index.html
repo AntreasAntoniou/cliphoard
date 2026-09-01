@@ -87,6 +87,13 @@
   .secitem h3{font-size:15px;margin-bottom:5px}
   .secitem p{color:var(--mut);font-size:13.5px}
   .secitem a{color:var(--accent)}
+  .support{background:linear-gradient(180deg,var(--bg2),var(--panel));border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+  .tiers{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:16px;margin-top:26px}
+  .tier{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:20px 22px;text-align:left}
+  .tier .amt{font-size:19px;font-weight:800;letter-spacing:-.3px;margin-bottom:6px}
+  .tier p{color:var(--mut);font-size:13.5px}
+  .plain{max-width:660px;margin:0 auto;color:var(--mut);font-size:14.5px;line-height:1.65;text-align:left}
+  .plain strong{color:var(--fg)}
   code{font-family:ui-monospace,"SF Mono",Menlo,monospace;font-size:.9em;background:var(--panel);border:1px solid var(--line);border-radius:5px;padding:1px 5px}
 
   .themes{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:8px}
@@ -131,6 +138,7 @@
     <a href="#security">Security</a>
     <a href="#compare">Compare</a>
     <a href="#themes">Themes</a>
+      <a href="#support">Support</a>
     <a href="https://github.com/AntreasAntoniou/cliphoard/blob/main/PRIVACY.md">Privacy</a>
     <a href="https://github.com/AntreasAntoniou/cliphoard">GitHub ↗</a>
   </div>
@@ -257,6 +265,56 @@
     <div class="theme"><img src="img/bar-swiss.png" alt="Swiss Grayscale theme" loading="lazy"><div class="cap"><b>Swiss Grayscale</b><span>default · light mode</span></div></div>
     <div class="theme"><img src="img/bar-dracula.png" alt="Dracula theme" loading="lazy"><div class="cap"><b>Dracula</b><span>editor classic</span></div></div>
     <div class="theme"><img src="img/bar-tokyoNight.png" alt="Tokyo Night theme" loading="lazy"><div class="cap"><b>Tokyo Night</b><span>editor classic</span></div></div>
+  </div>
+</section>
+
+
+<section class="support" id="support">
+  <div class="wrap">
+    <div class="eyebrow">Support the work</div>
+    <h2>Free forever. Not free to make.</h2>
+    <p class="lead">Cliphoard is MIT licensed and always will be. There is no paid tier, no
+      locked feature, no crippled build. Everyone gets everything.</p>
+
+    <div style="height:10px"></div>
+    <div class="plain">
+      <p>This is closer to Patreon than to a shop. You are not buying software — you already
+        have it, all of it, forever. You are funding the research it came out of.</p>
+      <p style="margin-top:14px">The semantic search in this app is that research, shipped.
+        The models that read your screenshots and find images by description are
+        <strong>ogma</strong> — my own, trained from scratch, and small enough to run on your
+        Mac while you use it. Not a large model made smaller: a small one made to punch far
+        above its parameter count. That is the question I work on — <strong>how much
+        capability you can get per parameter</strong>, rather than how much you can get by
+        making everything bigger.</p>
+      <p style="margin-top:14px">Cliphoard exists because that research needed somewhere real
+        to land. If it earns a place on your Mac, a contribution keeps the next one coming.</p>
+    </div>
+
+    <div class="tiers">
+      <div class="tier">
+        <div class="amt">£3 / month</div>
+        <p>A coffee. Keeps the lights on and the models training.</p>
+      </div>
+      <div class="tier">
+        <div class="amt">£10 / month</div>
+        <p>Meaningful. Funds the compute that turns an idea into a model you can actually run.</p>
+      </div>
+      <div class="tier">
+        <div class="amt">One-off</div>
+        <p>Whatever it was worth to you. No account, no subscription, no follow-up.</p>
+      </div>
+    </div>
+
+    <div style="height:26px"></div>
+    <div class="cta">
+      <a class="btn primary" href="https://github.com/sponsors/AntreasAntoniou">♥ Sponsor the research</a>
+      <a class="btn ghost" href="https://github.com/AntreasAntoniou/cliphoard">Star on GitHub ★</a>
+    </div>
+    <div style="height:18px"></div>
+    <p style="text-align:center;color:var(--mut);font-size:13px">
+      Not sponsoring is completely fine. Using it, telling someone, or filing a good bug
+      report all help too.</p>
   </div>
 </section>
 
