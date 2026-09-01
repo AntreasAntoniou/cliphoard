@@ -67,7 +67,7 @@ enum WebPaste {
     /// source (measured: 30,830 bytes vs 15,615 for sRGB), which pastes correctly but is
     /// twice the size to cross pasteboard IPC and then a web upload. Both forms were
     /// verified to paste; this is the cheaper one.
-    static func webSafePNG(from image: NSImage) -> Data? {
+    nonisolated static func webSafePNG(from image: NSImage) -> Data? {
         guard let tiff = image.tiffRepresentation,
               let rep = NSBitmapImageRep(data: tiff),
               let cg = rep.cgImage,
@@ -85,7 +85,7 @@ enum WebPaste {
         case notNeeded            // gate said no; pasteboard untouched
         case unsalvageable        // a declared type read nil; pasteboard untouched
         case rewritten(Int)       // success; the post-write changeCount
-        case restored             // write failed and the original was put back
+        case restored(Int)        // write failed; original put back, at this changeCount
         case lost                 // write failed AND restore failed — must be logged loudly
         case movedOn              // the user copied again mid-flight; board left untouched
     }
@@ -127,6 +127,38 @@ enum WebPaste {
     /// hand and the replacement item is fully built. `Paster` had the opposite order and it
     /// wiped the user's clipboard whenever a payload failed to load; that bug outlived the
     /// audit that named it (AUDIT.md:164). Not repeating it here.
+    /// Render off the main actor, then apply on it.
+    ///
+    /// The render is the expensive half and it is superlinear: 51ms at 1200x800, 268ms at
+    /// 2880x1800, and 1200ms at 6016x3384. Running it inline on the @MainActor poll path
+    /// froze the UI for about a second on every full-screen grab on a 5K/6K display. It is
+    /// pure — no pasteboard access — so it moves off freely.
+    ///
+    /// A longer render widens the gap between deciding to act and acting, which is safe by
+    /// construction: `apply` re-checks `expecting` as the statement immediately before
+    /// `clearContents()`, so a board that moved meanwhile is left untouched.
+    nonisolated static func renderWebSafePNG(from image: NSImage) async -> Data? {
+        await Task.detached(priority: .userInitiated) { webSafePNG(from: image) }.value
+    }
+
+    /// Salvage and apply using a PNG rendered elsewhere — the path `poll()` uses, so the
+    /// superlinear render never runs on the main actor.
+    @discardableResult
+    static func makeWebSafe(_ pb: NSPasteboard, png: Data, expecting: Int) -> Outcome {
+        guard let items = pb.pasteboardItems, let first = items.first else { return .notNeeded }
+        guard needsWebSafeCopy(types: first.types.map(\.rawValue)) else { return .notNeeded }
+        var salvaged: [[(NSPasteboard.PasteboardType, Data)]] = []
+        for item in items {
+            var flavours: [(NSPasteboard.PasteboardType, Data)] = []
+            for type in item.types {
+                guard let data = item.data(forType: type) else { return .unsalvageable }
+                flavours.append((type, data))
+            }
+            salvaged.append(flavours)
+        }
+        return apply(pb, png: png, salvaged: salvaged, expecting: expecting)
+    }
+
     @discardableResult
     static func makeWebSafe(_ pb: NSPasteboard, image: NSImage, expecting: Int) -> Outcome {
         // EVERY item, not just the first.
@@ -149,10 +181,15 @@ enum WebPaste {
             }
             salvaged.append(flavours)
         }
-        // Rendering is the slow part — measured at 113ms for 1200x800 and 258ms for
-        // 2880x1800 — so it happens BEFORE we touch anything, and the changeCount is
-        // re-checked after it.
         guard let png = webSafePNG(from: image) else { return .unsalvageable }
+        return apply(pb, png: png, salvaged: salvaged, expecting: expecting)
+    }
+
+    /// The pasteboard half: cheap, main-actor, and re-checks `expecting` immediately before
+    /// clearing. Split out so the expensive render can happen off the main actor first.
+    private static func apply(_ pb: NSPasteboard, png: Data,
+                              salvaged: [[(NSPasteboard.PasteboardType, Data)]],
+                              expecting: Int) -> Outcome {
 
         func rebuild(addingPNG: Bool) -> [NSPasteboardItem] {
             salvaged.enumerated().map { index, flavours in
@@ -178,10 +215,16 @@ enum WebPaste {
         // loss. If the board moved, leave it entirely alone.
         guard pb.changeCount == expecting else { return .movedOn }
 
-        pb.clearContents()
-        if pb.writeObjects(replacement) { return .rewritten(pb.changeCount) }
+        // `clearContents()` RETURNS the new changeCount, and writeObjects rides that same
+        // change (measured delta +1). Use it rather than re-reading the board afterwards: a
+        // user copy landing between writeObjects returning and a fresh read would hand back
+        // THEIR count, which the caller stores as `ignoreChangeCount` — discarding their clip
+        // as "our own paste". That is the bug class the suppressNextChange +1 prediction fix
+        // removed; do not reintroduce it here.
+        let mine = pb.clearContents()
+        if pb.writeObjects(replacement) { return .rewritten(mine) }
 
-        pb.clearContents()
-        return pb.writeObjects(rebuild(addingPNG: false)) ? .restored : .lost
+        let restoredCount = pb.clearContents()
+        return pb.writeObjects(rebuild(addingPNG: false)) ? .restored(restoredCount) : .lost
     }
 }

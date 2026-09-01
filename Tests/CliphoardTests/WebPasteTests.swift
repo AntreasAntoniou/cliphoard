@@ -159,7 +159,7 @@ final class WebPasteTests: XCTestCase {
                 .deletingLastPathComponent()
                 .appendingPathComponent("Sources/Cliphoard/Clipboard/WebPaste.swift"),
             encoding: .utf8)
-        XCTAssertTrue(source.contains("case restored"),
+        XCTAssertTrue(source.contains("case restored(Int)"),
                       "there must be a restore path: we hold every salvaged byte, so a "
                       + "failed write is recoverable and leaving the clipboard empty is not "
                       + "an acceptable outcome")
@@ -377,14 +377,86 @@ final class WebPasteHazardTests: XCTestCase {
         let source = try String(
             contentsOf: root.appendingPathComponent("Sources/Cliphoard/Clipboard/ClipboardMonitor.swift"),
             encoding: .utf8)
-        for arm in ["case .restored:", "case .lost:"] {
+        for arm in ["case .restored(let restoredCount):", "case .lost:"] {
             guard let start = source.range(of: arm) else {
                 return XCTFail("\(arm) is gone — move this test with it")
             }
             let body = String(source[start.upperBound...].prefix(500))
-            XCTAssertTrue(body.contains("lastChangeCount = pb.changeCount"),
+            XCTAssertTrue(body.contains("lastChangeCount ="),
                           "\(arm) does not record the changeCount its restore produced, so "
                           + "the next tick re-captures the restored board as a new clip")
         }
+    }
+}
+
+/// Two residual defects a verifier found after the fix shipped.
+@MainActor
+final class WebPasteResidualTests: XCTestCase {
+
+    /// The returned changeCount must come from `clearContents()`, which RETURNS it, not from
+    /// re-reading the board after the write. A user copy landing between `writeObjects`
+    /// returning and a fresh read would hand back THEIR count, which the caller stores as
+    /// `ignoreChangeCount` — so their clip is discarded as "our own paste" and never enters
+    /// history. That is the same bug class as the `suppressNextChange` +1 prediction: never
+    /// derive bookkeeping from a value that can move.
+    func testTheReportedCountComesFromClearContentsNotAReRead() throws {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let source = try String(
+            contentsOf: root.appendingPathComponent("Sources/Cliphoard/Clipboard/WebPaste.swift"),
+            encoding: .utf8)
+        XCTAssertTrue(source.contains("let mine = pb.clearContents()"),
+                      "capture the count clearContents returns")
+        XCTAssertTrue(source.contains(".rewritten(mine)"),
+                      "and report THAT, not a fresh read")
+        XCTAssertFalse(source.contains(".rewritten(pb.changeCount)"),
+                       "re-reading the board after the write races with the user's next copy "
+                       + "and silently swallows it")
+    }
+
+    /// The expensive render must not run on the main actor. It is superlinear — 51ms at
+    /// 1200x800, 268ms at 2880x1800, 1200ms at 6016x3384 — so inline it froze the UI for
+    /// about a second on every full-screen grab on a 5K/6K display.
+    func testTheRenderIsOffTheMainActor() throws {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let web = try String(
+            contentsOf: root.appendingPathComponent("Sources/Cliphoard/Clipboard/WebPaste.swift"),
+            encoding: .utf8)
+        XCTAssertTrue(web.contains("nonisolated static func webSafePNG"),
+                      "the render is pure and must be callable off the main actor")
+        XCTAssertTrue(web.contains("Task.detached"),
+                      "renderWebSafePNG must actually leave the main actor")
+
+        let monitor = try String(
+            contentsOf: root.appendingPathComponent("Sources/Cliphoard/Clipboard/ClipboardMonitor.swift"),
+            encoding: .utf8)
+        guard let start = monitor.range(of: "if let pending = pendingWebSafe {") else {
+            return XCTFail("the pending-rewrite block was renamed")
+        }
+        let body = String(monitor[start.upperBound...].prefix(1200))
+        XCTAssertTrue(body.contains("await WebPaste.renderWebSafePNG"),
+                      "poll() must await the off-actor render rather than encoding inline; "
+                      + "a 6016x3384 grab took 1068ms synchronously")
+    }
+
+    /// Rendering off-actor widens the window between deciding and acting, so the guard that
+    /// makes that safe must remain the LAST statement before the clear.
+    func testTheChangeCountGuardIsStillImmediatelyBeforeTheClear() throws {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let source = try String(
+            contentsOf: root.appendingPathComponent("Sources/Cliphoard/Clipboard/WebPaste.swift"),
+            encoding: .utf8)
+        guard let guardRange = source.range(of: "guard pb.changeCount == expecting else { return .movedOn }"),
+              let clearRange = source.range(of: "let mine = pb.clearContents()") else {
+            return XCTFail("the guard or the clear was renamed")
+        }
+        let between = String(source[guardRange.upperBound..<clearRange.lowerBound])
+            .split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty && !$0.hasPrefix("//") }
+        XCTAssertTrue(between.isEmpty,
+                      "work crept in between the changeCount check and the clear: \(between). "
+                      + "Anything slow there re-opens the race the guard exists to close.")
     }
 }

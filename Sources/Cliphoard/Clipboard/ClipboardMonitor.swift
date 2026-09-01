@@ -96,6 +96,41 @@ final class ClipboardMonitor {
         ignoreChangeCount = NSPasteboard.general.changeCount
     }
 
+
+    /// The cheap, main-actor half of the web-safe rewrite. Split from the render so the
+    /// expensive encode never blocks the UI.
+    private func applyWebSafe(png: Data, expecting: Int) {
+        let pb = NSPasteboard.general
+        switch WebPaste.makeWebSafe(pb, png: png, expecting: expecting) {
+        case .rewritten(let newCount):
+            DebugLog.write("  → added public.png for web apps "
+                           + "(types now [\((pb.types ?? []).map(\.rawValue).joined(separator: ","))])")
+            lastChangeCount = newCount
+            ignoreChangeCount = newCount
+            return
+        case .restored(let restoredCount):
+            // The restore bumped the real changeCount. Recording it matters: without
+            // it, `guard count != lastChangeCount` below sees equality and returns
+            // without updating, so the NEXT tick treats the restored board as new
+            // content and captures a duplicate clip.
+            lastChangeCount = restoredCount
+            ignoreChangeCount = restoredCount
+            DebugLog.write("  → web-safe rewrite failed; pasteboard restored")
+            return
+        case .lost:
+            lastChangeCount = pb.changeCount
+            ignoreChangeCount = pb.changeCount
+            NSLog("Cliphoard: web-safe rewrite failed AND restore failed — "
+                  + "the clipboard may be empty")
+            DebugLog.write("  → web-safe rewrite LOST the pasteboard")
+            return
+        case .movedOn:
+            DebugLog.write("  → web-safe rewrite abandoned (a new copy arrived)")
+        case .notNeeded, .unsalvageable:
+            break
+        }
+    }
+
     private func poll() {
         let pb = NSPasteboard.general
         let count = pb.changeCount
@@ -105,34 +140,16 @@ final class ClipboardMonitor {
         if let pending = pendingWebSafe {
             pendingWebSafe = nil
             if pending.changeCount == count {
-                switch WebPaste.makeWebSafe(pb, image: pending.image, expecting: count) {
-                case .rewritten(let newCount):
-                    DebugLog.write("  → added public.png for web apps "
-                                   + "(types now [\((pb.types ?? []).map(\.rawValue).joined(separator: ","))])")
-                    lastChangeCount = newCount
-                    ignoreChangeCount = newCount
-                    return
-                case .restored:
-                    // The restore bumped the real changeCount. Recording it matters: without
-                    // it, `guard count != lastChangeCount` below sees equality and returns
-                    // without updating, so the NEXT tick treats the restored board as new
-                    // content and captures a duplicate clip.
-                    lastChangeCount = pb.changeCount
-                    ignoreChangeCount = pb.changeCount
-                    DebugLog.write("  → web-safe rewrite failed; pasteboard restored")
-                    return
-                case .lost:
-                    lastChangeCount = pb.changeCount
-                    ignoreChangeCount = pb.changeCount
-                    NSLog("Cliphoard: web-safe rewrite failed AND restore failed — "
-                          + "the clipboard may be empty")
-                    DebugLog.write("  → web-safe rewrite LOST the pasteboard")
-                    return
-                case .movedOn:
-                    DebugLog.write("  → web-safe rewrite abandoned (a new copy arrived)")
-                case .notNeeded, .unsalvageable:
-                    break
+                // Render OFF the main actor. It is superlinear — 51ms at 1200x800, 268ms at
+                // 2880x1800, 1200ms at 6016x3384 — so doing it inline froze the UI for about
+                // a second on every full-screen grab on a 5K/6K display. The pasteboard work
+                // that follows is cheap, and re-checks `count` immediately before clearing,
+                // so the longer gap is safe: a board that moved meanwhile is left alone.
+                Task { @MainActor [weak self] in
+                    guard let png = await WebPaste.renderWebSafePNG(from: pending.image) else { return }
+                    self?.applyWebSafe(png: png, expecting: count)
                 }
+                return
             }
         }
 
