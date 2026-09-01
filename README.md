@@ -97,7 +97,7 @@ you are not buying software you already have, you are funding the mission behind
 **local-first, secure tools that are genuinely useful and a pleasure to use**.
 
 Part of that mission is research, and some of it ships here: searching your clips *by meaning*
-runs on **ogma**, text models I trained from scratch and released under MIT (2.5M and 8.9M
+runs on **ogma**, text models I trained and distilled myself from open teachers (2.5M and 8.9M
 parameters), built around how much capability you can get per parameter rather than how much
 you can get by making everything bigger. Credit where due — reading text inside screenshots is
 Apple's Vision framework, and finding images from a description uses OpenVision-Tiny, openly
