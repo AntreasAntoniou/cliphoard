@@ -27,16 +27,16 @@ jobs:
         uses: actions/cache@v4
         with:
           path: tools/models
-          key: ogma-models-${{ hashFiles('tools/convert_ogma.py', 'tools/_dl.py', 'tools/restore-models.sh', 'tools/_compat.py', 'tools/requirements.txt') }}
+          key: models-v2-${{ hashFiles('tools/restore-models.sh', 'tools/pack-openvision.sh', 'tools/convert_openvision.py', 'tools/convert_ogma_libre.py', 'tools/convert_minilm.py', 'tools/_dl.py', 'tools/_compat.py', 'tools/requirements.txt') }}
           restore-keys: |
-            ogma-models-
+            models-v2-
 
       - name: Install conversion deps
         run: |
           python3 -m pip install --upgrade pip
           python3 -m pip install -r tools/requirements.txt
 
-      - name: Restore + convert ogma models (downloads from HuggingFace)
+      - name: Restore + convert on-device models (ogma + MiniLM from HuggingFace; OpenVision from the pinned zip)
         env:
           HF_HUB_DISABLE_TELEMETRY: '1'
         run: bash tools/restore-models.sh
@@ -44,13 +44,11 @@ jobs:
       - name: Verify artifacts + tokenizers
         run: |
           fail=0
-          for n in ogma-micro ogma-small; do
-            if [ ! -d "tools/models/$n.mlpackage" ]; then
-              echo "::error::missing tools/models/$n.mlpackage after restore"; fail=1
-            fi
-            if [ ! -f "tools/models/$n/tokenizer.json" ]; then
-              echo "::error::missing tools/models/$n/tokenizer.json (build-app.sh needs it)"; fail=1
-            fi
+          for n in open-ogma-micro open-ogma-small all-MiniLM-L6-v2 openvision-tiny-p8-text; do
+            [ -d "tools/models/$n.mlpackage" ] || { echo "::error::missing tools/models/$n.mlpackage after restore"; fail=1; }
+            [ -f "tools/models/$n/tokenizer.json" ] || { echo "::error::missing tools/models/$n/tokenizer.json (build-app.sh needs it)"; fail=1; }
           done
-          [ "$fail" -eq 0 ] && echo "✓ both ogma models restored, converted, and tokenized"
+          [ -d tools/models/openvision-tiny-p8-image.mlpackage ] || { echo "::error::missing openvision image tower"; fail=1; }
+          [ -f tools/models/openvision-tiny-p8-text/config.json ] || { echo "::error::missing openvision tokenizer config.json"; fail=1; }
+          [ "$fail" -eq 0 ] && echo "✓ ogma, MiniLM and OpenVision restored"
           exit $fail

@@ -46,9 +46,13 @@ brew install --cask antreasantoniou/tap/cliphoard
 
 ## Prerequisite: bundled models
 
-The ogma CoreML models (`tools/models/*.mlpackage`) are gitignored. For a
-reproducible CI build, commit them via **Git LFS** or restore them in a step
-before `Scripts/release.sh`. A local release uses whatever is in `tools/models/`.
+The bundled OpenVision-Tiny towers (`tools/models/openvision-tiny-p8-*.mlpackage` plus the
+`openvision-tiny-p8-text/` tokenizer folder) are gitignored. `tools/restore-models.sh`
+downloads them as one SHA-256-pinned zip (`openvision-tiny-p8.zip` on the `models-v1`
+release) into the exact layout `Scripts/build-app.sh` expects; `Scripts/release.sh` and
+`release.yml` run it before building, and `STRICT_BUNDLE=1` makes a missing tower fatal.
+To re-publish after a re-conversion: `tools/convert_openvision.py`, `tools/pack-openvision.sh`,
+upload the zip to `models-v1`, update `OPENVISION_ZIP_SHA256` in `tools/restore-models.sh`.
 
 ## Versioning
 

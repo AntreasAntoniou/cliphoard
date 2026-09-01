@@ -1,7 +1,7 @@
 """Convert OpenVision-Tiny (patch8/224) to two CoreML packages, with parity gates.
 
-Run inside the pinned env:
-    .venv-clip/bin/python tools/convert_openvision.py
+Run inside the pinned env (tools/requirements-openvision.txt on top of tools/requirements.txt):
+    python tools/convert_openvision.py [--out DIR] [--check]
 
 WHAT IS DELIBERATE HERE, because each one is a silent failure if got wrong:
 
@@ -54,10 +54,38 @@ from tqdm import tqdm
 
 REPO = "UCSC-VLAA/openvision-vit-tiny-patch8-224"
 HUB = f"hf-hub:{REPO}"
-OUT = Path(__file__).resolve().parent / "models"
+DEFAULT_OUT = Path(__file__).resolve().parent / "models"
+OUT = DEFAULT_OUT   # rebound by --out; convert()/check()/the size report all read this global
 SIGNATURE = "openvision-tiny-p8"
 CONTEXT = 80
 EMBED = 192
+# Upstream revision the shipped towers were converted from (HF HEAD, Apache-2.0).
+REVISION = "a25ea3a2427415c197fedd2b52af390bbb3ead81"
+# The text tower's tokenizer folder, at the path Scripts/build-app.sh reads
+# (tools/models/<text tower name>/). Four files are upstream's own, copied byte for byte;
+# the hashes are the shipped ones and a mismatch fails the conversion.
+TOKENIZER_FILES = {
+    "tokenizer.json":          "d241a60d5e8f04cc1b2b3e9ef7a4921b27bf526d9f6050ab90f9267a1f9e5c66",
+    "tokenizer_config.json":   "1f92c93d2e31974acffab86d48e80a9357acb18c68346c5472ef1d12c72d5d77",
+    "special_tokens_map.json": "b6d346be366a7d1d48332dbc9fdf3bf8960b5d879522b7799ddba59e76237ee3",
+    "vocab.txt":               "07eced375cec144d27c900241f3e339478dec958f92fddbc551f295c992038a3",
+}
+# The ONE hand-written file. swift-transformers' AutoTokenizer.from(modelFolder:) reads BOTH
+# tokenizer_config.json AND config.json and throws if either is absent; without it the embedder
+# loaded as nil and image search was silently dark. ensure_ascii=False is load-bearing: the
+# shipped file (sha256 below) contains an em dash, and the default escaping changes the bytes.
+TOKENIZER_CONFIG = {
+    "model_type": "bert",
+    "_comment": "Minimal config for swift-transformers' AutoTokenizer.from(modelFolder:), which reads BOTH tokenizer_config.json AND config.json and throws if either is absent. Without this file the embedder loaded as nil and logged 'clip: embedder unavailable' — the two towers were present and correct in the bundle, and the whole feature was dark because a 30-byte JSON file was missing. OpenVision's text tower uses the bert-base-uncased WordPiece vocabulary ([CLS]=101, [PAD]=0), which is what model_type names here.",
+    "vocab_size": 32000,
+    "max_position_embeddings": CONTEXT,
+}
+TOKENIZER_CONFIG_SHA256 = "34052afeafc09f0c7dcf7aa3a8f13c80a0e41ad3501ae21178bfda41006b032a"
+
+
+def sha256_of(path: Path) -> str:
+    import hashlib
+    return hashlib.sha256(path.read_bytes()).hexdigest()
 SIDE = 224
 IMAGENET_MEAN = [0.485, 0.456, 0.406]
 IMAGENET_STD = [0.229, 0.224, 0.225]
@@ -89,7 +117,7 @@ class TextTower(torch.nn.Module):
 
 def convert() -> dict:
     OUT.mkdir(parents=True, exist_ok=True)
-    steps = tqdm(total=6, desc="converting", unit="step")
+    steps = tqdm(total=7, desc="converting", unit="step")
 
     steps.set_description("loading checkpoint")
     model, _, preprocess = open_clip.create_model_and_transforms(HUB)
@@ -147,10 +175,25 @@ def convert() -> dict:
     )
     mlt.save(str(OUT / f"{SIGNATURE}-text.mlpackage"))
     steps.update(1)
+
+    steps.set_description("tokenizer folder")
+    from huggingface_hub import hf_hub_download
+    tok_dir = OUT / f"{SIGNATURE}-text"
+    tok_dir.mkdir(parents=True, exist_ok=True)
+    for fname, want in TOKENIZER_FILES.items():
+        shutil.copyfile(hf_hub_download(REPO, fname, revision=REVISION), tok_dir / fname)
+        got = sha256_of(tok_dir / fname)
+        assert got == want, f"{fname} from {REPO}@{REVISION} is {got}, expected {want}"
+    (tok_dir / "config.json").write_text(
+        json.dumps(TOKENIZER_CONFIG, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    got = sha256_of(tok_dir / "config.json")
+    assert got == TOKENIZER_CONFIG_SHA256, f"config.json is {got}, expected {TOKENIZER_CONFIG_SHA256}"
+    steps.update(1)
     steps.close()
 
     manifest = {
         "repo": REPO,
+        "upstream_revision": REVISION,
         "licence": "apache-2.0",
         "signature": f"{SIGNATURE}-img-{EMBED}-v1",
         "embed_dim": EMBED,
@@ -161,7 +204,26 @@ def convert() -> dict:
         "normalize_std": IMAGENET_STD,
         "l2_normalised_in_graph": True,
         "tokenizer": "bert-base-uncased wordpiece; [CLS]=101 pad=0",
+        "tokenizer_sha256": dict(TOKENIZER_FILES, **{"config.json": TOKENIZER_CONFIG_SHA256}),
+        "weight_sha256": {
+            "image": sha256_of(OUT / f"{SIGNATURE}-image.mlpackage/Data/com.apple.CoreML/weights/weight.bin"),
+            "text": sha256_of(OUT / f"{SIGNATURE}-text.mlpackage/Data/com.apple.CoreML/weights/weight.bin"),
+        },
     }
+    # text_mean is CARRIED OVER, never recomputed: the 90-noun x 5-template generator that
+    # produced it was never committed (CLIPTextMean.swift's "regenerate with this script" is
+    # wrong until it is). Overwriting the manifest without it would silently drop the field.
+    for prior in (OUT / f"{SIGNATURE}-manifest.json", DEFAULT_OUT / f"{SIGNATURE}-manifest.json"):
+        if prior.exists():
+            old = json.loads(prior.read_text())
+            if "text_mean" in old:
+                manifest["text_mean"] = old["text_mean"]
+                manifest["text_mean_note"] = old.get("text_mean_note", "")
+                break
+    else:
+        print("WARNING: no prior manifest with text_mean found — the manifest will lack it", file=sys.stderr)
+    if "text_mean" not in manifest:
+        print("WARNING: text_mean absent from the written manifest", file=sys.stderr)
     (OUT / f"{SIGNATURE}-manifest.json").write_text(json.dumps(manifest, indent=2))
     return manifest
 
@@ -251,7 +313,10 @@ def check() -> int:
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--check", action="store_true", help="run parity gates only")
+    ap.add_argument("--out", default=str(DEFAULT_OUT),
+                    help="output directory (default tools/models). Use a scratch dir to prove a run without touching the deployed set")
     args = ap.parse_args()
+    OUT = Path(args.out).resolve()
     if args.check:
         sys.exit(check())
     manifest = convert()

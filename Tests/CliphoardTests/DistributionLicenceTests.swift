@@ -1,4 +1,5 @@
 import XCTest
+import CryptoKit
 @testable import Cliphoard
 
 /// The licence artefacts, pinned to what actually ships.
@@ -92,18 +93,37 @@ final class DistributionLicenceTests: XCTestCase {
 
     // MARK: - LICENSE
 
-    /// `LICENSE` must be unmodified MIT. Appending to it made GitHub report the repository as
-    /// `NOASSERTION` — "Other" in the sidebar — while the README badge and the site both said
-    /// MIT. An MIT project that machine-reads as unlicensed is a real misstatement, and it is
-    /// the same defect class as the one being fixed, pointing the other way.
+    /// `LICENSE` must be canonical MIT, byte for byte, with only the holder line ours.
+    /// Anchoring one end let a withdrawn NC appendix pass when prepended ABOVE "MIT License";
+    /// a hash of the body with line 3 masked catches an edit anywhere, and the same constant
+    /// is pinned in Scripts/verify-bundle.sh, the only guard on the CI release path.
+    /// Appending to it made GitHub report the repository as `NOASSERTION` — "Other" in the
+    /// sidebar — while the README badge and the site both said MIT.
+    static let mitBodySHA256 = "ac483bb6267e16aac1620af5d09a1ccd94c3bbab762ac1b3ee391fe18021deae"
+
     func testTheLicenceIsUnmodifiedMIT() throws {
         let licence = try read("LICENSE")
-        XCTAssertTrue(licence.contains("MIT License"), "LICENSE is not MIT any more")
-        XCTAssertTrue(licence.trimmingCharacters(in: .whitespacesAndNewlines)
-                        .hasSuffix("DEALINGS IN THE\nSOFTWARE."),
-                      "something is appended after the MIT text. Automated licence detection "
-                      + "fails on a modified body, so the repo reads as NOASSERTION. Third-"
-                      + "party facts belong in THIRD-PARTY-NOTICES.md, which is their one home.")
+        XCTAssertTrue(licence.hasPrefix("MIT License\n\nCopyright (c) "),
+                      "LICENSE does not START with the MIT header — something was prepended")
+        XCTAssertTrue(licence.hasSuffix("DEALINGS IN THE\nSOFTWARE.\n"),
+                      "something is appended after the MIT text")
+        var lines = licence.components(separatedBy: "\n")
+        XCTAssertEqual(lines.count, 22,
+                       "canonical MIT is 21 lines plus a trailing newline, got \(lines.count - 1) lines")
+        XCTAssertEqual(licence.utf8.count, 1073,
+                       "canonical MIT with our holder line is 1073 bytes, got \(licence.utf8.count)")
+        guard lines.count > 3 else { return XCTFail("LICENSE is too short to be MIT") }
+        XCTAssertNotNil(lines[2].range(of: #"^Copyright \(c\) \d{4}(-\d{4})? Antreas Antoniou$"#,
+                                       options: .regularExpression),
+                        "line 3 is not the plain copyright line: '\(lines[2])'")
+        lines[2] = "@HOLDER@"
+        let digest = SHA256.hash(data: Data(lines.joined(separator: "\n").utf8))
+            .map { String(format: "%02x", $0) }.joined()
+        XCTAssertEqual(digest, Self.mitBodySHA256,
+                       "LICENSE body is not canonical MIT (masked-holder sha256 \(digest)). "
+                       + "Third-party facts belong in THIRD-PARTY-NOTICES.md, which is their "
+                       + "one home; a modified body also makes GitHub read the repo as "
+                       + "NOASSERTION. Compare: diff LICENSE .build/checkouts/Jinja/LICENSE")
         for name in try bundledModels().union(DeepSearchLevel.allCases.compactMap(\.modelName)) {
             XCTAssertFalse(licence.contains(name),
                            "LICENSE mentions '\(name)'. A second copy of a fact that lives in "
@@ -239,13 +259,32 @@ final class DistributionLicenceTests: XCTestCase {
         }
     }
 
-    /// The notices must carry the upstream copyright line for each MIT-licensed linked
-    /// package, verbatim. MIT's condition is the notice itself, not a mention of the licence.
-    func testLinkedMITPackagesCarryTheirUpstreamCopyright() throws {
-        let notices = try read("THIRD-PARTY-NOTICES.md")
+    /// What a READER sees: the notices with HTML comments removed. The distribution manifest
+    /// lives inside one and carries the same copyright lines as the visible sections, so a
+    /// raw `contains` on the whole file stayed green with an entire visible section deleted.
+    private func visible(_ markdown: String) -> String {
+        markdown.replacingOccurrences(of: "<!--[\\s\\S]*?-->", with: "",
+                                      options: .regularExpression)
+    }
+
+    /// The visible `### <name>` section body: from its heading to the next `##`/`###` heading.
+    private func visibleSection(named name: String, in markdown: String) -> String? {
+        for part in visible(markdown).components(separatedBy: "\n### ").dropFirst() {
+            let heading = String(part.prefix(while: { $0 != "\n" }))
+            guard heading.lowercased().contains(name.lowercased()) else { continue }
+            return part.components(separatedBy: "\n## ").first ?? part
+        }
+        return nil
+    }
+
+    /// Each MIT-licensed linked package must have its upstream LICENSE reproduced verbatim in
+    /// the VISIBLE part of the notices, inside its own section. MIT's condition is the
+    /// copyright notice AND the permission notice, not a mention of the licence.
+    func testLinkedMITPackagesReproduceTheirUpstreamLicenceVisibly() throws {
+        let notices = try read("THIRD-PARTY-NOTICES.md")   // manifest lines are INSIDE the comment: parse the raw file
         let checkouts = root.appendingPathComponent(".build/checkouts")
         var checked = 0
-        for line in try read("THIRD-PARTY-NOTICES.md").split(separator: "\n")
+        for line in notices.split(separator: "\n")
                 where line.hasPrefix("linked:") && line.contains("licence: MIT") {
             guard let url = line.split(separator: "|").first?
                     .replacingOccurrences(of: "linked:", with: "")
@@ -261,16 +300,63 @@ final class DistributionLicenceTests: XCTestCase {
                         + "unreadable — cannot confirm its notice is reproduced")
                 continue
             }
-            guard let copyright = text.split(separator: "\n")
-                    .first(where: { $0.hasPrefix("Copyright") }) else { continue }
-            XCTAssertTrue(notices.contains(copyright),
-                          "\(name) is MIT and linked into the binary, but its upstream "
-                          + "copyright line '\(copyright)' does not appear in THIRD-PARTY-"
-                          + "NOTICES.md. MIT requires the notice travel with every copy.")
+            guard let section = visibleSection(named: name, in: notices) else {
+                XCTFail("\(name) is MIT and linked into the binary, but THIRD-PARTY-NOTICES.md "
+                        + "has no VISIBLE '### \(name)' section — a line inside the manifest "
+                        + "HTML comment is not a notice a reader can see")
+                continue
+            }
+            XCTAssertTrue(section.contains(text.trimmingCharacters(in: .whitespacesAndNewlines)),
+                          "\(name)'s visible section does not reproduce its upstream LICENSE "
+                          + "verbatim (copyright line, permission paragraph and warranty). MIT "
+                          + "requires the notice travel with every copy.")
             checked += 1
         }
         XCTAssertGreaterThan(checked, 0,
                              "no linked MIT package was checked — the manifest parse is broken, "
                              + "so this test would pass while attributing nothing")
+    }
+
+    /// The models the app BUNDLES are gitignored, so a clean clone can only build the shipped
+    /// bundle if `tools/restore-models.sh` has an arm for each one, pins what it downloads,
+    /// and the release entrypoints ask it for them. A CI-cut DMG shipped ZERO models because
+    /// none of that was true and nothing said so. Derived from the scripts, never restated.
+    func testEveryBundledModelIsRestorableFromAPinnedSource() throws {
+        let bundled = try bundledModels()
+        let restore = try code("tools/restore-models.sh")
+        // `pattern)` case arms, split on `|`. The bare `*)` legacy arm matches everything and
+        // would make this vacuous, so it is excluded.
+        let patterns: [String] = restore.flatMap { line -> [String] in
+            let t = line.trimmingCharacters(in: .whitespaces)
+            guard let close = t.firstIndex(of: ")") else { return [] }
+            let head = String(t[..<close])
+            guard !head.isEmpty,
+                  head.allSatisfy({ $0.isLetter || $0.isNumber || "-_.*|".contains($0) })
+            else { return [] }
+            return head.split(separator: "|").map(String.init).filter { $0 != "*" }
+        }
+        XCTAssertFalse(patterns.isEmpty, "no case arms parsed from restore-models.sh — the parse is broken")
+        for model in bundled {
+            XCTAssertTrue(patterns.contains { fnmatch($0, model, 0) == 0 },
+                          "tools/restore-models.sh has no case arm matching '\(model)' — a clean "
+                          + "clone cannot restore a model the app bundles, so a CI-cut DMG ships without it")
+        }
+        XCTAssertTrue(restore.contains {
+            $0.range(of: #"^OPENVISION_ZIP_SHA256="[0-9a-f]{64}"$"#, options: .regularExpression) != nil
+        }, "restore-models.sh downloads the bundled OpenVision zip but pins no 64-hex "
+           + "OPENVISION_ZIP_SHA256 — an unpinned download is not a reproducible bundle")
+        for script in ["Scripts/release.sh", ".github/workflows/release.yml"] {
+            let restored: [Set<String>] = try code(script).compactMap { line in
+                guard let r = line.range(of: #"(?<![A-Z_])MODELS="([^"]*)""#,
+                                         options: .regularExpression) else { return nil }
+                let body = line[r].dropFirst("MODELS=\"".count).dropLast()
+                return Set(body.split(separator: " ").map(String.init))
+            }
+            XCTAssertEqual(restored.count, 1,
+                           "\(script): expected exactly one MODELS=\"…\" restore list, found \(restored.count)")
+            XCTAssertTrue(bundled.isSubset(of: restored.first ?? []),
+                          "\(script) restores \(restored.first ?? []) but the app bundles "
+                          + "\(bundled) — the release entrypoint must restore every bundled model before building")
+        }
     }
 }

@@ -3,7 +3,7 @@ import XCTest
 
 /// Where each model tier is fetched from, and why the HuggingFace path has an extra request.
 ///
-/// The ogma models are ours, published at `axiotic/ogma-*`. Serving them from a GitHub
+/// The ogma models are ours, published at `axiotic/open-ogma-*` (MIT). Serving them from a GitHub
 /// release made real adoption of a model we released invisible on the platform people
 /// actually look at to judge whether a model is used. Moving them to HuggingFace fixes that
 /// — but only if the install path touches the file HuggingFace COUNTS.
@@ -255,14 +255,19 @@ final class OgmaLicenceSourceTests: XCTestCase {
     }
 
     /// The file's own prose must not point at the NonCommercial repos either — the header
-    /// claiming `axiotic/ogma-*` is what made the wrong mapping look intentional.
+    /// claiming the bare CC-BY-NC repo pattern is what made the wrong mapping look intentional.
     func testTheDocCommentDoesNotAdvertiseTheNonCommercialRepos() throws {
         let root = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        // Built from two halves so this file's own source cannot satisfy its own check.
+        let needle = "`axiotic/" + "ogma-*`"
         let source = try String(
             contentsOf: root.appendingPathComponent("Sources/Cliphoard/Search/ModelAssets.swift"),
             encoding: .utf8)
-        XCTAssertFalse(source.contains("`axiotic/ogma-*`"),
+        XCTAssertFalse(source.contains(needle),
                        "the header still advertises the CC-BY-NC repos as ours-and-permissive")
+        let thisFile = try String(contentsOf: URL(fileURLWithPath: #filePath), encoding: .utf8)
+        XCTAssertFalse(thisFile.contains(needle),
+                       "this test file's own header still says the models are published at the CC-BY-NC repos")
     }
 }

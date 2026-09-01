@@ -1,0 +1,10 @@
+# Extras for tools/convert_openvision.py on top of the frozen base stack (torch 2.7.1 /
+# coremltools 9.0 / numpy 1.26.4 in requirements.txt). These are the exact versions of the
+# env that produced the shipped towers (2026-08-17). CI never installs this file: the bundled
+# OpenVision set is a pinned download (tools/restore-models.sh), not a CI conversion.
+#   python -m pip install -r tools/requirements-openvision.txt
+-r requirements.txt
+open_clip_torch==3.3.0
+torchvision==0.22.1
+timm==1.0.28
+pillow==12.3.0

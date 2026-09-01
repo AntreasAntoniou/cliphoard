@@ -53,15 +53,19 @@ ENTITLEMENTS="Scripts/Cliphoard.entitlements"
 DEVID="${DEVID:-}"                 # Developer ID Application identity (empty = local/self-signed)
 NOTARY_PROFILE="${NOTARY_PROFILE:-}"   # notarytool keychain profile (empty = skip notarization)
 
-# 1. Ensure the DEFAULT-tier models exist (restore if missing), then build a
-# LEAN app: ogma micro/small + MiniLM bundled (~65MB of models). The retired
-# EmbeddingGemma tier no longer exists and its release asset was deleted — do not
-# reintroduce either without reading THIRD-PARTY-NOTICES.md. A release without
-# the default models would ship "basic matching only" — hard-fail instead.
-say "Restoring default-tier models…"
-MODELS="open-ogma-micro open-ogma-small all-MiniLM-L6-v2" bash tools/restore-models.sh
-for m in open-ogma-micro open-ogma-small all-MiniLM-L6-v2; do
+# 1. Restore the models the DMG actually BUNDLES: the two OpenVision-Tiny towers (34.6 MB),
+# downloaded by tools/restore-models.sh as one SHA-256-pinned zip from the models-v1 release.
+# ogma and MiniLM are NOT bundled (they download on demand at runtime) and are not restored
+# here. A release without the towers would ship with image search permanently dark while
+# THIRD-PARTY-NOTICES.md says they are BUNDLED — hard-fail instead. The retired EmbeddingGemma
+# tier and its asset are gone; do not reintroduce either without reading THIRD-PARTY-NOTICES.md.
+say "Restoring bundled models…"
+MODELS="openvision-tiny-p8-image openvision-tiny-p8-text" bash tools/restore-models.sh
+for m in openvision-tiny-p8-image openvision-tiny-p8-text; do
     [ -d "tools/models/$m.mlpackage" ] || { echo "::error::missing model $m — release aborted" >&2; exit 1; }
+done
+for f in tokenizer.json config.json; do
+    [ -f "tools/models/openvision-tiny-p8-text/$f" ] || { echo "::error::missing OpenVision tokenizer file $f — release aborted" >&2; exit 1; }
 done
 say "Building Cliphoard.app…"
 # The SHIPPED set. Previously this bundled ogma AND MiniLM — the latter directly

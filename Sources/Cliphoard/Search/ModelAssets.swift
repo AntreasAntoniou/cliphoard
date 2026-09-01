@@ -182,7 +182,7 @@ enum ModelAssets {
             // silently accepted whatever bytes the network returned — the integrity guarantee
             // the pin exists to provide, quietly voided by the branch that handles its own
             // absence. Every name that can reach here is pinned today
-            // (`DeepSearchLevel.allCases`, checked by `DistributionLicenceTests`), so this is
+            // (`DeepSearchLevel.allCases`, checked by `OgmaLicenceSourceTests.testEveryReachableTierIsPinned` in AssetSourceTests.swift), so this is
             // behaviour-preserving; it stays that way because adding a tier without a pin now
             // fails loudly instead of downgrading everyone who installs it.
             try? fm.removeItem(at: tmp)

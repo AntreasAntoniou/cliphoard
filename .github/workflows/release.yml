@@ -12,12 +12,11 @@ name: Release
 #   APPLE_TEAM_ID         your 10-char Team ID
 #   APPLE_APP_PASSWORD    an app-specific password from appleid.apple.com
 #
-# NOTE: the bundled OpenVision CoreML towers are gitignored (.mlpackage files are large
-# binaries produced locally). For CI to build a working app, the "Restore on-device
-# models" step below downloads the public ogma PyTorch weights from HuggingFace and
-# converts them to CoreML via tools/restore-models.sh — BEFORE Scripts/release.sh
-# runs — so the released app keeps its on-device semantic-search feature instead of
-# silently falling back to the weak HashingEmbedder.
+# NOTE: the bundled OpenVision CoreML towers are gitignored (large binaries). For CI to build
+# a working app, the "Restore bundled models" step below runs tools/restore-models.sh, which
+# downloads the SHA-256-pinned openvision-tiny-p8.zip (both towers + tokenizer folder) from
+# the models-v1 release — BEFORE Scripts/release.sh runs — so the released app ships image
+# search instead of silently shipping ZERO models while THIRD-PARTY-NOTICES.md says BUNDLED.
 
 on:
   push:
@@ -37,37 +36,39 @@ jobs:
         with:
           python-version: '3.11'
 
-      # Cache the restored/converted models keyed on the conversion inputs, so we
-      # only re-download from HuggingFace + re-convert when the tooling changes.
+      # Cache the restored models keyed on the restore inputs (the pin lives in
+      # restore-models.sh, so a re-published zip invalidates it). The v2 prefix discards the
+      # stale ogma-models-* caches, which can hold a pre-retirement EmbeddingGemma package.
       - name: Cache on-device models
         uses: actions/cache@v4
         with:
           path: tools/models
-          key: ogma-models-${{ hashFiles('tools/convert_ogma.py', 'tools/_dl.py', 'tools/restore-models.sh', 'tools/_compat.py', 'tools/requirements.txt') }}
+          key: models-v2-${{ hashFiles('tools/restore-models.sh', 'tools/pack-openvision.sh', 'tools/convert_openvision.py', 'tools/convert_ogma_libre.py', 'tools/convert_minilm.py', 'tools/_dl.py', 'tools/_compat.py', 'tools/requirements.txt') }}
           restore-keys: |
-            ogma-models-
+            models-v2-
 
-      - name: Restore on-device models
+      - name: Restore bundled models
         env:
           HF_HUB_DISABLE_TELEMETRY: '1'
         run: |
           python3 -m pip install --upgrade pip
-          # Conversion stack centralized in tools/requirements.txt (also exercised
-          # cert-free by .github/workflows/models.yml).
+          # Conversion stack (tools/requirements.txt) is installed for parity with models.yml;
+          # the bundled OpenVision pair below is a pinned download and needs no Python.
           python3 -m pip install -r tools/requirements.txt
-          # Lean release set. This list is now also build-app.sh's default, so it is
-          # belt-and-braces rather than the only guard — deliberately, because the
-          # runner's model cache can restore a pre-retirement EmbeddingGemma package
-          # that must not reach the DMG.
-          MODELS="open-ogma-micro open-ogma-small all-MiniLM-L6-v2" bash tools/restore-models.sh
+          # Only what the DMG bundles. BUNDLE_MODELS in build-app.sh/release.sh is the
+          # allowlist that keeps a cache-restored EmbeddingGemma package out of the DMG.
+          MODELS="openvision-tiny-p8-image openvision-tiny-p8-text" bash tools/restore-models.sh
 
       - name: Verify bundled models are present
         run: |
-          for m in open-ogma-micro open-ogma-small all-MiniLM-L6-v2; do
+          for m in openvision-tiny-p8-image openvision-tiny-p8-text; do
             if [ ! -d "tools/models/$m.mlpackage" ]; then
               echo "::error::missing model $m after restore. See tools/restore-models.sh."
               exit 1
             fi
+          done
+          for f in tokenizer.json config.json; do
+            [ -f "tools/models/openvision-tiny-p8-text/$f" ] || { echo "::error::missing OpenVision tokenizer file $f"; exit 1; }
           done
 
       - name: Set up signing keychain
