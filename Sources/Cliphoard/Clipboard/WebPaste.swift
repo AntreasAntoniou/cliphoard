@@ -98,8 +98,29 @@ enum WebPaste {
         !type.rawValue.contains(" ")
     }
 
-    /// Salvage every declared type, then rewrite the board as ONE item carrying all of them
-    /// verbatim plus a web-safe PNG.
+    /// Salvage the item's types, then rewrite the board as ONE item carrying them plus a
+    /// web-safe PNG.
+    ///
+    /// WHAT ACTUALLY SURVIVES, measured rather than assumed — an earlier version of this
+    /// comment claimed "all types verbatim" and that was wrong:
+    ///
+    ///   * Types ON THE ITEM survive byte-for-byte. For a screenshot that is `public.heic`,
+    ///     so an app that asks for HEIC still gets the original bytes.
+    ///   * Pasteboard-level flavours are NOT preserved. They were always synthesised by the
+    ///     translation layer, and afterwards they are re-synthesised from what is now on the
+    ///     item. Since the item gains an 8-bit sRGB PNG, `public.tiff` is derived from that.
+    ///
+    /// That is a REAL FIDELITY COST and it should not be discovered by surprise. Measured on
+    /// an HDR screenshot:
+    ///
+    ///     before   public.tiff  12,583,842 bytes  16-bit  Display P3
+    ///     after    public.tiff   3,186,516 bytes   8-bit  sRGB
+    ///
+    /// So an app requesting TIFF — Preview and Keynote typically do — receives an SDR image
+    /// where it previously received a wide-gamut one. The original remains available as
+    /// `public.heic` for anything that asks. The trade is deliberate: without it, pasting a
+    /// screenshot into any browser-based compose box silently does nothing at all, which is
+    /// the bug this exists to fix.
     ///
     /// ORDER IS THE WHOLE SAFETY ARGUMENT: nothing is cleared until every original byte is in
     /// hand and the replacement item is fully built. `Paster` had the opposite order and it
@@ -131,9 +152,17 @@ enum WebPaste {
         }
         guard let png = webSafePNG(from: image) else { return .unsalvageable }
 
+        // `setData` reports whether the flavour was accepted. Ignoring it would let a type
+        // be silently dropped while the outcome still read `.rewritten`.
         let item = NSPasteboardItem()
-        for (type, data) in salvaged where isWritableUTI(type) { item.setData(data, forType: type) }
-        item.setData(png, forType: .png)
+        var dropped: [String] = []
+        for (type, data) in salvaged where isWritableUTI(type) {
+            if !item.setData(data, forType: type) { dropped.append(type.rawValue) }
+        }
+        guard item.setData(png, forType: .png) else { return .unsalvageable }
+        if !dropped.isEmpty {
+            NSLog("Cliphoard: pasteboard flavours dropped during rewrite: \(dropped.joined(separator: ","))")
+        }
 
         pb.clearContents()
         if pb.writeObjects([item]) { return .rewritten(pb.changeCount) }

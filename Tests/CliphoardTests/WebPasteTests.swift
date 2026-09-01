@@ -253,3 +253,55 @@ final class WebPasteItemLevelTests: XCTestCase {
                        + "synthesised flavours it should never have touched")
     }
 }
+
+/// What survives a rewrite — pinned, because the first version of this code claimed "all
+/// types verbatim" and that was measurably false.
+///
+/// Types on the ITEM survive byte-for-byte. Pasteboard-level flavours do not: they were
+/// synthesised all along, and afterwards they are re-synthesised from whatever is now on the
+/// item. Measured on an HDR screenshot, `public.tiff` went from 12,583,842 bytes of 16-bit
+/// Display P3 to 3,186,516 bytes of 8-bit sRGB, because it is now derived from the PNG we
+/// added. The original survives as `public.heic` for anything that asks for it.
+@MainActor
+final class WebPasteFidelityTests: XCTestCase {
+    func testItemTypesSurviveByteForByteAndPNGIsAdded() throws {
+        let pb = NSPasteboard(name: .init("io.antreas.cliphoard.tests.fid.\(UUID().uuidString)"))
+        defer { pb.releaseGlobally() }
+
+        // A screenshot's shape: ONE item whose only flavour is heic.
+        let heic = Data((0..<4096).map { UInt8($0 % 251) })
+        pb.clearContents()
+        let seed = NSPasteboardItem()
+        seed.setData(heic, forType: .init("public.heic"))
+        XCTAssertTrue(pb.writeObjects([seed]))
+        XCTAssertEqual(pb.pasteboardItems?.first?.types.map(\.rawValue), ["public.heic"])
+
+        let img = NSImage(size: .init(width: 12, height: 12))
+        img.lockFocus(); NSColor.systemIndigo.setFill()
+        NSRect(x: 0, y: 0, width: 12, height: 12).fill(); img.unlockFocus()
+        guard case .rewritten = WebPaste.makeWebSafe(pb, image: img) else {
+            return XCTFail("expected a rewrite")
+        }
+
+        let after = try XCTUnwrap(pb.pasteboardItems?.first)
+        XCTAssertEqual(after.data(forType: .init("public.heic")), heic,
+                       "the ORIGINAL heic must survive byte-for-byte — it is the only copy "
+                       + "of the wide-gamut original left once tiff is re-derived from PNG")
+        XCTAssertNotNil(after.data(forType: .png),
+                        "and the PNG must be on the ITEM, since WebKit reads at item level")
+    }
+
+    /// The doc must not re-acquire the overstatement it was corrected for.
+    func testTheDocDoesNotClaimEverythingSurvivesVerbatim() throws {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let source = try String(
+            contentsOf: root.appendingPathComponent("Sources/Cliphoard/Clipboard/WebPaste.swift"),
+            encoding: .utf8)
+        XCTAssertTrue(source.contains("FIDELITY COST"),
+                      "the fidelity trade must stay documented where the code lives; it was "
+                      + "found by a verifier after the original claim shipped, not before")
+        XCTAssertTrue(source.contains("re-synthesised"),
+                      "the doc must say pasteboard-level flavours are re-derived, not kept")
+    }
+}
