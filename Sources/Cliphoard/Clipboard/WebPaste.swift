@@ -107,13 +107,26 @@ enum WebPaste {
     /// audit that named it (AUDIT.md:164). Not repeating it here.
     @discardableResult
     static func makeWebSafe(_ pb: NSPasteboard, image: NSImage) -> Outcome {
-        let declared = pb.types ?? []
+        // ITEM level, not pasteboard level, for two independent reasons.
+        //
+        // CORRECTNESS: `pb.types` is a superset containing flavours the translation layer
+        // synthesises on demand. Gating on it would let a synthesised PNG report "already
+        // pasteable" for a board whose ITEM carries only heic — masking the exact bug this
+        // exists to fix, since WebKit reads at item level.
+        //
+        // COST: reading `pb.data(forType: .tiff)` on a heic item MATERIALISES the synthesised
+        // TIFF — measured at 12.5 MB from a 31 KB item. Salvaging at pasteboard level would
+        // force that expansion and then write it back, on the 0.4s poll path, for every
+        // screenshot. The item carries only what the writer actually wrote, and the
+        // synthesised flavours regenerate for free after our write.
+        guard let source = pb.pasteboardItems?.first else { return .notNeeded }
+        let declared = source.types
         guard needsWebSafeCopy(types: declared.map(\.rawValue)) else { return .notNeeded }
 
         // Salvage FIRST. A nil read means a live promise we cannot reproduce — abort whole.
         var salvaged: [(NSPasteboard.PasteboardType, Data)] = []
         for type in declared {
-            guard let data = pb.data(forType: type) else { return .unsalvageable }
+            guard let data = source.data(forType: type) else { return .unsalvageable }
             salvaged.append((type, data))
         }
         guard let png = webSafePNG(from: image) else { return .unsalvageable }

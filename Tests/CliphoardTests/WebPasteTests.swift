@@ -185,3 +185,71 @@ final class WebPasteLegacyTypeTests: XCTestCase {
         XCTAssertTrue(WebPaste.isWritableUTI(.png))
     }
 }
+
+/// The gate and the salvage must read the ITEM, not the pasteboard.
+///
+/// `pb.types` is a superset: the translation layer synthesises flavours on demand. Two things
+/// go wrong if you trust it. A synthesised PNG would report "already pasteable" for a board
+/// whose item carries only heic — masking the very bug this fixes, because WebKit reads at
+/// item level. And reading a synthesised `public.tiff` MATERIALISES it: measured at 12.5 MB
+/// from a 31 KB item, which would then be written back on every screenshot.
+@MainActor
+final class WebPasteItemLevelTests: XCTestCase {
+    private var pb: NSPasteboard!
+    override func setUp() {
+        super.setUp()
+        pb = NSPasteboard(name: .init("io.antreas.cliphoard.tests.item.\(UUID().uuidString)"))
+    }
+    override func tearDown() { pb.releaseGlobally(); pb = nil; super.tearDown() }
+
+    /// A PNG-only item makes the pasteboard advertise TIFF it does not itself hold. If the
+    /// implementation salvaged the pasteboard's list it would copy that phantom.
+    func testThePasteboardAdvertisesMoreThanTheItemHolds() throws {
+        let img = NSImage(size: .init(width: 24, height: 24))
+        img.lockFocus(); NSColor.orange.setFill()
+        NSRect(x: 0, y: 0, width: 24, height: 24).fill(); img.unlockFocus()
+        let png = try XCTUnwrap(
+            NSBitmapImageRep(data: try XCTUnwrap(img.tiffRepresentation))?
+                .representation(using: .png, properties: [:]))
+
+        pb.clearContents()
+        let item = NSPasteboardItem()
+        item.setData(png, forType: .png)
+        XCTAssertTrue(pb.writeObjects([item]))
+
+        XCTAssertEqual(pb.pasteboardItems?.first?.types.map(\.rawValue), ["public.png"],
+                       "the item holds exactly what was written")
+        XCTAssertTrue((pb.types ?? []).contains(.tiff),
+                      "yet the pasteboard advertises a TIFF nobody wrote — synthesised on "
+                      + "demand. Salvaging at this level copies phantoms and forces their "
+                      + "materialisation.")
+    }
+
+    func testSalvageReadsTheItemNotThePasteboard() throws {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let source = try String(
+            contentsOf: root.appendingPathComponent("Sources/Cliphoard/Clipboard/WebPaste.swift"),
+            encoding: .utf8)
+        guard let start = source.range(of: "static func makeWebSafe(") else {
+            return XCTFail("makeWebSafe was renamed")
+        }
+        let body = String(source[start.upperBound...])
+        XCTAssertTrue(body.contains("pb.pasteboardItems?.first"),
+                      "the gate and salvage must read the ITEM; reading pb.types lets a "
+                      + "synthesised PNG mask the bug and forces a 12.5MB TIFF expansion")
+        guard let salvage = body.range(of: "salvaged.append(") else {
+            return XCTFail("no salvage loop")
+        }
+        // Strip comment lines first. The doc comment above the salvage loop EXPLAINS the
+        // pasteboard-level read it is warning against, and a substring search cannot tell
+        // prose from a call — the trap ForgetOrderingTests documents, hit again here.
+        let upToSalvage = String(body[..<salvage.lowerBound])
+            .split(separator: "\n", omittingEmptySubsequences: false)
+            .filter { !$0.trimmingCharacters(in: .whitespaces).hasPrefix("//") }
+            .joined(separator: "\n")
+        XCTAssertFalse(upToSalvage.contains("pb.data(forType:"),
+                       "salvage still reads through the PASTEBOARD, which materialises "
+                       + "synthesised flavours it should never have touched")
+    }
+}
