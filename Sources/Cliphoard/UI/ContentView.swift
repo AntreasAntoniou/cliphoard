@@ -193,17 +193,6 @@ struct ContentView: View {
                 withAnimation(.easeIn(duration: 0.25)) { showPasteConfirm = false }
             }
         }
-        .sheet(item: $model.inspectedItem, onDismiss: { model.closeInspector() }) { item in
-            ClipDetailView(
-                item: item,
-                store: store,
-                focusTags: model.inspectorFocusTags,
-                onPaste: { model.onPaste?(item, false) },
-                onCopy: { model.onCopy?(item) },
-                onClose: { model.closeInspector() },
-                onInspectOther: { model.inspect($0) }
-            )
-        }
     }
 
     // MARK: Paste status

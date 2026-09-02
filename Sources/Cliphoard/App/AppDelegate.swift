@@ -28,6 +28,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private lazy var model = PanelViewModel(store: store)
     private let pasteStatus = PasteStatus()
     private let panel = FloatingPanel()
+    private let inspector = InspectorWindowController()
     private let hotKey = HotKey()
 
     private var statusItem: NSStatusItem!
@@ -210,13 +211,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             NSApp.activate(ignoringOtherApps: true)
             self.panel.makeKeyAndOrderFront(nil)
         }
+        inspector.onClose = { [weak self] in self?.model.closeInspector() }
+        inspector.panel.onCancel = { [weak self] in self?.model.closeInspector() }
+        model.onInspectorChange = { [weak self] item in
+            guard let self else { return }
+            guard let item else {
+                guard self.inspector.isPresented else { return }
+                self.inspector.dismiss()
+                if self.isVisible, !self.isClosing { self.panel.makeKeyAndOrderFront(nil) }
+                return
+            }
+            let view = ClipDetailView(item: item, store: self.store, focusTags: self.model.inspectorFocusTags,
+                onPaste: { [model] in model.onPaste?(item, false) }, onCopy: { [model] in model.onCopy?(item) },
+                onClose: { [model] in model.closeInspector() }, onInspectOther: { [model] in model.inspect($0) })
+            self.inspector.present(AnyView(view), host: self.panel.frame,
+                                   visible: (self.panel.screen ?? NSScreen.main)?.visibleFrame ?? .zero)
+        }
         pasteStatus.onOpenAccessibility = { [weak self] in self?.openAccessibilitySettings() }
         panel.setContent { [model, store, pasteStatus] in
             ContentView(model: model, store: store, pasteStatus: pasteStatus)
         }
 
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            guard let self, self.panel.isKeyWindow else { return event }
+            guard let self else { return event }
+            if event.keyCode == 53, self.inspector.panel.isKeyWindow { self.model.closeInspector(); return nil }
+            guard self.panel.isKeyWindow else { return event }
             return self.handleKey(event)
         }
     }
@@ -262,6 +281,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func hide(paste: Bool) {
         guard isVisible, !isClosing else { return }
         isClosing = true
+        model.closeInspector()
         panel.slideOut { [weak self] in
             guard let self else { return }
             if paste {
