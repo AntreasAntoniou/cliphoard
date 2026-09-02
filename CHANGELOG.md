@@ -38,6 +38,15 @@ no Electron, no account, no cloud.
   optional, download-only fetches of a search model you have not installed yet (the ogma
   models from HuggingFace, the others from our GitHub release); they carry none of your
   data. No telemetry, no analytics, no account.
+- **Screenshots are made pasteable in web apps — on by default, with a switch.** macOS puts
+  a screenshot on the clipboard in a format browsers cannot read, so pasting one into
+  Messenger, Gmail or any web app silently does nothing (the first issue filed against this
+  project); Cliphoard adds a PNG they understand. To do that it has to take ownership of the
+  clipboard and rewrite it — the only time it does anything to the clipboard beyond reading
+  it and writing the clip you picked. Your screenshot is carried across; apps that ask for
+  TIFF get a standard-range image; the clipboard's owner shows as Cliphoard; and if both the
+  rewrite and the restore fail the clipboard is left empty (unlikely, logged loudly). Turn it
+  off in *Settings → Make screenshots pasteable in web apps*. Full detail in PRIVACY.md.
 
 ### Fixed
 
@@ -78,4 +87,4 @@ The build is signed with the project's local self-signed certificate, still name
 - On demand, never bundled: the ogma models (MIT) and all-MiniLM-L6-v2 (Apache-2.0).
 - Full attribution in `THIRD-PARTY-NOTICES.md`.
 
-**SHA-256:** `20c0eeb8b47057a3ab8cc6fc48389edc7f6628ff336f56f66145fdd03b81be1b`
+**SHA-256:** `b9db9a4791340fc8f9fd3aa9d54b3ce5f4849a8661609c9b4f7343e619ef4d42`

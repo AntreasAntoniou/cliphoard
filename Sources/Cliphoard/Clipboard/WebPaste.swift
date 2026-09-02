@@ -40,7 +40,7 @@ import AppKit
 /// item is fully built.
 @MainActor
 enum WebPaste {
-    /// OPT-IN. Default OFF, deliberately.
+    /// ON by default from 1.0.0, with a toggle that turns it OFF.
     ///
     /// Everything else Cliphoard does to the clipboard is passive: it reads, and it writes
     /// only when you pick a clip. This is the one feature that reaches out and REWRITES what
@@ -50,13 +50,24 @@ enum WebPaste {
     /// */`). Measured: `addTypes` on a board we do not own returns -1 and `setData` returns
     /// false, silently.
     ///
-    /// So the trade is real and the user should make it rather than inherit it: apps asking
-    /// for `public.tiff` receive an 8-bit sRGB image where they previously received 16-bit
-    /// Display P3, and pasteboard-owner provenance shows Cliphoard rather than the app that
-    /// took the screenshot. Off by default keeps "Cliphoard only observes your clipboard"
-    /// true for anyone who has not asked otherwise.
+    /// The trade is real and is disclosed where the switch is (SettingsView) and in
+    /// PRIVACY.md: apps asking for `public.tiff` receive an 8-bit sRGB image where they
+    /// previously received 16-bit Display P3, and pasteboard-owner provenance shows Cliphoard
+    /// rather than the app that took the screenshot. It shipped default-OFF once, and the
+    /// person who reported the bug it fixes — the first issue on this project — found the
+    /// shipped fix did nothing until they found the toggle. A fix nobody can see is not a
+    /// fix, so 1.0.0 defaults to ON.
+    ///
+    /// An ABSENT key means on; a PRESENT key is the user's choice, read by the same
+    /// `bool(forKey:)` the old getter used — so someone who turned this off under an earlier
+    /// build stays off after upgrading. Not `register(defaults:)`: that runs at launch, which
+    /// the test process never does, so a default-pinning test would be asserting its own
+    /// setup. Same idiom as `ClipStore.imageUnderstandingEnabled`.
     static var isEnabled: Bool {
-        get { UserDefaults.standard.bool(forKey: "webSafeScreenshots") }   // absent => false
+        get {
+            UserDefaults.standard.object(forKey: "webSafeScreenshots") == nil
+                ? true : UserDefaults.standard.bool(forKey: "webSafeScreenshots")   // absent => true
+        }
         set { UserDefaults.standard.set(newValue, forKey: "webSafeScreenshots") }
     }
 

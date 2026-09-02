@@ -24,8 +24,11 @@ final class AppSettings: ObservableObject {
             if imageUnderstanding { store.scheduleImageUnderstanding() }
         }
     }
-    /// See `WebPaste.isEnabled`. Off by default: it is the only feature that rewrites what
-    /// another app put on the clipboard, and macOS requires taking ownership to do it.
+    /// See `WebPaste.isEnabled`. On by default from 1.0.0, with this toggle as the way out: it
+    /// is the only feature that rewrites what another app put on the clipboard, and macOS
+    /// requires taking ownership to do it. `didSet` fires only on a user change, so an
+    /// untouched toggle leaves the key ABSENT (= on) and a flip to off stores an explicit
+    /// false that survives upgrades.
     @Published var webSafeScreenshots: Bool {
         didSet { WebPaste.isEnabled = webSafeScreenshots }
     }
@@ -216,8 +219,8 @@ struct SettingsView: View {
                     Toggle("Make screenshots pasteable in web apps",
                            isOn: $settings.webSafeScreenshots)
                     // Says what it COSTS, not just what it does. This is the only feature
-                    // that rewrites what another app put on the clipboard, and the user is
-                    // being asked to accept that — so the downsides go here, not in a footnote.
+                    // that rewrites what another app put on the clipboard, and it is on by
+                    // default — so the downsides go here, where the switch is, not in a footnote.
                     Text("macOS puts screenshots on the clipboard in a format browsers "
                          + "cannot read, so pasting one into Messenger, Gmail or any web "
                          + "app silently does nothing. This adds a format they understand.\n"
@@ -227,7 +230,8 @@ struct SettingsView: View {
                          + "image instead of a wide-gamut one, and the clipboard's owner "
                          + "shows as Cliphoard. If the rewrite fails the original is put "
                          + "back; if that also fails the clipboard is left empty, which is "
-                         + "unlikely but possible. Off unless you turn it on.")
+                         + "unlikely but possible. On by default. Turn it off and Cliphoard "
+                         + "never rewrites what another app put on your clipboard.")
                         .font(.system(size: 11)).foregroundStyle(.secondary)
                 }
 

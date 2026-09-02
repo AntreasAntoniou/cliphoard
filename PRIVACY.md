@@ -73,13 +73,18 @@ this-device-only — it never syncs and is never in the database — so old rows
 be reopened. Macs without a Secure Enclave use a random key in the login Keychain. No
 Touch ID prompt is involved.
 
-## Making screenshots pasteable in web apps — off by default
+## Making screenshots pasteable in web apps — on by default; turn it off in Settings
 
 macOS puts a screenshot on the clipboard in a format browsers cannot read, so pasting one
 into Messenger, Gmail or any other web app silently does nothing. Cliphoard can fix that by
 adding a format they understand.
 
-**It is off unless you turn it on, and here is exactly what it does when you do.**
+**It is on by default, and here is exactly what it does.** It first shipped switched off, and
+did nothing for the very person who reported the bug it fixes — a fix nobody can see is not a
+fix. It is the one thing Cliphoard does to your clipboard beyond reading it and writing the
+clip you picked, so the costs are listed below rather than assumed. Turn it off in
+**Settings → Make screenshots pasteable in web apps** and Cliphoard never rewrites what
+another app put on your clipboard.
 
 To add a format to the clipboard, macOS requires you to *own* it, and taking ownership means
 clearing it first — there is no API to add a format in place. (`addTypes` on a clipboard you
@@ -109,7 +114,7 @@ Four consequences, none of them hidden:
   loudly when it happens.
 
 It never runs on a clipboard marked transient, concealed or auto-generated, on an app you
-have excluded, or on anything that is not an image. Leave it off and Cliphoard only observes.
+have excluded, or on anything that is not an image. Turn it off and Cliphoard only observes.
 
 The only data that is *not* encrypted is what cannot be: the live system pasteboard
 and the in-memory copy of the clip you are pasting, which are plaintext by necessity

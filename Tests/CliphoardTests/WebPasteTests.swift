@@ -461,15 +461,22 @@ final class WebPasteResidualTests: XCTestCase {
     }
 }
 
-/// The rewrite is opt-in, and the default is load-bearing.
+/// The default is ON, and it is load-bearing in that direction now.
 ///
-/// Everything else Cliphoard does to the clipboard is passive. This is the one feature that
-/// rewrites what another app put there — macOS requires owning the pasteboard to add a
-/// flavour, and owning it means `clearContents()`. It first shipped default-ON with no
-/// toggle, which for a product whose pitch is "we only observe" was the wrong default.
-/// These tests exist so it cannot quietly become the default again.
+/// History, kept so the reasoning is not lost. The rewrite first shipped ON with no toggle.
+/// It was then made OFF with a toggle, on the argument that a product whose pitch is "we
+/// only observe" should not rewrite a clipboard nobody asked it to. Then the person who had
+/// reported the bug it fixes — the first issue on this project — installed that build and
+/// found the fix did nothing: the default had hidden it. A fix nobody can see is not a fix,
+/// so for 1.0.0 it is ON, the toggle stays, and PRIVACY.md and the Settings copy say what it
+/// costs.
+///
+/// Pinned: an ABSENT key means on; an explicit false means off — a user who turned it off
+/// under an earlier build must stay off after upgrading; an explicit true means on; and
+/// turning it off must STORE a false rather than remove the key, or the next launch would
+/// silently re-enable it.
 @MainActor
-final class WebPasteOptInTests: XCTestCase {
+final class WebPasteDefaultTests: XCTestCase {
     private var original: Any?
     override func setUp() {
         super.setUp()
@@ -480,23 +487,65 @@ final class WebPasteOptInTests: XCTestCase {
         super.tearDown()
     }
 
-    func testItIsOffWhenTheUserHasNeverChosen() {
+    func testItIsOnWhenTheUserHasNeverChosen() {
         UserDefaults.standard.removeObject(forKey: "webSafeScreenshots")
-        XCTAssertFalse(WebPaste.isEnabled,
-                       "a fresh install must NOT rewrite the user's clipboard. Ownership has "
-                       + "measured costs — TIFF consumers drop to standard range, and the "
-                       + "clipboard's owner becomes Cliphoard — and that is a trade the user "
-                       + "makes, not one they inherit.")
+        XCTAssertTrue(WebPaste.isEnabled,
+                      "a fresh install must make screenshots pasteable in web apps. The "
+                      + "previous default hid the fix from the person who reported the bug; "
+                      + "the costs are disclosed in PRIVACY.md and the Settings copy, and the "
+                      + "toggle is there for anyone who would rather Cliphoard only observed.")
     }
 
-    func testTheToggleRoundTrips() {
+    /// Written straight to the store, not through the setter: this is the shape a user who
+    /// turned it off in an earlier build has on disk, and the default flip must not undo it.
+    func testAnExplicitOffIsHonoured() {
+        UserDefaults.standard.set(false, forKey: "webSafeScreenshots")
+        XCTAssertFalse(WebPaste.isEnabled,
+                       "a stored false must win over the default: a user who turned this off "
+                       + "under an earlier build must stay off after upgrading")
+    }
+
+    func testAnExplicitOnIsHonoured() {
+        UserDefaults.standard.set(true, forKey: "webSafeScreenshots")
+        XCTAssertTrue(WebPaste.isEnabled)
+    }
+
+    func testTurningItOffStoresAFalseRatherThanRemovingTheKey() {
         WebPaste.isEnabled = true
         XCTAssertTrue(WebPaste.isEnabled)
         WebPaste.isEnabled = false
         XCTAssertFalse(WebPaste.isEnabled)
+        XCTAssertEqual(UserDefaults.standard.object(forKey: "webSafeScreenshots") as? Bool, false,
+                       "OFF must persist as an explicit false. A setter that removed the key "
+                       + "on false would read as 'never chosen' — and re-enable itself — on "
+                       + "the next launch.")
     }
 
-    /// The setting is consulted BEFORE any work, so a user who has not opted in pays nothing:
+    /// The documents and the Settings copy must state the default that ships, not the one
+    /// before it.
+    func testTheDocsStateTheDefault() throws {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let privacy = try String(
+            contentsOf: root.appendingPathComponent("PRIVACY.md"), encoding: .utf8)
+        XCTAssertTrue(privacy.contains(
+            "## Making screenshots pasteable in web apps — on by default; turn it off in Settings"),
+            "PRIVACY.md's section title must state the shipped default")
+        for stale in ["off by default", "off unless you turn it on", "leave it off"] {
+            XCTAssertFalse(privacy.lowercased().contains(stale),
+                           "PRIVACY.md still says '\(stale)' — that was the 0.x default")
+        }
+        let ui = try String(
+            contentsOf: root.appendingPathComponent("Sources/Cliphoard/UI/SettingsView.swift"),
+            encoding: .utf8)
+        XCTAssertFalse(ui.contains("Off unless you turn it on"),
+                       "the Settings copy still describes the old default")
+        XCTAssertTrue(ui.contains("On by default"),
+                      "the Settings copy must say the default plainly, so the user knows they "
+                      + "are leaving it on rather than being asked to turn it on")
+    }
+
+    /// The setting is consulted BEFORE any work, so a user who has turned it off pays nothing:
     /// no type scan, no image read.
     func testTheCapturePathChecksTheSettingFirst() throws {
         let root = URL(fileURLWithPath: #filePath)
@@ -513,7 +562,7 @@ final class WebPasteOptInTests: XCTestCase {
         guard let gate = source.range(of: "if WebPaste.isEnabled,",
                                       range: captureSite.upperBound..<source.endIndex) else {
             return XCTFail("the capture path no longer gates on the setting — the rewrite "
-                           + "would run for users who never asked for it")
+                           + "would run for users who turned it off")
         }
         let after = String(source[gate.upperBound...].prefix(300))
         guard let kind = after.range(of: "item.kind == .image"),
@@ -546,7 +595,7 @@ final class WebPasteOptInTests: XCTestCase {
 /// under the `WebPaste.isEnabled` gate — but the branch that CONSUMES it did not re-check, so
 /// turning the feature off within one 0.4s poll tick still let a rewrite through. The user had
 /// withdrawn consent and their clipboard was seized anyway, which is the wrong failure
-/// direction for an opt-in privacy control.
+/// direction for a privacy control — and now that it is on by default, for most users.
 @MainActor
 final class WebPasteConsentWithdrawalTests: XCTestCase {
     func testAQueuedRewriteIsAbandonedIfTheSettingIsTurnedOff() throws {
@@ -578,6 +627,19 @@ final class WebPasteConsentWithdrawalTests: XCTestCase {
         }
         XCTAssertLessThan(gate.lowerBound, apply.lowerBound,
                           "the setting must be consulted BEFORE the rewrite is applied")
+
+        // And again AFTER the render: it can take ~1.2s, and an OFF flipped during it is
+        // still a withdrawal.
+        guard let render = body.range(of: "await WebPaste.renderWebSafePNG") else {
+            return XCTFail("the off-actor render call moved")
+        }
+        let afterRender = String(body[render.upperBound...])
+        guard let lateGate = afterRender.range(of: "WebPaste.isEnabled"),
+              let lateApply = afterRender.range(of: "applyWebSafe") else {
+            return XCTFail("no isEnabled re-check between the render and the apply")
+        }
+        XCTAssertLessThan(lateGate.lowerBound, lateApply.lowerBound,
+                          "the setting must be re-read after the render, immediately before apply")
     }
 
     /// The documents must not promise a guarantee the code does not make. `apply()` has a

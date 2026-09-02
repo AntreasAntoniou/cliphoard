@@ -143,7 +143,7 @@ final class ClipboardMonitor {
             // gate, but a user can turn the feature off in the interval between the capture
             // tick and this one — and a consent withdrawn a moment ago is still withdrawn.
             // Without this, flipping the toggle off within a poll tick still let one rewrite
-            // through, which is the wrong failure direction for an opt-in privacy control.
+            // through, which is the wrong failure direction for a privacy control.
             if WebPaste.isEnabled, pending.changeCount == count {
                 // Render OFF the main actor. It is superlinear — 51ms at 1200x800, 268ms at
                 // 2880x1800, 1200ms at 6016x3384 — so doing it inline froze the UI for about
@@ -152,6 +152,9 @@ final class ClipboardMonitor {
                 // so the longer gap is safe: a board that moved meanwhile is left alone.
                 Task { @MainActor [weak self] in
                     guard let png = await WebPaste.renderWebSafePNG(from: pending.image) else { return }
+                    // The render can take ~1.2s on a 6K grab; an OFF flipped during it is
+                    // still a withdrawal. Read live, never cached.
+                    guard WebPaste.isEnabled else { return }
                     self?.applyWebSafe(png: png, expecting: count)
                 }
                 return
@@ -190,8 +193,8 @@ final class ClipboardMonitor {
         // A screenshot arrives with `public.heic` alone on pasteboard item 0, which WebKit
         // will not expose to JavaScript — so pasting into a Safari Web App (Messenger) does
         // nothing. Queue a web-safe rewrite for the next settled tick. See WebPaste.
-        // Opt-in, and checked FIRST so a user who has not enabled it pays nothing — not the
-        // type scan, not the image read. See WebPaste.isEnabled for why this is off by default.
+        // Checked FIRST so a user who has turned it off pays nothing — not the type scan, not
+        // the image read. On by default from 1.0.0; see WebPaste.isEnabled for the trade.
         if WebPaste.isEnabled,
            item.kind == .image,
            WebPaste.needsWebSafeCopy(types: types),
