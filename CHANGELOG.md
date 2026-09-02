@@ -78,4 +78,4 @@ The build is signed with the project's local self-signed certificate, still name
 - On demand, never bundled: the ogma models (MIT) and all-MiniLM-L6-v2 (Apache-2.0).
 - Full attribution in `THIRD-PARTY-NOTICES.md`.
 
-**SHA-256:** (filled at release)
+**SHA-256:** `20c0eeb8b47057a3ab8cc6fc48389edc7f6628ff336f56f66145fdd03b81be1b`
