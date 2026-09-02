@@ -8,10 +8,11 @@ import Security
 /// The AES key is protected by the **Secure Enclave** where available: a P-256
 /// key-agreement private key is generated *inside* the Enclave (its material can
 /// never be extracted from the chip), and the symmetric key is deterministically
-/// derived from it via key agreement + HKDF. Copying the on-disk keychain blob to
-/// another machine is therefore useless — only this Mac's Enclave can re-derive
-/// the key, and no Touch-ID prompt is required. On Macs without a Secure Enclave
-/// (old Intel without a T2) it falls back to a random key in the login Keychain.
+/// derived from it via key agreement + HKDF. The derived AES key is also archived
+/// in the login Keychain (this-device-only, never synced) so old rows can always be
+/// reopened; it is never in the database, so a copied database is unreadable on
+/// another Mac. On Macs without a Secure Enclave (old Intel without a T2) it falls
+/// back to a random key in the login Keychain.
 ///
 /// Failure is always non-destructive: a seal/open error returns the original value
 /// rather than risking history loss, and `open` falls back to the previous key so

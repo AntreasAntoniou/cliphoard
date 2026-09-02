@@ -187,6 +187,7 @@ final class ClipStore: ObservableObject {
         backfillDetectorFlagsIfNeeded()
         encryptExistingRowsIfNeeded()
         reKeyToSecureEnclaveIfNeeded()
+        encryptSourceAppIfNeeded()
         encryptImagePayloadsIfNeeded()
         sortStable()
         rebuildTagIndex()
@@ -295,6 +296,49 @@ final class ClipStore: ObservableObject {
         }
         db.vacuum()   // purge stale plaintext from free pages
         UserDefaults.standard.set(true, forKey: key)
+    }
+
+    /// One-time migration: seal the source app on every row still carrying it in the
+    /// clear. Inserts now seal it (`Database.insert`), and `loadAll` opens it either
+    /// way, so this only re-persists rows written before the column was content.
+    ///
+    /// Selects by the COLUMN (`plaintextSourceAppIDs`), not by the loaded value: in
+    /// memory a sealed name and a plaintext one read identically. Same guards as the
+    /// two passes above — a proven-complete load, a scan that reached its end, a tally
+    /// against ELIGIBLE — plus one transaction around the writes, so a row that fails
+    /// to land rolls the whole pass back and the next launch retries from scratch
+    /// rather than stamping over a half-sealed table.
+    private func encryptSourceAppIfNeeded() {
+        let key = "sourceAppEncryptedV1"
+        guard !UserDefaults.standard.bool(forKey: key) else { return }
+        guard let db, let proof = historyProof, items.count == proof.storedCount else {
+            DebugLog.write("migrate: no database, or the launch load was not proven "
+                           + "complete — NOT stamping source-app seal")
+            return
+        }
+        guard let plaintext = db.plaintextSourceAppIDs() else {
+            DebugLog.write("migrate: the source-app scan stopped early — NOT stamping "
+                           + "source-app seal, so a healthy launch retries")
+            return
+        }
+        let started = Date()
+        let eligible = items.filter {
+            plaintext.contains($0.id.uuidString) && !Crypto.isSealed($0.text)
+        }
+        var written = 0
+        let committed = db.transaction {
+            for item in eligible where db.insert(item) { written += 1 }
+        }
+        guard committed, written == eligible.count else {
+            DebugLog.write("migrate: source-app seal wrote \(written)/\(eligible.count) "
+                           + "eligible rows (committed: \(committed)) — NOT stamping the "
+                           + "marker, so a healthy launch retries")
+            return
+        }
+        db.vacuum()   // purge stale plaintext from free pages
+        UserDefaults.standard.set(true, forKey: key)
+        let ms = Int(Date().timeIntervalSince(started) * 1000)
+        DebugLog.write("migrate: source-app sealed \(written) row(s) in \(ms) ms")
     }
 
     /// One-time, best-effort: seal every on-disk image payload + thumbnail that is
