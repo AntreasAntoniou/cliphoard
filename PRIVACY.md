@@ -10,7 +10,7 @@ stored **locally** on your Mac, under:
 
 ```
 ~/Library/Application Support/Ditto/
-  ditto.sqlite        clipboard history (text, links, colors, file references), encrypted
+  ditto.sqlite        clipboard history (text, links, colors, file references, the source-app name), encrypted
                       — including text read out of images (see below), encrypted
   *.png               image clips and their thumbnails, encrypted at rest
 ```
@@ -61,14 +61,17 @@ which is what the Forget button is for.
 ## Encryption
 
 Everything Cliphoard persists is encrypted at rest with **AES-GCM**: clip **content**
-(text, rich text, file paths, colors) in the database, and **image clips and their
-thumbnails** as sealed payload files on disk. Sealed values carry an `enc1:` marker;
-opening is non-destructive and falls back gracefully, so a re-key never loses data.
-The encryption key is bound to your Mac's **Secure Enclave** where one is present —
-the key is derived inside the Enclave and its material can never be extracted from
-the chip, so copying the database (or the payload files) to another machine is
-useless, and no Touch ID prompt is required. On Macs without a Secure Enclave the key
-lives in your login Keychain.
+(text, rich text, file paths, colors, tags, recognised text) and, from 1.0.0, the name of
+the app each clip came from, in the database; and **image clips and their thumbnails** as
+sealed payload files on disk. Stored in the clear, on purpose: the row id, clip kind,
+timestamps, pin state, use count and the small detector flags — none is content. Sealed
+values carry an `enc1:` marker; opening is non-destructive and falls back to earlier keys,
+so a re-key never loses data. **The key:** on a Mac with a Secure Enclave, a P-256 private
+key is generated inside the Enclave and never leaves it; the AES key is derived from it
+(key agreement + HKDF). A copy of that derived key is kept in your login Keychain marked
+this-device-only — it never syncs and is never in the database — so old rows can always
+be reopened. Macs without a Secure Enclave use a random key in the login Keychain. No
+Touch ID prompt is involved.
 
 ## Making screenshots pasteable in web apps — off by default
 
@@ -118,6 +121,9 @@ copy-on-write, the freed unencrypted blocks are not zeroed and may remain recove
 in unallocated disk space until the OS reuses or trims them. So treat the storage
 folder as sensitive and use the exclusion list for apps where you copy secrets.
 
+Builds before 1.0.0 stored the source-app name in the clear; 1.0.0 seals it on first
+launch and compacts the database, with the same APFS caveat.
+
 ## What Cliphoard does NOT do
 
 - ❌ No network requests carrying your data. Cliphoard sends your clips to no
@@ -133,13 +139,22 @@ folder as sensitive and use the exclusion list for apps where you copy secrets.
 
 ## Sensitive content
 
-Cliphoard deliberately tries **not** to capture secrets:
+Cliphoard deliberately tries **not** to capture secrets, in three ways:
 
-- It ignores pasteboards apps mark as transient, concealed, or auto-generated —
-  the flags password managers (1Password, Keychain, etc.) use.
-- You can add any app to an exclusion denylist (`excludedBundleIDs`) so Cliphoard
-  never records what you copy from it.
-- Clip contents are never written to logs.
+1. Pasteboards apps mark as transient, concealed, or auto-generated — the flags password
+   managers set when you copy a password — are never stored.
+2. Clips that still arrive from a known password manager (1Password, Bitwarden, KeePassXC,
+   Dashlane, LastPass, Apple Passwords, Keychain Access, Secretive, Enpass, Strongbox) are
+   stored encrypted but flagged **password app** and excluded from every search index — no
+   embedding, no tags, no recognition. They are **not** hidden and **not** locked behind
+   Touch ID: they stay visible and pastable in your history; delete with ⌘⌫. Touch ID
+   hiding is planned for 1.0.1.
+3. You can add any app to an exclusion denylist (`excludedBundleIDs`) so Cliphoard never
+   records what you copy from it:
+   `defaults write io.antreas.cliphoard excludedBundleIDs -array com.example.app`
+   (a Settings UI is planned for 1.0.1).
+
+Clip contents are never written to logs.
 
 That said, a clipboard manager inherently stores what you copy. Treat the local
 database as sensitive, and use the exclusion list for apps that handle secrets.
@@ -188,14 +203,16 @@ Being open source makes this auditable: you can read the source and confirm ther
 are zero network calls. Add sync and that verifiable fact becomes "trust our
 crypto and our server" — a weaker trust model we're not willing to ask of you.
 
-**If you want sync anyway,** you remain in control: point the store
-(`~/Library/Application Support/Ditto/`) at your own synced folder (iCloud Drive,
-Syncthing, etc.) at your discretion. That's your choice to make — not a default we
-impose, and not data we ever hold.
+**Moving to a new Mac.** There is no export or import of a Cliphoard history yet. The key
+is bound to this Mac's Secure Enclave and login Keychain, so a copy of
+`~/Library/Application Support/Ditto/` on another Mac — or in any folder that syncs — is a
+database whose rows cannot be decrypted there. Do not put the store on iCloud Drive or
+Syncthing expecting another machine to read it. An encrypted, passphrase-protected
+export/import is planned for 1.0.1.
 
 ## Changes
 
 Any future change to this policy will appear in this file in the public repository,
 with the change visible in the Git history.
 
-_Last updated: 2026-06-25._
+_Last updated: 2026-09-02._
