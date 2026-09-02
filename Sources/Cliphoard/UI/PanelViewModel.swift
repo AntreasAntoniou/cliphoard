@@ -25,7 +25,14 @@ final class PanelViewModel: ObservableObject {
     /// When true the bar shows the settings surface instead of the card strip.
     @Published var showSettings: Bool = false
     /// Clip currently expanded into the detail supercard.
-    @Published var inspectedItem: ClipItem?
+    ///
+    /// Observed with `didSet`, NOT `$inspectedItem.sink`: `@Published` emits in `willSet`,
+    /// before the stored value changes, and the panel's resign-key exemption reads this
+    /// property directly. Presenting the inspector makes the bar resign key, so the
+    /// exemption must already see the new value when the callback runs.
+    @Published var inspectedItem: ClipItem? { didSet { onInspectorChange?(inspectedItem) } }
+    /// Fired after `inspectedItem` changes, with the new value (`nil` means closed).
+    var onInspectorChange: ((ClipItem?) -> Void)?
     /// Whether the inspector should scroll directly to its tag editor.
     @Published var inspectorFocusTags: Bool = false
 
