@@ -158,7 +158,7 @@ jobs:
             - **SHA-256:** `${{ steps.dmg.outputs.sha256 }}`
 
             Install: download the DMG, drag Cliphoard to Applications, and press ⌃⌥⌘V.
-            Or via Homebrew once the cask is published: `brew install --cask cliphoard`.
+            Or via Homebrew once the cask is published: `brew install --cask antreasantoniou/tap/cliphoard`.
 
       # After publish, so a push failure never loses the DMG. main is unprotected, so the
       # GITHUB_TOKEN (contents: write) can push; if main is ever protected, switch this to a PR.

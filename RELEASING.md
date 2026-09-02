@@ -46,6 +46,24 @@ step aborts unless the tag equals `v<Info.plist version>` and the cask's `versio
 After the GitHub Release is published, the workflow commits the DMG's sha256 into
 `Casks/cliphoard.rb` on `main` — `git pull` before publishing the cask.
 
+## First cut without a certificate (what 1.0.0 did)
+
+No Developer ID certificate existed for 1.0.0, so the first cut was unsigned and published
+by hand, with the automation kept out of the way:
+
+1. `bash Scripts/release.sh` with no `DEVID` / `NOTARY_PROFILE` → an unsigned
+   `build/Cliphoard-<version>.dmg` and the printed DMG sha256. `Casks/cliphoard.rb` is
+   untouched by design: only a notarised DMG's checksum ever enters the cask.
+2. `gh release edit models-v1 --prerelease` — the models release must not be what
+   `releases/latest` resolves to.
+3. `gh workflow disable Release` before the tag and release, `gh workflow enable Release`
+   after — a tag push must not trigger the signed CI path with no secrets behind it.
+4. Publish as `gh release create v<version> build/Cliphoard-<version>.dmg --prerelease`.
+5. The site and README link to the DMG asset URL
+   (`releases/download/v<version>/Cliphoard-<version>.dmg`), never `releases/latest`.
+6. The Homebrew tap is deferred to the first notarized release; the cask keeps its
+   placeholder sha256 until then.
+
 ## Homebrew cask
 
 `Casks/cliphoard.rb` is the cask source; its `sha256` is written by `Scripts/release.sh`

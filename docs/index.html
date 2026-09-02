@@ -153,8 +153,9 @@
     history slides up from the bottom — searchable by <i>meaning</i>, including your screenshots
     and photos. Free, open source, and every model runs on your Mac.</p>
   <div class="cta">
-    <a class="btn primary" href="https://github.com/AntreasAntoniou/cliphoard/releases/latest">↓ Download for macOS</a>
+    <a class="btn primary" href="https://github.com/AntreasAntoniou/cliphoard/releases/download/v1.0.0/Cliphoard-1.0.0.dmg">↓ Download Cliphoard 1.0.0 for macOS</a>
     <a class="btn ghost" href="https://github.com/AntreasAntoniou/cliphoard">View source</a>
+    <div class="req">1.0.0 is not yet notarized by Apple — the notarized build and Homebrew tap ship in 1.0.1. On first launch macOS refuses it once: <b>System Settings → Privacy &amp; Security → Open Anyway</b>, or <code>xattr -dr com.apple.quarantine /Applications/Cliphoard.app</code>.</div>
   </div>
   <div class="req">Free forever · MIT licensed · macOS 13+ · Apple Silicon &amp; Intel</div>
   <div class="shot"><img src="img/bar-oneDark.png" alt="The Cliphoard clipboard bar showing recent clips" loading="lazy"></div>
@@ -167,7 +168,7 @@
   <div class="grid">
     <div class="card"><div class="ic">⌨️</div><h3>Summon from anywhere</h3><p>A global ⌃⌥⌘V hotkey brings the bar up over any app. Pick a clip and it pastes straight back where you were.</p></div>
     <div class="card"><div class="ic">✨</div><h3>Semantic search</h3><p>On-device AI (CoreML) finds clips by what they <i>mean</i> — three swappable tiers, two of them models we trained and released ourselves. Search “that database query” and get it, no exact words needed.</p></div>
-    <div class="card"><div class="ic">🔒</div><h3>Private by design</h3><p>Everything stays on your Mac. No network calls, no telemetry, no account. Password managers are skipped automatically.</p></div>
+    <div class="card"><div class="ic">🔒</div><h3>Private by design</h3><p>Everything stays on your Mac. No network calls, no telemetry, no account. Concealed pasteboards — what password managers set — are never stored; anything else that arrives from one is flagged and kept out of search.</p></div>
     <div class="card"><div class="ic">🎨</div><h3>17 themes</h3><p>From a clean Swiss greyscale to One Dark, Dracula, Tokyo Night, Catppuccin and more — plus light themes. Follows your system appearance.</p></div>
     <div class="card"><div class="ic">🧱</div><h3>Three layouts</h3><p>A horizontal card strip, a dense compact list, or a Spotlight-style palette with a live preview. Your call.</p></div>
     <div class="card"><div class="ic">🖼️</div><h3>Text, links, colors, images</h3><p>Cliphoard recognises what you copy — rich text, URLs, hex colors, files and images — and keeps thumbnails for fast browsing.</p></div>
@@ -244,13 +245,13 @@
   <h2>Your clipboard holds passwords. We treat it that way.</h2>
   <p class="lead">Everything you copy is encrypted on disk, the key never leaves your Mac, and your clips never touch a network. Not marketing — it's how the code works.</p>
   <div class="secgrid">
-    <div class="secitem"><div class="ic">🔐</div><div><h3>Encrypted at rest</h3><p>Every clip — text, rich text, file paths, colors, images <i>and</i> the semantic search index — is sealed with authenticated <b>AES-GCM</b> before it's written to disk. Run <code>strings</code> on the database and you get nothing.</p></div></div>
-    <div class="secitem"><div class="ic">🔒</div><div><h3>Key sealed in the Secure Enclave</h3><p>The key is derived from a P-256 key generated <i>inside</i> your Mac's Secure Enclave — its material can't be extracted. Copy the database to another machine and it's undecryptable; only this Mac can re-derive the key. No Touch ID prompt.</p></div></div>
-    <div class="secitem"><div class="ic">🙈</div><div><h3>Secrets skipped at capture</h3><p>Copies from password managers, and pasteboards marked transient or concealed, are never stored in the first place — and you can add your own apps to the skip list.</p></div></div>
+    <div class="secitem"><div class="ic">🔐</div><div><h3>Encrypted at rest</h3><p>Every clip — text, rich text, file paths, colours, recognised text, your tags, <b>the app you copied from</b>, images <i>and</i> the semantic search index — is sealed with authenticated <b>AES-GCM</b> before it touches disk. Only timestamps, clip kind, pin state and small detector flags are stored in the clear. Run <code>strings</code> on the database and you get no clipboard content and no app names.</p></div></div>
+    <div class="secitem"><div class="ic">🔒</div><div><h3>Key bound to the Secure Enclave</h3><p>The AES key is derived from a P-256 key generated <i>inside</i> your Mac's Secure Enclave — that private key can't be extracted. A copy of the derived key is kept in your login Keychain, marked this-device-only; it is never in the database, so copy the database to another Mac and it's undecryptable. Macs without a Secure Enclave use a random key in the login Keychain. No Touch ID prompt. There is no export yet — moving your history to a new Mac (an encrypted, passphrase-protected export/import) is planned for 1.0.1.</p></div></div>
+    <div class="secitem"><div class="ic">🙈</div><div><h3>Secrets skipped at capture, password-manager clips flagged</h3><p>Pasteboards marked transient or concealed — what password managers set when you copy a password — are never stored. A clip that still arrives from a known password manager (1Password, Bitwarden, KeePassXC, Apple Passwords and others) is stored encrypted but <b>quarantined</b>: flagged <i>password app</i> and kept out of every search index. It is not hidden and not locked — it stays visible and pastable in your history. Touch ID hiding is planned for 1.0.1. Exclude any app with a one-line <code>defaults write</code>.</p></div></div>
     <div class="secitem"><div class="ic">📵</div><div><h3>Your clips never touch a network</h3><p>No telemetry, no account, no cloud, no phone-home. The app's only network calls fetch the <i>search models themselves</i> — the ogma models from HuggingFace, the others from our GitHub release — one-time, download-only requests that carry none of your data and happen only when you use a tier you have not installed yet. Every search, every screenshot read, every image embedding runs on your Mac; nothing you copy is ever uploaded, to us or to anyone.</p></div></div>
     <div class="secitem"><div class="ic">🗝️</div><div><h3>Owner-only on disk</h3><p>The store lives in your Application Support folder with <code>0700</code>/<code>0600</code> permissions — other user accounts on the Mac can't read it.</p></div></div>
     <div class="secitem"><div class="ic">🖼️</div><div><h3>Your screenshots are read <i>here</i></h3><p>Text recognition and image embedding both run on-device, through Apple's Vision framework and a bundled CoreML model. Recognised text is encrypted like any other clip — and there is a switch to turn it off entirely, plus a button that erases everything already read. The erase deletes before it compacts, so the bytes really do leave the file.</p></div></div>
-    <div class="secitem"><div class="ic">🚫</div><div><h3>Nothing is read that shouldn't be</h3><p>The same detectors that skip password managers also <b>veto</b> a clip from every index — no embedding, no tags, no recognition. A screenshot the detector withholds is not analysed at all; its pixels are never even decoded.</p></div></div>
+    <div class="secitem"><div class="ic">🚫</div><div><h3>Nothing is read that shouldn't be</h3><p>The same detectors that quarantine password-manager clips also <b>veto</b> a clip from every index — no embedding, no tags, no recognition. A screenshot the detector withholds is not analysed at all; its pixels are never even decoded.</p></div></div>
     <div class="secitem"><div class="ic">🔎</div><div><h3>Open source, auditable</h3><p>MIT-licensed. Don't take our word for it — <a href="https://github.com/AntreasAntoniou/cliphoard/blob/main/Sources/Cliphoard/Clipboard/Crypto.swift">read <code>Crypto.swift</code></a> yourself.</p></div></div>
   </div>
 </section>
@@ -332,13 +333,13 @@
   <div class="wrap">
     <div class="eyebrow">Get started</div>
     <h2>Ready in ten seconds.</h2>
-    <p class="lead">Download, drag to Applications, grant one permission, and press ⌃⌥⌘V.</p>
-    <div class="cta"><a class="btn primary" href="https://github.com/AntreasAntoniou/cliphoard/releases/latest">↓ Download for macOS</a>
+    <p class="lead">Download, drag to Applications, allow it once in Privacy &amp; Security (this release is not yet notarized), grant Accessibility, and press ⌃⌥⌘V.</p>
+    <div class="cta"><a class="btn primary" href="https://github.com/AntreasAntoniou/cliphoard/releases/download/v1.0.0/Cliphoard-1.0.0.dmg">↓ Download Cliphoard 1.0.0 for macOS</a>
       <a class="btn ghost" href="https://github.com/AntreasAntoniou/cliphoard">Star on GitHub ★</a></div>
     <div style="height:26px"></div>
     <div class="specs">
       <span>macOS 13 Ventura +</span><span>Universal (Apple Silicon &amp; Intel)</span>
-      <span>~50 MB download</span><span>MIT licensed</span><span>No telemetry</span>
+      <span>~39 MB download</span><span>MIT licensed</span><span>No telemetry</span>
     </div>
   </div>
 </section>

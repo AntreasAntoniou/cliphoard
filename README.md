@@ -29,11 +29,15 @@ cloud.** Everything you copy stays on your Mac.
   right from the pill next to the search field. Three model tiers (ogma micro/small, MiniLM), each installed on first use — the ogma
   models from [HuggingFace](https://huggingface.co/axiotic/open-ogma-small) so their download
   numbers reflect real usage of a model we released, MiniLM from our GitHub release. Every model is permissively licensed (MIT or Apache-2.0). No account; your clips never touch a network.
-- **🔒 Private, and provably so.** Nothing ever leaves your Mac. Every clip is
-  **encrypted at rest** with a key bound to the **Secure Enclave** (where available) —
-  text, rich text and metadata in the database, and image clips and their thumbnails on
-  disk. Password managers are skipped, and being open source you can read the source and
-  confirm there are zero network calls. ([Why no sync →](PRIVACY.md))
+- **🔒 Private, and provably so.** Nothing ever leaves your Mac. Clip content — text, rich
+  text, file paths, colours, recognised image text, your tags **and the name of the app you
+  copied from** — is **encrypted at rest** (AES-GCM) in the database, and image clips and
+  their thumbnails are encrypted on disk; timestamps, clip kind, pin state and the small
+  detector flags stay in the clear. The key is derived from a P-256 key generated inside the
+  **Secure Enclave** where your Mac has one (a random login-Keychain key otherwise).
+  Concealed pasteboards are never stored; clips from known password managers are
+  quarantined — flagged and never indexed, not hidden. Open source: read it and confirm
+  there are zero network calls. ([Details →](PRIVACY.md))
 - **🎨 17 themes, 3 layouts.** A clean Swiss greyscale, One Dark, Dracula, Tokyo Night,
   Catppuccin and more — follows your macOS Light/Dark appearance. Card strip, compact
   list, or a Spotlight-style palette with live preview.
@@ -67,8 +71,14 @@ right inside the bar (theme, layout, search mode, sound, history limit, permissi
 
 ## Install
 
-Download the latest DMG from [**Releases**](https://github.com/AntreasAntoniou/cliphoard/releases/latest),
+Download the latest DMG from [**Releases**](https://github.com/AntreasAntoniou/cliphoard/releases),
 drag **Cliphoard** to Applications, and press **⌃⌥⌘V**. Or build from source (below).
+
+> **1.0.0 is not yet notarized by Apple** (the notarized build and Homebrew tap ship in 1.0.1).
+> First launch: open it once, then *System Settings → Privacy & Security → Open Anyway*, or
+> `xattr -dr com.apple.quarantine /Applications/Cliphoard.app`. When 1.0.1 replaces it, macOS
+> treats it as a new app: re-grant Accessibility once and click **Always Allow** when Cliphoard
+> asks for its keychain key (Deny freezes history read-only; nothing is deleted).
 
 On first launch macOS asks for **Accessibility** access — Cliphoard needs it to send the
 ⌘V keystroke that pastes into the focused app (*System Settings → Privacy & Security →
@@ -109,9 +119,16 @@ Not sponsoring is completely fine.
 
 Everything is stored **locally** and **encrypted at rest** — text clips in the database
 and image clips (plus their thumbnails) on disk (see PRIVACY.md). Cliphoard sends no data anywhere — its only outbound call is the optional one-time model download — and has no
-telemetry, analytics, or account. Password managers (transient / concealed /
-auto-generated pasteboards) are skipped, and you can exclude any app. See
+telemetry, analytics, or account. Pasteboards marked transient, concealed or auto-generated
+— what password managers set — are never stored; a clip that still arrives from a known
+password manager is stored encrypted but quarantined: flagged "password app" and never
+indexed, not hidden. Exclude any app with
+`defaults write io.antreas.cliphoard excludedBundleIDs -array com.example.app`. See
 [PRIVACY.md](PRIVACY.md) — including **why there is, and will be, no cloud sync**.
+
+**Moving to a new Mac:** not yet — the key never leaves this Mac's Secure Enclave and login
+Keychain, so a copied database is unreadable elsewhere. Encrypted export/import is planned
+for 1.0.1.
 
 ## Deep search (on-device embeddings)
 
@@ -152,11 +169,14 @@ reimplemented in Swift). To produce/bundle the models, see [`tools/`](tools/READ
 | Global hotkey (Carbon) + slide-up panel | `Sources/Cliphoard/App/HotKey.swift`, `UI/FloatingPanel.swift` |
 | Bar, cards, themes, layouts (SwiftUI) | `Sources/Cliphoard/UI/ContentView.swift`, `ClipCardView.swift`, `Theme.swift` |
 
-## Roadmap
+## Coming in 1.0.1
 
-- **Clip stack** — queue several, paste in order
-- **On-device OCR** — search text inside image clips
-- Customizable hotkey · smart actions on links & colors
+- Encrypted, passphrase-protected export/import for moving history to a new Mac
+- Touch ID hiding for password-manager clips
+- A Settings UI for excluded apps
+- The notarized build and Homebrew tap
+
+Later: clip stack · customizable hotkey · smart actions on links & colors.
 
 ## License
 
