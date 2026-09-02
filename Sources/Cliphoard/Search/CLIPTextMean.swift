@@ -21,8 +21,14 @@
 ///
 /// Compiled in rather than read from a file, deliberately. The whole feature was already
 /// dark once because a 30-byte config.json was missing from the bundle; a constant cannot
-/// go absent. Regenerate with tools/convert_openvision.py if the weights ever change — a
-/// mean from different weights is worse than none.
+/// go absent. It CANNOT be regenerated from this repository: the 90-noun x 5-template
+/// generator that produced it was never committed. The value is a transcription of the
+/// `text_mean` field of tools/models/openvision-tiny-p8-manifest.json (inside the pinned
+/// openvision-tiny-p8.zip); tools/convert_openvision.py carries it over from the prior
+/// manifest rather than recomputing it, and DistributionLicenceTests
+/// .testCLIPTextMeanIsTheManifestTextMean pins the two together. If the weights ever change,
+/// measure a new mean, write it to the manifest and update this constant in the same commit —
+/// a mean from different weights is worse than none.
 enum CLIPTextMean {
     static let vector: [Float] = [
         -0.01035882, +0.07373437, -0.02613891, +0.00027735, +0.10296953, -0.04007994,

@@ -13,7 +13,8 @@
 #         single-year holder line (1073 bytes) · 3 LICENSE-Apache-2.0.txt is the complete
 #         canonical text · 4 linked MIT notices reproduced visibly · 5 every declared model is
 #         bundled + attributed · 6 nothing undeclared or hollow in Resources · 7 every bundled
-#         text tower carries its tokenizer folder (tokenizer.json + config.json, valid JSON).
+#         text tower carries its tokenizer folder (tokenizer.json + tokenizer_config.json +
+#         config.json, each valid JSON).
 #
 # Usage: verify-bundle.sh <app> <repo-root> [extra-dir-that-must-carry-licences]
 # Env:   BUNDLE_MODELS  the models this build intended to bundle
@@ -190,8 +191,13 @@ done
 #    coremlcompiler's metadata.json declares the `input_ids` input the converter names
 #    (tools/convert_openvision.py:171) — so a run without tools/models is not vacuous.
 #    swift-transformers' AutoTokenizer.from(modelFolder:) (Hub.swift loadConfig) throws unless
-#    BOTH tokenizer.json and config.json exist AND parse: the 30-byte config.json is exactly
-#    the file whose absence once made image search silently dark.
+#    tokenizer.json AND config.json exist and parse: the 30-byte config.json is exactly the
+#    file whose absence once made image search silently dark. tokenizer_config.json is needed
+#    too: without it Hub.swift's tokenizerConfig getter falls back to a bundled config for the
+#    model_type, and only gpt2/t5 fallbacks ship — for "bert" that is `missingConfig`, thrown.
+#    A verifier proved the first version of this check passed with that file deleted.
+#    Validated with python3's json module, NOT plutil: plutil converts to a plist and rejects
+#    any JSON containing null, which the real tokenizer_config.json does.
 for m in ${BUNDLE_MODELS:-}; do
     [ -d "$RES/$m.mlmodelc" ] || continue
     needs=0
@@ -203,16 +209,15 @@ for m in ${BUNDLE_MODELS:-}; do
     grep -q '"input_ids"' "$RES/$m.mlmodelc/metadata.json" 2>/dev/null && needs=1
     [ "$needs" = 1 ] || continue
     tok="$RES/$m-tokenizer"
-    for f in tokenizer.json config.json; do
-        [ -s "$tok/$f" ] \
-            || bad "${m} is a text tower but Resources/${m}-tokenizer/${f} is missing or empty — AutoTokenizer.from(modelFolder:) throws and image search is silently dark"
+    ok=1
+    for f in tokenizer.json tokenizer_config.json config.json; do
+        if [ ! -s "$tok/$f" ]; then
+            bad "${m} is a text tower but Resources/${m}-tokenizer/${f} is missing or empty — AutoTokenizer.from(modelFolder:) throws and image search is silently dark"; ok=0
+        elif ! python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "$tok/$f" 2>/dev/null; then
+            bad "Resources/${m}-tokenizer/${f} is not valid JSON — AutoTokenizer throws exactly as if it were absent"; ok=0
+        fi
     done
-    if [ -s "$tok/config.json" ] && ! plutil -convert xml1 -o /dev/null "$tok/config.json" 2>/dev/null; then
-        bad "Resources/${m}-tokenizer/config.json is not valid JSON — AutoTokenizer throws exactly as if it were absent"
-    fi
-    if [ -s "$tok/tokenizer.json" ] && [ -s "$tok/config.json" ]; then
-        note "✓" "${m}-tokenizer carries tokenizer.json + config.json"
-    fi
+    [ "$ok" = 1 ] && note "✓" "${m}-tokenizer carries tokenizer.json + tokenizer_config.json + config.json, all valid JSON"
 done
 
 if [ "$fail" -ne 0 ]; then
