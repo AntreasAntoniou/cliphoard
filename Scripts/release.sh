@@ -17,6 +17,9 @@
 #   DEVID="Developer ID Application: Your Name (ABCDE12345)" \
 #   NOTARY_PROFILE="cliphoard-notary" \
 #   bash Scripts/release.sh
+# Env: RELEASE_TAG (CI passes the tag) must equal v<Info.plist version>, or nothing is built.
+#      A signed+notarised run ends by writing the DMG's sha256 into Casks/cliphoard.rb; an
+#      unsigned run prints it and leaves the cask alone.
 #
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -24,24 +27,27 @@ cd "$(dirname "$0")/.."
 say() { printf '\n\033[1;36m▸ %s\033[0m\n' "$*"; }
 warn() { printf '\033[1;33m⚠ %s\033[0m\n' "$*"; }
 
-# Publish guard: the Homebrew cask ships an all-zero PLACEHOLDER sha256 that is
-# meant to be replaced with the RELEASED DMG's sha256 at release time (this
-# script packages the DMG; CI's "Compute DMG checksum" step prints that hash —
-# see .github/workflows/release.yml). Refuse to cut a release while the cask
-# still carries the placeholder, so a zero-sha (= unverifiable) install can never
-# be published. A real (non-zero) sha passes this check untouched. Set
-# ALLOW_PLACEHOLDER_SHA=1 only for a deliberate dry run that won't be published.
+# Preflight. The version must be in lockstep across Info.plist, the cask and (on CI) the tag:
+# the DMG is named from the plist while the cask's download URL directory comes from the tag,
+# so a mismatch publishes a cask whose URL 404s (RELEASING.md § Versioning).
 CASK="Casks/cliphoard.rb"
 ZERO_SHA="0000000000000000000000000000000000000000000000000000000000000000"
-if [[ -f "$CASK" ]] && grep -q "sha256 \"$ZERO_SHA\"" "$CASK"; then
-    if [[ "${ALLOW_PLACEHOLDER_SHA:-}" == "1" ]]; then
-        warn "$CASK still has the all-zero placeholder sha256 (ALLOW_PLACEHOLDER_SHA=1 — dry run only, DO NOT publish)."
-    else
-        printf '\033[1;31m✗ %s\033[0m\n' "$CASK still has the all-zero placeholder sha256." >&2
-        printf '   %s\n' "Fill it with the released DMG's sha256 before releasing (CI prints it; see release.yml)." >&2
-        printf '   %s\n' "For a deliberate non-publishing dry run, set ALLOW_PLACEHOLDER_SHA=1." >&2
-        exit 1
-    fi
+PLIST_VERSION="$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' Resources/Info.plist)"
+CASK_VERSION="$(sed -nE 's/^  version "([^"]+)"$/\1/p' "$CASK")"
+if [[ "$CASK_VERSION" != "$PLIST_VERSION" ]]; then
+    printf '\033[1;31m✗ %s\033[0m\n' "$CASK says version ${CASK_VERSION:-?} but Resources/Info.plist says $PLIST_VERSION — the cask URL would point at the wrong release directory (RELEASING.md § Versioning)." >&2
+    exit 1
+fi
+if [[ -n "${RELEASE_TAG:-}" && "$RELEASE_TAG" != "v$PLIST_VERSION" ]]; then
+    printf '\033[1;31m✗ %s\033[0m\n' "tag $RELEASE_TAG does not match Info.plist version $PLIST_VERSION (expected v$PLIST_VERSION) — bump Resources/Info.plist and $CASK before tagging." >&2
+    exit 1
+fi
+# The cask's sha256 IS this DMG's, which cannot exist before this script ends, so the all-zero
+# placeholder is the EXPECTED state going into the first cut. A signed+notarised run rewrites
+# it from the DMG at the end (step 6). The hard "never publish a zero sha" gate lives where a
+# cask is actually published — Scripts/publish-cask.sh — and in the cask's own Ruby preflight.
+if grep -q "^  sha256 \"$ZERO_SHA\"$" "$CASK"; then
+    warn "$CASK carries the all-zero placeholder sha256 — expected before the first cut; a signed+notarised run writes the real one at the end."
 fi
 
 # A public release must never ship the old brand name. Sweep any leftover
@@ -167,6 +173,18 @@ if [[ -n "$DEVID" ]]; then
         xcrun notarytool submit "$DMG" --keychain-profile "$NOTARY_PROFILE" --wait
         xcrun stapler staple "$DMG"
     fi
+fi
+
+# 6. Hand the cask its checksum — only from a DMG that was signed AND notarised: the sha of
+#    an unsigned dry run means nothing to the user who runs `brew install`. Taken AFTER the
+#    DMG is signed and stapled, because those steps change the bytes.
+DMG_SHA="$(shasum -a 256 "$DMG" | cut -d' ' -f1)"
+if [[ -n "$DEVID" && -n "$NOTARY_PROFILE" ]]; then
+    sed -i '' -E "s/^  sha256 \"[0-9a-f]{64}\"$/  sha256 \"$DMG_SHA\"/" "$CASK"
+    grep -q "^  sha256 \"$DMG_SHA\"$" "$CASK" || { echo "::error::$CASK sha256 line was not rewritten" >&2; exit 1; }
+    say "$CASK sha256 = $DMG_SHA (release.yml commits this to main; for a local release, commit it yourself)"
+else
+    warn "unsigned or un-notarised run: DMG sha256 $DMG_SHA — $CASK NOT updated (only a notarised DMG's checksum ever enters the cask)."
 fi
 
 say "Done → $DMG"

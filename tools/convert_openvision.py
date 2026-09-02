@@ -77,6 +77,10 @@ TOKENIZER_FILES = {
 TOKENIZER_CONFIG = {
     "model_type": "bert",
     "_comment": "Minimal config for swift-transformers' AutoTokenizer.from(modelFolder:), which reads BOTH tokenizer_config.json AND config.json and throws if either is absent. Without this file the embedder loaded as nil and logged 'clip: embedder unavailable' — the two towers were present and correct in the bundle, and the whole feature was dark because a 30-byte JSON file was missing. OpenVision's text tower uses the bert-base-uncased WordPiece vocabulary ([CLS]=101, [PAD]=0), which is what model_type names here.",
+    # KNOWN WRONG, DEFERRED: the WordPiece vocab has 30,522 entries. swift-transformers 0.1.24
+    # never reads this field (DistributionLicenceTests.testSwiftTransformersNeverReadsVocabSize
+    # keeps it so). Changing it changes TOKENIZER_CONFIG_SHA256, the zip and OPENVISION_ZIP_SHA256
+    # — fix at the next re-conversion done for a real reason, in the same re-pin; never alone.
     "vocab_size": 32000,
     "max_position_embeddings": CONTEXT,
 }

@@ -21,25 +21,40 @@ can't run under the App Sandbox.
 
 ## Cut a release
 
+**Prove the CI path first (no secrets, no tag, nothing published):** Actions → Release →
+Run workflow, or `gh workflow run Release --ref main`. It restores the pinned models, builds,
+runs `verify-bundle`, and packages an UNSIGNED DMG. It is the first place the app is ever
+compiled by CI, so a red run here is a finding, not a release.
+
 **Locally:**
 ```sh
 DEVID="Developer ID Application: Your Name (ABCDE12345)" \
 NOTARY_PROFILE=cliphoard-notary \
 bash Scripts/release.sh
-# → build/Cliphoard-<version>.dmg  (signed, notarized, stapled)
-gh release create v1.0.0 build/Cliphoard-*.dmg --generate-notes
+# → build/Cliphoard-<version>.dmg (signed, notarized, stapled)
+# → Casks/cliphoard.rb now carries that DMG's sha256: commit it
+git commit -am "cask: sha256 of Cliphoard-<version>.dmg"
+gh release create v<version> build/Cliphoard-*.dmg --generate-notes
 ```
 
 **Via CI:** push a tag and `.github/workflows/release.yml` does the rest:
 ```sh
 git tag v1.0.0 && git push origin v1.0.0
 ```
+The first step fails naming any of the 7 secrets that is missing or malformed. The build
+step aborts unless the tag equals `v<Info.plist version>` and the cask's `version` matches.
+After the GitHub Release is published, the workflow commits the DMG's sha256 into
+`Casks/cliphoard.rb` on `main` — `git pull` before publishing the cask.
 
 ## Homebrew cask
 
-`Casks/cliphoard.rb` is the cask source. Publish it from a tap repo
-(`github.com/AntreasAntoniou/homebrew-tap`) and bump `version` + `sha256` per
-release (the release step prints the DMG SHA-256). Users then:
+`Casks/cliphoard.rb` is the cask source; its `sha256` is written by `Scripts/release.sh`
+from the notarised DMG (never by hand). Publish it into the tap
+(`github.com/AntreasAntoniou/homebrew-tap`) with
+```sh
+bash Scripts/publish-cask.sh ../homebrew-tap   # refuses the placeholder; verifies the released DMG's sha256
+```
+then commit + push inside the tap. Users then:
 ```sh
 brew install --cask antreasantoniou/tap/cliphoard
 ```
@@ -53,6 +68,8 @@ release) into the exact layout `Scripts/build-app.sh` expects; `Scripts/release.
 `release.yml` run it before building, and `STRICT_BUNDLE=1` makes a missing tower fatal.
 To re-publish after a re-conversion: `tools/convert_openvision.py`, `tools/pack-openvision.sh`,
 upload the zip to `models-v1`, update `OPENVISION_ZIP_SHA256` in `tools/restore-models.sh`.
+
+
 
 ## Versioning
 

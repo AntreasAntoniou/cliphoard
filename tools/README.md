@@ -1,4 +1,4 @@
-# Ditto model tools — ogma → CoreML
+# Cliphoard model tools — ogma-libre / MiniLM / OpenVision → CoreML
 
 Converts the axiotic **ogma** embedding models and **all-MiniLM-L6-v2** to
 CoreML for on-device deep search. Both ogma models convert with **exact parity**
@@ -28,12 +28,11 @@ disables brotli content-encoding.
 
 ## Run
 ```bash
-python3 _dl.py axiotic/ogma-micro        # download → models/ogma-micro
-python3 convert_ogma.py models/ogma-micro # → models/ogma-micro.mlpackage (+parity)
-python3 _dl.py axiotic/ogma-small
-python3 convert_ogma.py models/ogma-small
+python3 _dl.py axiotic/open-ogma-micro                 # download → models/open-ogma-micro
+python3 convert_ogma_libre.py models/open-ogma-micro   # → models/open-ogma-micro.mlpackage (+parity)
+python3 _dl.py axiotic/open-ogma-small
+python3 convert_ogma_libre.py models/open-ogma-small
+bash restore-models.sh          # everything at once, incl. the pinned OpenVision zip (what CI runs)
 ```
 
-The model's `forward(input_ids, attention_mask)` already returns the pooled,
-L2-normalised embedding. `build-app.sh` compiles any `tools/models/*.mlpackage`
-to `.mlmodelc` and bundles them (plus `tokenizer.json`) into Ditto.app/Resources.
+The model's `forward(input_ids, attention_mask)` already returns the pooled, L2-normalised embedding. `Scripts/build-app.sh` compiles only the packages named in `BUNDLE_MODELS` (default: the two OpenVision towers) to `.mlmodelc` and bundles them, plus each text model's `<name>-tokenizer/` folder, into `Cliphoard.app/Contents/Resources`; `Scripts/verify-bundle.sh` then proves they landed. The other tiers download on demand.

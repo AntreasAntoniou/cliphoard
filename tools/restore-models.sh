@@ -18,8 +18,10 @@
 #   tools/models/<name>.mlpackage
 #   tools/models/<name>/{tokenizer.json,tokenizer_config.json,config.json}
 #
-# Idempotent: a model is skipped if its .mlpackage + tokenizer.json already exist
-# (so a restored CI cache is reused for free).
+# Idempotent: a model is skipped if its .mlpackage + tokenizer.json already exist (so a
+# restored CI cache is reused for free) — for the openvision pair only when the recorded
+# models/openvision-tiny-p8.zip.sha256 equals OPENVISION_ZIP_SHA256, so a re-pin is never
+# satisfied by a stale cache or an older local set.
 #
 # Requirements (install once before running):
 #   pip install torch transformers coremltools sentencepiece safetensors huggingface_hub
@@ -63,8 +65,14 @@ restore_openvision() {
         echo "::error::openvision-tiny-p8.zip sha256 $got != pinned $OPENVISION_ZIP_SHA256 — refusing to unpack" >&2
         exit 1
     fi
+    # Replace, never merge: ditto -x merges into existing directories, so a re-pin that drops
+    # a file would leave the old one behind. Only reached once the new zip is verified.
+    rm -rf models/openvision-tiny-p8-image.mlpackage models/openvision-tiny-p8-text.mlpackage \
+           models/openvision-tiny-p8-text models/openvision-tiny-p8-manifest.json
     /usr/bin/ditto -x -k "$zip" models/
     rm -f "$zip"
+    # Record which pin produced this set; the skip rule below re-downloads when it differs.
+    printf '%s\n' "$OPENVISION_ZIP_SHA256" > models/openvision-tiny-p8.zip.sha256
 }
 
 mkdir -p models
@@ -75,7 +83,23 @@ for name in $MODELS; do
         openvision-tiny-p8-image) tok="" ;;                  # the image tower has no tokenizer
         *) tok="models/$name/tokenizer.json" ;;
     esac
+    skip=0
     if [ -d "$pkg" ] && { [ -z "$tok" ] || [ -f "$tok" ]; }; then
+        case "$name" in
+            openvision-tiny-p8-*)
+                # Present is not enough for the pinned pair: a set restored under an OLDER pin
+                # (a stale CI cache, or a local tools/models from before a re-pin) must not
+                # satisfy the new one. The marker is written by restore_openvision.
+                recorded="$(cat models/openvision-tiny-p8.zip.sha256 2>/dev/null || true)"
+                if [ "$recorded" = "$OPENVISION_ZIP_SHA256" ]; then
+                    skip=1
+                else
+                    echo "▸ $name present but recorded pin '${recorded:-none}' != $OPENVISION_ZIP_SHA256 — re-downloading"
+                fi ;;
+            *) skip=1 ;;
+        esac
+    fi
+    if [ "$skip" = 1 ]; then
         echo "▸ $name already present — skipping"
         continue
     fi

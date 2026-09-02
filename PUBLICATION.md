@@ -67,23 +67,23 @@ gh repo create AntreasAntoniou/homebrew-tap --public \
 The cask already exists in-repo at `Casks/cliphoard.rb`; it gets copied to the tap **after**
 step 4 produces a real checksum.
 
-## 4. Cut the first release, then fill the real sha256
+## 4. Cut the first release — one pass
 
-**Verified:** the cask still carries the all-zero placeholder, and `Scripts/release.sh:36`
-**correctly refuses to publish while it does**. That guard is working as designed — do not
-disable it.
-
-This is a two-pass step, and it has to be:
-
-1. Tag and let CI build, sign, notarize and staple the DMG. The workflow prints the
-   `SHA-256:` of the released artifact.
-2. Paste that into `Casks/cliphoard.rb`, bump `version`, commit, copy the cask into the tap.
+**Verified:** the cask carries the all-zero placeholder sha256, and that is the EXPECTED
+state going into the first cut: the sha is the DMG's, which cannot exist before the release
+builds it. `Scripts/release.sh` writes the real sha256 into `Casks/cliphoard.rb` from the
+signed+notarised DMG at the end of the run, and `release.yml` commits that to `main` after
+the GitHub Release is published. The hard "never publish a zero sha" gate lives where a cask
+is actually published — `Scripts/publish-cask.sh` — plus the cask's own Ruby preflight.
 
 ```bash
-git tag v1.0.0 && git push origin v1.0.0
-# wait for the Release workflow, copy the SHA-256 it prints
-grep sha256 Casks/cliphoard.rb          # must no longer be all zeros
-brew install --cask AntreasAntoniou/tap/cliphoard   # the real proof
+gh workflow run Release --ref main && gh run watch   # 0. unsigned CI dry run: no secrets, nothing published
+git tag v1.0.0 && git push origin v1.0.0             # 1. the release (tag == v<Info.plist>, cask version matches)
+# wait for the Release workflow: it fails by NAME on any missing secret, else publishes the DMG
+git pull                                              # picks up "cask: sha256 of Cliphoard-1.0.0.dmg"
+grep '^  sha256' Casks/cliphoard.rb                   # must no longer be all zeros
+bash Scripts/publish-cask.sh ../homebrew-tap          # 2. refuses a placeholder; re-downloads the DMG, checks the sha
+brew install --cask AntreasAntoniou/tap/cliphoard     # the real proof
 ```
 
 ## 5. Accessibility pass — hardware, not automatable
@@ -99,8 +99,7 @@ themes. Contrast can be measured from screenshots; VoiceOver cannot be faked.
 
 Nothing here is blocked on anything except your steps above.
 
-- **Dry-run the release end to end** with `ALLOW_PLACEHOLDER_SHA=1` to shake out CI before a
-  real tag is pushed.
+- **Dry-run the release end to end**: `gh workflow run Release --ref main` builds an unsigned DMG on CI with no secrets and publishes nothing — the first-ever CI compile of this app, so run it before any tag.
 - **Update `README.md`** the way the site was updated. It is not WRONG — it already says
   three tiers and permissive licences — but it predates image search, reference-image
   matching, stacking baskets and the import framework.

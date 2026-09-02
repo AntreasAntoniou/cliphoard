@@ -81,8 +81,12 @@ final class DistributionLicenceTests: XCTestCase {
     /// entry's Attribution bullet contains the words "described as bundled" while describing
     /// the exact opposite, and the file opens with a correction paragraph naming every model.
     /// The claim lives on one line; assert on that line.
+    ///
+    /// Sections are looked up in the VISIBLE text: a `### ` heading plus a BUNDLED line planted
+    /// inside the distribution-manifest comment is not a notice a reader can see, and on the
+    /// raw text that passed 8/8 with the visible OpenVision section deleted.
     private func reachesYouLine(for name: String, in notices: String) -> String? {
-        for section in notices.components(separatedBy: "\n### ") {
+        for section in visible(notices).components(separatedBy: "\n### ") {
             let heading = String(section.prefix(while: { $0 != "\n" })).lowercased()
             guard heading.contains(name.lowercased()) else { continue }
             return section.split(separator: "\n").map(String.init)
@@ -113,9 +117,11 @@ final class DistributionLicenceTests: XCTestCase {
         XCTAssertEqual(licence.utf8.count, 1073,
                        "canonical MIT with our holder line is 1073 bytes, got \(licence.utf8.count)")
         guard lines.count > 3 else { return XCTFail("LICENSE is too short to be MIT") }
-        XCTAssertNotNil(lines[2].range(of: #"^Copyright \(c\) \d{4}(-\d{4})? Antreas Antoniou$"#,
+        XCTAssertNotNil(lines[2].range(of: #"^Copyright \(c\) \d{4} Antreas Antoniou$"#,
                                        options: .regularExpression),
-                        "line 3 is not the plain copyright line: '\(lines[2])'")
+                        "line 3 is not the plain single-year copyright line: '\(lines[2])' — a "
+                        + "range would break the 1073-byte pin above; Scripts/verify-bundle.sh "
+                        + "enforces the same rule")
         lines[2] = "@HOLDER@"
         let digest = SHA256.hash(data: Data(lines.joined(separator: "\n").utf8))
             .map { String(format: "%02x", $0) }.joined()
@@ -206,6 +212,13 @@ final class DistributionLicenceTests: XCTestCase {
 
     // MARK: - linked libraries
 
+    /// The canonical apache.org LICENSE-2.0.txt, byte for byte; Scripts/verify-bundle.sh pins
+    /// the same constant (APACHE_SHA256) on the CI path, where this test never runs.
+    static let apacheSHA256 = "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+
+    private func sha256hex(_ text: String) -> String {
+        SHA256.hash(data: Data(text.utf8)).map { String(format: "%02x", $0) }.joined()
+    }
     /// Apache-2.0 §4(a) requires recipients receive a copy of the licence, and both build
     /// paths must actually put it there.
     func testTheApacheTextExistsAndBothBuildPathsShipIt() throws {
@@ -221,6 +234,9 @@ final class DistributionLicenceTests: XCTestCase {
         }
         XCTAssertGreaterThan(text.utf8.count, 9_000,
                              "LICENSE-Apache-2.0.txt is too short to be the real text")
+        XCTAssertEqual(sha256hex(text), Self.apacheSHA256,
+                       "LICENSE-Apache-2.0.txt is not the canonical apache.org LICENSE-2.0.txt "
+                       + "(sha256 \(sha256hex(text))) — a reflowed or edited copy is not the licence")
         for script in ["Scripts/build-app.sh", "Scripts/release.sh"] {
             XCTAssertTrue(try read(script).contains("LICENSE-Apache-2.0.txt"),
                           "\(script) does not ship LICENSE-Apache-2.0.txt, so a recipient gets "
@@ -244,17 +260,20 @@ final class DistributionLicenceTests: XCTestCase {
             return XCTFail("Package.resolved has no `pins` array — the format changed")
         }
         let manifest = try read("THIRD-PARTY-NOTICES.md")
-        XCTAssertTrue(manifest.contains("distribution-manifest"),
-                      "the distribution-manifest block is gone; nothing classifies dependencies")
+        // Only the `linked:` / `not-linked:` lines INSIDE the distribution-manifest comment
+        // classify anything. Matching the whole file let a deleted manifest line pass because
+        // the package's name (and URL) still appeared in its visible `### ` section.
+        let classified = Set(manifestLines(in: manifest).map { normalisedURL(manifestURL($0)) })
+        XCTAssertFalse(classified.isEmpty,
+                       "the distribution-manifest comment parsed no linked:/not-linked: lines — "
+                       + "the block is gone or the parse is broken, so nothing classifies dependencies")
         for pin in pins {
             let url = (pin["location"] as? String) ?? (pin["repositoryURL"] as? String) ?? ""
             guard !url.isEmpty else { continue }
-            let name = url.split(separator: "/").last.map(String.init)?
-                          .replacingOccurrences(of: ".git", with: "") ?? url
-            XCTAssertTrue(manifest.contains(url) || manifest.contains(name),
-                          "'\(name)' is resolved into the build but the distribution-manifest "
-                          + "in THIRD-PARTY-NOTICES.md neither lists it as `linked:` (with its "
-                          + "licence and copyright) nor as `not-linked:` with a reason. Every "
+            XCTAssertTrue(classified.contains(normalisedURL(url)),
+                          "'\(url)' is resolved into the build but no `linked:` / `not-linked:` line "
+                          + "INSIDE the distribution-manifest comment of THIRD-PARTY-NOTICES.md names "
+                          + "it — a mention in a visible heading is not a classification. Every "
                           + "linked package is redistributed inside the binary.")
         }
     }
@@ -265,6 +284,33 @@ final class DistributionLicenceTests: XCTestCase {
     private func visible(_ markdown: String) -> String {
         markdown.replacingOccurrences(of: "<!--[\\s\\S]*?-->", with: "",
                                       options: .regularExpression)
+    }
+
+    /// The `linked:` / `not-linked:` lines INSIDE `<!-- distribution-manifest … -->`, and only
+    /// those. Matching names anywhere in the file is how deleting Jinja's manifest line stayed
+    /// green: "Jinja" still appeared in its visible heading.
+    private func manifestLines(in markdown: String) -> [String] {
+        guard let open = markdown.range(of: "<!-- distribution-manifest"),
+              let close = markdown.range(of: "-->", range: open.upperBound..<markdown.endIndex)
+        else { return [] }
+        return markdown[open.upperBound..<close.lowerBound].split(separator: "\n")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { $0.hasPrefix("linked:") || $0.hasPrefix("not-linked:") }
+    }
+
+    /// The URL of a manifest line: between the first `:` and the first `|`.
+    private func manifestURL(_ line: String) -> String {
+        let afterKey = line.drop(while: { $0 != ":" }).dropFirst()
+        let url = afterKey.split(separator: "|", maxSplits: 1, omittingEmptySubsequences: false).first ?? ""
+        return String(url).trimmingCharacters(in: .whitespaces)
+    }
+
+    /// Package.resolved and the manifest may differ by `.git`, a trailing slash, or case only.
+    private func normalisedURL(_ url: String) -> String {
+        var u = url.trimmingCharacters(in: .whitespaces).lowercased()
+        while u.hasSuffix("/") { u.removeLast() }
+        if u.hasSuffix(".git") { u.removeLast(4) }
+        return u
     }
 
     /// The visible `### <name>` section body: from its heading to the next `##`/`###` heading.
@@ -358,5 +404,56 @@ final class DistributionLicenceTests: XCTestCase {
                           "\(script) restores \(restored.first ?? []) but the app bundles "
                           + "\(bundled) — the release entrypoint must restore every bundled model before building")
         }
+    }
+
+    // MARK: - CLIPTextMean provenance
+
+    /// `CLIPTextMean.vector` is a transcription of `text_mean` in the OpenVision manifest that
+    /// ships inside the pinned openvision-tiny-p8.zip. The generator that produced it was never
+    /// committed, so the manifest is its only provenance; if the two ever disagree, the wrong
+    /// mean is being subtracted from every query — and that is worse than none.
+    func testCLIPTextMeanIsTheManifestTextMean() throws {
+        let url = root.appendingPathComponent("tools/models/openvision-tiny-p8-manifest.json")
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            throw XCTSkip("tools/models/openvision-tiny-p8-manifest.json is absent (gitignored); "
+                          + "restore it with: MODELS=\"openvision-tiny-p8-text\" bash tools/restore-models.sh")
+        }
+        let obj = try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any]
+        guard let mean = obj?["text_mean"] as? [Double] else {
+            return XCTFail("the manifest has no numeric `text_mean` array")
+        }
+        XCTAssertEqual(mean.count, 192, "the manifest's text_mean is not 192-d")
+        XCTAssertEqual(CLIPTextMean.vector.count, mean.count)
+        for (i, pair) in zip(mean, CLIPTextMean.vector).enumerated() {
+            XCTAssertEqual(Float(pair.0), pair.1, accuracy: 1e-7,
+                           "CLIPTextMean.vector[\(i)] = \(pair.1) but the manifest's text_mean[\(i)] = "
+                           + "\(pair.0) — the constant no longer matches the weights it was measured on")
+        }
+    }
+
+    /// The shipped tokenizer config.json says `vocab_size: 32000` while the WordPiece vocab has
+    /// 30,522 entries — recorded and deferred (fixing it re-pins the zip). That is harmless
+    /// ONLY while nothing reads the field. swift-transformers 0.1.24 does not; a bump that
+    /// starts to must turn this red so the deferral is revisited, not silently inherited.
+    func testSwiftTransformersNeverReadsVocabSize() throws {
+        let sources = root.appendingPathComponent(".build/checkouts/swift-transformers/Sources")
+        guard let e = FileManager.default.enumerator(atPath: sources.path) else {
+            return XCTFail("\(sources.path) is unreadable — swift test resolves checkouts first, "
+                           + "so this is not a legitimate state")
+        }
+        var swiftFiles = 0
+        var hits: [String] = []
+        for case let rel as String in e where rel.hasSuffix(".swift") {
+            swiftFiles += 1
+            let text = try String(contentsOf: sources.appendingPathComponent(rel), encoding: .utf8)
+            if text.contains("vocab_size") || text.contains("vocabSize") { hits.append(rel) }
+        }
+        XCTAssertGreaterThan(swiftFiles, 10,
+                             "too few Swift files under swift-transformers/Sources — the checkout is "
+                             + "absent or the layout moved, so this test proves nothing")
+        XCTAssertTrue(hits.isEmpty,
+                      "swift-transformers now reads vocab_size in \(hits) — re-convert OpenVision with "
+                      + "vocab_size 30522 (tools/convert_openvision.py), re-pack, re-upload, and re-pin "
+                      + "OPENVISION_ZIP_SHA256 + TOKENIZER_CONFIG_SHA256")
     }
 }

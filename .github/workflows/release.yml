@@ -1,16 +1,22 @@
 name: Release
 
 # Tag a version (e.g. `git tag v1.0.0 && git push --tags`) to build, sign,
-# notarize, package a DMG, and publish a GitHub Release automatically.
+# notarize, package a DMG, publish a GitHub Release, and commit the DMG's sha256 into
+# Casks/cliphoard.rb on main.
+#
+# Run it by hand (Actions → Release → Run workflow, or `gh workflow run Release --ref main`)
+# for an UNSIGNED DRY RUN: no secrets needed, signing/notarization/publishing are skipped,
+# the cask is untouched. It proves the CI compile + model restore + verify-bundle path.
 #
 # Required repository secrets (Settings → Secrets and variables → Actions):
-#   MACOS_CERT_P12        base64 of your "Developer ID Application" .p12
+#   MACOS_CERT_P12        base64 of your "Developer ID Application" .p12 (base64 -i cert.p12 | tr -d '\n')
 #   MACOS_CERT_PASSWORD   password for that .p12
 #   KEYCHAIN_PASSWORD     any throwaway password for the temp CI keychain
 #   MACOS_DEVID           e.g. "Developer ID Application: Your Name (TEAMID)"
 #   APPLE_ID              your Apple ID email (for notarytool)
 #   APPLE_TEAM_ID         your 10-char Team ID
-#   APPLE_APP_PASSWORD    an app-specific password from appleid.apple.com
+#   APPLE_APP_PASSWORD    an app-specific password from account.apple.com
+# The first step fails by NAME on any that is missing or malformed (Scripts/ci-preflight-secrets.sh).
 #
 # NOTE: the bundled OpenVision CoreML towers are gitignored (large binaries). For CI to build
 # a working app, the "Restore bundled models" step below runs tools/restore-models.sh, which
@@ -21,31 +27,48 @@ name: Release
 on:
   push:
     tags: ['v*.*.*']
+  workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
   release:
-    runs-on: macos-14
+    # macos-14 is deprecated on actions/runner-images; macos-26's default Xcode (26.x) is the
+    # toolchain generation this code is developed on.
+    runs-on: macos-26
+    env:
+      DRY_RUN: ${{ github.event_name == 'workflow_dispatch' }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Preflight release secrets
+        if: env.DRY_RUN != 'true'
+        env:
+          MACOS_CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
+          MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+          MACOS_DEVID: ${{ secrets.MACOS_DEVID }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        run: bash Scripts/ci-preflight-secrets.sh
 
       - name: Set up Python (for CoreML conversion)
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      # Cache the restored models keyed on the restore inputs (the pin lives in
-      # restore-models.sh, so a re-published zip invalidates it). The v2 prefix discards the
-      # stale ogma-models-* caches, which can hold a pre-retirement EmbeddingGemma package.
+      # Cache the restored models keyed on the EXACT restore inputs (the pin lives in
+      # restore-models.sh, so a re-pinned zip changes the key and misses). Deliberately no
+      # restore-keys: a prefix fallback would restore an OLDER tools/models on a miss, and
+      # restore-models.sh keeps whatever is present unless its recorded pin differs. The v2
+      # prefix retired the ogma-models-* caches (pre-retirement EmbeddingGemma).
       - name: Cache on-device models
         uses: actions/cache@v4
         with:
           path: tools/models
           key: models-v2-${{ hashFiles('tools/restore-models.sh', 'tools/pack-openvision.sh', 'tools/convert_openvision.py', 'tools/convert_ogma_libre.py', 'tools/convert_minilm.py', 'tools/_dl.py', 'tools/_compat.py', 'tools/requirements.txt') }}
-          restore-keys: |
-            models-v2-
 
       - name: Restore bundled models
         env:
@@ -72,34 +95,47 @@ jobs:
           done
 
       - name: Set up signing keychain
+        if: env.DRY_RUN != 'true'
         env:
           MACOS_CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
           MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
           KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+          MACOS_DEVID: ${{ secrets.MACOS_DEVID }}
         run: |
-          echo "$MACOS_CERT_P12" | base64 --decode > /tmp/cert.p12
+          printf '%s' "$MACOS_CERT_P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
           security create-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
           security default-keychain -s build.keychain
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
           security set-keychain-settings -t 3600 -u build.keychain
-          security import /tmp/cert.p12 -k build.keychain -P "$MACOS_CERT_PASSWORD" -T /usr/bin/codesign
+          security import "$RUNNER_TEMP/cert.p12" -k build.keychain -P "$MACOS_CERT_PASSWORD" -T /usr/bin/codesign \
+            || { echo "::error::security import failed — MACOS_CERT_P12 is not a Developer ID .p12 or MACOS_CERT_PASSWORD is wrong"; exit 1; }
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" build.keychain
-          rm -f /tmp/cert.p12
+          rm -f "$RUNNER_TEMP/cert.p12"
+          security find-identity -v -p codesigning build.keychain | grep -qF "$MACOS_DEVID" \
+            || { echo "::error::the imported certificate is not the identity named by MACOS_DEVID"; security find-identity -v -p codesigning build.keychain; exit 1; }
 
       - name: Store notarization credentials
+        if: env.DRY_RUN != 'true'
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
         run: |
           xcrun notarytool store-credentials cliphoard-notary \
-            --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_PASSWORD"
+            --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_PASSWORD" --validate \
+            || { echo "::error::Apple rejected APPLE_ID / APPLE_TEAM_ID / APPLE_APP_PASSWORD (it must be an app-specific password, not the Apple ID password)"; exit 1; }
 
       - name: Build, sign, notarize, package DMG
         env:
           DEVID: ${{ secrets.MACOS_DEVID }}
           NOTARY_PROFILE: cliphoard-notary
-        run: bash Scripts/release.sh
+          RELEASE_TAG: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}
+        run: |
+          if [ "$DRY_RUN" = "true" ]; then
+            echo "unsigned dry run: no signing, no notarization, cask untouched, nothing published"
+            unset DEVID NOTARY_PROFILE
+          fi
+          bash Scripts/release.sh
 
       - name: Compute DMG checksum
         id: dmg
@@ -109,6 +145,7 @@ jobs:
           echo "sha256=$(shasum -a 256 "$FILE" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
 
       - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
           files: ${{ steps.dmg.outputs.path }}
@@ -122,3 +159,18 @@ jobs:
 
             Install: download the DMG, drag Cliphoard to Applications, and press ⌃⌥⌘V.
             Or via Homebrew once the cask is published: `brew install --cask cliphoard`.
+
+      # After publish, so a push failure never loses the DMG. main is unprotected, so the
+      # GITHUB_TOKEN (contents: write) can push; if main is ever protected, switch this to a PR.
+      - name: Commit the cask checksum to main
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          set -euo pipefail
+          SHA="${{ steps.dmg.outputs.sha256 }}"; V="${GITHUB_REF_NAME#v}"
+          grep -q "^  sha256 \"$SHA\"$" Casks/cliphoard.rb || { echo "::error::release.sh did not write the DMG sha256 into Casks/cliphoard.rb"; exit 1; }
+          cp Casks/cliphoard.rb "$RUNNER_TEMP/cliphoard.rb"; git checkout -- Casks/cliphoard.rb
+          git fetch --no-tags origin main && git checkout -B main origin/main
+          grep -q "^  version \"$V\"$" Casks/cliphoard.rb || { echo "::error::main's cask is not version $V — refusing to commit a checksum for a different release"; exit 1; }
+          cp "$RUNNER_TEMP/cliphoard.rb" Casks/cliphoard.rb
+          git config user.name "github-actions[bot]"; git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Casks/cliphoard.rb && git commit -m "cask: sha256 of Cliphoard-$V.dmg" -m "$SHA" && git push origin main

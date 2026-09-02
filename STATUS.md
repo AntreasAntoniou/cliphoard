@@ -112,8 +112,7 @@ because the fixes are in this branch.
    `APPLE_APP_PASSWORD`). Everything downstream depends on this.
 2. **Publish the Homebrew tap** — create/push `github.com/AntreasAntoniou/homebrew-tap`;
    the cask lives only in-repo (`Casks/cliphoard.rb`) until then.
-3. **Fill the real DMG `sha256`** into `Casks/cliphoard.rb` (currently an all-zero
-   placeholder, correctly guarded) — computable only from the actual signed+notarized DMG.
+3. **Cask sha256** — written by the first tagged release (`release.sh` rewrites `Casks/cliphoard.rb` from the notarised DMG; `release.yml` commits it), then `Scripts/publish-cask.sh` copies it into the tap. Not hand-filled.
 4. **VoiceOver hardware pass** + final rendered **WCAG AA** contrast sign-off across the 16
    themes — cannot be verified from source.
 
