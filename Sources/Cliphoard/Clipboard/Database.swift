@@ -352,7 +352,7 @@ final class Database {
                 createdAt: Date(timeIntervalSinceReferenceDate: sqlite3_column_double(stmt, 7)),
                 lastUsedAt: Date(timeIntervalSinceReferenceDate: sqlite3_column_double(stmt, 8)),
                 pinned: sqlite3_column_int(stmt, 9) != 0,
-                sourceApp: columnOpt(stmt, 10),
+                sourceApp: columnOpt(stmt, 10).map(Crypto.open),
                 useCount: Int(sqlite3_column_int(stmt, 11)),
                 userTags: Self.userTags(fromText: columnOpt(stmt, 12).map(Crypto.open) ?? ""),
                 // The FULL stored integer, never masked to the bits this build
@@ -385,7 +385,9 @@ final class Database {
             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);
             """
         // Encrypt the actual clipboard CONTENT at rest (text, rich text, file
-        // path, color). Metadata (id, kind, timestamps, source app) stays clear.
+        // path, color). Metadata (id, kind, timestamps, pin, use count, flags, shape)
+        // stays clear. The source app is sealed with the content: a row whose origin
+        // reads 'Bitwarden' announces what the ciphertext beside it is.
         // Fail CLOSED: if any content column can't be sealed we refuse the whole
         // insert rather than let plaintext reach disk. `sealStrict` returns nil
         // only if AES-GCM seal genuinely fails (effectively never) — a backstop.
@@ -412,6 +414,13 @@ final class Database {
                 NSLog("Cliphoard db: content seal failed — refusing insert (color)"); return false
             }
             encColor = s
+        }
+        var encSourceApp: String? = nil
+        if let app = item.sourceApp {
+            guard let s = Crypto.sealStrict(app) else {
+                NSLog("Cliphoard db: content seal failed — refusing insert (source app)"); return false
+            }
+            encSourceApp = s
         }
         let normalizedTags = ClipItem.normalizedUserTags(item.userTags)
         guard let encUserTags = Crypto.sealStrict(normalizedTags.joined(separator: "\n")) else {
@@ -442,7 +451,7 @@ final class Database {
             sqlite3_bind_double(stmt, 8, item.createdAt.timeIntervalSinceReferenceDate)
             sqlite3_bind_double(stmt, 9, item.lastUsedAt.timeIntervalSinceReferenceDate)
             sqlite3_bind_int(stmt, 10, item.pinned ? 1 : 0)
-            bindText(stmt, 11, item.sourceApp)
+            bindText(stmt, 11, encSourceApp)
             sqlite3_bind_int(stmt, 12, Int32(item.useCount))
             bindText(stmt, 13, encUserTags)
             // Written verbatim (see `loadAll`): the whole raw value goes back to
@@ -745,6 +754,22 @@ final class Database {
     /// Rewrite the database file, purging free pages. Used after the encryption
     /// migration so stale plaintext can't linger in the file at rest.
     func vacuum() { exec("VACUUM;") }
+
+    /// The ids of every clip whose `source_app` is still stored IN THE CLEAR, or nil
+    /// when the scan stopped early.
+    ///
+    /// Read from the column, not from a loaded item: `loadAll` opens the value, so a
+    /// sealed name and a plaintext one are indistinguishable in memory by design. And
+    /// nil, not an empty set, on a short scan — the rows a truncated read accumulated
+    /// are a PREFIX (see `prepareEach`), and a one-shot pass that stamped itself on a
+    /// prefix would retire with plaintext still on disk.
+    func plaintextSourceAppIDs() -> Set<String>? {
+        var ids = Set<String>()
+        let rc = prepareEach("SELECT id, source_app FROM clips WHERE source_app IS NOT NULL;") { stmt in
+            if !Crypto.isSealed(column(stmt, 1)) { ids.insert(column(stmt, 0)) }
+        }
+        return rc == SQLITE_DONE ? ids : nil
+    }
 
     func delete(ids: [UUID]) {
         guard !ids.isEmpty else { return }
