@@ -124,10 +124,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let appItem = NSMenuItem()
         appItem.submenu = appMenu           // a top-level item with no submenu never
         main.addItem(appItem)               // dispatches its key equivalent
-        // LEAVE `autoenablesItems` AT ITS DEFAULT (true). That default is what disables
-        // this item for the duration of a modal session, which is what stops a second ⌘Q
-        // from re-entering `applicationShouldTerminate` while its confirm is on screen.
-        // Probed: with autoenabling on, ⌘Q inside a running NSAlert does nothing.
+        // `autoenablesItems` is left at its default (true) — but NOT because it protects
+        // anything. The first version of this comment claimed autoenabling is what stops a
+        // second ⌘Q re-entering `applicationShouldTerminate` while its confirm is on
+        // screen; a verifier probed it and that is false: with autoenabling OFF the item
+        // still does not fire during `NSAlert.runModal()`, and `isEnabled` reads true
+        // throughout in both configurations. It is the MODAL SESSION that swallows the key
+        // equivalent, not the item's enabled state. The re-entrancy guard that actually
+        // matters is `isAskingAboutQuit` in `applicationShouldTerminate`.
         return main
     }
 
@@ -581,9 +585,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                                                   relaunching: AppLifecycle.relaunchRequested)
         else { return .terminateNow }
         // An Apple Event (osascript / deploy-local.sh) IS still dispatched during a modal
-        // loop and would stack a second alert behind the first. ⌘Q cannot do this — AppKit
-        // disables main-menu items for the duration of a modal session — but the cheapest
-        // guard covers the path that can.
+        // loop and would stack a second alert behind the first. ⌘Q cannot do this — a modal
+        // session swallows main-menu key equivalents (probed; it is the session, not the
+        // item's enabled state) — but the cheapest guard covers the path that can.
         guard !isAskingAboutQuit else { return .terminateCancel }
         isAskingAboutQuit = true
 

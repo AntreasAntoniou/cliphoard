@@ -48,9 +48,13 @@ final class QuitPathTests: XCTestCase {
         XCTAssertEqual(quit.action.map(NSStringFromSelector), "quit",
                        "must target the same `quit` the status item uses, so both land in "
                        + "the one termination gate")
+        // Pinned at its default, NOT for re-entrancy protection: a verifier probed that a
+        // modal session swallows ⌘Q with autoenabling on OR off (isEnabled reads true in
+        // both). The guard against a second quit request is `isAskingAboutQuit`. This
+        // assertion only keeps the menu at the default so nothing new needs enabling logic.
         XCTAssertTrue(menu.autoenablesItems,
-                      "autoenabling is what disables this item during a modal session — "
-                      + "which is what stops a second ⌘Q re-entering the quit confirm")
+                      "the main menu should stay at AppKit's default autoenabling; nothing "
+                      + "here needs manual isEnabled management")
     }
 
     /// Without this the builder above passes while the app ships no menu at all.
