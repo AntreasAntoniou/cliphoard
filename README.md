@@ -65,6 +65,7 @@ cloud.** Everything you copy stays on your Mac.
 | `⌘P` | Pin / unpin selection |
 | `⌘⌫` | Delete selection |
 | `esc` | Dismiss (or close settings) |
+| `⌘Q` | Quit Cliphoard |
 
 Click a card to select it; click again to paste. The toolbar **gear** opens settings
 right inside the bar (theme, layout, search mode, sound, history limit, permissions).

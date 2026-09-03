@@ -26,6 +26,7 @@
 | --- | --- |
 | `App/Main.swift` | `@main struct Main`. Builds `NSApplication`, sets `AppDelegate` as delegate, `setActivationPolicy(.accessory)` (no Dock icon), retains the delegate via `objc_setAssociatedObject(app, "dittoDelegate", …)`, then `app.run()`. Struct (not `main.swift`) to avoid the top-level-code vs `@MainActor` conflict under SwiftPM. |
 | `App/AppDelegate.swift` | The conductor (`@MainActor`, `NSApplicationDelegate`, `NSMenuDelegate`). Owns `store`/`monitor`/`model`/`panel`/`hotKey`/`statusItem`. `applicationDidFinishLaunching` wires the status item, panel, hotkey, Darwin remote toggles, calls `EmbedderProvider.configureAndReindex`, and `monitor.start()`. Builds the status menu (`rebuildMenu`/`menuNeedsUpdate`), handles keyboard (`handleKey`), and runs the paste flow (`show`/`hide`/`commit`/`copyToClipboard`). |
+| `App/AppLifecycle.swift` | The app's only exits. `quit` / `requestRelaunch` / `performRelaunchIfRequested`; the reopen waits for this pid to exit before `open`. The unsaved-clip confirm lives in `AppDelegate.applicationShouldTerminate`, which every exit passes through. |
 | `App/HotKey.swift` | `final class HotKey`. Registers the global shortcut via Carbon `RegisterEventHotKey` + an `InstallEventHandler` on `GetApplicationEventTarget()`. Hotkey id signature `0x4454_4f48` ('DTOH'). `onPressed` callback dispatched to main. Carbon is used as the only reliable no-entitlement system-wide shortcut API. |
 
 ### Clipboard core — `Sources/Cliphoard/Clipboard/`

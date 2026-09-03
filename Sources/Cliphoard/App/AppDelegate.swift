@@ -39,8 +39,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var isVisible = false
     private var isClosing = false
     private var didPromptAX = false
+    private var isAskingAboutQuit = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        setupMainMenu()
         setupStatusItem()
         setupPanel()
         setupHotKey()
@@ -94,13 +96,49 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
     #endif
 
+    // MARK: Main menu
+
+    /// An `.accessory` app displays no menu bar — but AppKit still dispatches key
+    /// equivalents through `NSApp.mainMenu`, which is the only reason ⌘Q can work from the
+    /// bar, the inspector, the in-bar Settings and the Onboarding window with one item.
+    /// Probed on this machine: policy 1 (accessory), a posted ⌘Q fires this item, and it
+    /// fires with the SwiftUI search field's field editor as first responder.
+    ///
+    /// The status item's own "Quit Cliphoard" carries `keyEquivalent: "q"`, but a status
+    /// menu is not in the main-menu chain: that glyph was decorative until now.
+    ///
+    /// ONE item, deliberately. An Edit menu would put ⌘C into the main-menu chain, where it
+    /// would compete with the CONDITIONAL ⌘C in `handleKey` (selected text in the search
+    /// field vs. the selected clip) — a silent regression. Add nothing here.
+    private func setupMainMenu() { NSApp.mainMenu = Self.makeMainMenu(target: self) }
+
+    /// Built by a pure static so a test can assert the real menu with no running app.
+    static func makeMainMenu(target: AnyObject?) -> NSMenu {
+        let appMenu = NSMenu(title: "Cliphoard")
+        let item = NSMenuItem(title: "Quit Cliphoard",
+                              action: #selector(AppDelegate.quit), keyEquivalent: "q")
+        item.keyEquivalentModifierMask = [.command]
+        item.target = target
+        appMenu.addItem(item)
+        let main = NSMenu()
+        let appItem = NSMenuItem()
+        appItem.submenu = appMenu           // a top-level item with no submenu never
+        main.addItem(appItem)               // dispatches its key equivalent
+        // LEAVE `autoenablesItems` AT ITS DEFAULT (true). That default is what disables
+        // this item for the duration of a modal session, which is what stops a second ⌘Q
+        // from re-entering `applicationShouldTerminate` while its confirm is on screen.
+        // Probed: with autoenabling on, ⌘Q inside a running NSAlert does nothing.
+        return main
+    }
+
     // MARK: Status bar
 
     private func setupStatusItem() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         if let button = statusItem.button {
-            button.image = NSImage(systemSymbolName: "command", accessibilityDescription: "Cliphoard")
+            button.image = NSImage(systemSymbolName: "doc.on.clipboard", accessibilityDescription: "Cliphoard")
             button.image?.isTemplate = true
+            button.toolTip = "Cliphoard — click for the menu, ⌃⌥⌘V to open the bar"
         }
         statusMenu.delegate = self
         // EXPLICIT because the safe-mode disabling in `rebuildMenu` depends on it. Under
@@ -510,6 +548,87 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func quit() { NSApp.terminate(nil) }
+
+    // MARK: Leaving
+
+    /// The warning, or nil when there is nothing at risk and the app must quit without a
+    /// question. Pure, because an `NSAlert` cannot be driven headlessly and the COUNT is
+    /// the whole point — "some clips may be lost" is the sentence people click past.
+    ///
+    /// Keys on the count alone: `unsavedClipCount` is incremented at exactly one site, the
+    /// safe-mode arm of `ClipStore.add`, and `safeMode` never clears — so `count > 0`
+    /// already means "frozen, with clips that only exist in this process". A healthy store
+    /// therefore never asks, which is what keeps `Scripts/deploy-local.sh` (osascript quit,
+    /// 5s, pkill) and every ordinary quit dialog-free.
+    static func unsavedQuitPrompt(count: Int, relaunching: Bool)
+        -> (title: String, body: String, confirm: String)? {
+        guard count > 0 else { return nil }
+        let clips = count == 1 ? "1 clip" : "\(count) clips"
+        let verb = relaunching ? "Relaunch" : "Quit"
+        return (title: "\(verb) without saving \(clips)?",
+                body: "Cliphoard couldn't unlock its encryption key when it started, so \(clips) "
+                    + "copied since then \(count == 1 ? "is" : "are") held in memory only — never "
+                    + "written to disk, because a row sealed with a key this process cannot "
+                    + "store would be unreadable forever. Your existing history is untouched.\n\n"
+                    + "Cancel, paste anything you still need somewhere safe, then quit again.",
+                confirm: "\(verb) Anyway")
+    }
+
+    /// EVERY exit passes here: ⌘Q, the status item, the banner's buttons, Settings, and
+    /// `osascript … to quit`. A confirm bolted onto one call site would miss the others.
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard let prompt = Self.unsavedQuitPrompt(count: store.unsavedClipCount,
+                                                  relaunching: AppLifecycle.relaunchRequested)
+        else { return .terminateNow }
+        // An Apple Event (osascript / deploy-local.sh) IS still dispatched during a modal
+        // loop and would stack a second alert behind the first. ⌘Q cannot do this — AppKit
+        // disables main-menu items for the duration of a modal session — but the cheapest
+        // guard covers the path that can.
+        guard !isAskingAboutQuit else { return .terminateCancel }
+        isAskingAboutQuit = true
+
+        // `NSAlert.runModal()` OVERWRITES its window's level with `.modalPanel` (8).
+        // Probed: setting `alert.window.level` to `.popUpMenu` (101) or `.mainMenu + 3`
+        // before `runModal` does NOT survive — CGWindowList reports the alert at layer 8
+        // with the bar at 25 in front of it, so the user presses quit and watches nothing
+        // happen. Lower OUR windows for the duration instead: deterministic, synchronous,
+        // no timer, and restored on every path by the defer.
+        let barLevel = panel.level
+        let inspectorLevel = inspector.panel.level
+        panel.level = .normal
+        inspector.panel.level = .normal
+        // The alert takes key, and `onResignKey` hides the bar — mid-question. This is the
+        // existing, named flag for "we put this window here on the user's behalf".
+        model.isPresentingSystemPanel = true
+        defer {
+            panel.level = barLevel
+            inspector.panel.level = inspectorLevel
+            model.isPresentingSystemPanel = false
+            isAskingAboutQuit = false
+        }
+
+        NSApp.activate(ignoringOtherApps: true)
+        let alert = NSAlert()
+        alert.alertStyle = .critical
+        alert.messageText = prompt.title
+        alert.informativeText = prompt.body
+        alert.addButton(withTitle: prompt.confirm)   // .alertFirstButtonReturn
+        alert.addButton(withTitle: "Cancel")
+        // Return must not be the button that loses data.
+        alert.buttons[0].keyEquivalent = ""
+        alert.buttons[1].keyEquivalent = "\r"
+        guard alert.runModal() == .alertFirstButtonReturn else {
+            AppLifecycle.cancelRelaunch()   // a cancelled relaunch must not relaunch
+            return .terminateCancel
+        }
+        return .terminateNow
+    }
+
+    /// Only reached once termination is APPROVED, which is what makes "Relaunch" safe to
+    /// cancel.
+    func applicationWillTerminate(_ notification: Notification) {
+        AppLifecycle.performRelaunchIfRequested()
+    }
 
     @objc private func showWelcome() { Onboarding.present() }
 

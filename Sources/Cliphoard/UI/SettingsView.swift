@@ -171,6 +171,12 @@ struct SettingsView: View {
                          : "Off (recommended): the bar floats over your work without taking over — your current app keeps its focus and menu bar, and pasting back is faster. Turn this on only if the search field won't accept typing on your setup.")
                         .font(.system(size: 11)).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
+                    Divider()
+                    HStack {
+                        Text("Quit Cliphoard").foregroundStyle(.secondary)
+                        Spacer()
+                        Button("Quit") { AppLifecycle.quit() }.controlSize(.small)
+                    }
                 }
 
                 section("Appearance") {
@@ -461,14 +467,8 @@ struct SettingsView: View {
     }
 
     /// Quit and relaunch so a just-granted Accessibility permission is picked up.
-    private func relaunch() {
-        let url = Bundle.main.bundleURL
-        let task = Process()
-        task.executableURL = URL(fileURLWithPath: "/usr/bin/open")
-        task.arguments = ["-n", url.path]
-        try? task.run()
-        NSApp.terminate(nil)
-    }
+    /// Quit and relaunch so a just-granted Accessibility permission is picked up.
+    private func relaunch() { AppLifecycle.requestRelaunch() }
 
     // MARK: Building blocks
 

@@ -112,6 +112,16 @@ struct ContentView: View {
                         .font(.system(size: 10)).foregroundStyle(.secondary)
                 }
                 Spacer()
+                // The banner already tells the user to quit and reopen. Until now it named
+                // an action the interface did not offer: the status item was the only quit
+                // path, and a menu-bar manager (Ice) hides it behind a chevron. Both route
+                // through `applicationShouldTerminate`, so both inherit the unsaved-clip
+                // confirm — in the one state where there are unsaved clips.
+                Button("Quit") { AppLifecycle.quit() }
+                    .controlSize(.small)
+                Button("Relaunch") { AppLifecycle.requestRelaunch() }
+                    .controlSize(.small)
+                    .help("Quit Cliphoard and open it again, so it can ask for the key")
             }
             .padding(.horizontal, 12).padding(.vertical, 7)
             .background(Color.orange.opacity(0.14))
@@ -946,6 +956,7 @@ struct ContentView: View {
         if model.showSettings {
             HStack(spacing: 16) {
                 hint("esc", "Back")
+                hint("⌘Q", "Quit")
                 Spacer()
                 Text("Cliphoard · ⌃⌥⌘V").font(.system(size: 11)).foregroundStyle(.tertiary)
             }
@@ -961,6 +972,7 @@ struct ContentView: View {
                 hint("⌘P", "Pin")
                 hint("⌘⌫", "Delete")
                 hint("esc", "Close")
+                hint("⌘Q", "Quit")
                 Spacer()
                 // Count what is on screen, not what the model holds — with a
                 // signal filter on, those differ.

@@ -31,6 +31,16 @@ final class ClipStore: ObservableObject {
     /// alongside `safeMode` so the message is specific rather than alarming.
     @Published private(set) var unreadableClipCount = 0
 
+    /// Clips captured this session that were NOT written to disk, because the store was
+    /// frozen. Exact rather than approximate: `safeMode` is assigned once in `init` and
+    /// never cleared, `trim` returns early while frozen, and `delete`/`clearUnpinned`
+    /// refuse — so nothing can remove a counted clip behind the counter's back.
+    ///
+    /// It exists because the refusal below is silent by design (a `DebugLog` line), and a
+    /// quit path that does not say "these N go away now" is how a safety feature becomes
+    /// the loss it was built to prevent.
+    @Published private(set) var unsavedClipCount = 0
+
     /// Whether `items` is the COMPLETE stored history rather than a partial or failed
     /// read.
     ///
@@ -1081,6 +1091,7 @@ final class ClipStore: ObservableObject {
         // session, which is the most that can honestly be offered: writing it would
         // manufacture a row nobody can ever open.
         if safeMode {
+            unsavedClipCount += 1
             DebugLog.write("safe mode: NOT persisting a new clip — it would be sealed with "
                            + "a key this process cannot store, and unreadable after quit")
         } else {
