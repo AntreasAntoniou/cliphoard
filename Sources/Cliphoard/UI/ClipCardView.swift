@@ -346,6 +346,11 @@ struct ClipCardView: View {
     /// the primary Delete came to be the one control left ungated while three secondary
     /// ones were covered. Without a default the compiler makes each call site answer.
     let historyIsMutable: Bool
+    /// Run a file verb on this clip. Optional so a call site that does not wire it renders
+    /// NO items rather than dead ones — the same degrade `ClipDetailView.onInspectOther`
+    /// uses, and not the `historyIsMutable` case, which is about a control that would look
+    /// live while refusing.
+    var onFileVerb: ((FileVerb) -> Void)? = nil
 
     @State private var hovering = false
 
@@ -408,13 +413,16 @@ struct ClipCardView: View {
         .onHover { hovering = $0 }
         .contextMenu {
             Button("Paste") { onActivate() }
+            if item.kind == .file, let onFileVerb {
+                FileClipMenuItems(item: item, perform: onFileVerb)
+            }
             Button("Inspect") { onInspect() }
             Button(item.pinned ? "Unpin" : "Pin") { onPin() }
             Divider()
             Button("Delete", role: .destructive) { onDelete() }
                 .disabled(!historyIsMutable)   // refuses while frozen; do not look live
         }
-        .help(item.preview)
+        .help(helpText)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(accessibilityLabelText)
         .accessibilityValue(item.characterCountLabel)
@@ -423,8 +431,22 @@ struct ClipCardView: View {
         // VoiceOver user cannot reach the button itself. The shortcut is the
         // route that remains (AppDelegate routes ⌘-Return to `inspectSelection`).
         .accessibilityHint("Press Return to paste, Command-C to copy, "
-                           + "Command-Return to inspect")
+                           + "Command-Return to inspect"
+                           + (item.kind == .file ? ", Command-O to open the file" : ""))
         .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
+    }
+
+    /// The hover tooltip. For a file clip it carries the full path, the gesture that opens
+    /// it, and — when the file has gone — the reason Open and Reveal are greyed out. The
+    /// tooltip is the one place a card can say all that without changing its layout: the
+    /// header geometry is pinned by `ClipCardChromeTests`.
+    private var helpText: String {
+        guard item.kind == .file else { return item.preview }
+        let path = item.filePath ?? "no path recorded"
+        if let reason = FileClipAction.unavailableReason(path: item.filePath) {
+            return "\(path)\n\(reason) — Open and Reveal are unavailable; Copy Path still works"
+        }
+        return "\(path)\nDouble-click to open · ⌘O"
     }
 
     /// A spoken label combining the clip's chips, its kind, its source app, and a

@@ -196,7 +196,7 @@ final class PasterSafetyTests: XCTestCase {
             contentsOf: root.appendingPathComponent("Sources/Cliphoard/App/AppDelegate.swift"),
             encoding: .utf8)
 
-        for fn in ["private func commit(", "private func copyToClipboard("] {
+        for fn in ["private func commit(", "private func copyToClipboard(", "private func copyPath("] {
             guard let start = source.range(of: fn) else {
                 return XCTFail("\(fn) was renamed — move this test with it")
             }
@@ -209,7 +209,10 @@ final class PasterSafetyTests: XCTestCase {
             let body = String(rest[..<(end ?? rest.endIndex)])
 
             guard let suppress = body.range(of: "monitor.suppressOwnWrite()"),
-                  let write = body.range(of: "Paster.writeToPasteboard(") else {
+                  // Two write entry points now: `writeToPasteboard` for a clip, `writePath`
+                  // for a file clip's path. This invariant is about whichever write the
+                  // function performs, so the needle is the shared prefix.
+                  let write = body.range(of: "Paster.write") else {
                 return XCTFail("\(fn) no longer both writes and suppresses")
             }
             XCTAssertLessThan(
@@ -301,7 +304,7 @@ final class PasterSafetyTests: XCTestCase {
         let source = try String(
             contentsOf: root.appendingPathComponent("Sources/Cliphoard/App/AppDelegate.swift"),
             encoding: .utf8)
-        for fn in ["private func commit(", "private func copyToClipboard("] {
+        for fn in ["private func commit(", "private func copyToClipboard(", "private func copyPath("] {
             guard let start = source.range(of: fn) else { return XCTFail("\(fn) renamed") }
             let rest = source[start.upperBound...]
             let end = ["\n    private ", "\n    static func ", "\n    func ", "\n    // MARK:"]
@@ -350,7 +353,7 @@ final class PasterSafetyTests: XCTestCase {
         let source = try String(
             contentsOf: root.appendingPathComponent("Sources/Cliphoard/App/AppDelegate.swift"),
             encoding: .utf8)
-        for fn in ["private func commit(", "private func copyToClipboard("] {
+        for fn in ["private func commit(", "private func copyToClipboard(", "private func copyPath("] {
             guard let start = source.range(of: fn) else { return XCTFail("\(fn) renamed") }
             let rest = source[start.upperBound...]
             // EARLIEST of the plausible next-member markers, not the first one that happens
@@ -404,5 +407,34 @@ final class PasterSafetyTests: XCTestCase {
                       "show() resets every other piece of per-summon state but not the "
                       + "banner, so a failure message from earlier surfaces on an unrelated "
                       + "later open, describing something the user is no longer doing")
+        XCTAssertTrue(body.contains("pasteStatus.noticeMessage = nil"),
+                      "a missing-file notice must not outlive its summon either — show() "
+                      + "must clear it exactly as it clears the blocked-paste banner")
+    }
+    // MARK: - Copy Path vs paste-the-file
+
+    /// `writePath` puts the PATH on the pasteboard as text; `writeToPasteboard` puts the
+    /// FILE (a URL). The second half of each test is the whole test: each writer satisfies
+    /// the other's first assertion, so only the flavour that is ABSENT tells them apart —
+    /// which is what forbids "simplifying" the two writers back into one.
+    func testCopyPathWritesThePathAsTextAndNotAsAFile() throws {
+        let path = tempDir.appendingPathComponent("report.pdf").path
+        XCTAssertEqual(Paster.writePath(path, to: pb), .wrote)
+        XCTAssertEqual(pb.string(forType: .string), path)
+        XCTAssertFalse(pb.types?.contains(.fileURL) ?? false,
+                       "Copy Path must not write a file URL: pasted into a terminal you want "
+                       + "the path, not a file drop")
+    }
+
+    func testTheFileClipItselfStillWritesAFileURL() throws {
+        let url = tempDir.appendingPathComponent("report.pdf")
+        try Data("pdf".utf8).write(to: url)
+        var item = ClipItem(kind: .file, text: url.path)
+        item.filePath = url.path
+        XCTAssertEqual(Paster.writeToPasteboard(item, store: store, to: pb), .wrote)
+        XCTAssertTrue(pb.types?.contains(.fileURL) ?? false,
+                      "pasting a file clip must still deliver the FILE (a URL) so Finder and "
+                      + "file wells receive it")
     }
 }
+

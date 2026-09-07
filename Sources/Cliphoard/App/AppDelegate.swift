@@ -13,6 +13,12 @@ final class PasteStatus: ObservableObject {
     /// When set, the bar shows a non-modal banner prompting the user to grant
     /// Accessibility (or press ⌘V). Set on every blocked pick; never gated.
     @Published var blockedMessage: String?
+    /// A message with NO action attached — currently "that file is no longer there".
+    ///
+    /// A separate field rather than a reuse of `blockedMessage`: that banner hard-codes an
+    /// "Open Settings" button that opens Privacy → Accessibility, so a missing-file
+    /// sentence in it would ship a control that does something unrelated to its message.
+    @Published var noticeMessage: String?
     /// Bumped each time a paste actually fires (AX trusted) so the UI can flash a
     /// brief success confirmation.
     @Published var pasteConfirmToken: Int = 0
@@ -34,6 +40,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var statusItem: NSStatusItem!
     private let statusMenu = NSMenu()
     private var keyMonitor: Any?
+    private var clickMonitor: Any?
 
     private var previousApp: NSRunningApplication?
     private var isVisible = false
@@ -235,6 +242,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         model.onPaste = { [weak self] item, plain in self?.commit(item, plain: plain) }
         model.onClose = { [weak self] in self?.hide(paste: false) }
         model.onCopy = { [weak self] item in self?.copyToClipboard(item) }
+        model.onFileVerb = { [weak self] item, verb in self?.perform(verb, on: item) }
         panel.onResignKey = { [weak self] in
             guard let self, self.isVisible, !self.isClosing else { return }
             // The supercard is presented as a .sheet — a separate key window — so
@@ -265,7 +273,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             }
             let view = ClipDetailView(item: item, store: self.store, focusTags: self.model.inspectorFocusTags,
                 onPaste: { [model] in model.onPaste?(item, false) }, onCopy: { [model] in model.onCopy?(item) },
-                onClose: { [model] in model.closeInspector() }, onInspectOther: { [model] in model.inspect($0) })
+                onClose: { [model] in model.closeInspector() }, onInspectOther: { [model] in model.inspect($0) },
+                onFileVerb: { [model] verb in model.onFileVerb?(item, verb) })
             self.inspector.present(AnyView(view), host: self.panel.frame,
                                    visible: (self.panel.screen ?? NSScreen.main)?.visibleFrame ?? .zero)
         }
@@ -274,6 +283,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             ContentView(model: model, store: store, pasteStatus: pasteStatus)
         }
 
+        // Records the click count for `PanelViewModel.click`. A local monitor runs inside
+        // `NSApplication.sendEvent`, i.e. BEFORE the event reaches the window and before
+        // SwiftUI's tap fires (measured), so the count is always current when the tap
+        // handler reads it. The alternative — stacking `.onTapGesture(count: 2)` — makes
+        // SwiftUI hold the single tap back for the double-click interval (~0.35 s,
+        // measured), which would put a visible lag on selecting any card.
+        clickMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
+            self?.model.lastClickCount = event.clickCount
+            return event
+        }
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self else { return event }
             if event.keyCode == 53, self.inspector.panel.isKeyWindow { self.model.closeInspector(); return nil }
@@ -305,6 +324,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // an unrelated later open — stale state presented as if it described what the user
         // is doing right now.
         pasteStatus.blockedMessage = nil
+        pasteStatus.noticeMessage = nil
         model.resetSelection()
         model.presentToken &+= 1
         isVisible = true
@@ -320,7 +340,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         panel.slideIn()
     }
 
-    private func hide(paste: Bool) {
+    /// `restoreFocus` is a defaulted Bool rather than an enum-taking rename, because
+    /// `PasterSafetyTests` matches the literal call form `hide(paste:` — a rename would make
+    /// two live safety tests pass vacuously. Every existing call site is unchanged.
+    private func hide(paste: Bool, restoreFocus: Bool = true) {
         guard isVisible, !isClosing else { return }
         isClosing = true
         model.closeInspector()
@@ -328,7 +351,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             guard let self else { return }
             if paste {
                 Paster.paste(into: self.previousApp)
-            } else {
+            } else if restoreFocus {
                 self.previousApp?.activate(options: [])
             }
             self.isVisible = false
@@ -418,6 +441,74 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         hide(paste: false)
     }
 
+    // MARK: Files
+
+    private func perform(_ verb: FileVerb, on item: ClipItem) {
+        switch verb {
+        case .open:     openInWorkspace(item, reveal: false)
+        case .reveal:   openInWorkspace(item, reveal: true)
+        case .copyPath: copyPath(item)
+        }
+    }
+
+    /// Open the file, or reveal it in Finder.
+    ///
+    /// ORDER IS LOAD-BEARING, both halves. HIDE FIRST: `hide` sets `isClosing` synchronously
+    /// and `panel.onResignKey` guards on it, so the resign that Preview's activation causes
+    /// is swallowed instead of firing a second dismissal. And `restoreFocus: false`: the
+    /// ordinary `hide(paste: false)` re-activates the app the user came FROM, which for an
+    /// already-running Preview would raise it back over the document 0.2 s after we opened
+    /// it — the same defect from the other direction.
+    private func openInWorkspace(_ item: ClipItem, reveal: Bool) {
+        guard let path = item.filePath,
+              FileClipAction.unavailableReason(path: path) == nil else {
+            // Keep the bar UP and say why — the rule `commit` follows for a failed write.
+            // The notice renders inside the bar, so hiding would show it for the 0.2 s of
+            // the slide-out and no longer.
+            pasteStatus.noticeMessage = FileClipAction.missingMessage(path: item.filePath)
+            Feedback.playFailure()
+            return
+        }
+        let url = URL(fileURLWithPath: path)
+        store.markUsed(item)
+        hide(paste: false, restoreFocus: false)
+        if reveal {
+            NSWorkspace.shared.activateFileViewerSelecting([url])
+        } else if !NSWorkspace.shared.open(url) {
+            // The existence check above is a moment old and the file can go between the
+            // two. The bar is already sliding out, so there is nowhere left to render a
+            // sentence: the sound is the honest remaining signal, and the pre-check is what
+            // makes this near-unreachable.
+            Feedback.playFailure()
+        }
+    }
+
+    /// Copy a file clip's PATH as plain text — Finder's own ⌥⌘C ("Copy as Pathname").
+    /// Stays available when the file is missing; see `FileVerb.needsFile`.
+    ///
+    /// A deliberate mirror of `copyToClipboard`: same order, same guards, same suppression.
+    /// `monitor.suppressOwnWrite()` must stay AFTER the write and behind the success guard —
+    /// it records the actual post-write `changeCount`, and without it `poll()` captures
+    /// Cliphoard's own write straight back as a new text clip of the path.
+    private func copyPath(_ item: ClipItem) {
+        guard let path = item.filePath, !path.isEmpty else {
+            pasteStatus.noticeMessage = FileClipAction.missingMessage(path: item.filePath)
+            Feedback.playFailure()
+            return
+        }
+        let outcome = Paster.writePath(path)
+        guard outcome.succeeded else {
+            // See `commit`: nothing was written, so stay open and say so.
+            pasteStatus.blockedMessage = Self.failureMessage(for: outcome)
+            Feedback.playFailure()
+            return
+        }
+        store.markUsed(item)
+        monitor.suppressOwnWrite()
+        Feedback.playCapture()
+        hide(paste: false)
+    }
+
     // MARK: Keyboard
 
     private func handleKey(_ event: NSEvent) -> NSEvent? {
@@ -467,17 +558,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             }
             return event
         case kVK_ANSI_C where cmd || control:
-            // With text selected in the search field, ⌘C copies THAT (standard
-            // field behavior — pairs with ⌘A); otherwise it copies the selected
-            // clip onto the system clipboard without pasting. ⌃C always means
-            // the clip.
+            // With text selected in the search field, ⌘C copies THAT (standard field
+            // behavior — pairs with ⌘A); otherwise it copies the selected clip. ⌃C always
+            // means the clip.
             if cmd, let editor = panel.firstResponder as? NSTextView,
                editor.selectedRange().length > 0 {
                 editor.copy(nil); return nil
             }
+            // ⌥⌘C is COPY PATH. It used to fall into the clip-copy branch below, because
+            // this case never excluded extra modifiers — so the chord was not free, it was
+            // silently doing something else. Non-file clips keep exactly that behaviour via
+            // the fallback: a chord that silently does nothing reads as a broken app.
+            if cmd, plain {
+                if !model.fileVerb(.copyPath) { model.copySelection() }
+                return nil
+            }
             model.copySelection(); return nil
         case kVK_Delete where cmd:
             model.deleteSelection(); return nil
+        case kVK_ANSI_O where cmd:
+            // Only intercept when it can do something; otherwise hand the event back and
+            // let AppKit produce its own unavailable beep rather than inventing one.
+            return model.fileVerb(.open) ? nil : event
         case kVK_ANSI_P where cmd:
             model.pinSelection(); return nil
         default:

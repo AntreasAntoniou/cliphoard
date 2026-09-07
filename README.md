@@ -60,6 +60,8 @@ cloud.** Everything you copy stays on your Mac.
 | `← →` / `↑ ↓` | Move selection |
 | `↩` | Paste selected clip |
 | `⌘C` / `⌃C` | Copy selected clip (no paste) |
+| `⌘O` | Open the selected file clip |
+| `⌥⌘C` | Copy a file clip's path as text |
 | `⌥↩` | Paste selected clip as plain text |
 | `⌘1`–`⌘9` | Quick-paste by position |
 | `⌘P` | Pin / unpin selection |
@@ -67,7 +69,7 @@ cloud.** Everything you copy stays on your Mac.
 | `esc` | Dismiss (or close settings) |
 | `⌘Q` | Quit Cliphoard |
 
-Click a card to select it; click again to paste. The toolbar **gear** opens settings
+Click a card to select it; click again to paste — except a **file** clip, where a **double-click opens** the file and ↩ (or right-click → Paste) pastes it. The toolbar **gear** opens settings
 right inside the bar (theme, layout, search mode, sound, history limit, permissions).
 
 ## Install

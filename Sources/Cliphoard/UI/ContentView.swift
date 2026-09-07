@@ -137,7 +137,12 @@ struct ContentView: View {
             toolbar
             Divider().opacity(0.5)
             BoundedChrome {
-                if let message = pasteStatus.blockedMessage { pasteBlockedBanner(message) }
+                if let message = pasteStatus.blockedMessage {
+                    banner(message, action: ("Open Settings",
+                                             "Open Privacy → Accessibility to grant auto-paste",
+                                             { pasteStatus.onOpenAccessibility?() }))
+                }
+                if let notice = pasteStatus.noticeMessage { banner(notice, action: nil) }
                 if let progress = store.indexing { indexingBar(progress) }
             }
             // Pinned, not `maxHeight: .infinity`. A flexible body region makes
@@ -210,7 +215,11 @@ struct ContentView: View {
     /// Persistent, non-modal banner shown on every blocked pick (Accessibility not
     /// granted): the clip is on the clipboard but the ⌘V keystroke can't fire, so
     /// this is the user's always-visible feedback + a one-tap path to fix it.
-    private func pasteBlockedBanner(_ message: String) -> some View {
+    /// `action` is optional because the two callers differ in kind — a blocked paste has one
+    /// obvious fix and gets a button; a missing file has none and must not borrow that
+    /// button, which is exactly the defect `FrozenControlsTests` exists for.
+    private func banner(_ message: String,
+                        action: (title: String, help: String, run: () -> Void)?) -> some View {
         HStack(spacing: 8) {
             Image(systemName: "exclamationmark.triangle.fill")
                 .font(.system(size: 11)).foregroundStyle(Theme.accent)
@@ -219,17 +228,19 @@ struct ContentView: View {
                 .foregroundStyle(.primary)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 8)
-            Button {
-                pasteStatus.onOpenAccessibility?()
-            } label: {
-                Text("Open Settings")
-                    .font(.system(size: 11, weight: .semibold))
-                    .padding(.horizontal, 8).padding(.vertical, 3)
-                    .background(Theme.accent, in: Capsule())
-                    .foregroundStyle(Color.white)
+            if let action {
+                Button {
+                    action.run()
+                } label: {
+                    Text(action.title)
+                        .font(.system(size: 11, weight: .semibold))
+                        .padding(.horizontal, 8).padding(.vertical, 3)
+                        .background(Theme.accent, in: Capsule())
+                        .foregroundStyle(Color.white)
+                }
+                .buttonStyle(.plain)
+                .help(action.help)
             }
-            .buttonStyle(.plain)
-            .help("Open Privacy → Accessibility to grant auto-paste")
         }
         .padding(.horizontal, 16).padding(.vertical, 7)
         .background(Theme.accent.opacity(0.10))
@@ -668,7 +679,8 @@ struct ContentView: View {
                                 // but a Delete that looks live and silently does nothing
                                 // reads as a broken app, and the next thing someone tries
                                 // when the app looks broken is to clear it.
-                                historyIsMutable: !store.safeMode
+                                historyIsMutable: !store.safeMode,
+                                onFileVerb: { model.onFileVerb?(row.item, $0) }
                             )
                             // Identity is the clip's id (from ForEach) — NOT the index.
                             // An index-based .id reused stale views across filters
@@ -800,6 +812,9 @@ struct ContentView: View {
         .onTapGesture { model.click(idx) }
         .contextMenu {
             Button("Paste") { model.onPaste?(item, false) }
+            if item.kind == .file {
+                FileClipMenuItems(item: item) { model.onFileVerb?(item, $0) }
+            }
             Button("Inspect") { model.inspect(item) }
             Button(item.pinned ? "Unpin" : "Pin") { store.togglePin(item) }
             // Disabled while frozen. The action already refuses, and a destructive

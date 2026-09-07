@@ -99,6 +99,20 @@ enum Paster {
         }
     }
 
+    /// Write a bare path as plain text. Used by "Copy Path".
+    ///
+    /// Deliberately NOT a flag on `writeToPasteboard`: for a `.file` clip that function
+    /// writes an `NSURL`, which is right for pasting into Finder (you get the FILE) and
+    /// wrong for pasting into a terminal (you want the PATH). Two payloads, two functions —
+    /// and `PasterSafetyTests` now asserts the two pasteboards genuinely differ, so nobody
+    /// can "simplify" them back together. `.payloadUnreadable` is unreachable here: the
+    /// string is already in hand.
+    @discardableResult
+    static func writePath(_ path: String, to pb: NSPasteboard = .general) -> WriteOutcome {
+        pb.clearContents()
+        return pb.setString(path, forType: .string) ? .wrote : .pasteboardRefused
+    }
+
     /// Activate the previously-frontmost app and simulate ⌘V.
     static func paste(into app: NSRunningApplication?) {
         app?.activate(options: [])

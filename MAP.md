@@ -62,7 +62,7 @@ Cross-cutting **Support** (`Sources/Cliphoard/Support`) provides audible feedbac
 | `ClipboardMonitor.swift` | swift | `@MainActor` pasteboard poller (0.4s, App-Nap-exempt): captures copies, skips excluded apps/private types, persists images+thumbnails; pure static `shouldSkip`/`detectKind` | `ClipboardMonitor`, `start`, `stop`, `poll`, `capture`, `shouldSkip`, `detectKind`, `isColor`, `isLink` |
 | `Crypto.swift` | swift | At-rest AES-GCM encryption; Secure-Enclave-derived key (P-256 + HKDF) or random Keychain key; non-destructive seal/open w/ legacy fallback + `enc1:` marker | `Crypto`, `usesSecureEnclave`, `seal`, `open`, `resolveKey`, `secureEnclaveKey` |
 | `Database.swift` | swift | Thin SQLite (C API) store: clips + embeddings tables (WAL, encrypted content, Float16 BLOB vectors), CRUD, ordering, transactions, vacuum, blob/vector/tag (de)serialization | `Database`, `init?(path:)`, `loadAll`, `insert`, `updateMeta`, `upsertEmbedding`, `delete`, `transaction`, `blob(fromVector:)`, `vectorFromBlob`, `tags(fromText:)` |
-| `Paster.swift` | swift | `@MainActor` pasteboard writer + actuator: writes clip (text/RTF/image/file, plain option) and synthesizes Cmd-V into prior frontmost app | `Paster`, `writeToPasteboard`, `paste(into:)`, `sendCommandV` |
+| `Paster.swift` | swift | `@MainActor` pasteboard writer + actuator: writes clip (text/RTF/image/file, plain option) and synthesizes Cmd-V into prior frontmost app | `Paster`, `writeToPasteboard`, `writePath`, `paste(into:)`, `sendCommandV` |
 
 ### Sources/Cliphoard/Search/ (semantic engine)
 
@@ -75,6 +75,7 @@ Cross-cutting **Support** (`Sources/Cliphoard/Support`) provides audible feedbac
 ### Sources/Cliphoard/Support/ (cross-cutting)
 
 | File | Lang | Role | Key symbols |
+| `FileClipActions.swift` | swift | What you can do to a `.file` clip's file: `FileVerb` (open / reveal / copyPath, `needsFile`), `FileClipAction` (missing-file reason, titled menu items, notice text), `FileClipMenuItems` shared by both context menus | `FileVerb`, `FileClipAction`, `FileClipMenuItems` |
 |---|---|---|---|
 | `Feedback.swift` | swift | Audible capture feedback (system sound) + `DebugLog` append-only diagnostics file; both UserDefaults-backed | `Feedback`, `DebugLog`, `playCapture`, `DebugLog.write` |
 | `LoginItem.swift` | swift | Launch-at-login via `SMAppService` (macOS 13+) | `LoginItem`, `enabled`, `set(_:)` |
@@ -85,8 +86,8 @@ Cross-cutting **Support** (`Sources/Cliphoard/Support`) provides audible feedbac
 |---|---|---|---|
 | `FloatingPanel.swift` | swift | Borderless non-activating `NSPanel` pinned to screen bottom; slides in/out; rebuilds hosting controller per present to re-evaluate SwiftUI against fresh store; resignKey → dismiss | `FloatingPanel`, `setContent`, `refresh`, `slideIn`, `slideOut`, `resignKey` |
 | `ContentView.swift` | swift | Root view of the bar: toolbar (chips/search-mode/search/gear), paste-blocked banner + confirm flash, indexing bar, three layouts (strip/spotlight/list), footer, scroll-into-view; hosts `SettingsView` | `ContentView`, `init`, `body`, `tagNames(for:)` |
-| `ClipCardView.swift` | swift | SwiftUI card for one `ClipItem` (Paste-style): per-kind header/content, tag chips, footer, selection ring, context menu, a11y; static thumbnail `NSCache` | `ClipCardView`, `imageCache`, `cachedImage(for:)`, `body` |
-| `PanelViewModel.swift` | swift | `@MainActor` bar backing: query/filter/selection/present state; republishes store; memoized filtered/ranked results via `DeepSearch`; keyboard/click intents | `PanelViewModel`, `results`, `computeResults`, `moveSelection`, `commitSelection`, `copySelection`, `deleteSelection`, `pinSelection`, `quickSelect` |
+| `ClipCardView.swift` | swift | SwiftUI card for one `ClipItem` (Paste-style): per-kind header/content, tag chips, footer, selection ring, context menu (file clips: Open / Reveal in Finder / Copy Path), a11y; static thumbnail `NSCache` | `ClipCardView`, `imageCache`, `cachedImage(for:)`, `body` |
+| `PanelViewModel.swift` | swift | `@MainActor` bar backing: query/filter/selection/present state; republishes store; memoized filtered/ranked results via `DeepSearch`; keyboard/click intents | `PanelViewModel`, `results`, `computeResults`, `moveSelection`, `click`, `clickAction`, `commitSelection`, `copySelection`, `fileVerb`, `deleteSelection`, `pinSelection`, `quickSelect` |
 | `SettingsView.swift` | swift | In-bar settings: `AppSettings` (two-way bindings → Feedback/DebugLog/store/LoginItem/Theme/DeepSearch/TagBaskets) + `SettingsView` sections (General/Appearance/Sound/Search/Tags/History/Permissions), embedder status, AX-trust polling/relaunch | `AppSettings`, `SettingsView`, `applyCustomTags`, `refreshAXTrust`, `body` |
 | `OnboardingView.swift` | swift | First-run welcome window: explains hotkey + one-time Accessibility grant, polls AX trust, re-openable from menu | `Onboarding`, `OnboardingView`, `showIfNeeded`, `present` |
 | `Theme.swift` | swift | Theming: `ThemeTokens`, `ThemePreset` (system + dark/light palettes), `LayoutMode`, `Theme` facade (persistence, backgrounds, hex→Color) + reusable `FlowLayout`, `VisualEffectBackground` | `ThemeTokens`, `ThemePreset`, `LayoutMode`, `Theme`, `FlowLayout`, `VisualEffectBackground` |

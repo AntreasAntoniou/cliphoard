@@ -13,6 +13,7 @@ struct ClipDetailView: View {
     /// Navigate the inspector to another clip. Optional so the "similar images" strip
     /// degrades to plain thumbnails rather than dead buttons if a caller does not wire it.
     var onInspectOther: ((ClipItem) -> Void)? = nil
+    var onFileVerb: ((FileVerb) -> Void)? = nil
 
     /// Whether the store will accept a write right now.
     ///
@@ -193,6 +194,12 @@ struct ClipDetailView: View {
                 metadataRow("Last used", item.lastUsedAt.formatted(date: .abbreviated, time: .shortened))
                 metadataRow("Uses", "\(item.useCount)")
                 metadataRow("Pinned", item.pinned ? "Yes" : "No")
+                if item.kind == .file {
+                    metadataRow("Path", item.filePath ?? "—")
+                    if let reason = FileClipAction.unavailableReason(path: item.filePath) {
+                        metadataRow("Status", "Missing — \(reason). Copy Path still works.")
+                    }
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -356,6 +363,13 @@ struct ClipDetailView: View {
         HStack {
             Button("Paste", action: onPaste).keyboardShortcut(.defaultAction)
             Button("Copy", action: onCopy)
+            if item.kind == .file, let onFileVerb {
+                let reason = FileClipAction.unavailableReason(path: item.filePath)
+                ForEach(FileVerb.allCases, id: \.self) { verb in
+                    Button(FileClipAction.title(verb, reason: reason)) { onFileVerb(verb) }
+                        .disabled(verb.needsFile && reason != nil)
+                }
+            }
             Button(item.pinned ? "Unpin" : "Pin") { store.togglePin(item) }
             Spacer()
             Button("Delete", role: .destructive) { store.delete(item); onClose() }

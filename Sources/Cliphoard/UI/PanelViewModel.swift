@@ -63,6 +63,21 @@ final class PanelViewModel: ObservableObject {
     /// Invoked to copy a clip onto the system clipboard without pasting (⌘C/⌃C).
     var onCopy: ((ClipItem) -> Void)?
 
+    /// Invoked to run a file verb (Open / Reveal in Finder / Copy Path) on a `.file` clip.
+    var onFileVerb: ((ClipItem, FileVerb) -> Void)?
+
+    /// The `clickCount` of the mouse-down that is about to become a tap.
+    ///
+    /// SwiftUI's tap action cannot see its own event: measured on macOS 26.6,
+    /// `NSApp.currentEvent` inside a `.onTapGesture` action was an unrelated `mouseMoved`
+    /// with `clickCount == 1`. And stacking `.onTapGesture(count: 2)` makes SwiftUI hold
+    /// the SINGLE tap back for the double-click interval — measured at ~0.35 s — which
+    /// would put a visible lag on selecting any card. So `AppDelegate`'s local
+    /// `.leftMouseDown` monitor, which runs inside `NSApplication.sendEvent` and therefore
+    /// BEFORE the tap (also measured), records the count here and `click` reads it.
+    /// Not `@Published`: it drives no view.
+    var lastClickCount = 1
+
     /// True while WE have deliberately put a system window above the panel — currently the
     /// `NSOpenPanel` behind "search by image".
     ///
@@ -274,14 +289,44 @@ final class PanelViewModel: ObservableObject {
         scrollRequest = selection
     }
 
+    /// What a mouse click on a card means.
+    enum ClickAction: Equatable { case select, paste, open }
+
+    /// The click rule. Pure and static so it can be asserted with no window, no mouse and
+    /// no running app.
+    ///
+    /// A FILE card never pastes on a mouse click, and that IS the design: "click again to
+    /// paste" and "double-click to open" are the same two clicks, so one of them had to
+    /// give. A file URL pasted anywhere but Finder or a file well arrives as junk, while
+    /// "open the thing I am looking at" is what a picture of a document invites — so the
+    /// mouse opens and the keyboard pastes (↩, ⌘1–9, or the context menu's Paste).
+    ///
+    /// `.open` additionally requires the card to be already selected, i.e. the second click
+    /// must land on the card the FIRST one selected. AppKit raises `clickCount` on time and
+    /// proximity, so two quick clicks on adjacent list rows can carry `clickCount == 2`;
+    /// without this guard they would open a file nobody double-clicked.
+    nonisolated static func clickAction(kind: ClipKind, clickCount: Int,
+                                        alreadySelected: Bool) -> ClickAction {
+        guard kind == .file else { return alreadySelected ? .paste : .select }
+        return (clickCount >= 2 && alreadySelected) ? .open : .select
+    }
+
     /// Select a card via mouse click — instant, no scroll animation. Clicking the
-    /// already-selected card commits it (paste).
+    /// already-selected card commits it (paste); for a file clip, a double-click opens it
+    /// instead. See `clickAction`.
     func click(_ index: Int) {
-        if selection == index {
-            let r = results
-            if r.indices.contains(index) { onPaste?(r[index], false) }
-        } else {
-            selection = index
+        let count = lastClickCount
+        // Consume it. A tap that arrives with no mouse-down ahead of it must read as a
+        // plain single click rather than inheriting the previous one.
+        lastClickCount = 1
+        let r = results
+        guard r.indices.contains(index) else { selection = index; return }
+        let item = r[index]
+        switch Self.clickAction(kind: item.kind, clickCount: count,
+                                alreadySelected: selection == index) {
+        case .select: selection = index
+        case .paste:  onPaste?(item, false)
+        case .open:   onFileVerb?(item, .open)
         }
     }
 
@@ -289,6 +334,17 @@ final class PanelViewModel: ObservableObject {
         let r = results
         guard r.indices.contains(selection) else { return }
         onPaste?(r[selection], plain)
+    }
+
+    /// Run a file verb against the selection. Returns false when the selection is not a
+    /// file clip, so the key handler can hand the event back and let AppKit produce its own
+    /// unavailable-beep rather than inventing one.
+    @discardableResult
+    func fileVerb(_ verb: FileVerb) -> Bool {
+        let r = results
+        guard r.indices.contains(selection), r[selection].kind == .file else { return false }
+        onFileVerb?(r[selection], verb)
+        return true
     }
 
     func copySelection() {

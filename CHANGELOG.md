@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+- **File clips open.** Double-click a file clip (a PDF, a document, an image file) and it opens
+  in its default app; `⌘O` does the same for the selected clip. Right-click and the inspector
+  gain **Open**, **Reveal in Finder** and **Copy Path**; `⌥⌘C` copies the path as plain text
+  (Finder's own "Copy as Pathname" chord). A file clip no longer pastes on a mouse click — click
+  selects, double-click opens, and ↩ / `⌘1–9` / right-click → Paste still paste it. Every other
+  clip kind is unchanged. If the file has been moved or deleted, Open and Reveal are greyed with
+  the reason and the bar says which path is gone; Copy Path still works.
+- **Quit is discoverable.** `⌘Q` quits from the bar, the inspector and Settings; the safe-mode
+  banner carries Quit and Relaunch; Settings → General has a Quit button. If clips are held
+  unsaved (safe mode), quitting asks first and names how many.
+- **Screenshots pasteable in web apps is on by default**, with the toggle as the way out.
+
 ## 1.0.0 — 2026-09-02
 
 ### What it is

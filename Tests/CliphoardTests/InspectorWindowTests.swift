@@ -122,7 +122,7 @@ final class InspectorWindowTests: XCTestCase {
         XCTAssertTrue(source.contains("model.onInspectorChange ="),
                       "onInspectorChange is never assigned, so inspecting a clip shows nothing")
 
-        guard let start = source.range(of: "private func hide(paste: Bool)") else {
+        guard let start = source.range(of: "private func hide(paste: Bool") else {
             return XCTFail("hide(paste:) was renamed — move this test with it")
         }
         let body = String(source[start.upperBound...].prefix(700))
