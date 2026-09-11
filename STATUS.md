@@ -1,8 +1,9 @@
 # Cliphoard — Release Readiness Status
 
-**Last updated:** 2026-08-12 · **Branch:** `rename/cliphoard`
-**Verdict: NOT-READY for wide distribution — gated only by human-only steps.**
-**Local install currently FROZEN — see [`PUBLICATION.md`](PUBLICATION.md) before doing anything.**
+**Last updated:** 2026-09-11 · **Branch:** `main`
+**Verdict: RELEASED — v1.0.0 is public (unsigned; the notarized build and Homebrew tap ship in 1.0.1).**
+**Download:** https://github.com/AntreasAntoniou/cliphoard/releases/tag/v1.0.0 · **Site:** https://cliphoard.dev/
+Everything below this line is the pre-launch status log, kept as history; see `CHANGELOG.md` for what shipped.
 
 The codebase is release-quality. What stands between here and a public v1.0 is **not
 code**: it is an Apple Developer ID certificate, a published Homebrew tap, and a

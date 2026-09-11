@@ -8,6 +8,9 @@ Confirmed tally: **1 Critical, 13 High, 11 Medium, 13 Low** (after cross-dimensi
 
 ## CRITICAL
 
+> **Status 2026-09-11:** C1 below is now *disclosed*, not fixed — v1.0.0 shipped unsigned with the Gatekeeper workaround stated on the site, in the README and in the release notes; the notarized build is 1.0.1. The audit text is kept as written.
+
+
 ### C1. No notarization or hardened runtime — Gatekeeper blocks the app on any other Mac
 - **File:** `Scripts/build-app.sh` (lines 64-71); no `.entitlements` anywhere.
 - **Evidence:** Signs with a self-signed "Ditto Local Signing" identity or ad-hoc (`codesign --force --deep --sign -`). No `--options runtime`, no `--timestamp`, no `--entitlements`, no `notarytool`/`stapler` step. Repo-wide grep for notariz/hardened/stapler returns only aspirational SPEC.md text. SPEC.md line 113 lists "Developer-ID-signed + notarized build" under PLANNED.

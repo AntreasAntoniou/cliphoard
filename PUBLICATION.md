@@ -5,7 +5,7 @@ framework and the branch consolidation, and described a recovery procedure that 
 
 **State of the world right now:** `main` is the shipping branch and carries everything.
 496 tests, 0 failures, 5 skips. The site is live and accurate. Licensing is clean end to end
-— MIT app, MIT/Apache-2.0 models, nothing proprietary. **No release has ever been cut.**
+— MIT app, MIT/Apache-2.0 models, nothing proprietary. **v1.0.0 was cut and published on 2026-09-11 as an unsigned release** (no Developer ID yet — see `RELEASING.md` § *First cut without a certificate*); the sections below were written before that and are kept as the record of what was still open at the time.
 
 Everything below is ordered by dependency, not by effort. Steps 1–4 are yours and nothing
 downstream can start without them.
