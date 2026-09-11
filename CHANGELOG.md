@@ -1,6 +1,18 @@
 # Changelog
 
-## Unreleased
+## 1.0.0 — 2026-09-11
+
+### What it is
+
+The first release of Cliphoard: a fast, private, open-source clipboard manager for macOS 13+
+(Universal, Apple Silicon and Intel). Press ⌃⌥⌘V and your history slides up from the bottom
+of the screen — text, rich text, links, hex colours, files and images — searchable by
+meaning as well as by exact text, with on-device search models, 17 themes, three layouts,
+stackable tag baskets, text recognition inside screenshots, image search by description or
+by example, and an importer for the clipboard managers already on your Mac. Native Swift,
+no Electron, no account, no cloud.
+
+### Also in this release
 
 - **File clips open.** Double-click a file clip (a PDF, a document, an image file) and it opens
   in its default app; `⌘O` does the same for the selected clip. Right-click and the inspector
@@ -12,19 +24,6 @@
 - **Quit is discoverable.** `⌘Q` quits from the bar, the inspector and Settings; the safe-mode
   banner carries Quit and Relaunch; Settings → General has a Quit button. If clips are held
   unsaved (safe mode), quitting asks first and names how many.
-- **Screenshots pasteable in web apps is on by default**, with the toggle as the way out.
-
-## 1.0.0 — 2026-09-02
-
-### What it is
-
-The first release of Cliphoard: a fast, private, open-source clipboard manager for macOS 13+
-(Universal, Apple Silicon and Intel). Press ⌃⌥⌘V and your history slides up from the bottom
-of the screen — text, rich text, links, hex colours, files and images — searchable by
-meaning as well as by exact text, with on-device search models, 17 themes, three layouts,
-stackable tag baskets, text recognition inside screenshots, image search by description or
-by example, and an importer for the clipboard managers already on your Mac. Native Swift,
-no Electron, no account, no cloud.
 
 ### Privacy in this release
 
@@ -101,4 +100,4 @@ The build is signed with the project's local self-signed certificate, still name
 - On demand, never bundled: the ogma models (MIT) and all-MiniLM-L6-v2 (Apache-2.0).
 - Full attribution in `THIRD-PARTY-NOTICES.md`.
 
-**SHA-256:** `b9db9a4791340fc8f9fd3aa9d54b3ce5f4849a8661609c9b4f7343e619ef4d42`
+**SHA-256:** `f439daa3510b9e27c2c52341f932e6fce7be0981b585a0d188a56c5c6483a85e`

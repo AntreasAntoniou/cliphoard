@@ -9,6 +9,7 @@ A fast, private, open-source clipboard manager for macOS — searchable by <i>me
   <img src="https://img.shields.io/badge/license-MIT-22a06b">
   <img src="https://img.shields.io/badge/telemetry-none-22a06b">
   <img src="https://img.shields.io/badge/cloud-none-22a06b">
+  <a href="https://github.com/AntreasAntoniou/cliphoard/releases/latest"><img src="https://img.shields.io/github/v/release/AntreasAntoniou/cliphoard?display_name=tag&color=0b7cff" alt="Latest release"></a>
 </p>
 
 <p align="center"><img src="docs/img/bar-oneDark.png" alt="The Cliphoard clipboard bar" width="900"></p>

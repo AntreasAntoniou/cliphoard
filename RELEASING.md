@@ -54,11 +54,16 @@ by hand, with the automation kept out of the way:
 1. `bash Scripts/release.sh` with no `DEVID` / `NOTARY_PROFILE` → an unsigned
    `build/Cliphoard-<version>.dmg` and the printed DMG sha256. `Casks/cliphoard.rb` is
    untouched by design: only a notarised DMG's checksum ever enters the cask.
-2. `gh release edit models-v1 --prerelease` — the models release must not be what
-   `releases/latest` resolves to.
+2. `gh release edit models-v1 --prerelease` — the models release must never be what
+   `releases/latest` resolves to. Done **after** the app release exists, so that endpoint
+   is never momentarily a 404.
 3. `gh workflow disable Release` before the tag and release, `gh workflow enable Release`
    after — a tag push must not trigger the signed CI path with no secrets behind it.
-4. Publish as `gh release create v<version> build/Cliphoard-<version>.dmg --prerelease`.
+4. Publish as `gh release create v<version> build/Cliphoard-<version>.dmg --latest`.
+   1.0.0 shipped as a **full** release, not a pre-release: the site's own download buttons
+   reached `releases/latest` at the time, and with both releases marked pre-release that
+   endpoint returns 404. `prerelease` means *unfinished software*; this build is finished
+   and merely unsigned, and every surface says so in words.
 5. The site and README link to the DMG asset URL
    (`releases/download/v<version>/Cliphoard-<version>.dmg`), never `releases/latest`.
 6. The Homebrew tap is deferred to the first notarized release; the cask keeps its
