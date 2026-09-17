@@ -16,3 +16,7 @@ __pycache__/
 
 # Sibling worktrees (Athena step 0). In-repo per house rule; never committed.
 .worktrees/
+
+# Licence signing key — lives in ~/.cliphoard-licensing/, never here.
+*.ed25519
+licence-signing-key*
