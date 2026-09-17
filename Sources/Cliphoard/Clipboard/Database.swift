@@ -755,6 +755,34 @@ final class Database {
     /// migration so stale plaintext can't linger in the file at rest.
     func vacuum() { exec("VACUUM;") }
 
+    /// Write a consistent copy of the whole database to `path`.
+    ///
+    /// `VACUUM INTO`, and NOT `cp`. The store runs in WAL mode with a live write-ahead log
+    /// (1.9 MB on the owner's machine at the time of writing), so copying `ditto.sqlite`
+    /// alone captures the main file WITHOUT the committed pages sitting in the WAL — an
+    /// inconsistent snapshot, which is the "backup that isn't" failure this codebase
+    /// already writes tests against. `VACUUM INTO` is one statement, atomic, and produces a
+    /// fully checkpointed file with no WAL sidecar to remember.
+    ///
+    /// Requires SQLite 3.27+; the system SQLite here is 3.51.
+    @discardableResult
+    func snapshot(to path: String) -> Bool {
+        guard !FileManager.default.fileExists(atPath: path) else {
+            NSLog("Cliphoard db: refusing to overwrite an existing snapshot at \(path)")
+            return false
+        }
+        var ok = false
+        prepare("VACUUM INTO ?;") { stmt in
+            bindText(stmt, 1, path)
+            ok = step(stmt)
+        }
+        if ok {
+            try? FileManager.default.setAttributes([.posixPermissions: 0o600],
+                                                    ofItemAtPath: path)
+        }
+        return ok
+    }
+
     /// The ids of every clip whose `source_app` is still stored IN THE CLEAR, or nil
     /// when the scan stopped early.
     ///

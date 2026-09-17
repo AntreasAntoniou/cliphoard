@@ -141,9 +141,17 @@ final class AppSettings: ObservableObject {
 struct SettingsView: View {
     @ObservedObject var settings: AppSettings
     @ObservedObject var store: ClipStore
+    /// The bar's view model. Settings is rendered IN-BAR, so the host window is the
+    /// floating panel and `onResignKey` hides the whole thing the moment an NSOpenPanel,
+    /// NSSavePanel or NSAlert takes key. Every system window opened from here therefore
+    /// needs `isPresentingSystemPanel`, and this view had no way to reach it.
+    var model: PanelViewModel?
     /// Owns the import scan/preview/commit flow. StateObject rather than a plain
     /// property so a preview survives the view re-rendering while the user reads it.
     @StateObject private var importModel = ImportModel()
+    /// Owns the export/import flow for moving a history between Macs. StateObject for the
+    /// same reason: the opened file's preview must survive a re-render while it is read.
+    @StateObject private var archiveModel = ArchiveModel()
     /// Embedder lifecycle (ready / downloading N% / installing / failed) for the
     /// live status line — auto-install progress renders here.
     @ObservedObject private var embedderState = EmbedderState.shared
@@ -407,7 +415,11 @@ struct SettingsView: View {
                 }
 
                 section("Import") {
-                    ImportSection(model: importModel, store: store)
+                    ImportSection(model: importModel, store: store, panel: model)
+                }
+
+                section("Move to another Mac") {
+                    MoveToNewMacSection(model: archiveModel, store: store, panel: model)
                 }
 
                 section("History") {

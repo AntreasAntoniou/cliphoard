@@ -211,6 +211,18 @@ final class ClipStore: ObservableObject {
                !dead.isEmpty {
                 items.removeAll { dead.contains($0.id) }
                 db?.delete(ids: Array(dead))
+                // RE-MINT the token. It was minted by the load ABOVE, and the sweep has
+                // just deleted rows out from under it — so `storedCount` now describes a
+                // database that no longer exists, and `items.count == proof.storedCount`
+                // is false for the rest of the process. Every consumer of that comparison
+                // then refuses: the source-app migration silently declines to stamp, and
+                // the export refuses outright, on a store that is in fact perfectly whole.
+                // Nothing here reads the stale value today by luck of ordering, and the
+                // export is the first caller that would have.
+                if case .complete(let rows, let token) = db?.loadAllStatus() {
+                    items = rows
+                    historyProof = token
+                }
             }
         }
         // Moved here from above the safe-mode decision: it deletes rows and it rewrites
@@ -1024,6 +1036,264 @@ final class ClipStore: ObservableObject {
               let stored = try? Data(contentsOf: dir.appendingPathComponent(file))
         else { return nil }
         return Crypto.open(stored)
+    }
+
+    // MARK: - Moving to another Mac
+
+    /// Proof the launch load was complete, for the archive path.
+    ///
+    /// Exposed read-only and nothing more. `Database.CompleteHistory.init` is fileprivate
+    /// to `Database.swift`, so nobody downstream can manufacture one — the export's
+    /// completeness guard is a value the caller cannot forge rather than a `Bool` they can
+    /// forget to pass.
+    var archiveProof: Database.CompleteHistory? { historyProof }
+
+    /// Every dismissed `(tag, clip)` pair — authored data, so it travels in the archive.
+    var userTagDismissalList: [Database.UserTagDismissal] {
+        (db?.userTagDismissals()).map { Array($0) } ?? []
+    }
+
+    /// Write the whole history to `url` as one encrypted file. A PURE READ of this store.
+    func exportArchive(to url: URL, passphrase: String,
+                       acknowledgingUnreadable: Bool = false,
+                       progress: (Double, String) -> Void = { _, _ in })
+        -> Result<HistoryArchiveIO.ExportReport, HistoryArchive.ArchiveError> {
+        guard let proof = historyProof else { return .failure(.historyNotProvenComplete) }
+        return HistoryArchiveIO.export(items: items, proof: proof, directory: dir,
+                                       dismissals: userTagDismissalList, safeMode: safeMode,
+                                       to: url, passphrase: passphrase,
+                                       acknowledgingUnreadable: acknowledgingUnreadable,
+                                       progress: progress)
+    }
+
+    /// Phase B: read the file into quarantine inside this store's directory. Nothing in
+    /// the store is touched, and any failure removes the staging folder.
+    func stageImport(from url: URL, passphrase: String,
+                     progress: (Double, String) -> Void = { _, _ in })
+        -> Result<HistoryArchiveIO.Staged, HistoryArchive.ArchiveError> {
+        HistoryArchiveIO.stage(url: url, passphrase: passphrase, into: dir,
+                               safeMode: safeMode, storageComplete: storageComplete,
+                               hasProof: historyProof != nil, progress: progress)
+    }
+
+    /// What one import actually did. Three skip counts, not one: "already here" and
+    /// "a duplicate of something you already had" are different facts and the user should
+    /// be told which.
+    struct ImportTally {
+        var imported = 0
+        var skippedSameID = 0
+        var skippedSameContent = 0
+        var failed = 0
+        var payloadsMoved = 0
+        var payloadsAlreadyPresent = 0
+        var dismissals = 0
+        var snapshotPath: String?
+        var historyLimitNote: String?
+        var refusal: HistoryArchive.ArchiveError?
+        var seconds: Double = 0
+
+        var summaryLine: String {
+            if let refusal { return refusal.message }
+            var line = "Imported \(imported) · \(skippedSameID) already here · "
+                     + "\(skippedSameContent) duplicate\(skippedSameContent == 1 ? "" : "s") "
+                     + "of clips you already had · \(failed) failed."
+            if let note = historyLimitNote { line += " " + note }
+            if let snapshotPath {
+                line += " A snapshot of your previous history is at "
+                      + ((snapshotPath as NSString).lastPathComponent) + "."
+            }
+            return line
+        }
+    }
+
+    /// Phase C: commit a staged import, once.
+    ///
+    /// Deliberately NOT routed through `add`, and every one of these would be wrong here:
+    /// `add` dedups on `signature` and bumps `lastUsedAt = Date()` (flattening four years
+    /// of history into today); it runs `Detectors.scan` and ASSIGNS `flags`/`shape`,
+    /// discarding both the exported verdict and any flag bit a newer build wrote; it calls
+    /// `trim()`, which would evict the destination's own older clips AND unlink their
+    /// payload files to make room; it embeds synchronously on the main actor; it plays
+    /// the capture sound once per clip; and it inserts at `items[0]` and re-sorts per clip,
+    /// which is O(n²) over thousands of rows.
+    ///
+    /// Instead: `Database.insert` inside one `Database.transaction`, exactly like
+    /// `encryptSourceAppIfNeeded` — the house pattern, verbatim. `insert` re-seals every
+    /// value under THIS Mac's key via `Crypto.sealStrict`, so the fail-closed property is
+    /// INHERITED rather than re-implemented, and it write-throughs `item.imageFeature`, so
+    /// the Vision prints land inside the same transaction as their rows.
+    @discardableResult
+    func ingestImported(_ staged: HistoryArchiveIO.Staged,
+                        setUnlimited: Bool = true) -> ImportTally {
+        let started = Date()
+        var tally = ImportTally()
+        func finish(_ t: ImportTally) -> ImportTally {
+            var out = t
+            out.seconds = Date().timeIntervalSince(started)
+            return out
+        }
+        // Re-checked at COMMIT time, not only when the button was enabled.
+        guard !safeMode else {
+            HistoryArchiveIO.discard(staged)
+            tally.refusal = .storeFrozen
+            return finish(tally)
+        }
+        guard let db else {
+            HistoryArchiveIO.discard(staged)
+            tally.refusal = .noDatabase
+            return finish(tally)
+        }
+
+        // C1. SNAPSHOT, WAL-consistent. Follows the convention already in this store's own
+        //     directory (`ditto.sqlite.backup-…`, `.pre-derived-tags`, `.pre-w4` were all
+        //     made by hand); this one is made by `VACUUM INTO`, so it is atomic.
+        let stamp = DateFormatter()
+        stamp.dateFormat = "yyyyMMdd-HHmmss"
+        stamp.locale = Locale(identifier: "en_US_POSIX")
+        let snapshot = dir.appendingPathComponent(
+            "ditto.sqlite.pre-import-\(stamp.string(from: Date()))")
+        if hasRoomForSnapshot() {
+            if db.snapshot(to: snapshot.path) { tally.snapshotPath = snapshot.path }
+        } else {
+            DebugLog.write("import: not enough free disk for a pre-import snapshot")
+        }
+
+        // C2. FILTER — by id AND by signature. `add` dedups on `signature`, so "no two
+        //     live clips share a signature" is an invariant the rest of the app assumes;
+        //     an import that inserted a signature-duplicate would break it and make
+        //     `items.first(where: { $0.signature == … })` bump an arbitrary one.
+        let existingIDs = Set(items.map(\.id))
+        var seenSignatures = Set(items.map(\.signature))
+        var toWrite: [ClipItem] = []
+        for item in staged.clips {
+            if existingIDs.contains(item.id) { tally.skippedSameID += 1; continue }
+            guard seenSignatures.insert(item.signature).inserted else {
+                tally.skippedSameContent += 1
+                continue
+            }
+            toWrite.append(item)
+        }
+
+        // C3. HISTORY LIMIT, decided BEFORE the inserts — otherwise the very next copy
+        //     trims the import that just landed, deleting rows AND unlinking payloads.
+        let unpinnedAfter = items.filter { !$0.pinned }.count
+                          + toWrite.filter { !$0.pinned }.count
+        let limit = historyLimit
+        if limit > 0 && unpinnedAfter > limit {
+            if setUnlimited {
+                historyLimit = 0
+                tally.historyLimitNote = "Your history limit was \(limit) and this import "
+                    + "brings \(unpinnedAfter) unpinned clips, so the limit is now Unlimited."
+            } else {
+                tally.historyLimitNote = "WARNING: your history limit is still \(limit), so "
+                    + "the next clip you copy will trim this history back down to \(limit)."
+            }
+        }
+
+        // C4. MOVE the payloads. Same volume, so each rename is atomic. Payloads land
+        //     BEFORE the rows, so the worst case is an orphan payload — harmless,
+        //     content-addressed, swept later by a pass holding its own completeness token
+        //     — rather than a row whose image is missing.
+        var moved: [String] = []
+        var moveFailure: String?
+        for name in staged.stagedPayloads {
+            let from = staged.stagingDirectory.appendingPathComponent(name)
+            let to = dir.appendingPathComponent(name)
+            do { try FileManager.default.moveItem(at: from, to: to) }
+            catch { moveFailure = name; break }
+            moved.append(name)
+            let thumb = (name as NSString).deletingPathExtension + "-thumb.png"
+            let thumbFrom = staged.stagingDirectory.appendingPathComponent(thumb)
+            if FileManager.default.fileExists(atPath: thumbFrom.path) {
+                try? FileManager.default.moveItem(at: thumbFrom,
+                                                  to: dir.appendingPathComponent(thumb))
+            }
+        }
+        func rollBack() {
+            for name in moved {
+                try? FileManager.default.removeItem(at: dir.appendingPathComponent(name))
+                let thumb = (name as NSString).deletingPathExtension + "-thumb.png"
+                try? FileManager.default.removeItem(at: dir.appendingPathComponent(thumb))
+            }
+            HistoryArchiveIO.discard(staged)
+        }
+        if let moveFailure {
+            rollBack()
+            tally.refusal = .cannotWrite("\(moveFailure) could not be put in place")
+            return finish(tally)
+        }
+
+        // C5. COMMIT, once.
+        guard case .counted(let before) = db.clipCountStatus() else {
+            rollBack()
+            tally.refusal = .noDatabase
+            return finish(tally)
+        }
+        var written = 0
+        var dismissed = 0
+        let committed = db.transaction {
+            for item in toWrite where db.insert(item) { written += 1 }
+            for d in staged.dismissals where db.addUserTagDismissal(tag: d.tag,
+                                                                    clipID: d.clipID) {
+                dismissed += 1
+            }
+        }
+        // RE-READ the count from the database rather than trusting the tally: `transaction`
+        // decides `committed` BEFORE running COMMIT, and a disk-full at commit time reports
+        // success from every individual insert.
+        let after = db.clipCountStatus()
+        guard committed, written == toWrite.count,
+              after == .counted(before + toWrite.count) else {
+            rollBack()
+            tally.failed = toWrite.count
+            tally.refusal = .cannotWrite("the history could not be written — nothing was "
+                                         + "imported")
+            DebugLog.write("import: ROLLED BACK — committed \(committed), wrote "
+                           + "\(written)/\(toWrite.count), count \(after)")
+            return finish(tally)
+        }
+
+        tally.imported = written
+        tally.dismissals = dismissed
+        tally.payloadsMoved = moved.count
+        tally.payloadsAlreadyPresent = staged.payloadsAlreadyPresent
+
+        // C6. RELOAD from disk, so `items` is what the database now holds rather than what
+        //     this function believes it wrote.
+        reloadAfterImport()
+        HistoryArchiveIO.discard(staged)
+
+        // C7. INDEX. Both arms: text vectors here, CLIP image vectors in the image pass.
+        reindexStale()
+        scheduleImageUnderstanding()
+        DebugLog.write("import: \(written) clip(s), \(moved.count) image(s), "
+                       + "\(dismissed) dismissal(s)")
+        return finish(tally)
+    }
+
+    /// Re-read everything after a commit, and rebuild every derived index from it.
+    func reloadAfterImport() {
+        guard let db else { return }
+        let load = db.loadAllStatus()
+        if case .complete(let rows, let token) = load {
+            items = rows
+            historyProof = token
+        }
+        storageComplete = load.isComplete
+        unreadableClipCount = items.filter { Crypto.isSealed($0.text) }.count
+        sortStable()
+        rebuildTagIndex()
+        rebuildUserTagIndex()
+    }
+
+    /// Roughly: is there room for a copy of the database plus a margin.
+    private func hasRoomForSnapshot() -> Bool {
+        let dbPath = dir.appendingPathComponent("ditto.sqlite").path
+        let size = (try? FileManager.default.attributesOfItem(atPath: dbPath)[.size] as? Int)
+            .flatMap { $0 } ?? 0
+        guard let free = try? dir.resourceValues(forKeys: [.volumeAvailableCapacityKey])
+            .volumeAvailableCapacity else { return true }
+        return free > size + 64 * 1024 * 1024
     }
 
     // MARK: Mutations

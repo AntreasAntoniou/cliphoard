@@ -56,13 +56,21 @@ final class ImportModel: ObservableObject {
 
     /// Let the user point at an export or a store we did not find automatically — the Paste
     /// history that started all this was an export folder, not an installed app.
-    func chooseStore(for candidate: Candidate?, store: ClipStore) {
-        let panel = NSOpenPanel()
-        panel.allowsMultipleSelection = false
-        panel.canChooseDirectories = false
-        panel.prompt = "Preview"
-        panel.message = "Pick the other manager's database or export."
-        guard panel.runModal() == .OK, let url = panel.url else { return }
+    ///
+    /// Routed through `SystemPanel` — which it was not, and that was a live bug: this
+    /// called `runModal()` with NO guard at all, so opening the picker hid the bar
+    /// underneath it. Settings is rendered in-bar, so the host window is the floating panel
+    /// and `onResignKey` takes it away the moment the open panel becomes key.
+    func chooseStore(for candidate: Candidate?, store: ClipStore, panel viewModel: PanelViewModel?) {
+        let chosen = SystemPanel.run(viewModel) { () -> URL? in
+            let panel = NSOpenPanel()
+            panel.allowsMultipleSelection = false
+            panel.canChooseDirectories = false
+            panel.prompt = "Preview"
+            panel.message = "Pick the other manager's database or export."
+            return panel.runModal() == .OK ? panel.url : nil
+        }
+        guard let url = chosen else { return }
         if let candidate {
             dryRun(candidate, path: url.path, store: store)
         }
@@ -107,6 +115,16 @@ final class ImportModel: ObservableObject {
 struct ImportSection: View {
     @ObservedObject var model: ImportModel
     @ObservedObject var store: ClipStore
+    /// Handed to `ImportModel.chooseStore`, which must suspend hide-on-resign while its
+    /// `NSOpenPanel` is up. No button offers it yet — the picker is reached from the
+    /// caller that will — but the guard is wired now, because it is the thing that was
+    /// missing and a test pins it.
+    var panel: PanelViewModel?
+
+    /// Let the user point at a store Cliphoard did not find on its own.
+    func chooseOther(_ candidate: ImportModel.Candidate) {
+        model.chooseStore(for: candidate, store: store, panel: panel)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {

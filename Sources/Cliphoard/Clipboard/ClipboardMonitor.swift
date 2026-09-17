@@ -131,9 +131,37 @@ final class ClipboardMonitor {
         }
     }
 
+    /// How many callers are currently asking capture to stand down.
+    ///
+    /// A COUNTER rather than a Bool: two overlapping sheets must not have the first one to
+    /// finish re-arm capture underneath the second. Used by the archive passphrase sheets —
+    /// this is a clipboard manager, and a passphrase pasted in from a password manager must
+    /// not be captured into the very history that passphrase protects.
+    private(set) static var captureSuspensions = 0
+
+    static func suspendCapture() { captureSuspensions += 1 }
+    static func resumeCapture() { captureSuspensions = max(0, captureSuspensions - 1) }
+
+    /// Run `body` with capture suspended, re-arming on every path.
+    @discardableResult
+    static func withCaptureSuspended<T>(_ body: () -> T) -> T {
+        suspendCapture()
+        defer { resumeCapture() }
+        return body()
+    }
+
     private func poll() {
         let pb = NSPasteboard.general
         let count = pb.changeCount
+
+        // Suspended: swallow whatever appeared, rather than queue it for the moment the
+        // sheet closes. A passphrase that reaches the history one tick late is still in
+        // the history.
+        if Self.captureSuspensions > 0 {
+            lastChangeCount = count
+            pendingWebSafe = nil
+            return
+        }
 
         // Deliberately BEFORE the no-change guard: a settled board is exactly the case where
         // nothing has moved since the capture tick.
@@ -294,7 +322,7 @@ final class ClipboardMonitor {
     /// Downsample `pngData` to a thumbnail no larger than `maxPixelSize` on its
     /// longest edge, SEAL it (`enc1:` marker), and write the ciphertext to `url`.
     /// Best-effort: any failure is silently ignored.
-    private static func writeThumbnail(from pngData: Data, to url: URL, maxPixelSize: Int = 512) {
+    static func writeThumbnail(from pngData: Data, to url: URL, maxPixelSize: Int = 512) {
         guard let source = CGImageSourceCreateWithData(pngData as CFData, nil) else { return }
         let options: [CFString: Any] = [
             kCGImageSourceCreateThumbnailFromImageAlways: true,

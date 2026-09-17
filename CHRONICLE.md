@@ -633,3 +633,19 @@ prompt, with full content — lives in the chronicle ledger; `chron resume` read
 
 - **Why:** {"summary": "plan verdict recorded", "plus_ultra": {"arbiter": "Athena"}}
 
+
+## [2026-09-17T01:04Z-PXD6] ARM — Create a full-scale, read-only-derived copy of the live Cliphoard store at .worktrees/archive/.verify/livecopy (VACUUM INTO from an immutable sqlite connection, plus cp -p of the 748 top-level PNGs), add two decoy directories (an 8 MB models/weights.mlmodelc written with dd from /dev/urandom, and unreadable-payloads-archive/decoy.png), then run the new --export-history / --import-history against that copy
+
+- **Intent:** Run the plan's section-12 verification at real scale (7,891 clips, 651 payloads, about 300 MB) without ever opening the LIVE store read-write. The live store is only ever read: sqlite3 with immutable=1, shasum, ls, and cp -p. The decoys prove the export enumerates the payloadFile references held by loaded clips rather than scanning the directory — on the real store models/ is 385 MB of model weights and an accidental directory scan would sweep it in.
+- **Reversibility:** R1 — reversible only via a named artifact (snapshot, rollback tag, backup file)
+- **Restore:** `Delete the single scratch directory /Users/antreas/Projects/ditto/.worktrees/archive/.verify (recursive delete of that one path). Everything this step writes lives under it; no path outside it is created or modified, and the live store is never opened for writing.`
+- **Verified:** Baseline taken before anything ran: shasum -a 256 of the live ditto.sqlite is 4216d72f9bdf702aa0558a78c585593e9293e0c1aaec3f115c8aaed5cd48925c, saved to .verify/before.sha, alongside per-kind counts read through an immutable connection. The dd target is a NEW file inside the scratch copy; no dd, cp or sqlite write names any path under ~/Library. Free disk checked with df before the copy, and the live-store sha is re-checked after every step.
+
+
+## [2026-09-17T01:34Z-B2YT] ARM — Delete the scratch directory .worktrees/archive/.verify — the 1.7 GB of verification workspace (the read-only-derived copy of the store, the 261 MB exported archive, the imported destination store, and the file holding the throwaway test passphrase)
+
+- **Intent:** Carry out the restore step of ARM 2026-09-17T01:04Z-PXD6 now that the section-12 measurements are recorded. Nothing outside that one directory is named. It is untracked, .gitignored by way of .worktrees/, and every byte in it was derived from a read-only copy — the authoritative data it was derived FROM is untouched.
+- **Reversibility:** R2 — irreversible (destroys data, or mutates third-party state with no undo)
+- **Restore:** `IRREVERSIBLE: the derived workspace is discarded. What is lost is 1.7 GB of regenerable scratch — a VACUUM INTO copy of the store, a synthetic real-scale fixture, an exported .cliphoard and an imported destination store. Nothing original is in it; the source store is verified byte-identical to its baseline immediately before the delete. Accepted because leaving it would keep a plaintext test passphrase and a full copy of the owner's clipboard database sitting in a worktree.`
+- **Verified:** Immediately before the delete: shasum -a 256 of the live ditto.sqlite is compared against .verify/before.sha and the per-kind counts against .verify/before.kinds, both read through an immutable connection; the delete only runs if both match. All section-12 numbers are already captured in this session's output. The path is spelled in full and is inside the worktree.
+

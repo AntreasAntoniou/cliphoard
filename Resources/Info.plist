@@ -28,5 +28,25 @@
     <string>Cliphoard pastes saved clips into the app you were using.</string>
     <key>NSHighResolutionCapable</key>
     <true/>
+    <key>UTExportedTypeDeclarations</key>
+    <array>
+        <dict>
+            <key>UTTypeIdentifier</key>
+            <string>io.antreas.cliphoard.archive</string>
+            <key>UTTypeDescription</key>
+            <string>Cliphoard Encrypted History</string>
+            <key>UTTypeConformsTo</key>
+            <array>
+                <string>public.data</string>
+            </array>
+            <key>UTTypeTagSpecification</key>
+            <dict>
+                <key>public.filename-extension</key>
+                <array>
+                    <string>cliphoard</string>
+                </array>
+            </dict>
+        </dict>
+    </array>
 </dict>
 </plist>

@@ -1,4 +1,5 @@
 import XCTest
+@testable import Cliphoard
 
 /// T2: the three launch documents — `README.md`, `PRIVACY.md`, `docs/index.html` — must
 /// describe what 1.0.0 actually does, and only that.
@@ -15,8 +16,17 @@ import XCTest
 ///       automatically" / "never stored in the first place" described password-manager
 ///       clips as dropped when they are stored encrypted and quarantined; "you get nothing"
 ///       from `strings` was an overclaim while timestamps and flags are in the clear.
-///   (c) each doc says what is *not* in 1.0.0 — an export/import for moving history to a
-///       new Mac — and names the release it is planned for (1.0.1).
+///   (c) each doc describes the export that ships in 1.0.1, and warns that the passphrase
+///       is the only key and cannot be recovered.
+///
+///       This claim INVERTED, and the test that pinned it stayed green through the
+///       inversion — which is the whole reason it is written the way it now is. The old
+///       assertion was "the doc contains 1.0.1 and contains export", and both substrings
+///       survive the rewrite in all three documents ("1.0.1" also appears independently at
+///       README.md:81,83, PRIVACY.md:156,160 and docs/index.html:158). A doc that had
+///       stopped saying what the test was written to pin would have reported no failure at
+///       all. The positives below are therefore anchored on the SENTENCES that carry the
+///       claim, and the retired wording is added to the stale-needle list.
 ///
 /// The (a) code assertion lands in a parallel branch; in a worktree that carries only the
 /// docs it fails, and it passes once both are merged. That is the point of it.
@@ -88,6 +98,14 @@ final class DocsLaunchClaimTests: XCTestCase {
             "never stored in the first place",
             "you get nothing",
             "skipped automatically",
+            // Retired by 1.0.1. EXPORT-SPECIFIC, deliberately: a bare "is planned for
+            // 1.0.1" would turn the suite red on correct documents, because PRIVACY.md
+            // still says "hiding is planned for 1.0.1" and "(a Settings UI is planned for
+            // 1.0.1)" — both legitimate, both still true.
+            "encrypted export/import is planned",
+            "there is no export or import",
+            "there is no export yet",
+            "export/import is planned for 1.0.1",
         ]
         for doc in docs {
             let text = try flat(doc)
@@ -98,14 +116,78 @@ final class DocsLaunchClaimTests: XCTestCase {
         }
     }
 
-    // MARK: - (c) each doc names what is deferred, and to which release
+    // MARK: - (c) each doc describes the export that ships, and its one hard warning
 
-    func testEveryLaunchDocNamesTheExportPlanAndItsRelease() throws {
+    func testEveryLaunchDocDescribesTheShippedExport() throws {
+        // One anchor per document tying the export to the PASSPHRASE, and one stating that
+        // there is no recovery. Both are sentences rather than words, because "export" and
+        // "1.0.1" appear in every one of these files for unrelated reasons — which is
+        // exactly how the previous version of this test survived the claim inverting.
+        let passphraseAnchors: [String: String] = [
+            "README.md": "key stretched from your passphrase with pbkdf2-hmac-sha256",
+            "PRIVACY.md": "the key comes from your passphrase by pbkdf2-hmac-sha256",
+            "docs/index.html": "key from your passphrase (pbkdf2-hmac-sha256",
+        ]
+        let noRecoveryAnchors: [String: [String]] = [
+            "README.md": ["nothing is escrowed, a lost passphrase cannot be recovered"],
+            "PRIVACY.md": ["there is no recovery. no escrow, no backup key, no reset link",
+                           "its only protection is your passphrase"],
+            "docs/index.html": ["the passphrase is the only key — there is no recovery"],
+        ]
         for doc in docs {
             let text = try flat(doc)
-            XCTAssertTrue(text.contains("1.0.1"), "\(doc) does not name 1.0.1")
-            XCTAssertTrue(text.contains("export"),
-                          "\(doc) does not tell users there is no export yet")
+            XCTAssertTrue(text.contains("1.0.1"), "\(doc) does not name the release")
+            XCTAssertTrue(text.contains("export"), "\(doc) does not mention the export")
+            let anchor = try XCTUnwrap(passphraseAnchors[doc])
+            XCTAssertTrue(text.contains(anchor),
+                          "\(doc) no longer ties the export to the passphrase it is "
+                          + "protected by (missing: \(anchor))")
+            for anchor in noRecoveryAnchors[doc] ?? [] {
+                XCTAssertTrue(text.contains(anchor),
+                              "\(doc) no longer warns that a lost passphrase cannot be "
+                              + "recovered (missing: \(anchor))")
+            }
+        }
+        // The two algorithm names, where the documents actually make the cryptographic
+        // claim. If the numbers in PRIVACY.md are going to be specific, they have to be
+        // checkable.
+        for doc in ["PRIVACY.md", "docs/index.html"] {
+            let text = try flat(doc)
+            XCTAssertTrue(text.contains("aes-256-gcm"), "\(doc) does not name the cipher")
+            XCTAssertTrue(text.contains("pbkdf2"), "\(doc) does not name the KDF")
+            XCTAssertTrue(text.contains("600,000"),
+                          "\(doc) does not state the iteration floor")
         }
     }
+
+    /// …and the code behind the claim, on the (a) discipline: a doc claim with no code
+    /// behind it is the defect this repo keeps re-learning.
+    func testTheExportCodeMatchesWhatTheDocsClaimAboutIt() throws {
+        // Comment lines dropped: HistoryArchive.swift discusses PBKDF2 at length in prose,
+        // and a match on a comment is the trap `ForgetOrderingTests` documents.
+        let archive = try read("Sources/Cliphoard/Support/HistoryArchive.swift")
+            .split(separator: "\n").map(String.init)
+            .filter { !$0.trimmingCharacters(in: .whitespaces).hasPrefix("//") }
+            .joined(separator: "\n")
+        XCTAssertTrue(archive.contains("CCKeyDerivationPBKDF"),
+                      "the docs say the key is stretched with PBKDF2-HMAC-SHA256, so the "
+                      + "code must actually call it")
+        XCTAssertTrue(archive.contains("kCCPRFHmacAlgSHA256"),
+                      "PBKDF2 with some other PRF is not what the docs claim")
+        XCTAssertTrue(archive.contains("AES.GCM.seal"),
+                      "the docs say AES-256-GCM")
+        XCTAssertGreaterThanOrEqual(
+            HistoryArchive.kdfRoundsFloor, 600_000,
+            "PRIVACY.md and the site both promise at least 600,000 iterations. The floor "
+            + "is a compiled-in constant precisely so that number cannot drift away from "
+            + "the binary.")
+        XCTAssertEqual(SymmetricKeySizeProbe.exportKeyBytes, 32,
+                       "AES-256 means a 32-byte key")
+    }
+}
+
+/// A tiny indirection so the assertion above reads as a fact about the shipped format
+/// rather than as a literal repeated from it.
+private enum SymmetricKeySizeProbe {
+    static var exportKeyBytes: Int { HistoryArchive.fileKeyLength }
 }

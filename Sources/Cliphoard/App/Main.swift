@@ -101,6 +101,136 @@ struct Main {
             TagAudit.run(outputPath: out)
             exit(0)
         }
+        // Move a history to another Mac: `--export-history <path>` /
+        // `--import-history <path>`, both with an optional `--store-dir <dir>`.
+        //
+        // The passphrase is read from STDIN ONLY, first line — never from argv, which is
+        // world-readable through `ps`, never echoed when stdin is a terminal, and never
+        // logged. Like every other in-process flag here, these must be launched from
+        // inside the INSTALLED BUNDLE and not from `.build`: keychain access is keyed to
+        // code identity, so a `.build` binary sees a different (empty) keychain.
+        if let i = CommandLine.arguments.firstIndex(of: "--export-history"),
+           CommandLine.arguments.indices.contains(i + 1) {
+            let args = CommandLine.arguments
+            // The licence gate is carried HERE as well as in the UI. A gate the command
+            // line does not consult is a one-flag bypass, which is not a gate.
+            guard ProGate.allowsHistoryArchive else {
+                print("Moving your history to another Mac is a Pro feature.")
+                exit(2)
+            }
+            let out = URL(fileURLWithPath: (args[i + 1] as NSString).expandingTildeInPath)
+            let store = ClipStore(directory: Self.storeDirectoryArgument(args))
+            guard !store.safeMode else {
+                print("REFUSING: store is in SAFE MODE. Cliphoard cannot read its own "
+                      + "history right now, so an export would be unreadable gibberish.")
+                exit(1)
+            }
+            let passphrase = Self.readPassphrase("Passphrase for the export")
+            var lastLine = ""
+            let result = store.exportArchive(
+                to: out, passphrase: passphrase,
+                acknowledgingUnreadable: args.contains("--allow-unreadable")) { _, message in
+                    guard message != lastLine else { return }
+                    lastLine = message
+                    FileHandle.standardError.write(Data(("  " + message + "\n").utf8))
+                }
+            switch result {
+            case .success(let report):
+                print("exported \(report.clipCount) clips, \(report.payloadCount) images, "
+                      + "\(report.imageFeatureCount) image prints, "
+                      + "\(report.dismissalCount) dismissals")
+                print(String(format: "  %d bytes in %.2f s → %@",
+                             report.byteCount, report.seconds, out.path))
+                if report.skippedUnreadableClips > 0 || report.skippedUnreadablePayloads > 0 {
+                    print("  SKIPPED \(report.skippedUnreadableClips) unreadable clip(s) and "
+                          + "\(report.skippedUnreadablePayloads) unreadable image(s) — the "
+                          + "file records this, so the destination says it too.")
+                }
+                exit(0)
+            case .failure(let error):
+                print("REFUSED: " + error.message)
+                exit(1)
+            }
+        }
+        if let i = CommandLine.arguments.firstIndex(of: "--import-history"),
+           CommandLine.arguments.indices.contains(i + 1) {
+            let args = CommandLine.arguments
+            guard ProGate.allowsHistoryArchive else {
+                print("Moving your history to another Mac is a Pro feature.")
+                exit(2)
+            }
+            let file = URL(fileURLWithPath: (args[i + 1] as NSString).expandingTildeInPath)
+            let passphrase = Self.readPassphrase("Passphrase for \(file.lastPathComponent)")
+            // --dry-run verifies EVERY chunk's tag to EOF and writes nothing at all — not
+            // even a staging folder. It does not need (and does not open) the store.
+            if args.contains("--dry-run") {
+                switch HistoryArchiveIO.verify(url: file, passphrase: passphrase) {
+                case .success(let report):
+                    Self.printSummary(report.summary)
+                    let kinds = report.byKind.sorted { $0.key < $1.key }
+                        .map { "\($0.key) \($0.value)" }.joined(separator: " · ")
+                    print("  VERIFIED \(report.clipCount) clips · \(kinds)")
+                    print("  \(report.payloadCount) images · \(report.imageFeatureCount) "
+                          + "image prints · \(report.dismissalCount) dismissals")
+                    print(String(format: "  %d body bytes, every block's tag checked, in %.2f s",
+                                 report.bytesVerified, report.seconds))
+                    print("DRY RUN — nothing was written.")
+                    exit(0)
+                case .failure(let error):
+                    print("REFUSED: " + error.message)
+                    exit(1)
+                }
+            }
+            let store = ClipStore(directory: Self.storeDirectoryArgument(args))
+            guard !store.safeMode else {
+                print("REFUSING: store is in SAFE MODE. Nothing has been deleted.")
+                exit(1)
+            }
+            let setUnlimited = args.contains("--set-unlimited")
+            let acceptTrim = args.contains("--accept-trim")
+            // The history limit defaults to 200 and `trim()` deletes rows AND unlinks
+            // their payload files. Refusing here rather than importing and letting the
+            // next copy quietly evict thousands of the clips that just arrived.
+            switch HistoryArchiveIO.preview(url: file, passphrase: passphrase) {
+            case .failure(let error):
+                print("REFUSED: " + error.message)
+                exit(1)
+            case .success(let summary):
+                Self.printSummary(summary)
+                let unpinnedAfter = store.items.filter { !$0.pinned }.count + summary.clipCount
+                if store.historyLimit > 0 && unpinnedAfter > store.historyLimit
+                    && !setUnlimited && !acceptTrim {
+                    print("REFUSING: your history limit is \(store.historyLimit) and this "
+                          + "import would bring \(unpinnedAfter) unpinned clips, so the next "
+                          + "clip you copy would delete most of them (and their images). "
+                          + "Re-run with --set-unlimited to turn the limit off, or "
+                          + "--accept-trim to import anyway.")
+                    exit(1)
+                }
+            }
+            var lastLine = ""
+            let staged = store.stageImport(from: file, passphrase: passphrase) { _, message in
+                guard message != lastLine else { return }
+                lastLine = message
+                FileHandle.standardError.write(Data(("  " + message + "\n").utf8))
+            }
+            switch staged {
+            case .failure(let error):
+                print("REFUSED: " + error.message)
+                exit(1)
+            case .success(let quarantined):
+                let tally = store.ingestImported(quarantined, setUnlimited: setUnlimited)
+                if let refusal = tally.refusal {
+                    print("REFUSED: " + refusal.message)
+                    exit(1)
+                }
+                print(tally.summaryLine)
+                print(String(format: "  %d image(s) moved in, %d already here, in %.2f s",
+                             tally.payloadsMoved, tally.payloadsAlreadyPresent, tally.seconds))
+                print("  Search will re-index on the next launch of the app.")
+                exit(0)
+            }
+        }
         let app = NSApplication.shared
         let delegate = AppDelegate()
         app.delegate = delegate
@@ -109,4 +239,58 @@ struct Main {
         objc_setAssociatedObject(app, "dittoDelegate", delegate, .OBJC_ASSOCIATION_RETAIN)
         app.run()
     }
+
+    /// `--store-dir <dir>`, expanded, or nil for the real store. One line, and it is what
+    /// makes verifying an import possible without ever writing to the live history.
+    @MainActor
+    static func storeDirectoryArgument(_ args: [String]) -> URL? {
+        guard let j = args.firstIndex(of: "--store-dir"), args.indices.contains(j + 1)
+        else { return nil }
+        return URL(fileURLWithPath: (args[j + 1] as NSString).expandingTildeInPath,
+                   isDirectory: true)
+    }
+
+    /// First line of stdin. Never argv (world-readable via `ps`), never echoed when stdin
+    /// is a terminal, never logged, never on the pasteboard.
+    @MainActor
+    static func readPassphrase(_ prompt: String) -> String {
+        guard isatty(0) != 0 else { return readLine(strippingNewline: true) ?? "" }
+        FileHandle.standardError.write(Data((prompt + ": ").utf8))
+        var saved = termios()
+        tcgetattr(0, &saved)
+        var quiet = saved
+        quiet.c_lflag &= ~tcflag_t(ECHO)
+        tcsetattr(0, TCSAFLUSH, &quiet)
+        defer {
+            tcsetattr(0, TCSAFLUSH, &saved)
+            FileHandle.standardError.write(Data("\n".utf8))
+        }
+        return readLine(strippingNewline: true) ?? ""
+    }
+
+    @MainActor
+    static func printSummary(_ summary: HistoryArchive.Summary) {
+        let kinds = summary.byKind.sorted { $0.key < $1.key }
+            .map { "\($0.key) \($0.value)" }.joined(separator: " · ")
+        let stamp = DateFormatter()
+        stamp.dateStyle = .medium
+        stamp.timeStyle = .none
+        print("\(summary.clipCount) clips from "
+              + stamp.string(from: Date(timeIntervalSinceReferenceDate: summary.oldestCreatedAt))
+              + " to "
+              + stamp.string(from: Date(timeIntervalSinceReferenceDate: summary.newestCreatedAt))
+              + ", made on \(summary.machineName) (Cliphoard \(summary.appVersion), "
+              + "\(summary.exportedAt))")
+        print("  \(kinds)")
+        print("  \(summary.payloadCount) images (\(summary.payloadBytes) bytes) · "
+              + "\(summary.imageFeatureCount) image prints · "
+              + "\(summary.dismissalCount) dismissals · "
+              + "search index \(summary.embeddingsIncluded ? "included" : "recomputed here")")
+        if summary.skippedUnreadableClips > 0 || summary.skippedUnreadablePayloads > 0 {
+            print("  WARNING: the machine that made this file could not read "
+                  + "\(summary.skippedUnreadableClips) clip(s) and "
+                  + "\(summary.skippedUnreadablePayloads) image(s), so they are NOT in it.")
+        }
+    }
+
 }
