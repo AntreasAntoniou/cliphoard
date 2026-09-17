@@ -490,4 +490,34 @@ final class HistoryArchiveSafetyTests: ArchiveTestCase {
             XCTAssertEqual(Set(destination.items.map(\.text)), Set(source.items.map(\.text)))
         }
     }
+
+    /// `ClipStore.init` re-mints `historyProof` after the orphan sweep deletes rows. Without
+    /// it, `storedCount` describes a database that no longer exists, `items.count ==
+    /// proof.storedCount` is false for the rest of the process, and the export refuses on
+    /// a store that is perfectly whole. The maintainer's own store has swept orphans, so
+    /// this is the path every real export takes. A blind verifier reverted the hunk and
+    /// found 666 tests still green: the fix shipped with nothing pinning it.
+    func testAnExportSucceedsAfterTheLaunchSweepDeletedAnOrphanedImageRow() throws {
+        try skipIfKeychainUnreachable()
+        let fixture = ArchiveFixture.standard()
+        var rows = fixture.rows
+        // An image row whose payload file does NOT exist on disk: the launch sweep deletes
+        // it (`orphanedImageRows`), which is the exact moment the proof goes stale.
+        rows.append(ArchiveFixture.Row(kind: .image, text: "Image 24×24", payloadFile: "ghost.png",
+                                       createdAt: 700_000_999, lastUsedAt: 700_000_999))
+        let dir = directory("swept")
+        try ArchiveFixture.write(rows, dismissals: fixture.dismissals, payloads: fixture.payloads, to: dir)
+        let store = ClipStore(directory: dir)
+        XCTAssertFalse(store.safeMode)
+        XCTAssertEqual(store.items.count, fixture.rows.count, "the sweep must have removed exactly the ghost row")
+
+        switch store.exportArchive(to: tempRoot.appendingPathComponent("swept.cliphoard"), passphrase: passphrase) {
+        case .success(let report):
+            XCTAssertEqual(report.clipCount, fixture.rows.count)
+        case .failure(let error):
+            XCTFail("the export refused on a whole store after the launch sweep: \(error). "
+                    + "historyProof was not re-minted after orphanedImageRows deleted a row.")
+        }
+    }
+
 }

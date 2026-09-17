@@ -261,4 +261,36 @@ final class HistoryArchiveRoundTripTests: ArchiveTestCase {
         let reopened = ClipStore(directory: dir)
         XCTAssertEqual(Set(reopened.items.map(\.id)), Set(beforeIDs))
     }
+
+    /// The export enumerates payloads BY REFERENCE (`payloadFile` on each clip), never the
+    /// store directory. The store directory also holds `models/` (385 MB of weights on the
+    /// maintainer's Mac) and `unreadable-payloads-archive/` (payloads the app has already
+    /// declared unreadable); an export that listed the directory would sweep both in. A
+    /// blind verifier proved the behaviour and then proved it was defended by a comment
+    /// alone: unioning `contentsOfDirectory` into the reference set left every test green.
+    /// The archive is padded to whole 1 MiB chunks, so byte size cannot detect this;
+    /// `payloadCount` is the honest instrument.
+    func testTheExportCarriesOnlyReferencedPayloadsNeverTheDirectory() throws {
+        try skipIfKeychainUnreachable()
+        let (fixture, source) = try sourceStore(named: "decoys")
+        let dir = source.storeDirectory
+        // Two sealed-looking decoys beside the store, plus the two directories the real
+        // store carries. None is referenced by any clip.
+        for name in ["orphan-a.png", "orphan-b.png"] {
+            try Crypto.sealStrict(ArchiveFixture.png(seed: 99))!.write(to: dir.appendingPathComponent(name))
+        }
+        try FileManager.default.createDirectory(at: dir.appendingPathComponent("models"), withIntermediateDirectories: true)
+        try Data(repeating: 0xAB, count: 3_000_000).write(to: dir.appendingPathComponent("models/weights.bin"))
+        try FileManager.default.createDirectory(at: dir.appendingPathComponent("unreadable-payloads-archive"), withIntermediateDirectories: true)
+        try ArchiveFixture.png(seed: 7).write(to: dir.appendingPathComponent("unreadable-payloads-archive/old.png"))
+
+        let report = try source.exportArchive(to: tempRoot.appendingPathComponent("decoys.cliphoard"),
+                                              passphrase: passphrase).get()
+        let referenced = Set(fixture.rows.compactMap(\.payloadFile)).count
+        XCTAssertEqual(report.payloadCount, referenced,
+                       "the export carried \(report.payloadCount) payloads but only \(referenced) are "
+                       + "referenced by a clip — it is enumerating the directory, and on a real "
+                       + "store that means model weights and already-unreadable payloads")
+    }
+
 }
