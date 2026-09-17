@@ -165,12 +165,19 @@ final class LicenceGateTests: XCTestCase {
             else { UserDefaults.standard.removeObject(forKey: "historyLimit") }
         }
 
-        // A Pro user with "unlimited" and more clips than a free build would keep.
+        // A Pro user with "unlimited" and MORE CLIPS THAN THE FREE CEILING. The first
+        // version of this test used 12 clips against a ceiling of 500: a use-time clamp in
+        // trim() that deleted 100 of a downgraded user's 600 clips left it green, and the
+        // deletion assertion below was structurally incapable of failing. A blind verifier
+        // proved it. The hoard must exceed `ClipStore.freeHistoryLimit`, or this test is theatre.
+        let hoardSize = ClipStore.freeHistoryLimit + 100
         store.entitlement = pro
         store.historyLimit = 0
-        for i in 0..<12 { store.add(ClipItem(kind: .text, text: "clip \(i)")) }
+        for i in 0..<hoardSize { store.add(ClipItem(kind: .text, text: "clip \(i) — unique enough to not dedup \(UUID())")) }
         let hoard = store.items.count
-        XCTAssertEqual(hoard, 12, "precondition: nothing was trimmed under Pro + unlimited")
+        XCTAssertEqual(hoard, hoardSize, "precondition: nothing was trimmed under Pro + unlimited")
+        XCTAssertGreaterThan(hoard, ClipStore.freeHistoryLimit,
+                             "the fixture must exceed the free ceiling or the deletion assertion cannot fail")
 
         // The key is removed. This is the whole scenario: a refund, an expiry, a `defaults
         // delete`. Not one clip may go.

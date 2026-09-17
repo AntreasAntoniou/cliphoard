@@ -74,7 +74,10 @@ final class LicenceIsOfflineTests: XCTestCase {
                      "Sources/Cliphoard/UI/SettingsView.swift",
                      "Sources/Cliphoard/UI/ContentView.swift",
                      "Sources/Cliphoard/UI/ImportPanel.swift",
-                     "Sources/Cliphoard/UI/ProUpsell.swift"] {
+                     "Sources/Cliphoard/UI/ProUpsell.swift",
+                     // Gate 3's status-bar Keep submenu lives here; a verifier inserted a
+                     // URLSession into it and this scan stayed green because the file was absent.
+                     "Sources/Cliphoard/App/AppDelegate.swift"] {
             let code = codeLines(try source(path))
             for forbidden in networkAPIs {
                 XCTAssertFalse(code.contains(forbidden),
@@ -114,4 +117,29 @@ final class LicenceIsOfflineTests: XCTestCase {
             XCTAssertEqual(first, second, "verify is not deterministic for '\(input.prefix(16))'")
         }
     }
+
+    /// `Scripts/ci-preflight-secrets.sh` refuses a checkout that contains a signing key —
+    /// the one safety net between a careless `git add -A` and the private key reaching CI.
+    /// Deleting that block left the whole suite green; this runs the real script.
+    func testThePreflightRefusesACheckoutContainingASigningKey() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let script = root.appendingPathComponent("Scripts/ci-preflight-secrets.sh")
+        XCTAssertTrue(FileManager.default.isExecutableFile(atPath: script.path))
+        let fake = root.appendingPathComponent("licence-signing-key-TEST.ed25519")
+        try Data("not a key".utf8).write(to: fake)
+        defer { try? FileManager.default.removeItem(at: fake) }
+
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/bin/bash")
+        task.arguments = [script.path]
+        task.currentDirectoryURL = root
+        task.environment = ["PATH": "/usr/bin:/bin"]   // no secrets set: the key check must fire FIRST
+        let out = Pipe(); task.standardOutput = out; task.standardError = out
+        try task.run(); task.waitUntilExit()
+        let text = String(decoding: out.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+        XCTAssertEqual(task.terminationStatus, 1, "the preflight must exit 1 with a signing key in the tree")
+        XCTAssertTrue(text.contains("ed25519") || text.contains("signing key"),
+                      "the refusal must name the key, not the missing secrets: \(text.prefix(300))")
+    }
+
 }
