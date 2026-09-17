@@ -197,8 +197,11 @@ struct Main {
                 let raise = store.historyLimit < ClipStore.freeHistoryLimit
                     ? ", or raise the limit to \(ClipStore.freeHistoryLimit) in Settings first"
                     : ""
+                // Says what is STORED, not the ceiling: a lapsed Pro's 720 is honoured, so
+                // "keeps at most 500" would be false for the very store the fit rule protects.
                 print("REFUSING: --set-unlimited turns the history limit off, and this build "
-                      + "cannot — it keeps at most \(ClipStore.freeHistoryLimit) unpinned clips. "
+                      + "cannot: without Pro the limit stays on. Your history keeps up to "
+                      + "\(store.historyLimit) unpinned clips. "
                       + "Re-run with --accept-trim to keep the newest clips that fit your limit "
                       + "(the file keeps all of them; nothing already here is deleted)\(raise). "
                       + Licence.pitch)
