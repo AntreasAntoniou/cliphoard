@@ -41,6 +41,10 @@ final class LiveDataIntegrationTests: XCTestCase {
         else { throw XCTSkip("set CLIPHOARD_LIVE_COPY to a copy of a real store to run this") }
 
         let store = ClipStore(directory: copyDir)
+        // The recognition pass is a PRO row from 1.1.0. Declared here as a value so this
+        // measures the PIPELINE on real data, which is what the file exists for, rather than
+        // measuring the gate — which `LicenceGateTests` measures directly.
+        store.entitlement = .pro(orderID: "test-order", issued: Date())
         try XCTSkipUnless(!store.items.isEmpty, "copy loaded no clips")
 
         // 1. The keys must actually open the store. If this fails the process cannot read

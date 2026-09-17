@@ -18,9 +18,14 @@ import AppKit
 @MainActor
 final class ReferenceImageSearchTests: XCTestCase {
 
+    /// Searching by a picture is a PRO row from 1.1.0, and a free build never loads a tower
+    /// — so without this every test below would skip on "towers not installed" and a skip
+    /// reads identically to a pass in a summary line.
     private func tempStore() -> ClipStore {
-        ClipStore(directory: FileManager.default.temporaryDirectory
+        let store = ClipStore(directory: FileManager.default.temporaryDirectory
             .appendingPathComponent("DittoRef-\(UUID().uuidString)"))
+        store.entitlement = .pro(orderID: "test-order", issued: Date())
+        return store
     }
 
     private func png(_ colour: NSColor, size: CGFloat = 64) -> Data {

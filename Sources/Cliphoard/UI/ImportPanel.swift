@@ -90,7 +90,21 @@ final class ImportModel: ObservableObject {
         busy = nil
     }
 
-    func commit(_ candidate: Candidate, path: String? = nil, store: ClipStore) {
+    /// GATE 4. Free may PREVIEW — the dry run is the safety mechanism and paywalling it
+    /// would make the untested-adapter warning meaningless — but may not COMMIT.
+    ///
+    /// The entitlement arrives as a VALUE (the `HistoryReaper` idiom) rather than being read
+    /// from a global here, so the refusal is testable without a signed key, and so no future
+    /// caller can reach the write path without having said which entitlement it holds.
+    func commit(_ candidate: Candidate, path: String? = nil, store: ClipStore,
+                entitlement: Entitlement) {
+        guard entitlement.isPro else {
+            // Says what it refused and why. A migration button that quietly does nothing is
+            // how a user concludes the importer is broken rather than paid.
+            result = "Importing from another manager is Cliphoard Pro. Your preview above is "
+                   + "real — nothing was written."
+            return
+        }
         guard let read = candidate.source.read else { return }
         busy = "Importing \(candidate.source.name)…"
         var tally = PasteImport.Tally()
@@ -107,6 +121,11 @@ final class ImportModel: ObservableObject {
 struct ImportSection: View {
     @ObservedObject var model: ImportModel
     @ObservedObject var store: ClipStore
+
+    /// Read from the store, which holds it as a value read at the boundary. Observing the
+    /// store means a key pasted in the section above swaps this panel from pitch to button
+    /// in the same frame, with no relaunch.
+    private var entitlement: Entitlement { store.entitlement }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -176,11 +195,25 @@ struct ImportSection: View {
                      + "\(preview.skippedUnparsable) unreadable, \(preview.skippedEmpty) empty")
                     .font(.system(size: 11)).foregroundStyle(.secondary)
             }
-            HStack {
-                Spacer()
-                Button("Import \(preview.total)") { model.commit(candidate, store: store) }
+            if entitlement.isPro {
+                HStack {
+                    Spacer()
+                    Button("Import \(preview.total)") {
+                        model.commit(candidate, store: store, entitlement: entitlement)
+                    }
                     .controlSize(.small)
                     .disabled(preview.total == 0 || store.safeMode)
+                }
+            } else {
+                // UPSELL 4 — the highest-converting screen in the app, and the only pitch
+                // here built from the user's OWN data: their clips, their other manager,
+                // counted by the same writer that would do the import. No invented number.
+                ProPitchCard(
+                    message: "Bringing them across is Cliphoard Pro. The preview above is "
+                           + "real and it cost you nothing — this is the same tally the "
+                           + "import itself would produce. " + Licence.pitch,
+                    headline: "\(preview.total) clip\(preview.total == 1 ? "" : "s") still "
+                            + "sitting in \(candidate.source.name)")
             }
         }
         .padding(10)

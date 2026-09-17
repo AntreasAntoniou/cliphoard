@@ -12,6 +12,79 @@ final class AppSettings: ObservableObject {
     @Published var soundName: String { didSet { Feedback.soundName = soundName } }
     @Published var debugLogging: Bool { didSet { UserDefaults.standard.set(debugLogging, forKey: "debugLog") } }
     @Published var historyLimit: Int { didSet { store.historyLimit = historyLimit } }
+
+    /// This install's entitlement, from the one object every view here already observes.
+    /// Read through rather than copied, so a key pasted below changes every gated surface
+    /// in the same frame.
+    var entitlement: Entitlement { store.entitlement }
+
+    /// What the user has typed into the Pro key field. Not the stored key — `verifyLicence`
+    /// is what commits it, so a half-pasted key never becomes the live one.
+    @Published var licenceKeyField: String = ""
+    /// Set when a gated control was touched by a free build. The surfaces read it to explain
+    /// the refusal instead of appearing broken — a control that silently does nothing is the
+    /// exact defect `FrozenControlsTests` exists to catch, and a PAID one doing it is worse.
+    /// Tagged with the surface so the explanation renders under the control that raised it.
+    @Published var proPitch: ProPitch?
+
+    func pitch(_ surface: ProSurface) -> String? {
+        proPitch?.surface == surface ? proPitch?.message : nil
+    }
+
+    /// The order id of a live Pro entitlement, for the Settings section to show once verified.
+    var proOrderID: String? { if case .pro(let order, _) = entitlement { return order }; return nil }
+    var proIssued: Date? { if case .pro(_, let issued) = entitlement { return issued }; return nil }
+
+    /// Why the last Verify press failed, or nil. A licence field that rejects a key without
+    /// saying why sends the buyer to email; `Licence.verify` already returns the reason.
+    var licenceError: String? {
+        guard let verdict = licenceVerdict, case .free(let reason) = verdict else { return nil }
+        return reason ?? "that field is empty"
+    }
+
+    /// Verify what is in the field and keep it only if it is real. A key that does not
+    /// verify is NOT stored: storing it would make Settings show a key while the app behaves
+    /// as free, which is the most confusing state a licence UI can be in.
+    func verifyLicence() {
+        let typed = licenceKeyField.trimmingCharacters(in: .whitespacesAndNewlines)
+        let result = Licence.verify(typed)
+        if result.isPro {
+            Licence.store(typed)
+            proPitch = nil
+        } else {
+            Licence.remove()
+        }
+        store.entitlement = Licence.current
+        licenceVerdict = result
+        syncGatedSettingsToEntitlement()
+    }
+
+    func removeLicence() {
+        Licence.remove()
+        licenceKeyField = ""
+        licenceVerdict = nil
+        store.entitlement = Licence.current
+        syncGatedSettingsToEntitlement()
+    }
+
+    /// The verdict of the last Verify press, or nil if none. Separate from `entitlement` so
+    /// a FAILED paste can say why ("signature does not verify") rather than silently
+    /// reverting to a free build with no explanation.
+    @Published var licenceVerdict: Entitlement?
+
+    /// After a licence change, bring the gated settings back in line with what the build
+    /// will actually do. Only ever turns things OFF (or leaves them), never deletes: the
+    /// history limit is deliberately NOT rewritten here — see `ClipStore.allowedHistoryLimit`.
+    private func syncGatedSettingsToEntitlement() {
+        // A verified key turns the image features ON. 1.0.0's default was on for everyone,
+        // and a buyer whose paid feature is silently off has bought a support ticket — so a
+        // deliberate Verify press is allowed to override a previous off. Only a press does
+        // this; nothing here runs on its own.
+        if entitlement.isPro { ClipStore.setImageUnderstanding(true, entitlement: entitlement) }
+        let allowed = ClipStore.imageUnderstandingAllowed(entitlement)
+        if imageUnderstanding != allowed { imageUnderstanding = allowed }
+        if !SearchMode.available(entitlement).contains(searchMode) { searchMode = .smart }
+    }
     @Published var launchAtLogin: Bool { didSet { LoginItem.set(launchAtLogin) } }
     @Published var activateOnSummon: Bool { didSet { UserDefaults.standard.set(activateOnSummon, forKey: "activateOnSummon") } }
     /// Turning this ON schedules the pass immediately, so the setting takes effect while
@@ -20,7 +93,18 @@ final class AppSettings: ObservableObject {
     /// says so explicitly rather than letting the toggle imply more than it does.
     @Published var imageUnderstanding: Bool {
         didSet {
-            ClipStore.imageUnderstandingEnabled = imageUnderstanding
+            ClipStore.setImageUnderstanding(imageUnderstanding, entitlement: entitlement)
+            // GATE 2. The toggle is disabled for a free build, but a binding is not a
+            // permission: bounce the published value back so the switch cannot sit in the
+            // ON position describing work this build will not do.
+            let allowed = ClipStore.imageUnderstandingAllowed(entitlement)
+            if imageUnderstanding != allowed {
+                proPitch = ProPitch(.imageUnderstanding,
+                                    "Reading text inside your screenshots is Cliphoard Pro. "
+                                    + Licence.pitch)
+                imageUnderstanding = allowed
+                return
+            }
             if imageUnderstanding { store.scheduleImageUnderstanding() }
         }
     }
@@ -36,6 +120,17 @@ final class AppSettings: ObservableObject {
     @Published var layoutMode: LayoutMode { didSet { Theme.layout = layoutMode } }
     @Published var searchMode: SearchMode {
         didSet {
+            // GATE 1. The Pro row is SHOWN (naming the limit honestly is this app's habit —
+            // see `SearchMode.blurb`) and selecting it cannot take effect. Bouncing back to
+            // the previous mode, rather than disabling the row, is what makes this work in
+            // both pickers without relying on SwiftUI honouring `.disabled` inside a menu.
+            guard SearchMode.available(entitlement).contains(searchMode) else {
+                proPitch = ProPitch(.imageSearch,
+                                    "Searching your pictures by describing them is Cliphoard "
+                                    + "Pro. " + Licence.pitch)
+                searchMode = oldValue
+                return
+            }
             DeepSearch.mode = searchMode
             // Semantic modes need a model; default to ogma-small if none chosen.
             if searchMode != .exact && deepSearchLevel == .off { deepSearchLevel = .normal }
@@ -113,7 +208,10 @@ final class AppSettings: ObservableObject {
         historyLimit = store.historyLimit
         launchAtLogin = LoginItem.enabled
         activateOnSummon = UserDefaults.standard.bool(forKey: "activateOnSummon")
-        imageUnderstanding = ClipStore.imageUnderstandingEnabled
+        // The ALLOWED value, not the stored preference: the preference defaults to ON for an
+        // untouched install, and a free build showing that switch on would be describing work
+        // it does not do.
+        imageUnderstanding = ClipStore.imageUnderstandingAllowed(store.entitlement)
         webSafeScreenshots = WebPaste.isEnabled
         themePreset = Theme.preset
         layoutMode = Theme.layout
@@ -124,6 +222,27 @@ final class AppSettings: ObservableObject {
         overlayBaskets = TagBaskets.overlayIDs
         assignmentThreshold = Double(TagSpace.assignmentThreshold)
         customTagsText = TagBaskets.custom.tags.joined(separator: "\n")
+        licenceKeyField = UserDefaults.standard.string(forKey: Licence.defaultsKey) ?? ""
+        licenceVerdict = store.entitlement.isPro ? store.entitlement : nil
+        // A persisted `.image` selection can OUTLIVE the entitlement that allowed it — a
+        // removed key, a refund, a fresh free install on a defaults domain that still has the
+        // old selection. Without this the app opens in a mode that is selected, cannot run,
+        // and can only return an empty list — the one state both `FrozenControlsTests` and
+        // `SearchMode.blurb` exist to prevent, arrived at through the paywall this time
+        // rather than through a missing model.
+        //
+        // `DeepSearch.mode` is written EXPLICITLY, and the reason is worth recording because
+        // it is the opposite of what the language rule suggests. Observers do not fire for
+        // assignments during initialisation — but `searchMode` is `@Published`, a property
+        // WRAPPER, and once the wrapper itself is initialised an assignment goes through its
+        // setter, so `didSet` does fire and would write this through on its own. Measured,
+        // not assumed: removing this line leaves the test green. It stays anyway, because the
+        // persistence of a paid gate should not rest on a subtlety that vanishes the day
+        // someone drops `@Published` for an `@Observable` macro.
+        if !SearchMode.available(store.entitlement).contains(searchMode) {
+            searchMode = .smart
+            DeepSearch.mode = .smart
+        }
     }
 
     func previewSound() { Feedback.play(named: soundName) }
@@ -151,8 +270,10 @@ struct SettingsView: View {
     private var axTrusted: Bool { settings.axTrusted }
     private let axTimer = Timer.publish(every: 1.2, on: .main, in: .common).autoconnect()
 
+    /// Free rows first, Pro rows last. The order is the tier boundary made visible: everything
+    /// above the line is in the build you already have.
     private let limits: [(Int, String)] = [
-        (0, "Unlimited"), (100, "100"), (200, "200"), (500, "500"), (1000, "1000"), (5000, "5000")
+        (100, "100"), (200, "200"), (500, "500"), (1000, "1000"), (5000, "5000"), (0, "Unlimited")
     ]
 
     var body: some View {
@@ -179,6 +300,62 @@ struct SettingsView: View {
                     }
                 }
 
+                // GATE 6. Between General and Appearance, where someone looking for "how do
+                // I pay / where did my key go" will find it without scrolling past the tags.
+                section("Cliphoard Pro") {
+                    HStack(spacing: 6) {
+                        Image(systemName: settings.entitlement.isPro ? "checkmark.seal.fill" : "lock.fill")
+                            .foregroundStyle(settings.entitlement.isPro ? Color.green : Color.secondary)
+                        Text(settings.entitlement.isPro
+                             ? "Pro is active on this Mac"
+                             : "Free build — a full clipboard manager, with no time limit")
+                        Spacer()
+                        if !settings.entitlement.isPro {
+                            Button("Get Pro — \(Licence.priceLabel)") {
+                                NSWorkspace.shared.open(Licence.buyURL)
+                            }
+                            .controlSize(.small)
+                        }
+                    }
+                    if let order = settings.proOrderID {
+                        HStack {
+                            // The order id is shown ONCE VERIFIED and nowhere else: it is what
+                            // the buyer quotes in an email when something goes wrong, and it is
+                            // the only thing in the key worth reading back to them.
+                            Text("Order \(order)"
+                                 + (settings.proIssued.map {
+                                     " · issued \($0.formatted(date: .abbreviated, time: .omitted))"
+                                 } ?? ""))
+                                .font(.system(size: 11, design: .monospaced))
+                                .foregroundStyle(.secondary)
+                                .textSelection(.enabled)
+                            Spacer()
+                            Button("Remove") { settings.removeLicence() }.controlSize(.small)
+                        }
+                    }
+                    HStack {
+                        TextField("CLIP1-…", text: $settings.licenceKeyField)
+                            .textFieldStyle(.roundedBorder)
+                            .font(.system(size: 11, design: .monospaced))
+                        Button("Verify") { settings.verifyLicence() }
+                            .controlSize(.small)
+                            .disabled(settings.licenceKeyField
+                                .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    }
+                    if let error = settings.licenceError {
+                        // A key that does not verify is NOT stored, so this says why rather
+                        // than leaving a field full of text next to a build behaving as free.
+                        Text("That key did not verify — \(error). Nothing was saved.")
+                            .font(.system(size: 11)).foregroundStyle(.orange)
+                    }
+                    Text("Your key is checked on this Mac, offline, against a public key "
+                         + "compiled into the app. There is no licence server, no activation "
+                         + "and no call of any kind — and so nothing anyone could switch off. "
+                         + "Pro is \(Licence.priceLabel) once: one person, every Mac you own.")
+                        .font(.system(size: 11)).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
                 section("Appearance") {
                     HStack {
                         Text("Theme")
@@ -201,7 +378,18 @@ struct SettingsView: View {
                 }
 
                 section("Images") {
-                    Toggle("Read text in images", isOn: $settings.imageUnderstanding)
+                    HStack(spacing: 6) {
+                        // UPSELL 3. Disabled rather than hidden, and badged rather than merely
+                        // greyed: a switch that has vanished teaches nothing, and a greyed one
+                        // with no label is a bug report.
+                        Toggle("Read text in images", isOn: $settings.imageUnderstanding)
+                            .disabled(!settings.entitlement.isPro)
+                        if !settings.entitlement.isPro { ProBadge() }
+                        Spacer()
+                    }
+                    if let pitch = settings.pitch(.imageUnderstanding) {
+                        ProPitchCard(message: pitch)
+                    }
                     // Deliberately says what it does AND what it refuses, because the
                     // difference is the whole reason this is defensible. Claims nothing
                     // the code does not deliver — the authenticator-code gap is stated in
@@ -265,9 +453,18 @@ struct SettingsView: View {
                         Text("Mode")
                         Spacer()
                         Picker("", selection: $settings.searchMode) {
-                            ForEach(SearchMode.allCases) { Text($0.title).tag($0) }
+                            // UPSELL 1. The Pro mode is LISTED, named as Pro, and selecting it
+                            // is bounced by `AppSettings.searchMode`'s gate — so it can never
+                            // become a mode that is selected and silently returns nothing.
+                            ForEach(SearchMode.allCases) { mode in
+                                Text(SearchMode.available(settings.entitlement).contains(mode)
+                                     ? mode.title : "\(mode.title) — Pro").tag(mode)
+                            }
                         }
                         .labelsHidden().frame(width: 150)
+                    }
+                    if let pitch = settings.pitch(.imageSearch) {
+                        ProPitchCard(message: pitch)
                     }
                     HStack {
                         Text("Embedding model")
@@ -414,11 +611,35 @@ struct SettingsView: View {
                     HStack {
                         Text("Keep")
                         Spacer()
-                        Picker("", selection: $settings.historyLimit) {
-                            ForEach(limits, id: \.0) { Text($0.1).tag($0.0) }
+                        // UPSELL 2 + GATE 3. The Pro rows are shown, named, and refuse to
+                        // apply — through an explicit binding rather than the published value,
+                        // so the picker and the store can never disagree about what is kept.
+                        Picker("", selection: Binding(
+                            get: { settings.historyLimit },
+                            set: { requested in
+                                guard settings.entitlement.isPro
+                                        || ClipStore.freeHistoryLimits.contains(requested) else {
+                                    settings.proPitch = ProPitch(.history,
+                                        "Keeping more than \(ClipStore.freeHistoryLimit) unpinned "
+                                        + "clips is Cliphoard Pro. Nothing you already have is "
+                                        + "removed — pinned clips never expire and never count. "
+                                        + Licence.pitch)
+                                    return
+                                }
+                                settings.proPitch = nil
+                                settings.historyLimit = requested
+                            })) {
+                            ForEach(limits, id: \.0) { value, label in
+                                Text(settings.entitlement.isPro
+                                     || ClipStore.freeHistoryLimits.contains(value)
+                                     ? label : "\(label) — Pro").tag(value)
+                            }
                         }
                         .labelsHidden()
-                        .frame(width: 130)
+                        .frame(width: 150)
+                    }
+                    if let pitch = settings.pitch(.history) {
+                        ProPitchCard(message: pitch)
                     }
                     HStack {
                         Text("\(store.items.count) item\(store.items.count == 1 ? "" : "s") stored")

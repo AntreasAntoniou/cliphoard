@@ -19,9 +19,17 @@ final class ImageUnderstandingWiringTests: XCTestCase {
         super.tearDown()
     }
 
+    /// Reading text in images is a PRO row from 1.1.0, so a store exercising the pass must
+    /// hold a Pro entitlement or these stop testing the pass and start testing the paywall.
+    /// Declared as a VALUE, which is the whole reason the gate takes one — a signed key
+    /// would have to exist on the machine, and then this file could only run on one Mac.
+    private static let proEntitlement = Entitlement.pro(orderID: "test-order", issued: Date())
+
     private func tempStore() -> ClipStore {
-        ClipStore(directory: URL(fileURLWithPath: NSTemporaryDirectory())
+        let store = ClipStore(directory: URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("iu-\(UUID().uuidString)"))
+        store.entitlement = Self.proEntitlement
+        return store
     }
 
     private func imageClip(source: String? = nil) -> ClipItem {
@@ -167,9 +175,12 @@ final class ImageUnderstandingWiringTests: XCTestCase {
     func testDisabledSettingPerformsNoRecognition() async {
         let store = tempStore()
         store.add(imageClip())
+        // Through the entitlement-taking setter: the ambient one refuses `true` for a free
+        // build, so restoring `previous` through it would write `false` in this process and
+        // leak a disabled pass into every test that ran after this one.
         let previous = ClipStore.imageUnderstandingEnabled
-        defer { ClipStore.imageUnderstandingEnabled = previous }
-        ClipStore.imageUnderstandingEnabled = false
+        defer { ClipStore.setImageUnderstanding(previous, entitlement: Self.proEntitlement) }
+        ClipStore.setImageUnderstanding(false, entitlement: Self.proEntitlement)
 
         var calls = 0
         ImageUnderstanding.analyze = { _ in calls += 1; return self.result("x") }

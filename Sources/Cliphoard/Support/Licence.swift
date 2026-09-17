@@ -72,6 +72,16 @@ enum Licence {
     /// Where to buy. One place, so the four upsell surfaces cannot drift.
     static let buyURL = URL(string: "https://cliphoard.dev/#pro")!
 
+    /// The price, written ONCE. Four upsell surfaces name it, and four copies of a number
+    /// is four chances for the app to quote a price the checkout does not charge — which
+    /// for a paid product is not a typo, it is a false statement about money.
+    static let priceLabel = "$10"
+
+    /// What the gated surfaces say when they refuse. One sentence, one place, so the
+    /// search picker, the Keep picker, the OCR toggle and the Import panel cannot end up
+    /// describing four different products.
+    static let pitch = "Cliphoard Pro — \(priceLabel) once, on this Mac and every Mac you own."
+
     private static func b64urlDecode(_ s: String) -> Data? {
         var t = s.replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
         while t.count % 4 != 0 { t += "=" }

@@ -393,11 +393,21 @@ struct ContentView: View {
                 // "control that looks live and does nothing" defect FrozenControlsTests
                 // exists to catch. The currently-selected mode is always listed, so a
                 // persisted `.image` selection cannot leave the picker showing a blank.
+                //
+                // UPSELL 1: on a FREE build the Pro mode is listed and NAMED as Pro rather
+                // than hidden. That is the same instinct as `blurb` above — say what the
+                // limit is instead of letting the user infer it — and it is not the
+                // "looks live, does nothing" defect, because selecting it cannot take
+                // effect: `AppSettings.searchMode`'s gate bounces it back and explains.
                 ForEach(SearchMode.allCases.filter {
-                    !$0.usesImageModel || store.clipEmbedder != nil
+                    let allowed = SearchMode.available(store.entitlement).contains($0)
+                    return (allowed && (!$0.usesImageModel || store.clipEmbedder != nil))
                         || settings.searchMode == $0
+                        || !allowed
                 }) { mode in
-                    Label(mode.title, systemImage: mode.symbol).tag(mode)
+                    Label(SearchMode.available(store.entitlement).contains(mode)
+                          ? mode.title : "\(mode.title) — Pro",
+                          systemImage: mode.symbol).tag(mode)
                 }
             }
             .labelsHidden()

@@ -66,11 +66,58 @@ final class ClipStore: ObservableObject {
         var fraction: Double { total > 0 ? Double(done) / Double(total) : 0 }
     }
 
+    /// What this install is entitled to. Held as a VALUE, read from `Licence.current` at the
+    /// boundary (here, and again when Settings accepts or removes a key) rather than at each
+    /// use — the `HistoryReaper` idiom, and the reason the gates below can be tested without
+    /// a signed key. `@Published` so pasting a key lights Pro up with no relaunch.
+    @Published var entitlement: Entitlement = Licence.current {
+        didSet {
+            guard entitlement != oldValue else { return }
+            // The towers were loaded (or withheld) under the OLD entitlement; drop the memo
+            // so the next read re-decides. Without this, buying Pro leaves image search dead
+            // until the next launch — and the whole point of an offline key is that it works
+            // the moment it is pasted.
+            clipEmbedderLoadedForPro = nil
+            clipEmbedderMemo = nil
+        }
+    }
+
+    /// GATE 3. The most unpinned clips a FREE build will keep. Above 1.0.0's default of 200,
+    /// deliberately: nobody who is already using the app loses anything they actually had.
+    static let freeHistoryLimit = 500
+    /// The values a free build may choose. The rest are Pro-badged in the picker.
+    static let freeHistoryLimits = [100, 200, 500]
+    /// Pro-only rows, in picker order. `0` is "unlimited" — the repo's existing sentinel.
+    static let proHistoryLimits = [1000, 5000, 0]
+
+    /// CLAMP, NEVER DELETE. A requested limit above the free ceiling — including the
+    /// `0 = unlimited` sentinel, which is the largest request there is — becomes the ceiling.
+    ///
+    /// The thing this must never do is turn a downgrade into a deletion, so note what is NOT
+    /// here: nothing calls this on a licence change. Losing Pro writes no new limit, so a
+    /// hoarder who had `unlimited` and 5,000 clips keeps all 5,000 — `trim()` goes on
+    /// honouring the value that is stored, and not one clip is removed by the gate itself.
+    /// What a free build cannot do is ask for MORE. That asymmetry is the whole design: a
+    /// paywall may withhold a capability, and may never destroy data the user already has.
+    static func allowedHistoryLimit(_ requested: Int, _ entitlement: Entitlement) -> Int {
+        guard !entitlement.isPro else { return requested }
+        if requested <= 0 { return freeHistoryLimit }      // "unlimited" is a request for more
+        return min(requested, freeHistoryLimit)
+    }
+
     /// Maximum number of unpinned items kept (0 = unlimited). Pinned items are
     /// always kept regardless.
     var historyLimit: Int {
         get { UserDefaults.standard.object(forKey: "historyLimit") as? Int ?? 200 }
-        set { UserDefaults.standard.set(newValue, forKey: "historyLimit"); trim() }
+        set { setHistoryLimit(newValue, entitlement: entitlement) }
+    }
+
+    /// The gated setter. Takes the entitlement as a VALUE; `historyLimit`'s setter is the
+    /// boundary that supplies this store's own.
+    func setHistoryLimit(_ requested: Int, entitlement: Entitlement) {
+        UserDefaults.standard.set(Self.allowedHistoryLimit(requested, entitlement),
+                                  forKey: "historyLimit")
+        trim()
     }
 
     private let dir: URL
@@ -558,7 +605,24 @@ final class ClipStore: ObservableObject {
             UserDefaults.standard.object(forKey: "imageUnderstandingEnabled") == nil
                 ? true : UserDefaults.standard.bool(forKey: "imageUnderstandingEnabled")
         }
-        set { UserDefaults.standard.set(newValue, forKey: "imageUnderstandingEnabled") }
+        // GATE 2, half one: the ambient setter REFUSES `true` for a free build, reading the
+        // entitlement at this boundary. So no path through the UI — nor a `defaults write`
+        // routed through here — can leave the stored preference claiming a capability this
+        // build will not perform.
+        set { setImageUnderstanding(newValue, entitlement: Licence.current) }
+    }
+
+    /// The gated setter, taking the entitlement as a VALUE.
+    static func setImageUnderstanding(_ on: Bool, entitlement: Entitlement) {
+        UserDefaults.standard.set(on && entitlement.isPro, forKey: "imageUnderstandingEnabled")
+    }
+
+    /// GATE 2, half two: what actually RUNS. The preference above defaults to ON for an
+    /// untouched install, so gating only the setter would leave every fresh free install
+    /// reading text out of screenshots — a Pro row, performed for free, by default. This is
+    /// the predicate the recognition pass and the CLIP towers consult.
+    static func imageUnderstandingAllowed(_ entitlement: Entitlement) -> Bool {
+        entitlement.isPro && imageUnderstandingEnabled
     }
 
     /// Exactly the rows the pass has never looked at. The column IS the marker, so
@@ -654,8 +718,9 @@ final class ClipStore: ObservableObject {
             DebugLog.write("images: \(message)")
         }
         guard !safeMode else { return report("skipped — SAFE MODE") }
-        guard Self.imageUnderstandingEnabled else {
-            return report("skipped — turned off in Settings")
+        guard Self.imageUnderstandingAllowed(entitlement) else {
+            return report(entitlement.isPro ? "skipped — turned off in Settings"
+                                            : "skipped — reading text in images is Cliphoard Pro")
         }
         guard imageTask == nil else { return }   // already running; not worth a line
         let pending = items.filter(Self.needsImageUnderstanding).count
@@ -751,12 +816,30 @@ final class ClipStore: ObservableObject {
     /// embedder as "this feature is not available", never as an error: the app must work
     /// exactly as it did before if the towers are absent, because for most of its life they
     /// were. `load()` is all-or-nothing across both towers and the tokenizer.
-    private(set) lazy var clipEmbedder: CLIPEmbedder? = {
-        guard Self.imageUnderstandingEnabled else { return nil }
-        let loaded = CLIPEmbedder.load()
-        DebugLog.write("clip: embedder \(loaded == nil ? "unavailable" : "ready")")
-        return loaded
-    }()
+    /// Memoised rather than `lazy`, because `lazy` resolves exactly once and this now
+    /// depends on a value that changes while the app is running: a key pasted in Settings
+    /// must load the towers without a relaunch, and a key removed must drop them.
+    /// `clipEmbedderLoadedForPro` records WHICH entitlement the memo was taken under, so
+    /// "loaded and absent" stays distinct from "not yet loaded".
+    private var clipEmbedderMemo: CLIPEmbedder?
+    private var clipEmbedderLoadedForPro: Bool?
+
+    var clipEmbedder: CLIPEmbedder? {
+        let pro = entitlement.isPro
+        if clipEmbedderLoadedForPro == pro { return clipEmbedderMemo }
+        clipEmbedderLoadedForPro = pro
+        // GATE 2, half three: a FREE build never loads a tower. Not "loads it and refuses to
+        // search" — the 33 MB of OpenVision is never mapped, so the paid feature costs a free
+        // user no memory and no launch time at all.
+        guard Self.imageUnderstandingAllowed(entitlement) else {
+            clipEmbedderMemo = nil
+            DebugLog.write("clip: embedder withheld — \(pro ? "turned off in Settings" : "free build")")
+            return nil
+        }
+        clipEmbedderMemo = CLIPEmbedder.load()
+        DebugLog.write("clip: embedder \(clipEmbedderMemo == nil ? "unavailable" : "ready")")
+        return clipEmbedderMemo
+    }
 
     /// An image clip that has been through Vision but carries no vector in the CURRENT
     /// signature. Signature-scoped rather than a boolean, so bumping the model version

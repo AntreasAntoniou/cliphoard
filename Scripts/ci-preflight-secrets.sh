@@ -5,6 +5,25 @@
 # variables in the environment. Prints no secret values.
 set -euo pipefail
 
+# THE SIGNING KEY MUST NEVER BE IN A CHECKOUT. It is checked FIRST, before anything else,
+# and it is checked even on a local run: a key that reaches CI has already been handed to a
+# log, a cache and every fork, and the only useful moment to notice is before that happens.
+#
+# .gitignore covers the same two patterns, but .gitignore protects a COMMIT and this protects
+# a CHECKOUT — an untracked key sitting in the working tree is invisible to git and perfectly
+# visible to an archive step, a Docker COPY, or a `tar` of the workspace. `find` rather than
+# `git ls-files` for exactly that reason: tracked-ness is not the question.
+#
+# Prints the paths, never the contents.
+found="$(find . -path ./.git -prune -o \
+                \( -name '*.ed25519' -o -name 'licence-signing-key*' \) -print 2>/dev/null)"
+if [ -n "$found" ]; then
+    echo "::error::a Cliphoard licence SIGNING KEY is present in this checkout:"
+    printf '  %s\n' $found
+    echo "::error::the private half must live outside the repo (~/.cliphoard-licensing/, or \$CLIPHOARD_SIGNING_KEY). Remove it from the working tree and re-run. If it was ever committed or pushed, treat it as compromised: mint a new keypair, update Licence.publicKey, and re-issue keys."
+    exit 1
+fi
+
 missing=""
 for v in MACOS_CERT_P12 MACOS_CERT_PASSWORD KEYCHAIN_PASSWORD MACOS_DEVID APPLE_ID APPLE_TEAM_ID APPLE_APP_PASSWORD; do
     [ -n "${!v:-}" ] || missing="$missing $v"

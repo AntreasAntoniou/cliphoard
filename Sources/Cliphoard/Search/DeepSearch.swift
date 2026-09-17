@@ -152,6 +152,19 @@ enum SearchMode: String, CaseIterable, Identifiable {
     /// and the two are independently absent: the text tiers can be ready while the image
     /// towers are missing, and the UI must not offer a mode that cannot run.
     var usesImageModel: Bool { self == .image }
+
+    /// GATE 1. The modes this entitlement may SELECT.
+    ///
+    /// Takes the entitlement as a VALUE rather than reading `Licence.current` here — the
+    /// `HistoryReaper` idiom. A gate that reads a global is a gate every caller can forget
+    /// to think about; a gate that demands an argument is one the compiler makes them think
+    /// about, and it is what makes this testable without a signed key.
+    ///
+    /// `usesImageModel` already isolated exactly the mode that needs the 33 MB OpenVision
+    /// towers, so the paid split costs one filter and invents no crippled code path.
+    static func available(_ entitlement: Entitlement) -> [SearchMode] {
+        allCases.filter { !$0.usesImageModel || entitlement.isPro }
+    }
 }
 
 enum DeepSearch {

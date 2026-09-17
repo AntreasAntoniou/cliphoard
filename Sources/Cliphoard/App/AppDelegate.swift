@@ -187,9 +187,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         let limitItem = NSMenuItem(title: "History Limit", action: nil, keyEquivalent: "")
         let limitMenu = NSMenu()
-        for n in [0, 100, 200, 500, 1000, 5000] {
-            let title = n == 0 ? "Unlimited" : "\(n) items"
-            let it = NSMenuItem(title: title, action: #selector(setLimit(_:)), keyEquivalent: "")
+        // GATE 3, in the menu bar. The Pro rows are LISTED with the reason in the title and
+        // disabled by dropping the selector — the mechanism `destructiveAction` established
+        // and `FrozenControlsTests` pins, because under automatic enabling a manual
+        // `isEnabled = false` is discarded while a nil action is not.
+        let pro = store.entitlement.isPro
+        for n in [100, 200, 500, 1000, 5000, 0] {
+            let base = n == 0 ? "Unlimited" : "\(n) items"
+            let locked = !pro && !ClipStore.freeHistoryLimits.contains(n)
+            let it = NSMenuItem(title: locked ? "\(base)  (Cliphoard Pro)" : base,
+                                action: locked ? nil : #selector(setLimit(_:)),
+                                keyEquivalent: "")
             it.tag = n
             it.state = (store.historyLimit == n) ? .on : .off
             limitMenu.addItem(it)
