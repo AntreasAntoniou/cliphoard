@@ -188,25 +188,38 @@ struct Main {
             }
             let setUnlimited = args.contains("--set-unlimited")
             let acceptTrim = args.contains("--accept-trim")
-            // The history limit defaults to 200 and `trim()` deletes rows AND unlinks
-            // their payload files. Refusing here rather than importing and letting the
-            // next copy quietly evict thousands of the clips that just arrived.
+            // `--set-unlimited` turns the limit off, which only Pro can do — a free build used
+            // to be told to run it, and it set 500. `--accept-trim` keeps the stored limit and
+            // imports the newest clips that fit it, leaving the rest in the file: nothing is
+            // trimmed after the fact, because `trim()` deletes rows AND unlinks their images.
+            // Neither flag, and not everything fits: refuse, so the decision is the user's.
+            if setUnlimited && !store.entitlement.isPro && store.historyLimit != 0 {
+                let raise = store.historyLimit < ClipStore.freeHistoryLimit
+                    ? ", or raise the limit to \(ClipStore.freeHistoryLimit) in Settings first"
+                    : ""
+                print("REFUSING: --set-unlimited turns the history limit off, and this build "
+                      + "cannot — it keeps at most \(ClipStore.freeHistoryLimit) unpinned clips. "
+                      + "Re-run with --accept-trim to keep the newest clips that fit your limit "
+                      + "(the file keeps all of them; nothing already here is deleted)\(raise). "
+                      + Licence.pitch)
+                exit(1)
+            }
             switch HistoryArchiveIO.preview(url: file, passphrase: passphrase) {
             case .failure(let error):
                 print("REFUSED: " + error.message)
                 exit(1)
             case .success(let summary):
                 Self.printSummary(summary)
-                let unpinnedAfter = store.items.filter { !$0.pinned }.count + summary.clipCount
-                if store.historyLimit > 0 && unpinnedAfter > store.historyLimit
-                    && !setUnlimited && !acceptTrim {
-                    print("REFUSING: your history limit is \(store.historyLimit) and this "
-                          + "import would bring \(unpinnedAfter) unpinned clips, so the next "
-                          + "clip you copy would delete most of them (and their images). "
-                          + "Re-run with --set-unlimited to turn the limit off, or "
-                          + "--accept-trim to import anyway.")
+                let plan = ClipStore.importPlan(
+                    limitBefore: store.historyLimit,
+                    unpinnedHere: store.items.filter { !$0.pinned }.count,
+                    lift: setUnlimited, entitlement: store.entitlement)
+                let incoming = summary.clipCount - summary.pinnedCount
+                if !plan.fits(incoming) && !acceptTrim {
+                    print(plan.refusal(incomingUnpinned: incoming))
                     exit(1)
                 }
+                if let note = plan.preview(incomingUnpinned: incoming) { print("  " + note) }
             }
             var lastLine = ""
             let staged = store.stageImport(from: file, passphrase: passphrase) { _, message in
@@ -219,7 +232,7 @@ struct Main {
                 print("REFUSED: " + error.message)
                 exit(1)
             case .success(let quarantined):
-                let tally = store.ingestImported(quarantined, setUnlimited: setUnlimited)
+                let tally = store.ingestImported(quarantined, liftLimit: setUnlimited)
                 if let refusal = tally.refusal {
                     print("REFUSED: " + refusal.message)
                     exit(1)

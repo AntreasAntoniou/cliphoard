@@ -99,10 +99,121 @@ final class ClipStore: ObservableObject {
     /// honouring the value that is stored, and not one clip is removed by the gate itself.
     /// What a free build cannot do is ask for MORE. That asymmetry is the whole design: a
     /// paywall may withhold a capability, and may never destroy data the user already has.
-    static func allowedHistoryLimit(_ requested: Int, _ entitlement: Entitlement) -> Int {
+    nonisolated static func allowedHistoryLimit(_ requested: Int, _ entitlement: Entitlement) -> Int {
         guard !entitlement.isPro else { return requested }
         if requested <= 0 { return freeHistoryLimit }      // "unlimited" is a request for more
         return min(requested, freeHistoryLimit)
+    }
+
+    // MARK: Gate 3 on the import path
+
+    /// What an import may do about the history limit, decided ONCE by a pure function and
+    /// read by the preview box, the command line and `ingestImported` itself — so the
+    /// sentence the user reads is computed from the same numbers as the rows that land.
+    ///
+    /// Two facts make this more than a convenience. `setHistoryLimit` calls `trim()` the
+    /// moment it writes, and the import consults the limit BEFORE its own rows exist, when
+    /// `items` is the destination's own history. So a request the gated setter clamps DOWN —
+    /// a free build asking for "unlimited" on a store whose stored limit was left at 720 or
+    /// 5,000 by a lapsed Pro or a 1.0.0 upgrade — deleted the user's own clips before a single
+    /// imported row landed, and kept them deleted if the commit then rolled back. The limit
+    /// therefore moves UP only, only as far as `allowedHistoryLimit(0, entitlement)` (0 under
+    /// Pro, the free ceiling under free), never below what is stored, and only where `trim()`
+    /// at the new value would delete nothing.
+    ///
+    /// And nothing lands that the next capture would evict: `trim()` deletes rows AND unlinks
+    /// their payload files, so an import that overshot the limit was an import the first copy
+    /// afterwards destroyed (700 in, 201 gone). Every pinned clip lands — pinned never counts.
+    /// Of the unpinned, the newest by `lastUsedAt` — trim's own order — land up to `room`; the
+    /// rest stay in the file, which is never modified. Fewer clips arriving is a deferral;
+    /// rows disappearing is a loss. Only one of those is allowed.
+    ///
+    /// NO RATCHET: after any free import the stored limit is unchanged or the free ceiling and
+    /// unpinned rows never exceed it, so "export, copy until the old clips roll off, re-import"
+    /// buys nothing.
+    struct ImportPlan: Equatable {
+        let limitBefore: Int
+        let limitAfter: Int
+        let unpinnedHere: Int
+        let entitlement: Entitlement
+
+        var lifts: Bool { limitAfter != limitBefore }
+        /// nil = no cap. Otherwise how many more unpinned clips may land.
+        var room: Int? { limitAfter > 0 ? max(0, limitAfter - unpinnedHere) : nil }
+        func fits(_ incomingUnpinned: Int) -> Bool { room.map { incomingUnpinned <= $0 } ?? true }
+
+        private var limitWord: String { limitAfter == 0 ? "Unlimited" : "\(limitAfter)" }
+        private var ceiling: String {
+            entitlement.isPro ? "" : " — the most Cliphoard keeps without Pro"
+        }
+        private var proLine: String {
+            entitlement.isPro ? ""
+                : " Cliphoard Pro keeps them all — \(Licence.priceLabel) once, on every Mac you own."
+        }
+        private var neverDeleted: String {
+            "The rest stay in the file — nothing is deleted from it, and nothing already here "
+            + "is deleted. Pinned clips in the file are always kept."
+        }
+
+        /// BEFORE the commit — the preview box and the command line. `incomingUnpinned` is
+        /// the file's own count, which cannot know what dedup will skip, so it is an upper
+        /// bound and the sentence says "up to". Nil when nothing about the limit needs saying.
+        func preview(incomingUnpinned: Int) -> String? {
+            let lifted: String? = lifts
+                ? "Your history limit (now \(limitBefore)) will first be "
+                  + (limitAfter == 0 ? "turned off." : "raised to \(limitAfter)\(ceiling).")
+                : nil
+            guard let room, incomingUnpinned > room else {
+                return lifted.map { $0 + " Every clip in this file that isn't already here will be kept." }
+            }
+            let head = lifted.map { $0 + " " } ?? ""
+            let holds = "Your history holds \(unpinnedHere) unpinned "
+                + "clip\(unpinnedHere == 1 ? "" : "s") now and keeps up to \(limitWord), "
+            if room == 0 {
+                return head + holds + "so there is no room for more: only the pinned clips "
+                    + "in this file will be kept. " + neverDeleted + proLine
+            }
+            return head + holds + "so there is room for \(room) more: the newest clips in "
+                + "this file that aren't already here will be kept, up to \(room). "
+                + neverDeleted + proLine
+        }
+
+        /// AFTER the commit — exact. Nil when nothing about the limit needs saying.
+        func outcome(admittedUnpinned: Int, leftInFile: Int) -> String? {
+            let lifted: String? = lifts
+                ? "Your history limit was \(limitBefore) and is now \(limitWord)\(ceiling)."
+                : nil
+            guard leftInFile > 0 else { return lifted }
+            let kept = admittedUnpinned == 0
+                ? "so there was no room for more: only the pinned clips in the file were kept, and "
+                : "so the newest \(admittedUnpinned) from the file were kept, and "
+            return (lifted.map { $0 + " " } ?? "")
+                + "Your history keeps up to \(limitWord) unpinned clips, " + kept
+                + "\(leftInFile) stay in the file, which still holds all of them. Nothing "
+                + "already here was deleted." + proLine
+        }
+
+        /// The command line's refusal when not everything fits and no flag was given.
+        func refusal(incomingUnpinned: Int) -> String {
+            "REFUSING: not all of this file fits. "
+            + (preview(incomingUnpinned: incomingUnpinned) ?? "")
+            + " Re-run with --accept-trim to keep the newest clips that fit (the file keeps "
+            + "all of them; nothing already here is deleted)"
+            + (entitlement.isPro ? ", or with --set-unlimited to turn the limit off." : ".")
+        }
+    }
+
+    nonisolated static func importPlan(limitBefore: Int, unpinnedHere: Int, lift: Bool,
+                           entitlement: Entitlement) -> ImportPlan {
+        var after = limitBefore
+        if lift && limitBefore > 0 {
+            let most = allowedHistoryLimit(0, entitlement)       // 0 under Pro, the ceiling under free
+            let raised = most == 0 ? 0 : max(most, limitBefore)  // UP only, never past the clamp
+            // The gated setter runs `trim()` as it writes: raise only where that deletes nothing.
+            if raised == 0 || unpinnedHere <= raised { after = raised }
+        }
+        return ImportPlan(limitBefore: limitBefore, limitAfter: after,
+                          unpinnedHere: unpinnedHere, entitlement: entitlement)
     }
 
     /// Maximum number of unpinned items kept (0 = unlimited). Pinned items are
@@ -1172,6 +1283,9 @@ final class ClipStore: ObservableObject {
         var dismissals = 0
         var snapshotPath: String?
         var historyLimitNote: String?
+        /// Clips in the file that did not land because the history limit had no room. NOT a
+        /// loss: the file still holds them. The note carries the words; this carries the number.
+        var leftInFile = 0
         var refusal: HistoryArchive.ArchiveError?
         var seconds: Double = 0
 
@@ -1205,9 +1319,13 @@ final class ClipStore: ObservableObject {
     /// value under THIS Mac's key via `Crypto.sealStrict`, so the fail-closed property is
     /// INHERITED rather than re-implemented, and it write-throughs `item.imageFeature`, so
     /// the Vision prints land inside the same transaction as their rows.
+    ///
+    /// - Parameter liftLimit: the user's answer to "raise the history limit first?". A REQUEST,
+    ///   honoured only as far as the entitlement allows — see `importPlan`. (The old name,
+    ///   `setUnlimited`, described something a free build never did: it set 500.)
     @discardableResult
     func ingestImported(_ staged: HistoryArchiveIO.Staged,
-                        setUnlimited: Bool = true) -> ImportTally {
+                        liftLimit: Bool = true) -> ImportTally {
         let started = Date()
         var tally = ImportTally()
         func finish(_ t: ImportTally) -> ImportTally {
@@ -1257,34 +1375,27 @@ final class ClipStore: ObservableObject {
             toWrite.append(item)
         }
 
-        // C3. HISTORY LIMIT, decided BEFORE the inserts — otherwise the very next copy
-        //     trims the import that just landed, deleting rows AND unlinking payloads.
-        let unpinnedAfter = items.filter { !$0.pinned }.count
-                          + toWrite.filter { !$0.pinned }.count
-        let limit = historyLimit
-        if limit > 0 && unpinnedAfter > limit {
-            if setUnlimited {
-                // Lift the limit AS FAR AS THE ENTITLEMENT ALLOWS. The gated setter clamps a
-                // free build's request for "unlimited" to the free ceiling — and this is the
-                // one place the two rulings met: an import of 7,000 clips into a free build
-                // must neither be silently trimmed to 500 on the next capture nor be told
-                // the limit is "Unlimited" when it is not. Say what actually happened.
-                historyLimit = 0
-                let now = historyLimit
-                if now == 0 {
-                    tally.historyLimitNote = "Your history limit was \(limit) and this import "
-                        + "brings \(unpinnedAfter) unpinned clips, so the limit is now Unlimited."
-                } else {
-                    tally.historyLimitNote = "Your history limit was \(limit) and this import "
-                        + "brings \(unpinnedAfter) unpinned clips. The free build keeps up to "
-                        + "\(now), so the limit is now \(now) — the next clip you copy will trim "
-                        + "the oldest unpinned clips down to \(now). Cliphoard Pro keeps them all."
-                }
-            } else {
-                tally.historyLimitNote = "WARNING: your history limit is still \(limit), so "
-                    + "the next clip you copy will trim this history back down to \(limit)."
+        // C3. FIT, decided BEFORE the inserts — see `ImportPlan`. Nothing lands that the next
+        //     capture would evict; the limit moves up only, only through the gated setter; and
+        //     the rows follow what is STORED afterwards, never what was asked.
+        let asked = Self.importPlan(limitBefore: historyLimit,
+                                    unpinnedHere: items.filter { !$0.pinned }.count,
+                                    lift: liftLimit, entitlement: entitlement)
+        if asked.lifts { setHistoryLimit(asked.limitAfter, entitlement: entitlement) }
+        let plan = ImportPlan(limitBefore: asked.limitBefore, limitAfter: historyLimit,
+                              unpinnedHere: items.filter { !$0.pinned }.count,
+                              entitlement: entitlement)
+        if let room = plan.room {
+            let unpinned = toWrite.filter { !$0.pinned }
+                                  .sorted { $0.lastUsedAt > $1.lastUsedAt }
+            if unpinned.count > room {
+                tally.leftInFile = unpinned.count - room
+                toWrite = toWrite.filter(\.pinned) + Array(unpinned.prefix(room))
             }
         }
+        tally.historyLimitNote = plan.outcome(
+            admittedUnpinned: toWrite.filter { !$0.pinned }.count,
+            leftInFile: tally.leftInFile)
 
         // C4. MOVE the payloads. Same volume, so each rename is atomic. Payloads land
         //     BEFORE the rows, so the worst case is an orphan payload — harmless,
@@ -1292,7 +1403,10 @@ final class ClipStore: ObservableObject {
         //     — rather than a row whose image is missing.
         var moved: [String] = []
         var moveFailure: String?
-        for name in staged.stagedPayloads {
+        // Payloads follow the ROWS: a clip that stayed in the file must not leave its image
+        // behind as an orphan. (`stagedPayloads` holds main names; thumbs are derived below.)
+        let wanted = Set(toWrite.compactMap(\.payloadFile))
+        for name in staged.stagedPayloads where wanted.contains(name) {
             let from = staged.stagingDirectory.appendingPathComponent(name)
             let to = dir.appendingPathComponent(name)
             do { try FileManager.default.moveItem(at: from, to: to) }

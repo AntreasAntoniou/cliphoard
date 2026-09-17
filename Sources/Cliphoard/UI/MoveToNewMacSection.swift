@@ -32,18 +32,27 @@ final class ArchiveModel: ObservableObject {
         let url: URL
         let passphrase: String
         let summary: HistoryArchive.Summary
-        let currentLimit: Int
-        let unpinnedAfter: Int
-        var historyLimitWouldBite: Bool { currentLimit > 0 && unpinnedAfter > currentLimit }
+        let limitBefore: Int
+        let unpinnedHere: Int
+        let entitlement: Entitlement
+        /// From the summary — an upper bound on what will be written, since dedup only lowers it.
+        var incomingUnpinned: Int { summary.clipCount - summary.pinnedCount }
+        func plan(lift: Bool) -> ClipStore.ImportPlan {
+            ClipStore.importPlan(limitBefore: limitBefore, unpinnedHere: unpinnedHere,
+                                 lift: lift, entitlement: entitlement)
+        }
+        /// The toggle is offered only where it is both needed (the file does not fit as things
+        /// stand) and true (the entitlement can actually raise the limit).
+        var offersLift: Bool { !plan(lift: false).fits(incomingUnpinned) && plan(lift: true).lifts }
     }
 
     @Published private(set) var busy: String?
     @Published private(set) var result: String?
     @Published private(set) var pending: Pending?
-    /// Defaults ON, and the label states the effect. A post-hoc banner would leave a window
-    /// in which the very next copy trims thousands of the clips that just arrived — `trim()`
-    /// deletes rows AND unlinks their payload files.
-    @Published var setUnlimited = true
+    /// Defaults ON: raise the limit as far as the entitlement allows (off under Pro, the free
+    /// ceiling without) BEFORE the rows land. Never a post-hoc banner — `trim()` deletes rows
+    /// AND unlinks their payload files. What does not fit stays in the file; it is never trimmed.
+    @Published var liftLimit = true
 
     /// The ONE place the section decides whether the buttons work, and it produces the
     /// sentence shown underneath them. A control that looks live and does nothing is the
@@ -155,9 +164,9 @@ final class ArchiveModel: ObservableObject {
             result = error.message
         case .success(let summary):
             pending = Pending(url: url, passphrase: passphrase, summary: summary,
-                              currentLimit: store.historyLimit,
-                              unpinnedAfter: store.items.filter { !$0.pinned }.count
-                                  + summary.clipCount)
+                              limitBefore: store.historyLimit,
+                              unpinnedHere: store.items.filter { !$0.pinned }.count,
+                              entitlement: store.entitlement)
         }
     }
 
@@ -177,7 +186,7 @@ final class ArchiveModel: ObservableObject {
             result = error.message
         case .success(let quarantined):
             busy = "Finishing…"
-            let tally = store.ingestImported(quarantined, setUnlimited: setUnlimited)
+            let tally = store.ingestImported(quarantined, liftLimit: liftLimit)
             busy = nil
             result = tally.refusal == nil
                 ? tally.summaryLine + " Search is re-indexing in the background."
@@ -398,20 +407,28 @@ struct MoveToNewMacSection: View {
                      + "not in it.")
                     .font(.system(size: 11)).foregroundStyle(.orange)
             }
-            if pending.historyLimitWouldBite {
-                Toggle("Turn off the history limit (now \(pending.currentLimit)) — otherwise "
-                       + "the next clip you copy deletes most of this import",
-                       isOn: $model.setUnlimited)
+            if let note = pending.plan(lift: model.liftLimit)
+                .preview(incomingUnpinned: pending.incomingUnpinned) {
+                Text(note).font(.system(size: 11)).foregroundStyle(.orange)
+            }
+            if pending.offersLift {
+                let lifted = pending.plan(lift: true).limitAfter
+                Toggle(lifted == 0
+                       ? "Turn off the history limit (now \(pending.limitBefore)) so all of "
+                         + "this file fits"
+                       : "Raise the history limit from \(pending.limitBefore) to \(lifted) — "
+                         + "the most Cliphoard keeps without Pro",
+                       isOn: $model.liftLimit)
                     .font(.system(size: 11))
             }
             HStack {
                 Button("Cancel") { model.cancelImport() }.controlSize(.small)
                 Spacer()
-                Button("Import \(pending.summary.clipCount)") {
-                    model.commitImport(store: store)
-                }
-                .controlSize(.small)
-                .disabled(store.safeMode)
+                // "Import 700" above a sentence saying 500 arrive is the small lie this file
+                // exists to avoid; the sentences carry the numbers.
+                Button("Import") { model.commitImport(store: store) }
+                    .controlSize(.small)
+                    .disabled(store.safeMode)
             }
         }
         .padding(10)
