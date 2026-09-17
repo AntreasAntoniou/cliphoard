@@ -1264,9 +1264,22 @@ final class ClipStore: ObservableObject {
         let limit = historyLimit
         if limit > 0 && unpinnedAfter > limit {
             if setUnlimited {
+                // Lift the limit AS FAR AS THE ENTITLEMENT ALLOWS. The gated setter clamps a
+                // free build's request for "unlimited" to the free ceiling — and this is the
+                // one place the two rulings met: an import of 7,000 clips into a free build
+                // must neither be silently trimmed to 500 on the next capture nor be told
+                // the limit is "Unlimited" when it is not. Say what actually happened.
                 historyLimit = 0
-                tally.historyLimitNote = "Your history limit was \(limit) and this import "
-                    + "brings \(unpinnedAfter) unpinned clips, so the limit is now Unlimited."
+                let now = historyLimit
+                if now == 0 {
+                    tally.historyLimitNote = "Your history limit was \(limit) and this import "
+                        + "brings \(unpinnedAfter) unpinned clips, so the limit is now Unlimited."
+                } else {
+                    tally.historyLimitNote = "Your history limit was \(limit) and this import "
+                        + "brings \(unpinnedAfter) unpinned clips. The free build keeps up to "
+                        + "\(now), so the limit is now \(now) — the next clip you copy will trim "
+                        + "the oldest unpinned clips down to \(now). Cliphoard Pro keeps them all."
+                }
             } else {
                 tally.historyLimitNote = "WARNING: your history limit is still \(limit), so "
                     + "the next clip you copy will trim this history back down to \(limit)."

@@ -429,11 +429,21 @@ final class HistoryArchiveSafetyTests: ArchiveTestCase {
                        + "payload files, so letting it run here would destroy most of the "
                        + "import and its images with it")
         XCTAssertEqual(destination.items.count, fixture.rows.count)
-        XCTAssertEqual(destination.historyLimit, 0,
+        // The lift goes as far as the entitlement allows: 0 under Pro, the free ceiling
+        // under free. The test fixture is a free store, so the ceiling is the honest answer
+        // — and the note must say so rather than claim "Unlimited".
+        let expectedLimit = destination.entitlement.isPro ? 0 : ClipStore.freeHistoryLimit
+        XCTAssertEqual(destination.historyLimit, expectedLimit,
                        "the limit must be lifted BEFORE the inserts, not after — otherwise "
                        + "the very next copy trims the import that just arrived")
         let note = try XCTUnwrap(tally.historyLimitNote, "the user was not told")
         XCTAssertTrue(note.contains("5"), "the note must name the old limit")
+        if destination.entitlement.isPro {
+            XCTAssertTrue(note.contains("Unlimited"))
+        } else {
+            XCTAssertTrue(note.contains("\(ClipStore.freeHistoryLimit)") && !note.contains("Unlimited"),
+                          "a free build must be told the ceiling, never told 'Unlimited': \(note)")
+        }
         XCTAssertEqual(entries(destinationDirectory).filter { $0.hasSuffix(".png") }.count,
                        fixture.payloads.count * 2,
                        "every payload and its regenerated thumbnail must still be there")
@@ -518,6 +528,23 @@ final class HistoryArchiveSafetyTests: ArchiveTestCase {
             XCTFail("the export refused on a whole store after the launch sweep: \(error). "
                     + "historyProof was not re-minted after orphanedImageRows deleted a row.")
         }
+    }
+
+
+    /// The same import under Pro lifts the limit to Unlimited — the two rulings agree at
+    /// the seam: clamp for free, never delete for anyone, always say what happened.
+    func testImportUnderProLiftsTheLimitToUnlimited() throws {
+        try skipIfKeychainUnreachable()
+        let (fixture, _, file) = try exportFixture("pro-source")
+        let destination = ClipStore(directory: directory("pro-dest"))
+        destination.entitlement = .pro(orderID: "test", issued: Date())
+        destination.historyLimit = 5
+        let staged = try destination.stageImport(from: file, passphrase: passphrase).get()
+        let tally = destination.ingestImported(staged, setUnlimited: true)
+        XCTAssertNil(tally.refusal)
+        XCTAssertEqual(tally.imported, fixture.rows.count)
+        XCTAssertEqual(destination.historyLimit, 0, "Pro lifts to Unlimited")
+        XCTAssertTrue(tally.historyLimitNote?.contains("Unlimited") ?? false)
     }
 
 }
