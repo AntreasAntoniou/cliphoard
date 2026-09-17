@@ -208,12 +208,32 @@ Being open source makes this auditable: you can read the source and confirm ther
 are zero network calls. Add sync and that verifiable fact becomes "trust our
 crypto and our server" — a weaker trust model we're not willing to ask of you.
 
-**Moving to a new Mac.** There is no export or import of a Cliphoard history yet. The key
-is bound to this Mac's Secure Enclave and login Keychain, so a copy of
-`~/Library/Application Support/Ditto/` on another Mac — or in any folder that syncs — is a
-database whose rows cannot be decrypted there. Do not put the store on iCloud Drive or
-Syncthing expecting another machine to read it. An encrypted, passphrase-protected
-export/import is planned for 1.0.1.
+**Moving to a new Mac.** Since **1.0.1**, *Settings → Move to another Mac* writes one
+encrypted file. **What is inside:** every clip's content, rich text, file paths, colours,
+your tags, recognised image text, the app each clip came from, pin state, timestamps, use
+counts and detector flags, plus the image payloads and the perceptual prints used for
+"clips that look like this". **What is not inside:** the search index (recomputed on the new
+Mac in a few minutes) and this Mac's encryption key, which cannot leave it.
+
+**How it is protected.** The whole file — including the clip count, the dates and this
+Mac's name — is sealed as one authenticated stream: **AES-256-GCM** in 1 MiB chunks, each
+chunk bound to the file's header, its position and whether it is the last, so a truncated,
+reordered or modified file is **refused**, not partly read. The key comes from your
+passphrase by **PBKDF2-HMAC-SHA256** with a random 16-byte salt and at least **600,000**
+iterations. Nothing but a 48-byte cryptographic header is in the clear, and that header says
+nothing about you.
+
+**The export file has no Secure Enclave behind it — its only protection is your
+passphrase.**
+
+**There is no recovery.** No escrow, no backup key, no reset link — by design. Lose the
+passphrase and the file is gone. It includes clips flagged as coming from password managers;
+treat it exactly as you treat your history.
+
+Importing never deletes: clips already on the new Mac are kept, nothing is tagged or
+rewritten, and a snapshot of the previous database is written beside it before anything is
+committed. Copying `~/Library/Application Support/Ditto/` to another Mac still does not
+work, and still should not be put on iCloud Drive or Syncthing.
 
 ## Changes
 

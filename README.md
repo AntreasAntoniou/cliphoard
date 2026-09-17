@@ -130,9 +130,16 @@ indexed, not hidden. Exclude any app with
 `defaults write io.antreas.cliphoard excludedBundleIDs -array com.example.app`. See
 [PRIVACY.md](PRIVACY.md) — including **why there is, and will be, no cloud sync**.
 
-**Moving to a new Mac:** not yet — the key never leaves this Mac's Secure Enclave and login
-Keychain, so a copied database is unreadable elsewhere. Encrypted export/import is planned
-for 1.0.1.
+**Moving to a new Mac:** *Settings → Move to another Mac*. The key never leaves this Mac's
+Secure Enclave and login Keychain, so copying the database achieves nothing. Instead,
+**Export…** writes a single encrypted `.cliphoard` file holding your whole history — clips,
+images, tags, pins, dates and the app each clip came from — and **Import…** on the new Mac
+decrypts it and re-seals every clip under *that* Mac's key. The whole file is sealed as one
+authenticated stream (AES-256-GCM, key stretched from your passphrase with
+PBKDF2-HMAC-SHA256). **Your passphrase is the only key: nothing is escrowed, a lost
+passphrase cannot be recovered, and the file is as sensitive as your history itself.** New
+in **1.0.1**. Headless equivalents: `--export-history <path>` and `--import-history <path>`
+(passphrase on stdin, `--dry-run` to verify a file without writing anything).
 
 ## Deep search (on-device embeddings)
 
@@ -175,7 +182,6 @@ reimplemented in Swift). To produce/bundle the models, see [`tools/`](tools/READ
 
 ## Coming in 1.0.1
 
-- Encrypted, passphrase-protected export/import for moving history to a new Mac
 - Touch ID hiding for password-manager clips
 - A Settings UI for excluded apps
 - The notarized build and Homebrew tap

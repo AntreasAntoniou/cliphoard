@@ -155,7 +155,7 @@ struct ContentView: View {
             // at 1992pt for a settings pane — and inflating the bar to match.
             Group {
                 if model.showSettings {
-                    SettingsView(settings: settings, store: store)
+                    SettingsView(settings: settings, store: store, model: model)
                 } else {
                     switch settings.layoutMode {
                     case .strip:     cards

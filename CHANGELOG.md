@@ -1,5 +1,63 @@
 # Changelog
 
+## 1.0.1
+
+### Move to another Mac
+
+*Settings → Move to another Mac*, and the headless equivalents `--export-history <path>` /
+`--import-history <path>`.
+
+**Export** writes your whole history into one encrypted `.cliphoard` file: every clip's
+content, rich text, file paths, colours, your tags, recognised image text, the app each clip
+came from, pin state, timestamps, use counts and detector flags — plus the image payloads
+themselves and the Vision prints behind "clips that look like this". The search index is
+**not** in the file; it is recomputed on the new Mac (about seven minutes for an
+8,000-clip store, in the background, with the app usable throughout), which keeps the file
+roughly 60 MB smaller on a store that size and unties it from whichever search model you
+happen to be using.
+
+**Import** merges. It never deletes, it never re-tags, and it never bumps a clip's dates: a
+clip already on the new Mac is skipped, whether it matches by id or by content, and the two
+counts are reported separately. Everything lands in one transaction, and the row count is
+re-read from the database afterwards rather than trusted from the tally — if anything is
+wrong, nothing is imported. A snapshot of the previous database is written beside it
+(`ditto.sqlite.pre-import-…`, via `VACUUM INTO`, so it is consistent with the write-ahead
+log rather than a half-copy) before a single row is written, and the result banner says
+where it is.
+
+**How the file is protected.** One authenticated stream: AES-256-GCM in 1 MiB chunks, each
+chunk bound to the file's 48-byte header, its own position and whether it is the last — so a
+truncated, reordered, spliced or modified file is refused rather than partly read, including
+the case where it was cut exactly on a chunk boundary. The key is stretched from your
+passphrase with PBKDF2-HMAC-SHA256, a fresh 16-byte random salt and at least 600,000
+iterations (calibrated to your Mac, and the floor is compiled in so a file cannot ask for
+less). The passphrase needs at least 12 characters, there is a Generate button, and **there
+is no recovery**: nothing is escrowed, no backup key exists, and a lost passphrase means a
+file nobody can open.
+
+**What it refuses to do.** Both directions refuse in safe mode, and both refuse if the
+history could not be read in full — an export of a partial read would silently lose clips,
+and the usual next step after an export is to wipe the old Mac. An export that cannot
+decrypt some of its own rows or images refuses too, and will only proceed once you say so —
+in which case the file records the counts, so the destination says it as well. A partial
+export can never present itself as a complete one.
+
+**Two command-line flags**, for moving a history without touching the interface:
+`--export-history <path> [--store-dir <dir>] [--allow-unreadable]` and
+`--import-history <path> [--store-dir <dir>] [--dry-run] [--set-unlimited | --accept-trim]`.
+The passphrase is read from stdin only — never from the arguments, where `ps` would show it.
+`--dry-run` checks every chunk's tag to the end of the file and prints what would be
+imported, writing nothing at all. `--set-unlimited` exists because the history limit
+defaults to 200 and trimming deletes rows *and* unlinks their images: the import lifts the
+limit before it writes, or refuses, rather than letting your next copy quietly evict the
+history that just arrived.
+
+### Also in this release
+
+- **The file picker no longer hides the bar.** Settings is drawn inside the floating panel,
+  so any system window taking key focus dismissed the whole interface underneath it.
+  "Choose…" in *Import* had no guard at all.
+
 ## 1.0.0 — 2026-09-11
 
 ### What it is
@@ -78,7 +136,6 @@ The build is signed with the project's local self-signed certificate, still name
 
 ### Deferred to 1.0.1
 
-- Encrypted, passphrase-protected export/import for moving history to a new Mac
 - Touch ID hiding for password-manager clips
 - A Settings UI for excluded apps
 - The notarized build and Homebrew tap
