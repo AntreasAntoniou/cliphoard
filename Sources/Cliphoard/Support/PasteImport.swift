@@ -62,9 +62,9 @@ enum PasteImport {
         var leftInSource = 0
     }
 
-    @MainActor
+    @MainActor @discardableResult
     static func run(dbPath: String, store: ClipStore, dryRun: Bool,
-                    limit: Int?, since: Date?) {
+                    limit: Int?, since: Date?) -> Tally {
         func say(_ s: String) { print(s); DebugLog.write("paste-import: \(s)") }
 
         say("source: \(dbPath)")
@@ -73,34 +73,21 @@ enum PasteImport {
         guard !store.safeMode else {
             say("REFUSING: the store is in SAFE MODE. Importing would either fail to persist "
                 + "or write rows under a key that cannot be read back. Fix the keychain first.")
-            return
+            return Tally()
         }
 
         let rows = read(dbPath: dbPath, limit: limit, since: since, log: say)
-        guard !rows.isEmpty else { return say("no rows read — nothing to do") }
+        guard !rows.isEmpty else { say("no rows read — nothing to do"); return Tally() }
         say("read \(rows.count) rows")
 
         var tally = Tally()
-        // Signatures already present, so a re-run is idempotent rather than duplicating the
-        // whole history. `store.add` dedups too, but counting here makes the report honest
-        // about what was skipped rather than silently absorbing it.
-        var seen = Set(store.items.map(\.signature))
-
-        for row in rows {
-            guard let item = clip(from: row, directory: store.storeDirectory,
-                                  tally: &tally) else { continue }
-            guard !seen.contains(item.signature) else { tally.skippedDuplicate += 1; continue }
-            seen.insert(item.signature)
-
-            item.createdAt = row.created
-            item.lastUsedAt = row.created
-            item.sourceApp = row.sourceApp
-            item.userTags = [marker]
-
-            tally.byKind[item.kind.rawValue, default: 0] += 1
-            tally.imported += 1
-            if !dryRun { store.add(item) }
-        }
+        // ONE writer. `ClipImporters.write` owns dedup (by signature, so a re-run is
+        // idempotent) and the fit rule: the newest clips that fit under the stored history
+        // limit land, the rest stay in the export, which is only ever read. This used to call
+        // `store.add` per row, and `add` → `trim()` evicted the user's own OLDEST clips past
+        // the limit and unlinked their payloads — under "imported 20".
+        let staged = stage(rows: rows, tally: &tally)
+        ClipImporters.write(staged, marker: marker, store: store, dryRun: dryRun, tally: &tally)
 
         say("---")
         for (kind, n) in tally.byKind.sorted(by: { $0.value > $1.value }) {
@@ -110,20 +97,31 @@ enum PasteImport {
         say("  skipped: no preview \(tally.skippedNoPreview), unparsable "
             + "\(tally.skippedUnparsable), empty \(tally.skippedEmpty), "
             + "duplicate \(tally.skippedDuplicate)")
+        if tally.leftInSource > 0 {
+            say("  up to \(tally.leftInSource) older clip(s) stay in Paste: the history limit "
+                + "is \(store.historyLimit). Set it to 0 (Unlimited) and re-run.")
+        }
         say(dryRun ? "DRY RUN — \(tally.imported) clips WOULD be imported"
                    : "imported \(tally.imported) clips, each tagged '\(marker)'")
         if !dryRun {
             say("to undo: search the tag '\(marker)' and delete, or "
                 + "DELETE FROM clips WHERE id IN (…) — the tag is the handle")
         }
+        return tally
     }
 
-    /// Paste as a `ClipImporters` adapter. The mapping is shared with `run`; only the
-    /// output shape differs, so the verified parser is not duplicated for the framework.
+    /// Paste as a `ClipImporters` adapter. Same signature the catalogue references.
     @MainActor
     static func stage(path: String, tally: inout Tally) -> [ClipImporters.Staged] {
+        stage(rows: read(dbPath: path, limit: nil, since: nil, log: { _ in }), tally: &tally)
+    }
+
+    /// Rows → `Staged`. Shared by `run` (which reads with --limit/--since and logs) and the
+    /// adapter above (which reads everything and logs nothing); the verified parser exists once.
+    @MainActor
+    static func stage(rows: [Row], tally: inout Tally) -> [ClipImporters.Staged] {
         var out: [ClipImporters.Staged] = []
-        for row in read(dbPath: path, limit: nil, since: nil, log: { _ in }) {
+        for row in rows {
             guard let json = decodePreview(row.preview) else { tally.skippedUnparsable += 1; continue }
             var staged = ClipImporters.Staged(kind: .text, text: "", created: row.created,
                                               sourceApp: row.sourceApp, filePath: nil,
@@ -227,76 +225,6 @@ enum PasteImport {
         // recognise by magic. Try anyway rather than losing the row on a guess.
         return (try? PropertyListSerialization.propertyList(
             from: data, options: [], format: nil)) as? [String: Any]
-    }
-
-    @MainActor
-    private static func clip(from row: Row, directory: URL,
-                             tally: inout Tally) -> ClipItem? {
-        // TWO ENCODINGS, not one. Paste writes `ZRAWPREVIEW` as UTF-8 JSON for most rows
-        // and as a BINARY PLIST for a minority — same keys, same schema, different
-        // container. The first version of this importer assumed JSON and silently dropped
-        // every plist row: 151 clips, including 2 images, counted as "unparsable" and never
-        // investigated because the number looked like acceptable attrition.
-        //
-        // There is no way to tell which encoding a row uses except by trying, and no
-        // documentation for either. Try JSON, fall back to plist, and only then give up.
-        guard let json = decodePreview(row.preview) else {
-            tally.skippedUnparsable += 1
-            return nil
-        }
-
-        // Paste's own `type` string is trusted over ZRAWTYPE: the numeric column is
-        // undocumented and the export's README calls it a hint, while the JSON names itself.
-        switch json["type"] as? String {
-        case "text":
-            guard let text = json["text"] as? String,
-                  !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-                tally.skippedEmpty += 1
-                return nil
-            }
-            // Re-run Cliphoard's OWN kind detection rather than trusting Paste's coarse
-            // "text": a URL or a hex colour copied years ago should land as .link or .color
-            // here, exactly as it would if copied today. Consistency with the live capture
-            // path matters more than fidelity to the source app's taxonomy.
-            let kind = ClipboardMonitor.detectKind(for: text)
-            let item = ClipItem(kind: kind, text: text)
-            if kind == .color { item.colorHex = text.trimmingCharacters(in: .whitespaces) }
-            return item
-
-        case "link":
-            guard let url = json["url"] as? String, !url.isEmpty else {
-                tally.skippedEmpty += 1
-                return nil
-            }
-            return ClipItem(kind: .link, text: url)
-
-        case "color":
-            // Paste stores a packed integer; render it the way Cliphoard stores colours so
-            // the swatch and every colour-aware path work unchanged.
-            guard let code = json["colorCode"] as? Int else { tally.skippedEmpty += 1; return nil }
-            let hex = String(format: "#%06X", code & 0xFFFFFF)
-            let item = ClipItem(kind: .color, text: hex)
-            item.colorHex = hex
-            return item
-
-        case "files":
-            guard let paths = json["filePaths"] as? [String], let first = paths.first else {
-                tally.skippedEmpty += 1
-                return nil
-            }
-            let item = ClipItem(kind: .file, text: first)
-            item.filePath = first
-            return item
-
-        default:
-            // Images arrive under several shapes; keyed on the payload rather than the label.
-            if let b64 = json["imageData"] as? String,
-               let raw = Data(base64Encoded: b64, options: .ignoreUnknownCharacters) {
-                return imageItem(from: raw, into: directory, tally: &tally)
-            }
-            tally.skippedNoPreview += 1
-            return nil
-        }
     }
 
     /// Re-encodes to PNG and seals it, going through the SAME shape as `persistImage` so an
