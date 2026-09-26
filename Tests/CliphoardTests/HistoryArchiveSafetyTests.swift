@@ -39,12 +39,12 @@ final class HistoryArchiveSafetyTests: ArchiveTestCase {
         (try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []
     }
 
-    /// Seven hundred unpinned clips — above `freeHistoryLimit` — plus two pinned ones that are
-    /// the OLDEST rows, so only pinning can save them. The 50-clip standard fixture never
-    /// exceeds 500 and is therefore structurally unable to check rows, only sentences.
+    /// Seven hundred unpinned clips — above the old 500 ceiling and the 200 default — plus two
+    /// pinned ones that are the OLDEST rows, so only pinning can save them. The 50-clip standard
+    /// fixture never exceeds a default limit and is therefore unable to check rows, only sentences.
     private func exportHoard(_ name: String)
         throws -> (unpinned: Int, pinned: Int, rows: [ArchiveFixture.Row], file: URL) {
-        let unpinned = ClipStore.freeHistoryLimit + 200
+        let unpinned = 700
         var rows: [ArchiveFixture.Row] = (0..<unpinned).map { n in
             ArchiveFixture.Row(kind: .text, text: "archive clip \(n)",
                                createdAt: 700_000_000 + Double(n),
@@ -454,21 +454,14 @@ final class HistoryArchiveSafetyTests: ArchiveTestCase {
                        + "payload files, so letting it run here would destroy most of the "
                        + "import and its images with it")
         XCTAssertEqual(destination.items.count, fixture.rows.count)
-        // The lift goes as far as the entitlement allows: 0 under Pro, the free ceiling
-        // under free. The test fixture is a free store, so the ceiling is the honest answer
-        // — and the note must say so rather than claim "Unlimited".
-        let expectedLimit = destination.entitlement.isPro ? 0 : ClipStore.freeHistoryLimit
-        XCTAssertEqual(destination.historyLimit, expectedLimit,
-                       "the limit must be lifted BEFORE the inserts, not after — otherwise "
+        // The lift turns the limit OFF — for everyone; the limit is not part of the paid split.
+        XCTAssertEqual(destination.historyLimit, 0,
+                       "the limit must be turned off BEFORE the inserts, not after — otherwise "
                        + "the very next copy trims the import that just arrived")
         let note = try XCTUnwrap(tally.historyLimitNote, "the user was not told")
-        XCTAssertTrue(note.contains("5"), "the note must name the old limit")
-        if destination.entitlement.isPro {
-            XCTAssertTrue(note.contains("Unlimited"))
-        } else {
-            XCTAssertTrue(note.contains("\(ClipStore.freeHistoryLimit)") && !note.contains("Unlimited"),
-                          "a free build must be told the ceiling, never told 'Unlimited': \(note)")
-        }
+        XCTAssertTrue(note.contains("5") && note.contains("Unlimited"),
+                      "the note must name the old limit and the new: \(note)")
+        XCTAssertFalse(note.contains("Pro"), "the history limit is not a paid feature: \(note)")
         XCTAssertEqual(entries(destinationDirectory).filter { $0.hasSuffix(".png") }.count,
                        fixture.payloads.count * 2,
                        "every payload and its regenerated thumbnail must still be there")
@@ -561,32 +554,39 @@ final class HistoryArchiveSafetyTests: ArchiveTestCase {
     }
 
 
-    /// The same import under Pro lifts the limit to Unlimited — the two rulings agree at
-    /// the seam: clamp for free, never delete for anyone, always say what happened.
-    func testImportUnderProLiftsTheLimitToUnlimited() throws {
+    /// The lift is not entitlement-aware in either direction: the same file into a free and a
+    /// Pro destination at the same limit gives the same limit, the same count and the same
+    /// sentence. (Mutant: an `isPro` branch inside `ingestImported`.)
+    func testTheLiftIsTheSameUnderEitherEntitlement() throws {
         try skipIfKeychainUnreachable()
-        let (fixture, _, file) = try exportFixture("pro-source")
-        let destination = ClipStore(directory: directory("pro-dest"))
-        destination.entitlement = .pro(orderID: "test", issued: Date())
-        destination.historyLimit = 5
-        let staged = try destination.stageImport(from: file, passphrase: passphrase).get()
-        let tally = destination.ingestImported(staged, liftLimit: true)
-        XCTAssertNil(tally.refusal)
-        XCTAssertEqual(tally.imported, fixture.rows.count)
-        XCTAssertEqual(destination.historyLimit, 0, "Pro lifts to Unlimited")
-        XCTAssertTrue(tally.historyLimitNote?.contains("Unlimited") ?? false)
+        let (fixture, _, file) = try exportFixture("either-source")
+        var notes: [String?] = []
+        let arms: [(String, Entitlement)] = [("free", .free(reason: nil)),
+                                             ("pro", .pro(orderID: "test", issued: Date()))]
+        for (name, entitlement) in arms {
+            let destination = ClipStore(directory: directory("either-\(name)"))
+            try XCTSkipIf(destination.safeMode, "frozen store here")
+            destination.entitlement = entitlement
+            destination.historyLimit = 5
+            let staged = try destination.stageImport(from: file, passphrase: passphrase).get()
+            let tally = destination.ingestImported(staged, liftLimit: true)
+            XCTAssertNil(tally.refusal)
+            XCTAssertEqual(tally.imported, fixture.rows.count, name)
+            XCTAssertEqual(destination.historyLimit, 0, "\(name): the lift turns the limit off")
+            notes.append(tally.historyLimitNote)
+        }
+        XCTAssertEqual(notes[0], notes[1], "the sentence differs by entitlement")
+        XCTAssertTrue(notes[0]?.contains("Unlimited") ?? false)
     }
 
-    // MARK: - The free ceiling, in ROWS (Argus-27)
+    // MARK: - The history limit on the import path, in ROWS
 
-    /// A free import above the ceiling landed every row and left the stored limit at 500, so
-    /// the FIRST CAPTURE AFTERWARDS deleted 201 rows — under a preview that said "Nothing is
-    /// deleted". The 50-clip fixture cannot see this; a 702-clip hoard can.
-    func testAFreeImportAboveTheCeilingIsNotDestroyedByTheNextCapture() throws {
+    /// A lifted import lands everything and turns the limit off — for a FREE store. This is
+    /// where the free ceiling used to bite (700 in, 201 gone on the next capture).
+    func testALiftedImportLandsEverythingAndTheNextCaptureDeletesNothing() throws {
         try skipIfKeychainUnreachable()
-        let hoard = try exportHoard("hoard")
-        let ceiling = ClipStore.freeHistoryLimit
-        let destination = ClipStore(directory: directory("hoard-free-dest"))
+        let hoard = try exportHoard("hoard-lifted")
+        let destination = ClipStore(directory: directory("hoard-lifted-dest"))
         try XCTSkipIf(destination.safeMode, "frozen store here")
         destination.entitlement = .free(reason: nil)
         destination.historyLimit = 200
@@ -594,192 +594,227 @@ final class HistoryArchiveSafetyTests: ArchiveTestCase {
         let staged = try destination.stageImport(from: hoard.file, passphrase: passphrase).get()
         let tally = destination.ingestImported(staged, liftLimit: true)
         XCTAssertNil(tally.refusal)
-
-        // 1. The limit went UP to the ceiling and no further — never 0, never left at 200.
-        XCTAssertEqual(destination.historyLimit, ceiling, "lifted as far as free allows, no further")
-
-        // 2. What landed FITS, and every pinned clip landed on top of it.
-        let unpinnedLanded = destination.items.filter { !$0.pinned }
-        XCTAssertEqual(unpinnedLanded.count, ceiling,
-                       "\(unpinnedLanded.count) unpinned rows against a limit of \(ceiling): the "
-                       + "first capture would evict \(max(0, unpinnedLanded.count + 1 - ceiling))")
-        XCTAssertEqual(destination.items.filter(\.pinned).count, hoard.pinned,
-                       "pinned clips always land and never count")
-        XCTAssertEqual(tally.imported, ceiling + hoard.pinned)
-        XCTAssertEqual(tally.leftInFile, hoard.unpinned - ceiling)
-
-        // 3. The NEWEST landed, by lastUsedAt — trim's own order.
-        let newest = hoard.rows.filter { !$0.pinned }.sorted { $0.lastUsedAt > $1.lastUsedAt }
-        XCTAssertEqual(Set(unpinnedLanded.map(\.id)), Set(newest.prefix(ceiling).map(\.id)))
-
-        // 4. The sentence is true.
+        XCTAssertEqual(destination.historyLimit, 0, "the lift turns the limit off, for everyone")
+        XCTAssertEqual(destination.items.count, hoard.unpinned + hoard.pinned)
+        XCTAssertEqual(tally.imported, hoard.unpinned + hoard.pinned)
+        XCTAssertEqual(tally.leftInFile, 0)
         let note = try XCTUnwrap(tally.historyLimitNote)
-        XCTAssertFalse(note.contains("Unlimited"), note)
-        XCTAssertTrue(note.contains("\(ceiling)") && note.contains("\(hoard.unpinned - ceiling)"), note)
+        XCTAssertTrue(note.contains("200") && note.contains("Unlimited"), note)
+        XCTAssertFalse(note.contains("Pro"), note)
 
-        // 5. THE DEFECT, in rows: the first capture afterwards.
-        let landed = Set(destination.items.map(\.id))
-        let before = destination.items.count
         destination.add(ClipItem(kind: .text, text: "the first clip copied after the import"))
-        let gone = landed.subtracting(destination.items.map(\.id))
-        XCTAssertEqual(destination.items.count, before,
-                       "the capture changed the row count by \(destination.items.count - before)")
-        XCTAssertEqual(gone.count, 1, "the first capture after the import deleted \(gone.count) "
-                       + "clip(s); a full history rolls off exactly one")
-        XCTAssertEqual(gone, [newest[ceiling - 1].id], "and it is the oldest unpinned one")
-        XCTAssertEqual(destination.items.filter(\.pinned).count, hoard.pinned, "a pinned clip was trimmed")
-
-        // 6. The file is the user's data and is untouched.
+        XCTAssertEqual(destination.items.count, hoard.unpinned + hoard.pinned + 1,
+                       "the first capture after a lifted import deleted clips")
         XCTAssertEqual(try HistoryArchiveIO.preview(url: hoard.file, passphrase: passphrase).get()
-                           .clipCount, hoard.unpinned + hoard.pinned)
+                           .clipCount, hoard.unpinned + hoard.pinned, "the file is never modified")
     }
 
-    /// The worse bug nobody reported: a stored limit ABOVE the ceiling, left by a lapsed Pro
-    /// or a 1.0.0 build. The old C3 wrote the clamped 500 through the gated setter, which
-    /// trims as it writes — deleting the user's own clips BEFORE the import wrote a row.
-    func testAFreeImportNeverLowersAStoredLimitAboveTheCeiling() throws {
+    /// A DECLINED lift lands what fits — the newest, plus every pinned clip — and the next
+    /// capture rolls off exactly one. The same under either entitlement, sentence included.
+    func testADeclinedLiftLandsWhatFitsUnderEitherEntitlementAndTheNextCaptureRollsOffOne() throws {
+        try skipIfKeychainUnreachable()
+        let hoard = try exportHoard("hoard-declined")
+        let limit = 200
+        let newest = hoard.rows.filter { !$0.pinned }.sorted { $0.lastUsedAt > $1.lastUsedAt }
+        var notes: [String?] = []
+        let arms: [(String, Entitlement)] = [("free", .free(reason: nil)),
+                                             ("pro", .pro(orderID: "test", issued: Date()))]
+        for (name, entitlement) in arms {
+            let destination = ClipStore(directory: directory("declined-\(name)"))
+            try XCTSkipIf(destination.safeMode, "frozen store here")
+            destination.entitlement = entitlement
+            destination.historyLimit = limit
+
+            let staged = try destination.stageImport(from: hoard.file, passphrase: passphrase).get()
+            let tally = destination.ingestImported(staged, liftLimit: false)
+            XCTAssertNil(tally.refusal)
+            XCTAssertEqual(destination.historyLimit, limit, "\(name): a declined lift changed the limit")
+            let unpinnedLanded = destination.items.filter { !$0.pinned }
+            XCTAssertEqual(unpinnedLanded.count, limit,
+                           "\(name): \(unpinnedLanded.count) unpinned rows against a limit of \(limit)")
+            XCTAssertEqual(Set(unpinnedLanded.map(\.id)), Set(newest.prefix(limit).map(\.id)),
+                           "\(name): the NEWEST must land, by lastUsedAt — trim's own order")
+            XCTAssertEqual(destination.items.filter(\.pinned).count, hoard.pinned,
+                           "\(name): pinned clips always land and never count")
+            XCTAssertEqual(tally.imported, limit + hoard.pinned)
+            XCTAssertEqual(tally.leftInFile, hoard.unpinned - limit)
+            let note = try XCTUnwrap(tally.historyLimitNote)
+            XCTAssertTrue(note.contains("\(limit)") && note.contains("\(hoard.unpinned - limit)")
+                          && note.contains("stay in the file"), note)
+            XCTAssertFalse(note.contains("Pro") || note.contains("Unlimited"), note)
+            notes.append(note)
+
+            let landed = Set(destination.items.map(\.id))
+            let before = destination.items.count
+            destination.add(ClipItem(kind: .text, text: "the first clip copied after the import"))
+            let gone = landed.subtracting(destination.items.map(\.id))
+            XCTAssertEqual(destination.items.count, before,
+                           "\(name): the capture changed the row count by \(destination.items.count - before)")
+            XCTAssertEqual(gone, [newest[limit - 1].id], "\(name): a full history rolls off exactly the oldest unpinned one")
+            XCTAssertEqual(destination.items.filter(\.pinned).count, hoard.pinned, "\(name): a pinned clip was trimmed")
+        }
+        XCTAssertEqual(notes[0], notes[1], "the sentence differs by entitlement")
+        XCTAssertEqual(try HistoryArchiveIO.preview(url: hoard.file, passphrase: passphrase).get()
+                           .clipCount, hoard.unpinned + hoard.pinned, "the file is never modified")
+    }
+
+    /// An import never LOWERS a stored limit — a lapsed Pro's 720, or a 1.0.0 build's 5000 —
+    /// and a clip that stays in the file leaves no payload behind. Both arms: lift declined
+    /// (the limit stays; two newest land) and lift accepted (off; everything lands).
+    func testAnImportNeverLowersAStoredLimitAndPayloadsFollowRows() throws {
         try skipIfKeychainUnreachable()
         let (fixture, _, file) = try exportFixture("small")      // 4 pinned, 3 image clips
-        let stored = ClipStore.freeHistoryLimit + 220             // 720
+        let stored = 720
         let existingCount = stored - 2                            // room for exactly 2
         let existing: [ArchiveFixture.Row] = (0..<existingCount).map { n in
             ArchiveFixture.Row(kind: .text, text: "mine \(n)",
                                createdAt: 600_000_000 + Double(n), lastUsedAt: 600_000_000 + Double(n))
         }
-        let dir = directory("grandfathered")
-        try ArchiveFixture.write(existing, to: dir)
-        UserDefaults.standard.set(stored, forKey: "historyLimit")   // RAW — the setter would clamp it
-        let store = ClipStore(directory: dir)
-        try XCTSkipIf(store.safeMode, "frozen store here")
-        store.entitlement = .free(reason: nil)
-        XCTAssertEqual(store.items.count, existingCount, "precondition: init does not trim")
-        XCTAssertEqual(store.historyLimit, stored, "precondition")
-
-        let staged = try store.stageImport(from: file, passphrase: passphrase).get()
-        let tally = store.ingestImported(staged, liftLimit: true)
-        XCTAssertNil(tally.refusal)
-        XCTAssertEqual(store.historyLimit, stored,
-                       "the import REWROTE a stored limit through the clamp — and the setter trims as it writes")
-        XCTAssertEqual(Set(existing.map(\.id)).intersection(store.items.map(\.id)).count, existingCount,
-                       "the import DELETED clips the user already had")
         let pinned = fixture.rows.filter(\.pinned).count
-        XCTAssertEqual(tally.imported, 2 + pinned)
-        XCTAssertEqual(store.items.filter { !$0.pinned }.count, stored)
-        XCTAssertEqual(tally.leftInFile, fixture.rows.count - pinned - 2)
-        // The 3 image clips rank 4th–6th newest, so they stayed in the file: no orphan payload.
-        XCTAssertEqual(entries(dir).filter { $0.hasSuffix(".png") }.count, 0,
-                       "an image clip that stayed in the file left its payload behind")
-        store.add(ClipItem(kind: .text, text: "after"))
-        XCTAssertEqual(store.items.filter { !$0.pinned }.count, stored, "a full history rolls off exactly one")
-        XCTAssertEqual(store.items.filter(\.pinned).count, pinned)
-    }
+        for (name, lift) in [("declined", false), ("lifted", true)] {
+            let dir = directory("grandfathered-\(name)")
+            try ArchiveFixture.write(existing, to: dir)
+            UserDefaults.standard.set(stored, forKey: "historyLimit")   // RAW: init must not trim either
+            let store = ClipStore(directory: dir)
+            try XCTSkipIf(store.safeMode, "frozen store here")
+            store.entitlement = .free(reason: nil)
+            XCTAssertEqual(store.items.count, existingCount, "\(name): precondition — init does not trim")
+            XCTAssertEqual(store.historyLimit, stored, "\(name): precondition")
 
-    /// Pro is untouched by the fit rule: everything lands, the limit is really off, and the
-    /// next capture deletes nothing.
-    func testTheSameImportUnderProLandsEverythingAndTheNextCaptureDeletesNothing() throws {
-        try skipIfKeychainUnreachable()
-        let hoard = try exportHoard("hoard-pro")
-        let destination = ClipStore(directory: directory("hoard-pro-dest"))
-        try XCTSkipIf(destination.safeMode, "frozen store here")
-        destination.entitlement = .pro(orderID: "test", issued: Date())
-        destination.historyLimit = 200
-        let staged = try destination.stageImport(from: hoard.file, passphrase: passphrase).get()
-        let tally = destination.ingestImported(staged, liftLimit: true)
-        XCTAssertNil(tally.refusal)
-        XCTAssertEqual(destination.historyLimit, 0, "Pro really turns the limit off")
-        XCTAssertEqual(destination.items.count, hoard.unpinned + hoard.pinned)
-        XCTAssertEqual(tally.leftInFile, 0)
-        XCTAssertTrue(try XCTUnwrap(tally.historyLimitNote).contains("Unlimited"))
-        destination.add(ClipItem(kind: .text, text: "after"))
-        XCTAssertEqual(destination.items.count, hoard.unpinned + hoard.pinned + 1)
-    }
-
-    /// The rule as arithmetic, the ratchet, every sentence, and both surfaces reading the plan.
-    func testTheImportPlanNeverLetsAFreeBuildAskForMoreAndEverySentenceIsTrue() throws {
-        let free = Entitlement.free(reason: nil)
-        let pro = Entitlement.pro(orderID: "test", issued: Date())
-        let ceiling = ClipStore.freeHistoryLimit
-        func plan(_ stored: Int, _ here: Int, _ e: Entitlement, lift: Bool = true) -> ClipStore.ImportPlan {
-            ClipStore.importPlan(limitBefore: stored, unpinnedHere: here, lift: lift, entitlement: e)
+            let staged = try store.stageImport(from: file, passphrase: passphrase).get()
+            let tally = store.ingestImported(staged, liftLimit: lift)
+            XCTAssertNil(tally.refusal)
+            XCTAssertEqual(Set(existing.map(\.id)).intersection(store.items.map(\.id)).count, existingCount,
+                           "\(name): the import DELETED clips the user already had")
+            if lift {
+                XCTAssertEqual(store.historyLimit, 0, "the lift turns the limit off")
+                XCTAssertEqual(tally.imported, fixture.rows.count)
+                XCTAssertEqual(tally.leftInFile, 0)
+            } else {
+                XCTAssertEqual(store.historyLimit, stored, "a declined lift REWROTE the stored limit")
+                XCTAssertEqual(tally.imported, 2 + pinned)
+                XCTAssertEqual(store.items.filter { !$0.pinned }.count, stored)
+                XCTAssertEqual(tally.leftInFile, fixture.rows.count - pinned - 2)
+                // The 3 image clips rank 4th–6th newest, so they stayed in the file: no orphan payload.
+                XCTAssertEqual(entries(dir).filter { $0.hasSuffix(".png") }.count, 0,
+                               "an image clip that stayed in the file left its payload behind")
+                store.add(ClipItem(kind: .text, text: "after"))
+                XCTAssertEqual(store.items.filter { !$0.pinned }.count, stored, "a full history rolls off exactly one")
+                XCTAssertEqual(store.items.filter(\.pinned).count, pinned)
+            }
         }
-        XCTAssertEqual(plan(200, 100, free).limitAfter, ceiling)          // up to the ceiling
-        XCTAssertEqual(plan(200, 100, free).room, ceiling - 100)
-        XCTAssertEqual(plan(720, 700, free).limitAfter, 720)              // never down
-        XCTAssertEqual(plan(720, 700, free).room, 20)
-        XCTAssertEqual(plan(5000, 600, free).limitAfter, 5000)
-        XCTAssertEqual(plan(0, 5000, free).limitAfter, 0)                 // grandfathered 0 honoured
-        XCTAssertNil(plan(0, 5000, free).room)
-        XCTAssertEqual(plan(200, 600, free).limitAfter, 200)              // a raise that would trim: no
-        XCTAssertEqual(plan(200, 600, free).room, 0)
-        XCTAssertFalse(plan(ceiling, 0, free).lifts)                      // nothing to offer at the ceiling
-        XCTAssertEqual(plan(200, 100, pro).limitAfter, 0)
-        XCTAssertNil(plan(200, 100, pro).room)
-        XCTAssertEqual(plan(200, 100, pro, lift: false).room, 100)
+    }
 
-        // THE RATCHET: no free path raises the stored limit past max(stored, ceiling), or to 0.
-        for stored in [1, 100, 200, 500, 1000, 5000] {
-            for here in [0, 100, 600, 6000] {
-                let p = plan(stored, here, free)
-                XCTAssertNotEqual(p.limitAfter, 0, "free obtained unlimited history (stored \(stored), here \(here))")
-                XCTAssertLessThanOrEqual(p.limitAfter, max(stored, ceiling))
-                XCTAssertGreaterThanOrEqual(p.limitAfter, stored, "an import lowered a limit")
+    /// The rule as arithmetic — the limit only ever turns OFF, never lowers — every sentence
+    /// free of the word "Pro" and of the price, and both surfaces reading the plan.
+    func testTheImportPlanOnlyEverTurnsTheLimitOffAndEverySentenceIsTrue() throws {
+        func plan(_ s: Int, _ h: Int, lift: Bool = true) -> ClipStore.ImportPlan {
+            ClipStore.importPlan(limitBefore: s, unpinnedHere: h, lift: lift)
+        }
+        XCTAssertEqual(plan(200, 100).limitAfter, 0)
+        XCTAssertNil(plan(200, 100).room)
+        XCTAssertEqual(plan(200, 100, lift: false).room, 100)
+        XCTAssertEqual(plan(720, 700, lift: false).room, 20)
+        XCTAssertEqual(plan(200, 600, lift: false).room, 0)
+        XCTAssertFalse(plan(0, 5000).lifts, "nothing to lift when the limit is already off")
+        XCTAssertNil(plan(0, 5000, lift: false).room)
+
+        for s in [0, 1, 100, 200, 500, 720, 1000, 5000] {
+            for h in [0, 100, 600, 6000] {
+                for lift in [true, false] {
+                    let p = plan(s, h, lift: lift)
+                    XCTAssertTrue(p.limitAfter == s || p.limitAfter == 0, "stored \(s): limitAfter \(p.limitAfter)")
+                    XCTAssertTrue(p.limitAfter == 0 || p.limitAfter >= s, "an import lowered a limit")
+                    if !lift { XCTAssertEqual(p.limitAfter, s, "a declined lift changed the limit") }
+                    let sentences = [p.preview(incomingUnpinned: 700),
+                                     p.outcome(admittedUnpinned: 0, leftInFile: 7),
+                                     p.refusal(incomingUnpinned: 700)].compactMap { $0 }
+                    for sentence in sentences {
+                        XCTAssertFalse(sentence.contains("Pro") || sentence.contains(Licence.priceLabel),
+                                       "the history limit is not a paid feature: \(sentence)")
+                    }
+                }
             }
         }
 
-        // The sentences.
-        let f = plan(200, 100, free)
-        let before = try XCTUnwrap(f.preview(incomingUnpinned: 700))
-        XCTAssertFalse(before.contains("Unlimited"), before)
-        XCTAssertTrue(before.contains("\(ceiling)") && before.contains("\(ceiling - 100)"), before)
-        XCTAssertTrue(before.contains("nothing already here is deleted"), before)
-        let after = try XCTUnwrap(f.outcome(admittedUnpinned: ceiling - 100, leftInFile: 300))
-        XCTAssertTrue(after.contains("\(ceiling - 100)") && after.contains("300") && !after.contains("Unlimited"), after)
-        XCTAssertFalse(f.refusal(incomingUnpinned: 700).contains("--set-unlimited"),
-                       "a free build must not be told a flag that does not do what it says")
-        XCTAssertTrue(plan(200, 100, pro, lift: false).refusal(incomingUnpinned: 700).contains("--set-unlimited"))
-        XCTAssertTrue(try XCTUnwrap(plan(200, 100, pro).preview(incomingUnpinned: 700)).contains("turned off"))
-        XCTAssertNil(plan(200, 100, pro, lift: false).preview(incomingUnpinned: 50), "nothing to say when it fits")
-        XCTAssertNil(plan(200, 100, pro, lift: false).outcome(admittedUnpinned: 50, leftInFile: 0))
+        let r = plan(200, 100, lift: false).refusal(incomingUnpinned: 700)
+        XCTAssertTrue(r.contains("--set-unlimited") && r.contains("--accept-trim"),
+                      "everyone is told both flags: \(r)")
+        let declined = try XCTUnwrap(plan(200, 100, lift: false).preview(incomingUnpinned: 700))
+        XCTAssertTrue(declined.contains("100 more") && declined.contains("nothing already here is deleted"), declined)
+        XCTAssertTrue(try XCTUnwrap(plan(200, 100).preview(incomingUnpinned: 700)).contains("turned off"))
+        XCTAssertEqual(plan(200, 100).outcome(admittedUnpinned: 700, leftInFile: 0),
+                       "Your history limit was 200 and is now Unlimited.")
+        XCTAssertNil(plan(200, 100, lift: false).preview(incomingUnpinned: 50), "nothing to say when it fits")
+        XCTAssertNil(plan(200, 100, lift: false).outcome(admittedUnpinned: 50, leftInFile: 0))
 
-        // Both surfaces read the plan rather than re-deriving the rule.
+        // Both surfaces read the plan rather than re-deriving the rule, and neither knows the entitlement.
         let main = try source("Sources/Cliphoard/App/Main.swift")
-        XCTAssertFalse(main.contains("Re-run with --set-unlimited to turn the limit off, or"),
-                       "under free that flag set 500 — --accept-trim wearing a different word")
         XCTAssertTrue(main.contains("ClipStore.importPlan("))
+        XCTAssertFalse(main.contains("cannot: without Pro") || main.contains("Licence.pitch")
+                       || main.contains("entitlement"), "the CLI still gates the history limit")
         let section = try source("Sources/Cliphoard/UI/MoveToNewMacSection.swift")
-        XCTAssertFalse(section.contains("deletes most of this import"),
-                       "the old toggle promised a free build could turn the limit off")
+        XCTAssertFalse(section.contains("without Pro") || section.contains("entitlement"),
+                       "the Move section still knows the entitlement")
         let box = try XCTUnwrap(body(of: "private func previewBox", in: section))
         XCTAssertTrue(box.contains(".preview(incomingUnpinned:") && box.contains("offersLift"))
+        XCTAssertTrue(try XCTUnwrap(body(of: "func commitImport", in: section))
+                          .contains("pending.plan(lift: liftLimit).lifts"),
+                      "the commit must honour the toggle only where the toggle was shown")
     }
 
-    /// A grandfathered limit is honoured even when there is ROOM. The old C3 would have
-    /// rewritten 720 as 500 through the clamp — no deletion that day, but every capture after
-    /// it would trim at 500 instead of 720, quietly costing a lapsed Pro 220 clips of capacity.
-    /// (When the store is full, the raise-may-not-delete guard blocks the lowering too; this
-    /// is the case only `max(ceiling, stored)` protects.)
-    func testAFreeImportKeepsAGrandfatheredLimitWhenThereIsRoom() throws {
+    /// A file that fits under a stored limit, lift declined: the limit is untouched, everything
+    /// lands, and nothing about the limit needs saying.
+    func testAnImportThatFitsWithTheLiftDeclinedChangesNothingAndSaysNothing() throws {
         try skipIfKeychainUnreachable()
         let (fixture, _, file) = try exportFixture("roomy")
-        let stored = ClipStore.freeHistoryLimit + 220
+        let stored = 720
         let existing: [ArchiveFixture.Row] = (0..<10).map { n in
             ArchiveFixture.Row(kind: .text, text: "mine \(n)",
                                createdAt: 600_000_000 + Double(n), lastUsedAt: 600_000_000 + Double(n))
         }
         let dir = directory("grandfathered-roomy")
         try ArchiveFixture.write(existing, to: dir)
-        UserDefaults.standard.set(stored, forKey: "historyLimit")   // RAW — the setter would clamp it
+        UserDefaults.standard.set(stored, forKey: "historyLimit")   // RAW: init must not trim either
         let store = ClipStore(directory: dir)
         try XCTSkipIf(store.safeMode, "frozen store here")
-        store.entitlement = .free(reason: nil)
         let staged = try store.stageImport(from: file, passphrase: passphrase).get()
-        let tally = store.ingestImported(staged, liftLimit: true)
+        let tally = store.ingestImported(staged, liftLimit: false)
         XCTAssertNil(tally.refusal)
-        XCTAssertEqual(store.historyLimit, stored, "a limit above the ceiling was LOWERED by an import")
+        XCTAssertEqual(store.historyLimit, stored, "a fitting import changed the limit")
         XCTAssertEqual(tally.imported, fixture.rows.count, "everything fits under \(stored)")
         XCTAssertEqual(tally.leftInFile, 0)
         XCTAssertNil(tally.historyLimitNote, "nothing about the limit needed saying: \(tally.historyLimitNote ?? "")")
         XCTAssertEqual(store.items.count, existing.count + fixture.rows.count)
+    }
+
+    /// The Move section offers the lift only where the file does not fit — and a file that
+    /// fits never changes the user's limit behind a toggle they were not shown, even though
+    /// the toggle's stored answer defaults to ON.
+    func testTheMoveSectionOffersTheLiftOnlyWhenTheFileDoesNotFit() throws {
+        func summary(clips: Int, pinned: Int) -> HistoryArchive.Summary {
+            HistoryArchive.Summary(
+                appVersion: "1.0.1", exportedAt: "2026-09-26T00:00:00Z", machineName: "Test Mac",
+                clipCount: clips, byKind: ["text": clips], pinnedCount: pinned,
+                oldestCreatedAt: 700_000_000, newestCreatedAt: 700_000_100,
+                payloadCount: 0, payloadBytes: 0, imageFeatureCount: 0, dismissalCount: 0,
+                embeddingsIncluded: false, imageFeaturesIncluded: false,
+                skippedUnreadableClips: 0, skippedUnreadablePayloads: 0)
+        }
+        func pending(limit: Int, here: Int, clips: Int) -> ArchiveModel.Pending {
+            ArchiveModel.Pending(url: URL(fileURLWithPath: "/x"), passphrase: "",
+                                 summary: summary(clips: clips, pinned: 0),
+                                 limitBefore: limit, unpinnedHere: here)
+        }
+        let fits = pending(limit: 720, here: 10, clips: 50)
+        XCTAssertFalse(fits.offersLift)
+        XCTAssertFalse(fits.plan(lift: true).lifts, "a fitting file changed the limit behind a hidden toggle")
+        XCTAssertNil(fits.plan(lift: true).preview(incomingUnpinned: fits.incomingUnpinned))
+        let overflows = pending(limit: 200, here: 0, clips: 700)
+        XCTAssertTrue(overflows.offersLift)
+        XCTAssertEqual(overflows.plan(lift: true).limitAfter, 0)
+        XCTAssertEqual(overflows.plan(lift: false).limitAfter, 200)
+        XCTAssertFalse(pending(limit: 0, here: 5000, clips: 700).offersLift, "nothing to offer when the limit is off")
     }
 
 }

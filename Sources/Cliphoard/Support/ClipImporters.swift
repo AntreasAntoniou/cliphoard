@@ -419,11 +419,21 @@ enum ClipImporters {
     /// The single writer. Every adapter's output goes through here, so sealing, the detector
     /// veto, dedup and payload handling exist once — and a new adapter cannot get any of
     /// them subtly wrong, because it never touches them.
+    ///
+    /// Nothing lands that the next capture would evict. `add` runs `trim()`, which deletes rows
+    /// AND unlinks payloads, so writing past the stored limit ate the user's own oldest clips
+    /// and then most of the import, under "Imported 2,000". The fit rule is `ImportPlan`'s:
+    /// the newest `room` clips land; the rest stay in the other manager, which is only read.
     @MainActor
     static func write(_ staged: [Staged], marker: String, store: ClipStore,
                       dryRun: Bool, tally: inout PasteImport.Tally) {
         var seen = Set(store.items.map(\.signature))
-        for s in staged {
+        var room = ClipStore.importPlan(limitBefore: store.historyLimit,
+                                        unpinnedHere: store.items.filter { !$0.pinned }.count,
+                                        lift: false).room
+        let newestFirst = staged.sorted { $0.created > $1.created }
+        for (n, s) in newestFirst.enumerated() {
+            if room == 0 { tally.leftInSource = newestFirst.count - n; break }
             let item: ClipItem
             if let png = s.imageData {
                 guard let made = PasteImport.imageItem(from: png,
@@ -443,6 +453,7 @@ enum ClipImporters {
             item.userTags = [marker]
             tally.byKind[item.kind.rawValue, default: 0] += 1
             tally.imported += 1
+            room = room.map { $0 - 1 }
             if !dryRun { store.add(item) }
         }
     }

@@ -66,6 +66,10 @@ struct Main {
             }
             print("  skipped: unparsable \(tally.skippedUnparsable), empty \(tally.skippedEmpty), "
                   + "duplicate \(tally.skippedDuplicate)")
+            if tally.leftInSource > 0 {
+                print("  up to \(tally.leftInSource) older clip(s) stay in \(source.name): the "
+                      + "history limit is \(store.historyLimit). Set it to 0 (Unlimited) and re-run.")
+            }
             print(dry ? "DRY RUN — \(tally.imported) clips WOULD be imported"
                       : "imported \(tally.imported), tagged 'import-\(source.id)'")
             exit(0)
@@ -188,25 +192,11 @@ struct Main {
             }
             let setUnlimited = args.contains("--set-unlimited")
             let acceptTrim = args.contains("--accept-trim")
-            // `--set-unlimited` turns the limit off, which only Pro can do — a free build used
-            // to be told to run it, and it set 500. `--accept-trim` keeps the stored limit and
-            // imports the newest clips that fit it, leaving the rest in the file: nothing is
-            // trimmed after the fact, because `trim()` deletes rows AND unlinks their images.
-            // Neither flag, and not everything fits: refuse, so the decision is the user's.
-            if setUnlimited && !store.entitlement.isPro && store.historyLimit != 0 {
-                let raise = store.historyLimit < ClipStore.freeHistoryLimit
-                    ? ", or raise the limit to \(ClipStore.freeHistoryLimit) in Settings first"
-                    : ""
-                // Says what is STORED, not the ceiling: a lapsed Pro's 720 is honoured, so
-                // "keeps at most 500" would be false for the very store the fit rule protects.
-                print("REFUSING: --set-unlimited turns the history limit off, and this build "
-                      + "cannot: without Pro the limit stays on. Your history keeps up to "
-                      + "\(store.historyLimit) unpinned clips. "
-                      + "Re-run with --accept-trim to keep the newest clips that fit your limit "
-                      + "(the file keeps all of them; nothing already here is deleted)\(raise). "
-                      + Licence.pitch)
-                exit(1)
-            }
+            // `--set-unlimited` turns the history limit off before the rows land. `--accept-trim`
+            // keeps the stored limit and imports the newest clips that fit it, leaving the rest
+            // in the file: nothing is trimmed after the fact, because `trim()` deletes rows AND
+            // unlinks their images. Neither flag, and not everything fits: refuse, so the
+            // decision is the user's.
             switch HistoryArchiveIO.preview(url: file, passphrase: passphrase) {
             case .failure(let error):
                 print("REFUSED: " + error.message)
@@ -216,7 +206,7 @@ struct Main {
                 let plan = ClipStore.importPlan(
                     limitBefore: store.historyLimit,
                     unpinnedHere: store.items.filter { !$0.pinned }.count,
-                    lift: setUnlimited, entitlement: store.entitlement)
+                    lift: setUnlimited)
                 let incoming = summary.clipCount - summary.pinnedCount
                 if !plan.fits(incoming) && !acceptTrim {
                     print(plan.refusal(incomingUnpinned: incoming))

@@ -69,17 +69,17 @@ enum Licence {
     static func store(_ key: String) { UserDefaults.standard.set(key.trimmingCharacters(in: .whitespacesAndNewlines), forKey: defaultsKey) }
     static func remove() { UserDefaults.standard.removeObject(forKey: defaultsKey) }
 
-    /// Where to buy. One place, so the four upsell surfaces cannot drift.
+    /// Where to buy. One place, so the upsell surfaces cannot drift.
     static let buyURL = URL(string: "https://cliphoard.dev/#pro")!
 
-    /// The price, written ONCE. Four upsell surfaces name it, and four copies of a number
-    /// is four chances for the app to quote a price the checkout does not charge — which
+    /// The price, written ONCE. Every upsell surface names it, and each copy of the number
+    /// is a chance for the app to quote a price the checkout does not charge — which
     /// for a paid product is not a typo, it is a false statement about money.
     static let priceLabel = "$10"
 
-    /// What the gated surfaces say when they refuse. One sentence, one place, so the
-    /// search picker, the Keep picker, the OCR toggle and the Import panel cannot end up
-    /// describing four different products.
+    /// What the gated surfaces say when they refuse. One sentence, one place, so the two
+    /// search-mode pickers and the image-text toggle cannot end up describing different
+    /// products.
     static let pitch = "Cliphoard Pro — \(priceLabel) once, on this Mac and every Mac you own."
 
     private static func b64urlDecode(_ s: String) -> Data? {

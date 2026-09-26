@@ -14,7 +14,7 @@ import AppKit
 /// the signature itself and skips honestly where the maintainer's sample key is absent.
 ///
 /// THE ONE PROPERTY THAT OUTRANKS EVERY OTHER HERE: a paywall may withhold a capability and
-/// may never destroy data. `testTheHistoryClampNeverDeletesAClip` is the assertion that
+/// may never destroy data. `testALicenceChangeNeverDeletesAClipAndFreeMayKeepEverything` is the assertion that
 /// matters most in this file; if it ever goes red, the gate is worse than no gate.
 @MainActor
 final class LicenceGateTests: XCTestCase {
@@ -128,33 +128,32 @@ final class LicenceGateTests: XCTestCase {
         XCTAssertTrue(store.imagesSimilar(toReferenceImage: Data([0x89, 0x50])).isEmpty)
     }
 
-    // MARK: - Gate 3 · the history limit
+    // MARK: - The history limit is free
 
-    func testGate3FreeClampsAboveFiveHundredAndProDoesNot() {
-        XCTAssertEqual(ClipStore.allowedHistoryLimit(5000, free), 500)
-        XCTAssertEqual(ClipStore.allowedHistoryLimit(1000, free), 500)
-        XCTAssertEqual(ClipStore.allowedHistoryLimit(0, free), 500,
-                       "0 is the UNLIMITED sentinel — the largest request there is, so it "
-                       + "clamps rather than sailing past the ceiling as a small number")
-        for n in ClipStore.freeHistoryLimits {
-            XCTAssertEqual(ClipStore.allowedHistoryLimit(n, free), n,
-                           "\(n) is a free row and must pass through untouched")
+    func testEveryKeepRowIsFree() throws {
+        try skipIfKeychainUnreachable()
+        let store = tempStore()
+        try XCTSkipIf(store.safeMode, "frozen store here")
+        let savedLimit = UserDefaults.standard.object(forKey: "historyLimit")
+        defer {
+            if let savedLimit { UserDefaults.standard.set(savedLimit, forKey: "historyLimit") }
+            else { UserDefaults.standard.removeObject(forKey: "historyLimit") }
         }
-        for n in ClipStore.proHistoryLimits {
-            XCTAssertEqual(ClipStore.allowedHistoryLimit(n, pro), n, "Pro passes through")
+        store.entitlement = free
+        for n in [100, 200, 500, 1000, 5000, 0] {
+            store.historyLimit = n
+            XCTAssertEqual(store.historyLimit, n, "a free build's Keep row \(n) was altered — "
+                           + "the history limit is not part of the paid split")
         }
-        XCTAssertEqual(ClipStore.freeHistoryLimit, 500,
-                       "above 1.0.0's default of 200, deliberately: nobody already using the "
-                       + "app loses anything they actually had")
     }
 
-    /// THE ONE THAT MATTERS. A downgrade must never destroy a clip.
+    /// THE ONE THAT MATTERS. A licence change — either way — must never destroy a clip, and a
+    /// free build may keep everything.
     ///
-    /// Nothing calls the clamp on a licence change, so a hoarder who bought Pro, chose
-    /// Unlimited, accumulated more than the free ceiling and then lost their key keeps every
-    /// clip: the stored limit is left exactly as it was and `trim()` goes on honouring it.
-    /// A free build cannot ask for MORE; it is never made to hold LESS.
-    func testTheHistoryClampNeverDeletesAClip() throws {
+    /// The hoard is 600: above the OLD 500 ceiling, so a reintroduced clamp — at write time or
+    /// as a use-time check in `trim()` — bites. (A first version of the ancestor of this test
+    /// used 12 clips and was structurally incapable of failing; a blind verifier proved it.)
+    func testALicenceChangeNeverDeletesAClipAndFreeMayKeepEverything() throws {
         try skipIfKeychainUnreachable()
         let store = tempStore()
         try XCTSkipIf(store.safeMode, "frozen store here — it refuses to persist, correctly")
@@ -165,83 +164,68 @@ final class LicenceGateTests: XCTestCase {
             else { UserDefaults.standard.removeObject(forKey: "historyLimit") }
         }
 
-        // A Pro user with "unlimited" and MORE CLIPS THAN THE FREE CEILING. The first
-        // version of this test used 12 clips against a ceiling of 500: a use-time clamp in
-        // trim() that deleted 100 of a downgraded user's 600 clips left it green, and the
-        // deletion assertion below was structurally incapable of failing. A blind verifier
-        // proved it. The hoard must exceed `ClipStore.freeHistoryLimit`, or this test is theatre.
-        let hoardSize = ClipStore.freeHistoryLimit + 100
-        store.entitlement = pro
-        store.historyLimit = 0
-        for i in 0..<hoardSize { store.add(ClipItem(kind: .text, text: "clip \(i) — unique enough to not dedup \(UUID())")) }
-        let hoard = store.items.count
-        XCTAssertEqual(hoard, hoardSize, "precondition: nothing was trimmed under Pro + unlimited")
-        XCTAssertGreaterThan(hoard, ClipStore.freeHistoryLimit,
-                             "the fixture must exceed the free ceiling or the deletion assertion cannot fail")
-
-        // The key is removed. This is the whole scenario: a refund, an expiry, a `defaults
-        // delete`. Not one clip may go.
+        let hoardSize = 600
         store.entitlement = free
-        XCTAssertEqual(store.items.count, hoard,
-                       "losing Pro DELETED \(hoard - store.items.count) clip(s). A paywall may "
-                       + "withhold a capability; it may never destroy data the user already "
-                       + "has. Nothing is allowed to call the clamp on a licence change.")
-        XCTAssertEqual(store.historyLimit, 0,
-                       "the stored limit must be left exactly as it was — rewriting it to 500 "
-                       + "is what would make the next capture's trim() eat the excess")
+        store.historyLimit = 0
+        XCTAssertEqual(store.historyLimit, 0, "a free build may keep everything")
+        for i in 0..<hoardSize { store.add(ClipItem(kind: .text, text: "clip \(i) — \(UUID())")) }
+        XCTAssertEqual(store.items.count, hoardSize, "a free build with Unlimited was trimmed")
+        store.add(ClipItem(kind: .text, text: "a capture under free"))
+        XCTAssertEqual(store.items.count, hoardSize + 1, "a capture under free + Unlimited trimmed")
 
-        // And a capture, which is where trim() actually runs, still deletes nothing.
+        store.entitlement = pro
+        XCTAssertEqual(store.items.count, hoardSize + 1, "gaining Pro deleted clips")
+        store.entitlement = free
+        XCTAssertEqual(store.items.count, hoardSize + 1,
+                       "losing Pro DELETED \(hoardSize + 1 - store.items.count) clip(s). A paywall "
+                       + "may withhold a capability; it may never destroy data the user already has.")
+        XCTAssertEqual(store.historyLimit, 0, "a licence change rewrote the stored limit")
         store.add(ClipItem(kind: .text, text: "after the downgrade"))
-        XCTAssertEqual(store.items.count, hoard + 1,
-                       "the first capture after a downgrade trimmed the history")
-
-        // What free CANNOT do is ask for more.
-        store.historyLimit = 5000
-        XCTAssertEqual(store.historyLimit, 500, "a free build's request above the ceiling clamps")
+        XCTAssertEqual(store.items.count, hoardSize + 2,
+                       "the first capture after a licence change trimmed the history")
     }
 
-    // MARK: - Gate 4 · the importer
+    // MARK: - The importers are free
 
-    /// Free may preview and may not commit. The preview is the SAFETY mechanism — nine of
-    /// the ten adapters have never been run against real data — so paywalling it would make
-    /// the untested-importer warning meaningless. Paywalling the WRITE is the honest split.
-    func testGate4FreePreviewsButDoesNotCommitAndProCommits() throws {
+    /// Every importer previews AND commits for everyone. The preview stays the SAFETY step —
+    /// nine of the ten adapters have never been run against real data — and the commit is not
+    /// entitlement-aware in either direction.
+    func testEveryImporterIsFreeFreePreviewsAndCommits() throws {
         try skipIfKeychainUnreachable()
         let store = tempStore()
         try XCTSkipIf(store.safeMode, "frozen store here")
-
-        // A fixture store written with raw sqlite3, the house way: real Maccy-shaped rows
-        // rather than a mock, so the adapter under the button is the one being measured.
-        let fixture = FileManager.default.temporaryDirectory
-            .appendingPathComponent("DittoGateImport-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: fixture, withIntermediateDirectories: true)
-        let dbPath = fixture.appendingPathComponent("maccy.sqlite").path
         guard let maccy = ClipImporters.all.first(where: { $0.id == "maccy" }),
               maccy.read != nil else {
-            throw XCTSkip("no Maccy adapter in this build — nothing to gate")
+            throw XCTSkip("no Maccy adapter in this build — nothing to check")
         }
-
+        let savedLimit = UserDefaults.standard.object(forKey: "historyLimit")
+        defer {
+            if let savedLimit { UserDefaults.standard.set(savedLimit, forKey: "historyLimit") }
+            else { UserDefaults.standard.removeObject(forKey: "historyLimit") }
+        }
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("DittoGateImport-\(UUID().uuidString)", isDirectory: true)
+        let path = try MaccyFixture.write(3, to: dir)
         let model = ImportModel()
-        let candidate = ImportModel.Candidate(source: maccy, path: dbPath)
-        let before = store.items.count
+        let candidate = ImportModel.Candidate(source: maccy, path: path)
 
-        // FREE: the dry run is allowed to run and the commit is refused.
+        store.entitlement = free
+        store.historyLimit = 0
         model.dryRun(candidate, store: store)
-        XCTAssertEqual(store.items.count, before, "a preview must write nothing, ever")
-        model.commit(candidate, store: store, entitlement: free)
-        XCTAssertEqual(store.items.count, before,
-                       "a FREE build committed an import. The commit is the paid half; the "
-                       + "preview is not.")
-        XCTAssertEqual(model.result?.contains("Cliphoard Pro"), true,
-                       "the refusal must SAY it is a paid feature — a migration button that "
-                       + "quietly does nothing reads as broken, not as paid")
+        XCTAssertEqual(store.items.count, 0, "a preview must write nothing, ever")
+        XCTAssertEqual(model.preview?.total, 3,
+                       "precondition: the fixture is read — an empty fixture could not see a commit")
+        model.commit(candidate, store: store)
+        XCTAssertEqual(store.items.count, 3, "a FREE build's import wrote nothing")
+        XCTAssertEqual(model.result?.contains("Pro"), false, model.result ?? "")
 
-        // PRO: the same call reaches the writer. With an empty fixture it imports nothing,
-        // which is the point — what changes is that it is no longer REFUSED, and that is
-        // visible in the result line rather than in a count that cannot move.
-        model.commit(candidate, store: store, entitlement: pro)
-        XCTAssertEqual(model.result?.contains("Cliphoard Pro"), false,
-                       "Pro must reach the importer rather than the refusal")
+        let proStore = tempStore()
+        try XCTSkipIf(proStore.safeMode, "frozen store here")
+        proStore.entitlement = pro
+        proStore.historyLimit = 0
+        let proModel = ImportModel()
+        proModel.commit(candidate, store: proStore)
+        XCTAssertEqual(proStore.items.count, 3, "Pro must reach the same writer")
     }
 
     // MARK: - Gate 5 · the Touch ID vault is NOT BUILT
@@ -332,11 +316,13 @@ final class LicenceGateTests: XCTestCase {
         XCTAssertNotNil(settings.licenceError, "the failure must say why, not just refuse")
     }
 
-    // MARK: - The four upsell surfaces exist
+    // MARK: - The two upsell surfaces exist, and nothing else carries one
 
     /// The upsells ARE the marketing, and they are the part a refactor silently drops because
-    /// nothing breaks when they go. Each is pinned to the file it lives in.
-    func testTheFourUpsellSurfacesArePresent() throws {
+    /// nothing breaks when they go. Each is pinned to the file it lives in — and the surfaces
+    /// that LEFT the paid split (the Keep picker, the status-bar submenu, the Import panel) are
+    /// pinned to carry no gate, no badge and no pitch.
+    func testTheTwoUpsellSurfacesArePresentAndHistoryAndImportCarryNone() throws {
         func source(_ path: String) throws -> String {
             try String(contentsOf: URL(fileURLWithPath: #filePath)
                 .deletingLastPathComponent().deletingLastPathComponent()
@@ -345,6 +331,7 @@ final class LicenceGateTests: XCTestCase {
         let settings = try source("Sources/Cliphoard/UI/SettingsView.swift")
         let panel = try source("Sources/Cliphoard/UI/ContentView.swift")
         let importPanel = try source("Sources/Cliphoard/UI/ImportPanel.swift")
+        let appDelegate = try source("Sources/Cliphoard/App/AppDelegate.swift")
 
         // 1 · the locked row in BOTH search-mode pickers
         XCTAssertTrue(panel.contains("— Pro"),
@@ -352,21 +339,44 @@ final class LicenceGateTests: XCTestCase {
                       + "nobody ever learns the feature exists")
         XCTAssertTrue(settings.contains("SearchMode.available(settings.entitlement)"),
                       "the Settings mode picker is no longer entitlement-aware")
-        // 2 · the greyed Unlimited in the Keep picker
-        XCTAssertTrue(settings.contains("ClipStore.freeHistoryLimits.contains(value)"),
-                      "the Keep picker no longer distinguishes the Pro rows")
-        // 3 · the OCR toggle
+        // 2 · the OCR toggle
         XCTAssertTrue(settings.contains("Toggle(\"Read text in images\", isOn: $settings.imageUnderstanding)")
                       && settings.contains(".disabled(!settings.entitlement.isPro)"),
                       "the image toggle is no longer disabled for a free build")
-        // 4 · the import panel's one-card pitch, built from the user's OWN clip count
-        XCTAssertTrue(importPanel.contains("ProPitchCard(") && importPanel.contains("preview.total"),
-                      "the Import pitch no longer shows the user their own clips — that "
-                      + "number is the only persuasive thing on the screen the app did not "
-                      + "invent")
+        // 3 · the History section carries no gate, no badge, no pitch
+        guard let historyStart = settings.range(of: "section(\"History\")") else {
+            return XCTFail("the History section was renamed — move this test with it")
+        }
+        let afterHistory = settings[historyStart.upperBound...]
+        let historyEnd = afterHistory.range(of: "section(\"")?.lowerBound ?? afterHistory.endIndex
+        let history = String(afterHistory[..<historyEnd])
+        for needle in ["— Pro", "ProPitch", "isPro", "ProBadge"] {
+            XCTAssertFalse(history.contains(needle),
+                           "the Keep picker still carries \(needle) — the history limit is not "
+                           + "part of the paid split")
+        }
+        XCTAssertFalse(settings.contains("pitch(.history)"))
+        XCTAssertFalse(appDelegate.contains("(Cliphoard Pro)"),
+                       "the status-bar History Limit submenu still locks rows")
+        XCTAssertFalse(importPanel.contains("ProPitchCard") || importPanel.contains("isPro"),
+                       "the Import panel still gates the commit")
+        XCTAssertNil(ProSurface(rawValue: "history"))
+        XCTAssertNil(ProSurface(rawValue: "importPanel"))
+        // 4 · the ceiling is gone from the whole tree, not renamed
+        let sources = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().appendingPathComponent("Sources")
+        for case let url as URL in FileManager.default
+                .enumerator(at: sources, includingPropertiesForKeys: nil)!
+        where url.pathExtension == "swift" {
+            let text = try String(contentsOf: url, encoding: .utf8)
+            for needle in ["freeHistoryLimit", "proHistoryLimits", "allowedHistoryLimit", "setHistoryLimit("] {
+                XCTAssertFalse(text.contains(needle), "\(url.lastPathComponent) still names \(needle)")
+            }
+        }
     }
 
-    /// One price, one place. Four surfaces each hard-coding the number is four chances to
+    /// One price, one place. Every surface hard-coding the number is a chance to
     /// quote a price the checkout does not charge — which for a paid product is not a typo,
     /// it is a false statement about money.
     ///

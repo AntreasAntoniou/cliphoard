@@ -34,24 +34,27 @@ final class ArchiveModel: ObservableObject {
         let summary: HistoryArchive.Summary
         let limitBefore: Int
         let unpinnedHere: Int
-        let entitlement: Entitlement
         /// From the summary — an upper bound on what will be written, since dedup only lowers it.
         var incomingUnpinned: Int { summary.clipCount - summary.pinnedCount }
+        /// Offered only where it is needed: the file does not fit under the stored limit.
+        var offersLift: Bool {
+            !ClipStore.importPlan(limitBefore: limitBefore, unpinnedHere: unpinnedHere,
+                                  lift: false).fits(incomingUnpinned)
+        }
+        /// The toggle's answer counts only where the toggle was shown: a file that fits never
+        /// changes the user's limit behind a control they were not offered.
         func plan(lift: Bool) -> ClipStore.ImportPlan {
             ClipStore.importPlan(limitBefore: limitBefore, unpinnedHere: unpinnedHere,
-                                 lift: lift, entitlement: entitlement)
+                                 lift: lift && offersLift)
         }
-        /// The toggle is offered only where it is both needed (the file does not fit as things
-        /// stand) and true (the entitlement can actually raise the limit).
-        var offersLift: Bool { !plan(lift: false).fits(incomingUnpinned) && plan(lift: true).lifts }
     }
 
     @Published private(set) var busy: String?
     @Published private(set) var result: String?
     @Published private(set) var pending: Pending?
-    /// Defaults ON: raise the limit as far as the entitlement allows (off under Pro, the free
-    /// ceiling without) BEFORE the rows land. Never a post-hoc banner — `trim()` deletes rows
-    /// AND unlinks their payload files. What does not fit stays in the file; it is never trimmed.
+    /// Defaults ON: when the file does not fit, turn the history limit off BEFORE the rows land.
+    /// Never a post-hoc banner — `trim()` deletes rows AND unlinks their payload files. Declined,
+    /// what does not fit stays in the file; it is never trimmed.
     @Published var liftLimit = true
 
     /// The ONE place the section decides whether the buttons work, and it produces the
@@ -165,8 +168,7 @@ final class ArchiveModel: ObservableObject {
         case .success(let summary):
             pending = Pending(url: url, passphrase: passphrase, summary: summary,
                               limitBefore: store.historyLimit,
-                              unpinnedHere: store.items.filter { !$0.pinned }.count,
-                              entitlement: store.entitlement)
+                              unpinnedHere: store.items.filter { !$0.pinned }.count)
         }
     }
 
@@ -186,7 +188,7 @@ final class ArchiveModel: ObservableObject {
             result = error.message
         case .success(let quarantined):
             busy = "Finishing…"
-            let tally = store.ingestImported(quarantined, liftLimit: liftLimit)
+            let tally = store.ingestImported(quarantined, liftLimit: pending.plan(lift: liftLimit).lifts)
             busy = nil
             result = tally.refusal == nil
                 ? tally.summaryLine + " Search is re-indexing in the background."
@@ -412,13 +414,8 @@ struct MoveToNewMacSection: View {
                 Text(note).font(.system(size: 11)).foregroundStyle(.orange)
             }
             if pending.offersLift {
-                let lifted = pending.plan(lift: true).limitAfter
-                Toggle(lifted == 0
-                       ? "Turn off the history limit (now \(pending.limitBefore)) so all of "
-                         + "this file fits"
-                       : "Raise the history limit from \(pending.limitBefore) to \(lifted) — "
-                         + "the most Cliphoard keeps without Pro",
-                       isOn: $model.liftLimit)
+                Toggle("Turn off the history limit (now \(pending.limitBefore)) so all of "
+                       + "this file fits", isOn: $model.liftLimit)
                     .font(.system(size: 11))
             }
             HStack {

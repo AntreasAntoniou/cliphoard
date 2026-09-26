@@ -4,7 +4,7 @@ import AppKit
 /// The two shared pieces of the paid split's interface: the badge that names a Pro row, and
 /// the card a refused control shows instead of doing nothing.
 ///
-/// They live together because the alternative is four surfaces each inventing their own
+/// They live together because the alternative is each surface inventing its own
 /// wording, their own price and their own button — and the price in particular must be
 /// written once (`Licence.priceLabel`) or the app will eventually quote a number the
 /// checkout does not charge.
@@ -32,15 +32,9 @@ struct ProBadge: View {
 /// the price, and offers the one button that resolves it.
 struct ProPitchCard: View {
     let message: String
-    /// Optional headline — the Import panel uses it to show the user their own clip count,
-    /// which is the most persuasive number the app has and the only one it did not invent.
-    var headline: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            if let headline {
-                Text(headline).font(.system(size: 12, weight: .semibold))
-            }
             HStack(alignment: .top, spacing: 8) {
                 Image(systemName: "lock.fill")
                     .font(.system(size: 11))
@@ -71,7 +65,7 @@ struct ProPitchCard: View {
 /// is, for someone who just clicked something near the bottom, indistinguishable from
 /// nothing happening at all.
 enum ProSurface: String {
-    case imageSearch, imageUnderstanding, history, importPanel
+    case imageSearch, imageUnderstanding
 }
 
 struct ProPitch: Equatable {

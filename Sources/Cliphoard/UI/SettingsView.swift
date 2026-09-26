@@ -73,8 +73,8 @@ final class AppSettings: ObservableObject {
     @Published var licenceVerdict: Entitlement?
 
     /// After a licence change, bring the gated settings back in line with what the build
-    /// will actually do. Only ever turns things OFF (or leaves them), never deletes: the
-    /// history limit is deliberately NOT rewritten here — see `ClipStore.allowedHistoryLimit`.
+    /// will actually do. Only ever turns things OFF (or leaves them), never deletes. The
+    /// history limit is not an entitlement setting and is never touched here.
     private func syncGatedSettingsToEntitlement() {
         // A verified key turns the image features ON. 1.0.0's default was on for everyone,
         // and a buyer whose paid feature is silently off has bought a support ticket — so a
@@ -278,8 +278,7 @@ struct SettingsView: View {
     private var axTrusted: Bool { settings.axTrusted }
     private let axTimer = Timer.publish(every: 1.2, on: .main, in: .common).autoconnect()
 
-    /// Free rows first, Pro rows last. The order is the tier boundary made visible: everything
-    /// above the line is in the build you already have.
+    /// The Keep rows, smallest first. `0` is the unlimited sentinel `trim()` already honours.
     private let limits: [(Int, String)] = [
         (100, "100"), (200, "200"), (500, "500"), (1000, "1000"), (5000, "5000"), (0, "Unlimited")
     ]
@@ -623,35 +622,11 @@ struct SettingsView: View {
                     HStack {
                         Text("Keep")
                         Spacer()
-                        // UPSELL 2 + GATE 3. The Pro rows are shown, named, and refuse to
-                        // apply — through an explicit binding rather than the published value,
-                        // so the picker and the store can never disagree about what is kept.
-                        Picker("", selection: Binding(
-                            get: { settings.historyLimit },
-                            set: { requested in
-                                guard settings.entitlement.isPro
-                                        || ClipStore.freeHistoryLimits.contains(requested) else {
-                                    settings.proPitch = ProPitch(.history,
-                                        "Keeping more than \(ClipStore.freeHistoryLimit) unpinned "
-                                        + "clips is Cliphoard Pro. Nothing you already have is "
-                                        + "removed — pinned clips never expire and never count. "
-                                        + Licence.pitch)
-                                    return
-                                }
-                                settings.proPitch = nil
-                                settings.historyLimit = requested
-                            })) {
-                            ForEach(limits, id: \.0) { value, label in
-                                Text(settings.entitlement.isPro
-                                     || ClipStore.freeHistoryLimits.contains(value)
-                                     ? label : "\(label) — Pro").tag(value)
-                            }
+                        Picker("", selection: $settings.historyLimit) {
+                            ForEach(limits, id: \.0) { value, label in Text(label).tag(value) }
                         }
                         .labelsHidden()
                         .frame(width: 150)
-                    }
-                    if let pitch = settings.pitch(.history) {
-                        ProPitchCard(message: pitch)
                     }
                     HStack {
                         Text("\(store.items.count) item\(store.items.count == 1 ? "" : "s") stored")

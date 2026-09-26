@@ -35,6 +35,9 @@ final class ImportModel: ObservableObject {
         let skippedDuplicate: Int
         let skippedUnparsable: Int
         let skippedEmpty: Int
+        /// Clips the stored history limit left in the other manager. An upper bound: counted
+        /// before dedup. Not a loss — the other manager is only ever read.
+        let leftInSource: Int
     }
 
     @Published private(set) var candidates: [Candidate] = []
@@ -94,25 +97,15 @@ final class ImportModel: ObservableObject {
                           total: tally.imported,
                           skippedDuplicate: tally.skippedDuplicate,
                           skippedUnparsable: tally.skippedUnparsable,
-                          skippedEmpty: tally.skippedEmpty)
+                          skippedEmpty: tally.skippedEmpty,
+                          leftInSource: tally.leftInSource)
         busy = nil
     }
 
-    /// GATE 4. Free may PREVIEW — the dry run is the safety mechanism and paywalling it
-    /// would make the untested-adapter warning meaningless — but may not COMMIT.
-    ///
-    /// The entitlement arrives as a VALUE (the `HistoryReaper` idiom) rather than being read
-    /// from a global here, so the refusal is testable without a signed key, and so no future
-    /// caller can reach the write path without having said which entitlement it holds.
-    func commit(_ candidate: Candidate, path: String? = nil, store: ClipStore,
-                entitlement: Entitlement) {
-        guard entitlement.isPro else {
-            // Says what it refused and why. A migration button that quietly does nothing is
-            // how a user concludes the importer is broken rather than paid.
-            result = "Importing from another manager is Cliphoard Pro. Your preview above is "
-                   + "real — nothing was written."
-            return
-        }
+    /// Preview first, then commit — for everyone. The preview is the safety step (nine of the
+    /// ten adapters have never been run against real data) and the commit is the same writer
+    /// the preview counted with, so the tally shown is the tally that lands.
+    func commit(_ candidate: Candidate, path: String? = nil, store: ClipStore) {
         guard let read = candidate.source.read else { return }
         busy = "Importing \(candidate.source.name)…"
         var tally = PasteImport.Tally()
@@ -123,6 +116,18 @@ final class ImportModel: ObservableObject {
         preview = nil
         result = "Imported \(tally.imported) clip\(tally.imported == 1 ? "" : "s") from "
             + "\(candidate.source.name), tagged “import-\(candidate.source.id)”."
+            + Self.leftBehind(tally.leftInSource, in: candidate.source.name,
+                              limit: store.historyLimit)
+    }
+
+    /// The clips that did not fit, said plainly and true for every build: Unlimited is a row
+    /// anyone may choose, and a second import skips what is already here. "Up to": the
+    /// remainder is counted before dedup, so it is a ceiling, not a promise.
+    static func leftBehind(_ n: Int, in name: String, limit: Int) -> String {
+        guard n > 0 else { return "" }
+        return " Up to \(n) older clip\(n == 1 ? "" : "s") stay in \(name): your history keeps "
+            + "\(limit) unpinned clips. Choose Unlimited under History → Keep and import again "
+            + "to bring the rest across — clips already here are skipped."
     }
 }
 
@@ -140,10 +145,6 @@ struct ImportSection: View {
         model.chooseStore(for: candidate, store: store, panel: panel)
     }
 
-    /// Read from the store, which holds it as a value read at the boundary. Observing the
-    /// store means a key pasted in the section above swaps this panel from pitch to button
-    /// in the same frame, with no relaunch.
-    private var entitlement: Entitlement { store.entitlement }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -213,25 +214,17 @@ struct ImportSection: View {
                      + "\(preview.skippedUnparsable) unreadable, \(preview.skippedEmpty) empty")
                     .font(.system(size: 11)).foregroundStyle(.secondary)
             }
-            if entitlement.isPro {
-                HStack {
-                    Spacer()
-                    Button("Import \(preview.total)") {
-                        model.commit(candidate, store: store, entitlement: entitlement)
-                    }
+            if preview.leftInSource > 0 {
+                Text(ImportModel.leftBehind(preview.leftInSource, in: candidate.source.name,
+                                            limit: store.historyLimit)
+                        .trimmingCharacters(in: .whitespaces))
+                    .font(.system(size: 11)).foregroundStyle(.orange)
+            }
+            HStack {
+                Spacer()
+                Button("Import \(preview.total)") { model.commit(candidate, store: store) }
                     .controlSize(.small)
                     .disabled(preview.total == 0 || store.safeMode)
-                }
-            } else {
-                // UPSELL 4 — the highest-converting screen in the app, and the only pitch
-                // here built from the user's OWN data: their clips, their other manager,
-                // counted by the same writer that would do the import. No invented number.
-                ProPitchCard(
-                    message: "Bringing them across is Cliphoard Pro. The preview above is "
-                           + "real and it cost you nothing — this is the same tally the "
-                           + "import itself would produce. " + Licence.pitch,
-                    headline: "\(preview.total) clip\(preview.total == 1 ? "" : "s") still "
-                            + "sitting in \(candidate.source.name)")
             }
         }
         .padding(10)

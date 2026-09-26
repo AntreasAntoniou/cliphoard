@@ -57,6 +57,9 @@ enum PasteImport {
         var skippedDuplicate = 0
         var imageBytes = 0
         var imported = 0
+        /// Clips the stored history limit left in the source. An upper bound, counted before
+        /// dedup; the source is only ever read, so this is a deferral, not a loss.
+        var leftInSource = 0
     }
 
     @MainActor

@@ -75,7 +75,7 @@ final class LicenceIsOfflineTests: XCTestCase {
                      "Sources/Cliphoard/UI/ContentView.swift",
                      "Sources/Cliphoard/UI/ImportPanel.swift",
                      "Sources/Cliphoard/UI/ProUpsell.swift",
-                     // Gate 3's status-bar Keep submenu lives here; a verifier inserted a
+                     // The status-bar History Limit submenu lives here; a verifier inserted a
                      // URLSession into it and this scan stayed green because the file was absent.
                      "Sources/Cliphoard/App/AppDelegate.swift"] {
             let code = codeLines(try source(path))
