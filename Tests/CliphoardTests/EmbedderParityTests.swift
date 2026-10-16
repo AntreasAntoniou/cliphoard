@@ -12,13 +12,13 @@ import CoreML
 /// fixed string, and asserts the leading vector components and the tokenizer token
 /// ids match checked-in golden values from `tools/reference.json`.
 ///
-/// MODEL DETECTION (first that resolves wins):
-///   1. `$CLIPHOARD_OGMA_MODEL_DIR` — a directory containing `<name>.mlpackage` and a
-///      sibling `<name>/` tokenizer folder (the exact layout produced by
-///      `tools/restore-models.sh`), OR a directory that is itself a `.mlpackage`
-///      with a sibling tokenizer folder.
-///   2. `<repo>/tools/models/open-ogma-small.mlpackage` + `<repo>/tools/models/open-ogma-small/`.
-/// If neither resolves, `XCTSkip` is thrown with a clear message.
+/// MODEL RESOLUTION (open-ogma-small only, because it produced these goldens):
+///   1. A nonempty `$CLIPHOARD_OGMA_MODEL_DIR` must name a directory containing
+///      `open-ogma-small.mlpackage` and `open-ogma-small/tokenizer.json`, OR that
+///      exact `.mlpackage` with its sibling tokenizer folder. An incompatible,
+///      missing or incomplete override throws an error; it never falls back.
+///   2. With an unset or empty override, only `<repo>/tools/models/open-ogma-small.mlpackage`
+///      and its sibling tokenizer are considered. Missing default fixtures cause `XCTSkip`.
 ///
 /// REGENERATING THE GOLDENS (from the real PyTorch model — single source of truth):
 ///   # 1. Restore + convert the model (writes tools/models/open-ogma-small.mlpackage,
@@ -71,56 +71,54 @@ final class EmbedderParityTests: XCTestCase {
             .appendingPathComponent("tools/models")
     }
 
-    /// Resolve a model from the env var (preferred) or the default tools/models
-    /// path. Returns nil when nothing usable is present (→ skip).
-    private func resolveModel() -> ResolvedModel? {
-        let fm = FileManager.default
-
-        // 1. Env override. May point at a directory holding <name>.mlpackage +
-        //    <name>/ tokenizer, or directly at a <name>.mlpackage.
-        if let dir = ProcessInfo.processInfo.environment["CLIPHOARD_OGMA_MODEL_DIR"], !dir.isEmpty {
-            let url = URL(fileURLWithPath: dir)
-            if url.pathExtension == "mlpackage" {
-                if let m = model(at: url) { return m }
-            }
-            if let m = firstModel(in: url) { return m }
-        }
-
-        // 2. Default: <repo>/tools/models/open-ogma-small.mlpackage (+ tokenizer folder),
-        //    falling back to any other .mlpackage with a matching tokenizer folder.
-        let preferred = defaultModelsDir.appendingPathComponent("\(defaultModelName).mlpackage")
-        if let m = model(at: preferred) { return m }
-        guard fm.fileExists(atPath: defaultModelsDir.path) else { return nil }
-        return firstModel(in: defaultModelsDir)
+    /// Only this wrapper reads process state; the resolver below takes both locations
+    /// explicitly so filesystem fixtures can exercise precedence without mutating the env.
+    private func resolveModel() throws -> ResolvedModel? {
+        try resolveModel(override: ProcessInfo.processInfo.environment["CLIPHOARD_OGMA_MODEL_DIR"],
+                         defaultModelsDir: defaultModelsDir)
     }
 
-    /// First `<name>.mlpackage` in `dir` that has a sibling `<name>/` tokenizer
-    /// folder (lexicographically, for determinism).
-    private func firstModel(in dir: URL) -> ResolvedModel? {
-        let fm = FileManager.default
-        guard let entries = try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil) else {
-            return nil
+    private struct InvalidModelOverride: LocalizedError {
+        let path: String
+        let expectedModelName: String
+
+        var errorDescription: String? {
+            "Invalid CLIPHOARD_OGMA_MODEL_DIR '\(path)': expected \(expectedModelName).mlpackage "
+                + "with a sibling \(expectedModelName)/tokenizer.json, or a directory containing both. "
+                + "The override is missing, incomplete or incompatible with these golden vectors."
         }
-        for url in entries.sorted(by: { $0.lastPathComponent < $1.lastPathComponent })
-            where url.pathExtension == "mlpackage" {
-            if let m = model(at: url) { return m }
-        }
-        return nil
     }
 
-    /// Validate a specific `.mlpackage` and locate its tokenizer folder (the
-    /// sibling `<name>/` directory containing tokenizer.json, per restore-models.sh).
+    /// An absent optional default skips; an explicitly selected invalid fixture fails.
+    /// A different model cannot be a substitute for the one that produced the goldens.
+    private func resolveModel(override: String?, defaultModelsDir: URL) throws -> ResolvedModel? {
+        guard let override, !override.isEmpty else {
+            return model(at: defaultModelsDir.appendingPathComponent("\(defaultModelName).mlpackage"))
+        }
+        let location = URL(fileURLWithPath: override)
+        let package = location.pathExtension == "mlpackage"
+            ? location
+            : location.appendingPathComponent("\(defaultModelName).mlpackage")
+        guard let resolved = model(at: package) else {
+            throw InvalidModelOverride(path: override, expectedModelName: defaultModelName)
+        }
+        return resolved
+    }
+
+    /// Require the exact package directory and a tokenizer file beside it. Do not infer
+    /// compatibility from a `.mlpackage` suffix or accept another model's tokenizer.
     private func model(at mlpackage: URL) -> ResolvedModel? {
         let fm = FileManager.default
-        guard fm.fileExists(atPath: mlpackage.path), mlpackage.pathExtension == "mlpackage" else {
-            return nil
-        }
-        let name = mlpackage.deletingPathExtension().lastPathComponent
-        let tokFolder = mlpackage.deletingLastPathComponent().appendingPathComponent(name)
-        guard fm.fileExists(atPath: tokFolder.appendingPathComponent("tokenizer.json").path) else {
-            return nil
-        }
-        return ResolvedModel(name: name, mlpackage: mlpackage, tokenizerFolder: tokFolder)
+        var isDirectory: ObjCBool = false
+        guard mlpackage.lastPathComponent == "\(defaultModelName).mlpackage",
+              fm.fileExists(atPath: mlpackage.path, isDirectory: &isDirectory),
+              isDirectory.boolValue else { return nil }
+        let tokenizerFolder = mlpackage.deletingLastPathComponent().appendingPathComponent(defaultModelName)
+        guard fm.fileExists(atPath: tokenizerFolder.appendingPathComponent("tokenizer.json").path,
+                            isDirectory: &isDirectory),
+              !isDirectory.boolValue else { return nil }
+        return ResolvedModel(name: defaultModelName, mlpackage: mlpackage,
+                             tokenizerFolder: tokenizerFolder)
     }
 
     /// Load the resolved `.mlpackage` directly. The app bundles a precompiled
@@ -137,13 +135,14 @@ final class EmbedderParityTests: XCTestCase {
 
     @MainActor
     func testEmbedderGoldenVectorParity() throws {
-        guard let resolved = resolveModel() else {
+        guard let resolved = try resolveModel() else {
             throw XCTSkip("""
-                No ogma CoreML model found — skipping golden-vector parity. \
-                The .mlpackage models are gitignored; restore one with \
-                `MODELS="\(defaultModelName)" tools/restore-models.sh`, or point \
-                $CLIPHOARD_OGMA_MODEL_DIR at a directory containing <name>.mlpackage + a \
-                sibling <name>/ tokenizer folder.
+                No complete \(defaultModelName) CoreML fixture found at \(defaultModelsDir.path) — \
+                skipping golden-vector parity. The gitignored fixture must contain \
+                \(defaultModelName).mlpackage and \(defaultModelName)/tokenizer.json. Restore it with \
+                `MODELS="\(defaultModelName)" tools/restore-models.sh`, or set \
+                $CLIPHOARD_OGMA_MODEL_DIR to that exact package or a directory containing it. \
+                Other models cannot be compared with these goldens.
                 """)
         }
 
@@ -180,4 +179,118 @@ final class EmbedderParityTests: XCTestCase {
                            "component \(i) parity mismatch: got \(vec[i]), golden \(goldenHead[i])")
         }
     }
+    // MARK: Filesystem-only resolver regressions
+
+    private func withResolverFixtures(_ body: (URL) throws -> Void) throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("CliphoardOgmaResolver-\(UUID())", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try body(root)
+    }
+
+    @discardableResult
+    private func fixtureModel(_ name: String, in directory: URL,
+                              withTokenizer: Bool = true) throws -> URL {
+        let package = directory.appendingPathComponent("\(name).mlpackage", isDirectory: true)
+        try FileManager.default.createDirectory(at: package, withIntermediateDirectories: true)
+        if withTokenizer {
+            let tokenizer = directory.appendingPathComponent(name, isDirectory: true)
+            try FileManager.default.createDirectory(at: tokenizer, withIntermediateDirectories: true)
+            try Data("{}".utf8).write(to: tokenizer.appendingPathComponent("tokenizer.json"))
+        }
+        return package
+    }
+
+    private func assertRejectedOverride(_ path: URL, defaultModelsDir: URL,
+                                        file: StaticString = #filePath, line: UInt = #line) {
+        XCTAssertThrowsError(try resolveModel(override: path.path, defaultModelsDir: defaultModelsDir),
+                             file: file, line: line) { error in
+            XCTAssertTrue(error.localizedDescription.contains(self.defaultModelName),
+                          "the error must name the model required by the goldens", file: file, line: line)
+            XCTAssertTrue(error.localizedDescription.contains(path.path),
+                          "the error must identify the rejected override", file: file, line: line)
+        }
+    }
+
+    func testResolverSkipsAnOpenVisionOnlyDefault() throws {
+        try withResolverFixtures { root in
+            try fixtureModel("openvision-tiny-p8-text", in: root)
+            XCTAssertNil(try resolveModel(override: nil, defaultModelsDir: root))
+        }
+    }
+
+    func testResolverSkipsAMissingDefaultDirectory() throws {
+        try withResolverFixtures { root in
+            XCTAssertNil(try resolveModel(override: nil, defaultModelsDir: root.appendingPathComponent("absent")))
+        }
+    }
+
+    func testResolverUsesTheExactDefaultModel() throws {
+        try withResolverFixtures { root in
+            let expected = try fixtureModel(defaultModelName, in: root)
+            let resolved = try XCTUnwrap(resolveModel(override: nil, defaultModelsDir: root))
+            XCTAssertEqual(resolved.mlpackage, expected)
+            XCTAssertEqual(resolved.name, defaultModelName)
+        }
+    }
+
+    func testResolverChoosesTheExpectedModelFromAMixedOverride() throws {
+        try withResolverFixtures { root in
+            try fixtureModel("all-MiniLM-L6-v2", in: root)
+            try fixtureModel("openvision-tiny-p8-text", in: root)
+            let expected = try fixtureModel(defaultModelName, in: root)
+            let resolved = try XCTUnwrap(resolveModel(override: root.path,
+                                                       defaultModelsDir: root.appendingPathComponent("absent")))
+            XCTAssertEqual(resolved.mlpackage, expected)
+        }
+    }
+
+    func testResolverAcceptsTheExactDirectPackageOverride() throws {
+        try withResolverFixtures { root in
+            let expected = try fixtureModel(defaultModelName, in: root)
+            let resolved = try XCTUnwrap(resolveModel(override: expected.path,
+                                                       defaultModelsDir: root.appendingPathComponent("absent")))
+            XCTAssertEqual(resolved.mlpackage, expected)
+        }
+    }
+
+    func testResolverRejectsAWrongDirectModelEvenWithAValidDefault() throws {
+        try withResolverFixtures { root in
+            let defaults = root.appendingPathComponent("defaults")
+            try fixtureModel(defaultModelName, in: defaults)
+            let wrong = try fixtureModel("openvision-tiny-p8-text", in: root.appendingPathComponent("override"))
+            assertRejectedOverride(wrong, defaultModelsDir: defaults)
+        }
+    }
+
+    func testResolverRejectsMissingOrIncompleteOverridesInsteadOfFallingBack() throws {
+        try withResolverFixtures { root in
+            let defaults = root.appendingPathComponent("defaults")
+            try fixtureModel(defaultModelName, in: defaults)
+            assertRejectedOverride(root.appendingPathComponent("absent"), defaultModelsDir: defaults)
+            let incomplete = root.appendingPathComponent("incomplete")
+            try fixtureModel(defaultModelName, in: incomplete, withTokenizer: false)
+            assertRejectedOverride(incomplete, defaultModelsDir: defaults)
+            let incompatible = root.appendingPathComponent("incompatible")
+            try fixtureModel("openvision-tiny-p8-text", in: incompatible)
+            assertRejectedOverride(incompatible, defaultModelsDir: defaults)
+        }
+    }
+
+    func testResolverSkipsADefaultWithoutItsTokenizer() throws {
+        try withResolverFixtures { root in
+            try fixtureModel(defaultModelName, in: root, withTokenizer: false)
+            XCTAssertNil(try resolveModel(override: nil, defaultModelsDir: root))
+        }
+    }
+
+    func testResolverTreatsAnEmptyOverrideAsUnset() throws {
+        try withResolverFixtures { root in
+            let expected = try fixtureModel(defaultModelName, in: root)
+            let resolved = try XCTUnwrap(resolveModel(override: "", defaultModelsDir: root))
+            XCTAssertEqual(resolved.mlpackage, expected)
+        }
+    }
+
 }
