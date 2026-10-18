@@ -1,8 +1,33 @@
 # Cliphoard — Release Readiness Status
 
-**Last updated:** 2026-09-11 · **Branch:** `main`
+**Last updated:** 2026-10-18 · **Branch:** `main`
 **Verdict: RELEASED — v1.0.0 is public (unsigned; the notarized build and Homebrew tap ship in 1.0.1).**
-**Download:** https://github.com/AntreasAntoniou/cliphoard/releases/tag/v1.0.0 · **Site:** https://cliphoard.dev/
+**Download:** https://github.com/AntreasAntoniou/cliphoard/releases/tag/v1.0.0 · **Live site:** https://antreas.io/cliphoard/
+
+## Local release verification — 18 October 2026
+
+- Fresh full suite: **712 executed, 711 passed, 1 skipped, 0 failures**. The remaining
+  skip is the opt-in test against a copy of a real clipboard store; no private store
+  was supplied. Four previously skipped safety checks now execute using damaged
+  temporary databases and an absent canary in the isolated test keychain namespace.
+- Universal arm64/x86_64 release packaging succeeded. Both compiled OpenVision
+  towers, tokenizer JSON and licence/attribution checks passed. This is a local
+  validation build with the existing version string, not a newly published release.
+- Release CI now runs tests before signing and no longer installs the PyTorch model
+  conversion stack. Manual dry runs cannot publish even when run against a tag.
+  Tagged packaging requires signing/notarization settings, and the signed path now
+  requires ticket validation and Gatekeeper acceptance before writing the cask hash.
+- Public v1.0.0 was downloaded and matched its published SHA-256; its universal app
+  has a valid local signature but is rejected by Gatekeeper and has no stapled ticket.
+- **Still blocked:** no Developer ID Application identity or repository release
+  secrets are available. The active Bitwarden lease contains no matching signing or
+  notarization item. `cliphoard.dev` does not resolve, and the local Pro purchase link
+  has no verified checkout/key-delivery route. No new release, tag, cask or paid launch
+  was published. Bump the plist/cask version before the next release.
+- Eight GitHub dependency alerts remain in the pinned Python conversion tooling;
+  removing that stack from release packaging does not resolve those alerts. Physical
+  Intel/minimum-OS, auto-paste and trusted customer installation remain unverified.
+
 Everything below this line is the pre-launch status log, kept as history; see `CHANGELOG.md` for what shipped.
 
 The codebase is release-quality. What stands between here and a public v1.0 is **not

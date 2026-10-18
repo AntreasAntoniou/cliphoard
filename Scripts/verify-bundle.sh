@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
 # Prove an assembled .app matches what the licence documents claim about it.
 #
-# This exists because the unit suite cannot protect the artifact: `release.yml` runs no
-# tests at all, so on the CI path this script is the only thing between "compile" and
-# "notarise and publish" that looks at what actually landed in Resources. The defect this
+# This complements the unit suite by inspecting the actual packaged artifact. It checks
+# what landed in Resources before a local build or CI can distribute it. The defect this
 # was written for WAS live and silent: `restore-models.sh` had no `openvision-*` case and
 # the `models-v1` release had no openvision asset, so a CI-cut DMG shipped ZERO models while
 # THIRD-PARTY-NOTICES.md at its root said OpenVision is BUNDLED. Fixed: restore-models.sh
@@ -59,8 +58,8 @@ for dir in "$RES" ${EXTRA:+"$EXTRA"}; do
 done
 
 # 2. LICENSE must be canonical MIT, not merely identical to the repo copy: a repo LICENSE
-#    with a prepended or appended clause would otherwise ship in every DMG (this script is
-#    the only guard on the CI path). The body hash is taken with the holder line (line 3)
+#    with a prepended or appended clause would otherwise ship in every DMG. The body hash
+#    is taken with the holder line (line 3)
 #    masked, so a year bump passes and any other edit fails. The holder line is a SINGLE
 #    year — no range — and the file is exactly 1073 bytes: DistributionLicenceTests
 #    .testTheLicenceIsUnmodifiedMIT pins the same three facts, and the two guards must agree.
@@ -80,7 +79,7 @@ done
 # 3. LICENSE-Apache-2.0.txt must be the COMPLETE, canonical licence. Step 1 only proves the
 #    app copy equals the repo copy, so a one-line stub in the repo would ship identically and
 #    pass. Same landmarks and size floor as DistributionLicenceTests
-#    .testTheApacheTextExistsAndBothBuildPathsShipIt (which release.yml never runs), plus the
+#    .testTheApacheTextExistsAndBothBuildPathsShipIt, plus the
 #    sha256 of apache.org's LICENSE-2.0.txt, pinned there as apacheSHA256.
 APACHE_SHA256="cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
 for dir in "$RES" ${EXTRA:+"$EXTRA"}; do

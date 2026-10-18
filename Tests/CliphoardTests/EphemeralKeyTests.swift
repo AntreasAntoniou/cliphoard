@@ -1,5 +1,6 @@
 import XCTest
 import CryptoKit
+import Security
 @testable import Cliphoard
 
 /// TP-23: an ephemeral key must never satisfy a fail-closed check.
@@ -95,34 +96,53 @@ final class EphemeralKeyTests: XCTestCase {
     /// The canary must not certify health under a doomed key — that is how the freeze
     /// itself was defeated, on a store too small for the ratio gate to catch.
     ///
-    /// SKIPS when the keychain is reachable, and that is not evasion — it is the only
-    /// honest form of this test. `verifyCanary` guards on ephemerality ONLY in its
-    /// canary-absent branch. With an established, readable canary the read is `.found`,
-    /// `open()` succeeds under the durable key, and health is reported true — correctly.
-    /// Asserting false there would make this test RED on a healthy Mac, i.e. red on
-    /// exactly the machine state the fix targets, which a review caught before it could
-    /// happen.
-    ///
-    /// Known gap: the branch this exists for needs a genuinely ABSENT canary, which a test
-    /// cannot arrange without an injectable keychain. Recorded rather than faked.
+    /// The per-run test keychain namespace lets us arrange an absent canary without
+    /// touching production keys. Remove only this process's test canary, then restore
+    /// a healthy one after the simulation so later tests inherit the normal state.
     func testCanaryCannotReportHealthUnderAnEphemeralKey() throws {
-        // Establish the signal before reading it. `keychainAccessDenied` is set only as a
-        // SIDE EFFECT of a keychain read, so a process that has not performed one sees
-        // `false` and skips — this test skipped claiming "the canary is readable here" in
-        // a process that logged -25320 moments later. Same fix, same reason, as
-        // `FrozenStoreSkip`'s helper.
-        Crypto.verifyCanary()
-        try XCTSkipUnless(Crypto.keychainAccessDenied,
-                          "the canary is readable here, so verifyCanary takes its .found "
-                          + "branch and the ephemerality guard is never consulted — there "
-                          + "is nothing to assert")
+        let service = Crypto.service
+        guard service.hasPrefix(Crypto.testServicePrefix),
+              service != Crypto.productionService else {
+            XCTFail("refusing to modify a canary outside the isolated test namespace")
+            return
+        }
+        try skipIfKeychainUnreachable()
+        let queries: [[String: Any]] = [true, false].map { dataProtection in
+            [kSecClass as String: kSecClassGenericPassword,
+             kSecAttrService as String: service,
+             kSecAttrAccount as String: "db-canary-v1",
+             kSecUseDataProtectionKeychain as String: dataProtection]
+        }
+        defer {
+            XCTAssertTrue(Crypto.verifyCanary(), "restore the healthy test canary")
+        }
+        for query in queries {
+            // An unentitled test process can observe an empty data-protection
+            // namespace but cannot mutate it. Delete only an item actually found.
+            let readStatus = SecItemCopyMatching(query as CFDictionary, nil)
+            if readStatus == errSecItemNotFound { continue }
+            guard readStatus == errSecSuccess else {
+                XCTFail("could not inspect the test canary: OSStatus \(readStatus)")
+                return
+            }
+            let status = SecItemDelete(query as CFDictionary)
+            guard status == errSecSuccess || status == errSecItemNotFound else {
+                XCTFail("could not remove the test canary: OSStatus \(status)")
+                return
+            }
+        }
         Crypto.simulatingEphemeralKey {
-            _ = Crypto.verifyCanary()
+            XCTAssertFalse(Crypto.verifyCanary())
             XCTAssertFalse(Crypto.decryptionHealthy,
                            "decryption was reported HEALTHY while the key is ephemeral. "
                            + "That sets safe mode's first term false, and on a store below "
                            + "the ratio gate the re-seal migration then runs under a key "
                            + "that dies at exit — total permanent loss.")
+            for query in queries {
+                XCTAssertEqual(SecItemCopyMatching(query as CFDictionary, nil),
+                               errSecItemNotFound,
+                               "an ephemeral key must not establish a canary")
+            }
         }
     }
 

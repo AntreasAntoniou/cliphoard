@@ -54,7 +54,7 @@ jobs:
           APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
         run: bash Scripts/ci-preflight-secrets.sh
 
-      - name: Set up Python (for CoreML conversion)
+      - name: Set up Python (for bundle validation)
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
@@ -74,10 +74,8 @@ jobs:
         env:
           HF_HUB_DISABLE_TELEMETRY: '1'
         run: |
-          python3 -m pip install --upgrade pip
-          # Conversion stack (tools/requirements.txt) is installed for parity with models.yml;
-          # the bundled OpenVision pair below is a pinned download and needs no Python.
-          python3 -m pip install -r tools/requirements.txt
+          # These are prebuilt, checksum-pinned CoreML assets. Conversion dependencies
+          # belong to models.yml; packaging must not install or execute PyTorch.
           # Only what the DMG bundles. BUNDLE_MODELS in build-app.sh/release.sh is the
           # allowlist that keeps a cache-restored EmbeddingGemma package out of the DMG.
           MODELS="openvision-tiny-p8-image openvision-tiny-p8-text" bash tools/restore-models.sh
@@ -93,6 +91,9 @@ jobs:
           for f in tokenizer.json config.json; do
             [ -f "tools/models/openvision-tiny-p8-text/$f" ] || { echo "::error::missing OpenVision tokenizer file $f"; exit 1; }
           done
+
+      - name: Run regression tests before signing
+        run: env -u CLIPHOARD_LIVE_COPY swift test
 
       - name: Set up signing keychain
         if: env.DRY_RUN != 'true'
@@ -129,7 +130,7 @@ jobs:
         env:
           DEVID: ${{ secrets.MACOS_DEVID }}
           NOTARY_PROFILE: cliphoard-notary
-          RELEASE_TAG: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}
+          RELEASE_TAG: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}
         run: |
           if [ "$DRY_RUN" = "true" ]; then
             echo "unsigned dry run: no signing, no notarization, cask untouched, nothing published"
@@ -145,7 +146,7 @@ jobs:
           echo "sha256=$(shasum -a 256 "$FILE" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
 
       - name: Publish GitHub Release
-        if: startsWith(github.ref, 'refs/tags/')
+        if: env.DRY_RUN != 'true' && startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
           files: ${{ steps.dmg.outputs.path }}
@@ -163,7 +164,7 @@ jobs:
       # After publish, so a push failure never loses the DMG. main is unprotected, so the
       # GITHUB_TOKEN (contents: write) can push; if main is ever protected, switch this to a PR.
       - name: Commit the cask checksum to main
-        if: startsWith(github.ref, 'refs/tags/')
+        if: env.DRY_RUN != 'true' && startsWith(github.ref, 'refs/tags/')
         run: |
           set -euo pipefail
           SHA="${{ steps.dmg.outputs.sha256 }}"; V="${GITHUB_REF_NAME#v}"

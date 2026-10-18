@@ -16,6 +16,26 @@ import XCTest
 /// This is not hiding a failure. The condition is named in the message, and on any machine
 /// where the keychain is reachable every one of these runs for real.
 extension XCTestCase {
+    /// Exercise the real storage-failure path without depending on a locked keychain.
+    /// Every byte belongs to this test; ClipStore must preserve the damaged database.
+    @MainActor
+    func frozenStoreFixture() throws -> ClipStore {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("CliphoardFrozen-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let database = directory.appendingPathComponent("ditto.sqlite")
+        let damagedBytes = Data(repeating: 0xFF, count: 100)
+        try damagedBytes.write(to: database)
+        addTeardownBlock {
+            defer { try? FileManager.default.removeItem(at: directory) }
+            XCTAssertEqual(try Data(contentsOf: database), damagedBytes,
+                           "a frozen store must preserve the original database bytes")
+        }
+        let store = ClipStore(directory: directory)
+        XCTAssertTrue(store.safeMode, "an unreadable database must freeze the store")
+        return store
+    }
+
     /// Gates on `keychainAccessDenied` — the signal that means specifically "this process
     /// could not REACH the keychain" — and deliberately NOT on `decryptionHealthy`.
     ///

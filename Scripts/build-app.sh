@@ -10,7 +10,7 @@ APP="$ROOT/build/Cliphoard.app"
 echo "▸ Building ($CONFIG, universal arm64 + x86_64)…"
 # Build a UNIVERSAL binary so the app runs natively on both Apple Silicon and Intel
 # (an arm64-only build will not launch on Intel at all — Rosetta only runs x86 on ARM).
-swift build -c "$CONFIG" --arch arm64 --arch x86_64 2>/dev/null
+swift build -c "$CONFIG" --arch arm64 --arch x86_64
 BIN="$(swift build -c "$CONFIG" --arch arm64 --arch x86_64 --show-bin-path 2>/dev/null)/Cliphoard"
 
 echo "▸ Assembling bundle…"
@@ -129,5 +129,5 @@ echo "✓ Built $APP"
 
 # Prove the assembled bundle matches what the licence documents claim. This runs on
 # EVERY build path (make app, deploy-local.sh, release.sh) because the .app is what
-# reaches a user, and release.yml runs no unit tests at all.
+# reaches a user; unit tests alone do not inspect its final Resources directory.
 BUNDLE_MODELS="$BUNDLE_MODELS" bash "$ROOT/Scripts/verify-bundle.sh" "$APP" "$ROOT"

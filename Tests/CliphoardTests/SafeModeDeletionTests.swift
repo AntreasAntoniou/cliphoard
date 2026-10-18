@@ -21,15 +21,9 @@ final class SafeModeDeletionTests: XCTestCase {
             .appendingPathComponent("safe-mode-del-\(UUID().uuidString)")
     }
 
-    /// Runs only when the store is genuinely frozen — which is the only state where the
-    /// property is meaningful. Inverted coverage by necessity: on a healthy machine there
-    /// is no safe mode to test, so it skips and says so.
+    /// A damaged temporary database exercises safe mode even on a healthy machine.
     func testAFrozenStoreDeletesNothingWhenOverTheLimit() throws {
-        let dir = tempDir()
-        let store = ClipStore(directory: dir)
-        try XCTSkipUnless(store.safeMode,
-                          "store is healthy here, so there is no frozen state to exercise "
-                          + "— this property only exists while safe mode is engaged")
+        let store = try frozenStoreFixture()
 
         // Far below the number of clips we are about to add, so an ungated trim would
         // certainly fire.
@@ -45,10 +39,7 @@ final class SafeModeDeletionTests: XCTestCase {
         XCTAssertEqual(store.items.count, beforeCount,
                        "a frozen store evicted clips from memory; with the database write "
                        + "already blocked, that is deletion with nothing stored in return")
-        XCTAssertFalse(FileManager.default.fileExists(
-            atPath: dir.appendingPathComponent("ditto.sqlite").path)
-            && store.items.isEmpty,
-            "frozen store emptied itself")
+        XCTAssertEqual(beforeCount, 12, "the fixture must exercise an over-limit store")
     }
 
     /// The converse, so this file cannot pass by freezing everything: a HEALTHY store must
@@ -75,15 +66,13 @@ final class SafeModeDeletionTests: XCTestCase {
     /// They had no tests at all. Worse, `testClearUnpinned` was converted from failing to
     /// skipping in the very commit that changed its behaviour — the guard is intended, but
     /// converting the old assertion to a skip removed the only coverage without replacing
-    /// it. This is the replacement, in the inverted form this file already uses.
+    /// it. A damaged temporary database makes the replacement deterministic.
     ///
     /// Safe mode is the state where every clip renders as `enc1:` gibberish, so it
     /// actively manufactures the motive to press Delete on data that is fully recoverable
     /// once the keychain is reachable again.
     func testFrozenStoreRefusesEveryDestructiveAction() throws {
-        let store = ClipStore(directory: tempDir())
-        try XCTSkipUnless(store.safeMode,
-                          "store is healthy here, so there is no frozen state to exercise")
+        let store = try frozenStoreFixture()
 
         for i in 0..<4 { store.add(ClipItem(kind: .text, text: "clip \(i)")) }
         let before = store.items.count

@@ -23,8 +23,9 @@ can't run under the App Sandbox.
 
 **Prove the CI path first (no secrets, no tag, nothing published):** Actions → Release →
 Run workflow, or `gh workflow run Release --ref main`. It restores the pinned models, builds,
-runs `verify-bundle`, and packages an UNSIGNED DMG. It is the first place the app is ever
-compiled by CI, so a red run here is a finding, not a release.
+runs the regression suite and `verify-bundle`, and packages an UNSIGNED DMG. A red run
+here is a finding, not a release. Packaging restores prebuilt, checksum-pinned CoreML
+models; the Python conversion dependencies are used only by the model workflow.
 
 **Locally:**
 ```sh
@@ -43,6 +44,9 @@ git tag v1.0.0 && git push origin v1.0.0
 ```
 The first step fails naming any of the 7 secrets that is missing or malformed. The build
 step aborts unless the tag equals `v<Info.plist version>` and the cask's `version` matches.
+Tagged local runs also require both `DEVID` and `NOTARY_PROFILE`. Signed releases must
+pass ticket validation and Gatekeeper assessment for both the app and the final DMG
+before the cask checksum is written or the release is published.
 After the GitHub Release is published, the workflow commits the DMG's sha256 into
 `Casks/cliphoard.rb` on `main` — `git pull` before publishing the cask.
 

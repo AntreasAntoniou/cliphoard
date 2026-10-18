@@ -42,6 +42,12 @@ if [[ -n "${RELEASE_TAG:-}" && "$RELEASE_TAG" != "v$PLIST_VERSION" ]]; then
     printf '\033[1;31m✗ %s\033[0m\n' "tag $RELEASE_TAG does not match Info.plist version $PLIST_VERSION (expected v$PLIST_VERSION) — bump Resources/Info.plist and $CASK before tagging." >&2
     exit 1
 fi
+# A tag denotes public distribution. Keep unsigned packaging available for local
+# validation, but never let a tagged run silently degrade to that mode.
+if [[ -n "${RELEASE_TAG:-}" && ( -z "${DEVID:-}" || -z "${NOTARY_PROFILE:-}" ) ]]; then
+    echo "ERROR: a tagged release requires both DEVID and NOTARY_PROFILE; refusing unsigned or unnotarized distribution." >&2
+    exit 1
+fi
 # The cask's sha256 IS this DMG's, which cannot exist before this script ends, so the all-zero
 # placeholder is the EXPECTED state going into the first cut. A signed+notarised run rewrites
 # it from the DMG at the end (step 6). The hard "never publish a zero sha" gate lives where a
@@ -139,6 +145,9 @@ if [[ -n "$NOTARY_PROFILE" && -n "$DEVID" ]]; then
     xcrun notarytool submit "build/Cliphoard.zip" --keychain-profile "$NOTARY_PROFILE" --wait
     say "Stapling ticket…"
     xcrun stapler staple "$APP"
+    xcrun stapler validate "$APP"
+    codesign --verify --strict --verbose=2 "$APP"
+    spctl --assess --type execute --verbose=4 "$APP"
     rm -f "build/Cliphoard.zip"
 elif [[ -n "$DEVID" ]]; then
     warn "NOTARY_PROFILE not set — skipping notarization (DMG won't pass Gatekeeper)."
@@ -172,6 +181,8 @@ if [[ -n "$DEVID" ]]; then
         say "Notarizing DMG…"
         xcrun notarytool submit "$DMG" --keychain-profile "$NOTARY_PROFILE" --wait
         xcrun stapler staple "$DMG"
+        xcrun stapler validate "$DMG"
+        spctl --assess --type open --context context:primary-signature --verbose=4 "$DMG"
     fi
 fi
 

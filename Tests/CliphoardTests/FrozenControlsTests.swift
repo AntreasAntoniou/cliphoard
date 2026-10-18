@@ -72,10 +72,7 @@ final class FrozenControlsTests: XCTestCase {
     /// healthy and `sealStrict` SUCCEEDS, so an edit writes that garbage over the user's
     /// real labels — permanently, and undetectably afterwards.
     func testUserTagsCannotBeRewrittenWhileFrozen() throws {
-        let store = tempStore()
-        try XCTSkipUnless(store.safeMode,
-                          "no frozen store to exercise on this machine — the converse "
-                          + "below covers the healthy direction")
+        let store = try frozenStoreFixture()
         let item = ClipItem(kind: .text, text: "hello")
         item.userTags = ["real-label"]
 
