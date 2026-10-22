@@ -1,0 +1,349 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LOCAL QA HARNESS — Cliphoard site (synthetic fixtures)</title>
+<!--
+  LOCAL-ONLY TEST HARNESS. NOT PART OF THE PUBLISHED SITE.
+
+  It lives under Tests/ on purpose: docs/ is what GitHub Pages serves, so nothing in
+  here can reach cliphoard.dev. The page it frames is the real docs/ site, unmodified,
+  with no query flag and no debug mode — there is deliberately no way to trigger a
+  fixture from the site itself.
+
+  Serve the REPO ROOT and open this file:
+
+      python3 -m http.server 4347 --bind 127.0.0.1      # from the repository root
+      http://127.0.0.1:4347/Tests/site/preview.html
+
+  Every amount below is SYNTHETIC. None of it is real revenue, none of it is written to
+  docs/data/net-sales.json, and the banner saying so is permanent.
+
+  The fixture buttons import the REAL docs/assets/funding.js and call the REAL
+  `fundingView` and `applyFundingView` against the framed page's own funding section, so
+  what you are looking at is the shipped code and the shipped DOM with different data —
+  not a reimplementation of either.
+-->
+<style>
+  :root{
+    --ink:#18263A; --slate:#57687C; --line:#CBDAEA; --ice:#F4F8FC;
+    --ocean:#2368C4; --warn:#7A1B5B; --warnbg:#FBE9F4;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:#E7EDF4; color:var(--ink);
+    font:14px/1.5 -apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",Arial,sans-serif;
+  }
+  .synthetic{
+    background:var(--warnbg); color:var(--warn);
+    border-bottom:3px solid var(--warn);
+    padding:.7rem 1rem; font-weight:700; letter-spacing:.02em;
+  }
+  .synthetic span{display:block;font-weight:400;font-size:12.5px;margin-top:.2rem}
+  .bar{
+    display:flex; flex-wrap:wrap; gap:.75rem 1.5rem; align-items:flex-start;
+    padding:.9rem 1rem; background:#fff; border-bottom:1px solid var(--line);
+    position:sticky; top:0; z-index:5;
+  }
+  fieldset{border:1px solid var(--line);border-radius:8px;padding:.5rem .7rem .7rem;margin:0}
+  legend{font-size:11.5px;color:var(--slate);padding:0 .3rem}
+  button{
+    font:inherit; font-size:13px; padding:.35rem .6rem; margin:.15rem .15rem 0 0;
+    border:1px solid var(--line); border-radius:6px; background:var(--ice);
+    color:var(--ink); cursor:pointer;
+  }
+  button:hover{border-color:var(--ocean);color:var(--ocean)}
+  button[aria-pressed="true"]{background:var(--ocean);border-color:var(--ocean);color:#fff}
+  button.fixture{border-color:#E3BCD6;background:var(--warnbg);color:var(--warn)}
+  button.fixture:hover{border-color:var(--warn)}
+  :focus-visible{outline:3px solid var(--ocean);outline-offset:2px}
+  .readback{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;color:var(--slate)}
+  .readback b{color:var(--ink)}
+  .stage{padding:1rem;display:flex;justify-content:flex-start;overflow-x:auto}
+  /* OUTLINE, not border, and no max-width.
+     `* { box-sizing: border-box }` above put a 1px border INSIDE the iframe's box, so
+     width:320px produced a 318px viewport — which is what the live QA pass caught. An
+     outline is painted outside the layout box and costs nothing, and dropping max-width
+     means 1440 really is 1440 instead of silently shrinking to the window; the stage
+     scrolls horizontally instead. The readback shows requested and measured side by
+     side, so any remaining difference is visible rather than assumed. */
+  iframe{
+    width:1440px; height:82vh; background:#fff; display:block;
+    border:0; outline:1px solid var(--line); outline-offset:0; flex:0 0 auto;
+  }
+  a{color:var(--ocean)}
+  #log{padding:0 1rem 1rem;max-width:70rem;margin:0 auto;font-size:12.5px;color:var(--slate)}
+  #log b{color:var(--warn)}
+</style>
+</head>
+<body>
+
+<div class="synthetic" role="alert">
+  SYNTHETIC TEST HARNESS — every figure rendered from a button below is FAKE
+  <span>Local only. Not part of the published site. Nothing here writes to
+    <code>docs/data/net-sales.json</code>, and the framed page's own data file is the real
+    one until you press a fixture button.</span>
+</div>
+
+<div class="bar">
+  <fieldset>
+    <legend>Iframe width (CSS px)</legend>
+    <button type="button" data-width="320">320</button>
+    <button type="button" data-width="390">390</button>
+    <button type="button" data-width="768">768</button>
+    <button type="button" data-width="1440" aria-pressed="true">1440</button>
+  </fieldset>
+
+  <fieldset>
+    <legend>Synthetic funding fixtures (fake money)</legend>
+    <button type="button" class="fixture" data-fixture="unavailable">unavailable</button>
+    <button type="button" class="fixture" data-fixture="zero">certified zero</button>
+    <button type="button" class="fixture" data-fixture="over">$250,000.01</button>
+    <button type="button" class="fixture" data-fixture="double">$500,000.00</button>
+    <button type="button" class="fixture" data-fixture="stale">stale</button>
+    <button type="button" class="fixture" data-fixture="negative">negative</button>
+    <button type="button" class="fixture" data-fixture="invalid">invalid payload</button>
+  </fieldset>
+
+  <fieldset>
+    <legend>Jump to section</legend>
+    <button type="button" data-jump="top">Top</button>
+    <button type="button" data-jump="funding">Funding</button>
+    <button type="button" data-jump="research">Research</button>
+    <button type="button" data-jump="pro">Free and Pro</button>
+  </fieldset>
+
+  <fieldset>
+    <legend>Real data</legend>
+    <button type="button" id="reset">Reload real page</button>
+    <button type="button" id="openplain">Open framed page in a tab</button>
+  </fieldset>
+
+  <fieldset>
+    <legend>Readback</legend>
+    <p class="readback" id="readback">measuring…</p>
+    <p class="readback"><a id="direct" href="../../docs/" target="_blank" rel="noopener">../../docs/</a></p>
+  </fieldset>
+</div>
+
+<div class="stage">
+  <!-- ../../docs/ resolves to /docs/ when the REPO ROOT is served, which is why the
+       command above serves the root rather than docs/. -->
+  <iframe id="site" src="../../docs/" title="Cliphoard site under test"></iframe>
+</div>
+
+<p id="log">Press a width to check layout and overflow, a jump button to scroll the framed
+  page, or a fixture to drive the real funding module with fake data. To see the reset
+  behaviour, press <b>$500,000.00</b> and then <b>unavailable</b> or <b>invalid payload</b>:
+  the figure must go back to "No reconciled reports available." with no reload. Screenshot
+  with Chrome's own capture — this harness takes no screenshots and runs no automation.</p>
+
+<script type="module">
+/* The REAL module, the same file the site loads. Not a copy. */
+import { fundingView, applyFundingView, toCents, formatUSD, SCHEMA }
+  from "../../docs/assets/funding.js";
+
+const frame = document.getElementById("site");
+const log = document.getElementById("log");
+const readback = document.getElementById("readback");
+
+/* ── SYNTHETIC FIXTURES. Every amount here is invented for layout testing. ──── */
+
+const TODAY = "2026-12-05";
+
+function base(over = {}) {
+  return {
+    schema: SCHEMA,
+    status: "reported",
+    currency: "USD",
+    goal: "250000.00",
+    total_net: "1038.50",
+    campaign_start: "2026-11-01",
+    as_of: "2026-11-30",
+    generated: "2026-12-02",
+    basis: "SYNTHETIC QA FIXTURE — not real revenue.",
+    coverage: { reports: 2, start: "2026-11-01", end: "2026-11-30" },
+    channels: [
+      { id: "app_store", status: "reported", net: "566.00", as_of: "2026-11-30" },
+      { id: "lemon_squeezy", status: "reported", net: "472.50", as_of: "2026-11-30" },
+    ],
+    ...over,
+  };
+}
+
+/** A synthetic two-channel campaign netting exactly these two amounts.
+ *
+ *  Both channels are always present, because the renderer requires complete evidence
+ *  from both and refuses a total that is not their sum. The total is derived with the
+ *  SHIPPED module's own `toCents`/`formatUSD`, so the harness never carries a second
+ *  copy of the money rules it exists to exercise. */
+function split(appAmount, lemonAmount) {
+  const plain = (text) => text.replace(/[$,]/g, "");
+  const total = plain(formatUSD(toCents(appAmount) + toCents(lemonAmount)));
+  const channel = (id, amount) => ({
+    id,
+    status: toCents(amount) === 0 ? "certified_zero" : "reported",
+    net: amount,
+    as_of: "2026-11-30",
+  });
+  return base({
+    status: toCents(total) === 0 ? "certified_zero" : "reported",
+    total_net: total,
+    channels: [channel("app_store", appAmount), channel("lemon_squeezy", lemonAmount)],
+  });
+}
+
+const FIXTURES = {
+  unavailable: { today: TODAY, payload: base({
+    status: "unavailable", total_net: null, campaign_start: null, as_of: null,
+    coverage: { reports: 0, start: null, end: null },
+    channels: [
+      { id: "app_store", status: "no_reports", net: null, as_of: null },
+      { id: "lemon_squeezy", status: "no_reports", net: null, as_of: null },
+    ],
+  }) },
+  zero: { today: TODAY, payload: split("0.00", "0.00") },
+  over: { today: TODAY, payload: split("250000.01", "0.00") },
+  double: { today: TODAY, payload: split("250000.00", "250000.00") },
+  stale: { today: "2027-06-01", payload: split("41625.40", "41625.35") },
+  negative: { today: TODAY, payload: base({
+    total_net: "-125.40",
+    channels: [
+      { id: "app_store", status: "reported", net: "-625.40", as_of: "2026-11-30" },
+      { id: "lemon_squeezy", status: "reported", net: "500.00", as_of: "2026-11-30" },
+    ],
+  }) },
+  // Deliberately broken: a float where a money string belongs. The correct outcome is
+  // that NOTHING changes on the page — the honest static markup stays.
+  invalid: { today: TODAY, payload: base({ total_net: 1038.5 }) },
+};
+
+/* ── driving the real page ───────────────────────────────────────────────── */
+
+function framedDocument() {
+  try {
+    return frame.contentDocument ?? null;
+  } catch {
+    return null;   // cross-origin: the repo root is not being served
+  }
+}
+
+function fundingRoot() {
+  return framedDocument()?.querySelector("[data-funding]") ?? null;
+}
+
+function note(text, warn = false) {
+  log.innerHTML = "";
+  if (warn) {
+    const b = document.createElement("b");
+    b.textContent = text;
+    log.appendChild(b);
+  } else {
+    log.appendChild(document.createTextNode(text));
+  }
+}
+
+for (const button of document.querySelectorAll("button[data-fixture]")) {
+  button.addEventListener("click", () => {
+    const root = fundingRoot();
+    if (!root) {
+      note("Cannot reach the framed document. Serve the REPOSITORY ROOT "
+         + "(python3 -m http.server 4347 --bind 127.0.0.1) and open this file over HTTP.", true);
+      return;
+    }
+    const { payload, today } = FIXTURES[button.dataset.fixture];
+    const view = fundingView(payload, today);
+    const { rendered, reset } = applyFundingView(view, root);
+    // `reset=true` is the interesting one: it means the renderer put the page BACK to
+    // the neutral state rather than leaving the previous synthetic figure on screen.
+    // Press 500,000 and then unavailable to watch that happen, with no reload.
+    note(`SYNTHETIC "${button.dataset.fixture}": view.ok=${view.ok}, state=${view.state}`
+       + (view.reason ? `, reason=${view.reason}` : "")
+       + `, figure rendered=${rendered}, page reset to neutral=${reset}.`
+       + " All amounts are fake.", true);
+  });
+}
+
+/* Scrolling the FRAMED document, because a locator at this level cannot reach inside
+   it. `#top` is the page's own id on the header bar, so "Top" uses the same mechanism as
+   the other three rather than a special case. */
+for (const button of document.querySelectorAll("button[data-jump]")) {
+  button.addEventListener("click", () => {
+    const doc = framedDocument();
+    if (!doc) {
+      note("Cannot reach the framed document. Serve the REPOSITORY ROOT and open this "
+         + "file over HTTP.", true);
+      return;
+    }
+    const id = button.dataset.jump;
+    const target = doc.getElementById(id);
+    if (!target) {
+      note(`The framed page has no #${id} anchor.`, true);
+      return;
+    }
+    target.scrollIntoView({ block: "start", behavior: "auto" });
+    note(`Scrolled the framed page to #${id}.`);
+  });
+}
+
+for (const button of document.querySelectorAll("button[data-width]")) {
+  button.addEventListener("click", () => {
+    for (const other of document.querySelectorAll("button[data-width]")) {
+      other.setAttribute("aria-pressed", String(other === button));
+    }
+    frame.style.width = `${button.dataset.width}px`;
+    measure();
+  });
+}
+
+document.getElementById("reset").addEventListener("click", () => {
+  // eslint-disable-next-line no-self-assign
+  frame.src = frame.src;
+  note("Reloaded the real page against the real docs/data/net-sales.json.");
+});
+
+document.getElementById("openplain").addEventListener("click", () => {
+  window.open(frame.src, "_blank", "noopener");
+});
+
+/** Width and overflow readback, so root can confirm the iframe really is at the
+ *  breakpoint being tested and see horizontal overflow without opening DevTools. */
+function measure() {
+  const requested = document.querySelector('button[data-width][aria-pressed="true"]');
+  const want = requested ? Number(requested.dataset.width) : null;
+  const outer = Math.round(frame.getBoundingClientRect().width);
+  let inner = "?", scroll = "?", overflow = "?";
+  try {
+    const win = frame.contentWindow;
+    const doc = frame.contentDocument;
+    if (win && doc?.documentElement) {
+      inner = win.innerWidth;
+      scroll = doc.documentElement.scrollWidth;
+      overflow = scroll > inner + 1 ? `YES (+${scroll - inner}px)` : "no";
+    }
+  } catch { /* cross-origin */ }
+  const exact = want === null ? "?" : (inner === want ? "yes" : `NO (wanted ${want}px)`);
+  readback.textContent = "";
+  readback.append(
+    document.createTextNode("requested "),
+    Object.assign(document.createElement("b"), { textContent: `${want ?? "?"}px` }),
+    document.createTextNode("  box "),
+    Object.assign(document.createElement("b"), { textContent: `${outer}px` }),
+    document.createTextNode("  viewport "),
+    Object.assign(document.createElement("b"), { textContent: `${inner}px` }),
+    document.createTextNode("  exact "),
+    Object.assign(document.createElement("b"), { textContent: exact }),
+    document.createTextNode("  scrollWidth "),
+    Object.assign(document.createElement("b"), { textContent: `${scroll}px` }),
+    document.createTextNode("  h-overflow "),
+    Object.assign(document.createElement("b"), { textContent: String(overflow) }),
+  );
+}
+
+frame.addEventListener("load", measure);
+window.addEventListener("resize", measure);
+measure();
+</script>
+</body>
+</html>

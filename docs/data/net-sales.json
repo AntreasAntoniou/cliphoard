@@ -1,0 +1,30 @@
+{
+  "schema": "cliphoard.net-sales/2",
+  "status": "unavailable",
+  "currency": "USD",
+  "goal": "250000.00",
+  "total_net": null,
+  "campaign_start": null,
+  "as_of": null,
+  "generated": "2026-10-22",
+  "basis": "Provider-reported net earnings since the campaign start, after customer taxes, platform and payment fees, refunds, chargebacks and reported adjustments, and before income tax and running costs. Reconciled monthly from provider reports; not a current bank balance.",
+  "coverage": {
+    "reports": 0,
+    "start": null,
+    "end": null
+  },
+  "channels": [
+    {
+      "id": "app_store",
+      "status": "no_reports",
+      "net": null,
+      "as_of": null
+    },
+    {
+      "id": "lemon_squeezy",
+      "status": "no_reports",
+      "net": null,
+      "as_of": null
+    }
+  ]
+}
