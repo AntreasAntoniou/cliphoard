@@ -5,27 +5,111 @@
  * and `/cliphoard/` when it does not — so every URL in here and in index.html is
  * RELATIVE. A single leading slash anywhere would 404 the whole page on the subpath.
  *
- * The palette is fixed rather than theme-switched: six values, one accent. Everything
- * that is not type is a hairline, which is what leaves room for the one loud element
- * on the page (the goal ruler in #funding) to actually be loud.
+ * TWO THEMES, AND THEY ARE THE APP'S OWN. Light is Swiss Grayscale — neutral greys and
+ * one blue, the preset the app shows in Light Mode. Dark is One Dark, at the exact
+ * hexes `Sources/Cliphoard/UI/Theme.swift` ships: #21252b ground, #282c34 panel,
+ * #61afef accent. A test reads those values out of the Swift file and fails if the two
+ * drift apart, because the point of this page is to look like the thing you download.
+ *
+ * Everything that is not type is a hairline, and the radii are the app's own 9–12px.
+ * That restraint is what leaves room for the one loud element on the page (the goal
+ * ruler in #funding) to actually be loud.
+ *
+ * HOW THE THEME IS CHOSEN. `:root` is light. The dark palette is declared TWICE, with
+ * identical values:
+ *
+ *   - inside `prefers-color-scheme: dark`, scoped to `:root:not([data-theme="light"])`
+ *   - on `:root[data-theme="dark"]`, which `assets/appearance.js` sets
+ *
+ * The first copy is the whole System path: with JavaScript blocked the page still
+ * follows the OS, and an OS appearance change retints it with no reload and no script.
+ * The `:not()` is what lets an explicit LIGHT choice win under a dark OS — the media
+ * block simply stops applying and `:root` stands. The duplication is deliberate and
+ * tested for parity: `light-dark()` would collapse it to one declaration, but a Safari
+ * 16 visitor on the macOS 13 this app supports would get invalid custom properties and
+ * an unreadable page, which is a worse failure than repeating nine lines.
  */
 
 :root{
-  --ice:#F4F8FC;        /* page ground */
-  --white:#FFFFFF;      /* raised surfaces: plates, tables, the letter */
-  --ink:#18263A;        /* body and display type */
-  --slate:#57687C;      /* secondary type, captions */
-  --ocean:#2368C4;      /* the single accent: links, buttons, the ruler fill */
-  --pale:#DCEBFA;       /* tints and the ruler trough */
-  --line:#CBDAEA;       /* hairlines — derived, sits between pale and slate */
+  color-scheme:light;
+
+  /* Swiss Grayscale. The app's own light preset, at its own values: `Theme.swift`
+   * builds it from `Color(.sRGB, white:)`, so these are literally those whites rounded
+   * to 8 bits — 0.96 is #F5F5F5, 0.82 is #D1D1D1, 0.93 is #EDEDED. Greyscale means
+   * greyscale: the only colour in the light theme is the blue. */
+  --ground:#F5F5F5;     /* page ground — swiss barFill, white 0.96 */
+  --panel:#FFFFFF;      /* plates, tables, the letter — swiss cardFill, .white */
+  --text:#1D1D1D;       /* body and display type */
+  --muted:#5E5E5E;      /* secondary type, captions */
+  --line:#D1D1D1;       /* hairlines — swiss border, white 0.82 */
+  --accent:#2368C4;     /* links, buttons, the ruler fill */
+
+  /* Derived roles.
+   * `--accent` is the app's Swiss blue (#2980F5) darkened one stop, because one value
+   * has to work in both directions: as link text ON the ground (5.0:1) and as a fill
+   * UNDER white text (5.5:1). #2980F5 manages 3.8:1 either way and fails both.
+   * `--muted` is the app's Swiss secondary grey (#6B6B6B) darkened for the same reason
+   * — #6B6B6B reaches only 4.88:1 on a 0.96-white ground, which is AA with no margin
+   * left for a cheap display. */
+  --tint:#EDEDED;       /* code, table heads, the ruler trough — swiss tagFill, 0.93 */
+  --accent-hover:#174E99;
+  --on-accent:#FFFFFF;  /* NEVER --panel: the dark theme needs DARK text on its accent */
+  --focus:#2368C4;
+  --disabled-fg:#8A8A8A; /* exempt from 1.4.3, which excludes inactive controls */
+  --disabled-bg:#E6E6E6;
 
   --spine:46rem;        /* the text measure, ~68ch at 17px */
   --letter-measure:38rem;
   --page:70rem;         /* plates, tables and the ruler run wider than the prose */
 
-  --r-s:4px;
-  --r-m:8px;
-  --r-l:12px;
+  --r-s:5px;
+  --r-m:9px;            /* Theme.swift swiss cornerRadius */
+  --r-l:12px;           /* Theme.swift oneDark cornerRadius */
+}
+
+/* One Dark — the System path. No JavaScript required, and no reload on an OS change.
+ *
+ * `--ground`, `--panel` and `--accent` are byte-for-byte the hexes `Theme.swift` passes
+ * to `editor(bg:panel:accent:)` for the oneDark preset, and a test reads them out of
+ * that Swift file. `--line` and `--tint` are the app's own `Color.white.opacity(0.10)`
+ * and `0.07` borders and tag fills COMPOSITED over the panel, because CSS has no
+ * equivalent of a translucent fill that does not also fade the text on top of it.
+ * `--muted` is One Dark's comment grey #9097a3 lifted two stops: at its own value it
+ * reads 4.76:1 on the panel and 4.42:1 on the tint, and the second of those is a fail.
+ */
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --ground:#21252B;
+    --panel:#282C34;
+    --text:#D7DAE0;
+    --muted:#A3ABB8;
+    --line:#3D4148;
+    --accent:#61AFEF;
+    --tint:#373B42;
+    --accent-hover:#8CC6F4;
+    --on-accent:#1B1F24;
+    --focus:#61AFEF;
+    --disabled-fg:#6B7280;
+    --disabled-bg:#33373E;
+  }
+}
+
+/* One Dark — an explicit choice. Identical to the block above, by test. */
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --ground:#21252B;
+  --panel:#282C34;
+  --text:#D7DAE0;
+  --muted:#A3ABB8;
+  --line:#3D4148;
+  --accent:#61AFEF;
+  --tint:#373B42;
+  --accent-hover:#8CC6F4;
+  --on-accent:#1B1F24;
+  --focus:#61AFEF;
+  --disabled-fg:#6B7280;
+  --disabled-bg:#33373E;
 }
 
 *,*::before,*::after{box-sizing:border-box}
@@ -33,8 +117,8 @@ html{-webkit-text-size-adjust:100%}
 body,h1,h2,h3,p,dl,dd,dt,ul,li,figure,blockquote,table{margin:0;padding:0}
 
 body{
-  background:var(--ice);
-  color:var(--ink);
+  background:var(--ground);
+  color:var(--text);
   font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",Arial,sans-serif;
   font-size:1.0625rem;      /* 17px */
   line-height:1.6;
@@ -43,16 +127,16 @@ body{
 }
 
 /* ── links and focus ─────────────────────────────────────────────────────────
- * The focus ring is drawn in ocean on a 3px outline with an offset, so it is
- * visible against both the ice ground and the white surfaces. Never removed.
+ * The focus ring is drawn in `--focus` on a 3px outline with an offset, so it clears
+ * 3:1 against both the ground and the panels in either theme. Never removed.
  */
-a{color:var(--ocean);text-decoration:underline;text-underline-offset:.15em;text-decoration-thickness:1px}
-a:hover{text-decoration-thickness:2px}
-:focus-visible{outline:3px solid var(--ocean);outline-offset:2px;border-radius:2px}
+a{color:var(--accent);text-decoration:underline;text-underline-offset:.15em;text-decoration-thickness:1px}
+a:hover{color:var(--accent-hover);text-decoration-thickness:2px}
+:focus-visible{outline:3px solid var(--focus);outline-offset:2px;border-radius:2px}
 
 .skip{
   position:absolute;left:-9999px;top:0;z-index:10;
-  background:var(--white);color:var(--ink);padding:.7rem 1rem;
+  background:var(--panel);color:var(--text);padding:.7rem 1rem;
   border:1px solid var(--line);border-radius:0 0 var(--r-m) 0;text-decoration:none;font-weight:600;
 }
 .skip:focus{left:0}
@@ -78,28 +162,55 @@ h3{font-size:1.375rem;line-height:1.25;letter-spacing:-.01em;font-weight:650;mar
 h3 + .lead,h3 + p{margin-top:.6rem}
 .facts h3,.letter h3{margin-top:0;font-size:1.0625rem;line-height:1.35}
 p + p{margin-top:.95rem}
-.lead{font-size:1.1875rem;line-height:1.55;color:var(--slate);max-width:var(--spine)}
-.note{font-size:.84375rem;line-height:1.5;color:var(--slate)}
+.lead{font-size:1.1875rem;line-height:1.55;color:var(--muted);max-width:var(--spine)}
+.note{font-size:.84375rem;line-height:1.5;color:var(--muted)}
 code{
   font-family:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
-  font-size:.9em;background:var(--pale);border-radius:var(--r-s);padding:.1em .35em;
+  font-size:.9em;background:var(--tint);border-radius:var(--r-s);padding:.1em .35em;
 }
 kbd{
   font-family:inherit;font-weight:650;font-size:.95em;
-  background:var(--white);border:1px solid var(--line);border-bottom-width:2px;
+  background:var(--panel);border:1px solid var(--line);border-bottom-width:2px;
   border-radius:var(--r-s);padding:.05em .35em;white-space:nowrap;
 }
 
-/* ── nav ─────────────────────────────────────────────────────────────────── */
-.topbar{border-bottom:1px solid var(--line);background:var(--ice)}
-.topbar .page{display:flex;flex-wrap:wrap;gap:.5rem 1.5rem;align-items:center;padding-block:.9rem}
-.wordmark{display:flex;align-items:center;gap:.55rem;font-weight:700;font-size:1.0625rem;color:var(--ink);text-decoration:none}
+/* ── nav ─────────────────────────────────────────────────────────────────────
+ * Three things share one row on a wide screen and the row was too tight: the wordmark,
+ * five section links and the appearance control. The row gap is now real, the nav has
+ * breathing room, and below 52rem the nav drops to a line of its own (`order` + a
+ * 100% basis) instead of being squeezed in beside the control.
+ */
+.topbar{border-bottom:1px solid var(--line);background:var(--ground)}
+.topbar .page{display:flex;flex-wrap:wrap;gap:.65rem 1.75rem;align-items:center;padding-block:.9rem}
+.wordmark{display:flex;align-items:center;gap:.55rem;font-weight:700;font-size:1.0625rem;
+  color:var(--text);text-decoration:none;margin-right:auto}
 .wordmark img{display:block;border-radius:6px}
-.topbar nav{margin-left:auto}
-.topbar nav ul{display:flex;flex-wrap:wrap;gap:.25rem 1.1rem;list-style:none}
-.topbar nav a{color:var(--slate);text-decoration:none;font-size:.9375rem;padding:.15rem 0;border-bottom:2px solid transparent}
-.topbar nav a:hover{color:var(--ink)}
-.topbar nav a[aria-current="true"]{color:var(--ink);border-bottom-color:var(--ocean)}
+.topbar nav{order:1}
+.topbar nav ul{display:flex;flex-wrap:wrap;gap:.3rem 1.3rem;list-style:none}
+.topbar nav a{color:var(--muted);text-decoration:none;font-size:.9375rem;padding:.2rem 0;border-bottom:2px solid transparent}
+.topbar nav a:hover{color:var(--text)}
+.topbar nav a[aria-current="true"]{color:var(--text);border-bottom-color:var(--accent)}
+
+/* ── the appearance choice ───────────────────────────────────────────────────
+ * A native <select>, kept native on purpose: it is keyboard-operable, announces its
+ * own label and selected option, and `color-scheme` makes the popup match the theme
+ * without a line of styling. It ships carrying `hidden`, and appearance.js is what
+ * removes that — so with JavaScript blocked the control is never offered, and the
+ * page quietly follows the OS instead. `[hidden]` is restated here because the
+ * `display:flex` below would otherwise defeat the attribute.
+ */
+.appearance{display:flex;align-items:center;gap:.45rem;order:2;font-size:.9375rem;color:var(--muted)}
+.appearance[hidden]{display:none}
+.appearance label{white-space:nowrap}
+.appearance select{
+  font:inherit;font-size:.9375rem;
+  color:var(--text);background:var(--panel);
+  /* `--muted`, not `--line`. Styling the select replaces the UA's own border, and a
+   * hairline is 1.5:1 against the panel — below the 3:1 that 1.4.11 wants for the
+   * boundary of a control you are meant to find and operate. A hairline is right for
+   * a table rule and wrong for a control. */
+  border:1px solid var(--muted);border-radius:var(--r-s);padding:.2rem .4rem;
+}
 
 /* ── hero ────────────────────────────────────────────────────────────────── */
 .hero{padding-block:3.5rem 0}
@@ -107,43 +218,64 @@ kbd{
 .hero-head img{display:block;width:6rem;height:6rem;border-radius:1.25rem;flex:0 0 auto}
 .hero .lead{margin-top:1.1rem}
 
-.actions{display:flex;flex-wrap:wrap;gap:.75rem;margin-top:1.75rem}
+.actions{display:flex;flex-wrap:wrap;gap:.85rem;margin-top:1.9rem}
 .btn{
   display:inline-block;font:inherit;font-weight:650;
   padding:.7rem 1.15rem;border-radius:var(--r-m);text-decoration:none;
-  border:1px solid var(--ocean);
+  border:1px solid var(--accent);
 }
-.btn-solid{background:var(--ocean);color:var(--white)}
-.btn-solid:hover{background:#1b55a6}
-.btn-line{background:var(--white);color:var(--ocean)}
-.btn-line:hover{background:var(--pale)}
+.btn-solid{background:var(--accent);color:var(--on-accent)}
+.btn-solid:hover{background:var(--accent-hover);border-color:var(--accent-hover);color:var(--on-accent)}
+.btn-line{background:var(--panel);color:var(--accent)}
+.btn-line:hover{background:var(--tint);color:var(--accent)}
+.btn[aria-disabled="true"],.btn:disabled{
+  background:var(--disabled-bg);border-color:var(--line);color:var(--disabled-fg);
+  cursor:default;pointer-events:none;
+}
 
-/* The purpose, in the first screen. One sentence at lead size with an ocean rule, so the
- * research goal is readable before anything is scrolled. Not a banner and not a box: it
- * is a line of the hero's own prose. */
+/* The purpose, in the first screen. One sentence at lead size with an accent rule, so
+ * the research goal is readable before anything is scrolled. Not a banner and not a
+ * box: it is a line of the hero's own prose. */
 .purpose{
   margin-top:1.4rem;max-width:var(--spine);font-size:1.0625rem;
-  border-left:3px solid var(--ocean);padding-left:1rem;
+  border-left:3px solid var(--accent);padding-left:1rem;
 }
-/* Release status as two plain lines under the buttons, not a warning panel. The old
- * bordered block dominated the first screen; this says the same two facts in the flow. */
-.note.release{margin-top:1.1rem;max-width:var(--spine);color:var(--ink)}
-.note.release + .note{margin-top:.5rem}
+/* The source note sat directly under the buttons with nothing between them, which read
+ * as part of the button row. These three rules are the whole spacing fix: a clear gap
+ * after the actions, a smaller one between consecutive notes, and the release status as
+ * two plain lines rather than a warning panel. */
+.actions + .note{margin-top:1.05rem}
+.note + .note{margin-top:.55rem}
+.note.release{margin-top:1.25rem;max-width:var(--spine);color:var(--text)}
+.note.release + .note{margin-top:.55rem}
 .status-line{margin-top:1.1rem}
 
-/* ── plates: the real screenshots ────────────────────────────────────────── */
+/* ── plates: the real screenshots ────────────────────────────────────────────
+ * The bar is 3456px wide and its type is small, so a screenshot shown at half the
+ * content width is decoration rather than evidence. The pairing survives where the
+ * thing being compared is the COLOUR (the theme plates); the two search results, where
+ * you have to read a query and its answer, each get the full content width. Every
+ * figure also carries an ordinary link to the PNG, so any of them can be opened at its
+ * real size — no lightbox, no script, no second copy of the image.
+ */
 figure.plate{margin-top:3rem}
-figure.plate img{
+figure.plate img,figure.shot img{
   display:block;width:100%;height:auto;
-  border:1px solid var(--line);border-radius:var(--r-l);background:var(--white);
+  border:1px solid var(--line);border-radius:var(--r-l);background:var(--panel);
 }
-figure.plate figcaption{margin-top:.6rem;font-size:.84375rem;color:var(--slate)}
+figure.plate figcaption,figure.shot figcaption{margin-top:.6rem;font-size:.84375rem;color:var(--muted)}
+
+.shots{margin-top:2rem;display:grid;gap:2rem}
+.shots figure{margin:0}
+.shots figcaption b{color:var(--text);font-weight:650}
 
 .plates-2{display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;margin-top:2rem}
 .plates-2 figure{margin:0}
-.plates-2 img{display:block;width:100%;height:auto;border:1px solid var(--line);border-radius:var(--r-m);background:var(--white)}
-.plates-2 figcaption{margin-top:.55rem;font-size:.875rem;color:var(--slate)}
-.plates-2 figcaption b{color:var(--ink);font-weight:650}
+.plates-2 img{display:block;width:100%;height:auto;border:1px solid var(--line);border-radius:var(--r-m);background:var(--panel)}
+.plates-2 figcaption{margin-top:.55rem;font-size:.875rem;color:var(--muted)}
+.plates-2 figcaption b{color:var(--text);font-weight:650}
+
+.full-size{white-space:nowrap}
 
 /* ── the facts list: hairline rows, not cards ────────────────────────────── */
 .facts{margin-top:2.25rem;border-top:1px solid var(--line)}
@@ -152,19 +284,34 @@ figure.plate figcaption{margin-top:.6rem;font-size:.84375rem;color:var(--slate)}
   padding:1.15rem 0;border-bottom:1px solid var(--line);
 }
 .facts dt{font-weight:650}
-.facts dd{color:var(--slate);max-width:44rem}
+.facts dd{color:var(--muted);max-width:44rem}
 
-/* ── tables ──────────────────────────────────────────────────────────────── */
-.tablewrap{margin-top:2rem;overflow-x:auto;-webkit-overflow-scrolling:touch}
-table{border-collapse:collapse;width:100%;min-width:34rem;background:var(--white);
+/* ── tables ──────────────────────────────────────────────────────────────────
+ * `min-width:34rem` belongs to the WIDE technical table — six columns of model
+ * metadata that genuinely cannot fold. It used to apply to every table, which pushed
+ * the Free and Pro columns of the comparison off the right edge of a 320px phone: the
+ * reader saw a feature list and no answers. The comparison now has its own class, no
+ * minimum, a fixed layout and declared column proportions, so all three columns are on
+ * screen at 320px. Only the wide table scrolls, and `.scrolls` is focusable so a
+ * keyboard can reach that scroll.
+ */
+.tablewrap{margin-top:2rem}
+.tablewrap.scrolls{overflow-x:auto;-webkit-overflow-scrolling:touch}
+table{border-collapse:collapse;width:100%;min-width:34rem;background:var(--panel);
   border:1px solid var(--line);border-radius:var(--r-m);font-size:1rem}
-caption{caption-side:bottom;text-align:left;font-size:.84375rem;color:var(--slate);padding-top:.8rem;max-width:var(--spine)}
+caption{caption-side:bottom;text-align:left;font-size:.84375rem;color:var(--muted);padding-top:.8rem;max-width:var(--spine)}
 th,td{text-align:left;padding:.7rem .9rem;border-bottom:1px solid var(--line);vertical-align:top}
-thead th{font-weight:650;background:var(--pale);white-space:nowrap}
+thead th{font-weight:650;background:var(--tint);white-space:nowrap}
 tbody tr:last-child th,tbody tr:last-child td{border-bottom:0}
-td small,th small{display:block;font-weight:400;color:var(--slate);font-size:.84375rem;line-height:1.4;margin-top:.15rem}
-.yes{color:var(--ocean);font-weight:650}
-.no{color:var(--slate)}
+td small,th small{display:block;font-weight:400;color:var(--muted);font-size:.84375rem;line-height:1.4;margin-top:.15rem}
+.yes{color:var(--accent);font-weight:650}
+.no{color:var(--muted)}
+
+table.compare{min-width:0;table-layout:fixed}
+table.compare thead th:first-child{width:62%}
+table.compare thead th:nth-child(2),table.compare thead th:nth-child(3){width:19%;text-align:center}
+table.compare td{text-align:center}
+table.compare th[scope="row"]{overflow-wrap:break-word;hyphens:auto}
 
 /* ── #funding: the one loud element ──────────────────────────────────────── */
 .goal{margin-top:2.5rem}
@@ -174,24 +321,33 @@ td small,th small{display:block;font-weight:400;color:var(--slate);font-size:.84
   font-size:clamp(1.75rem,5vw,3rem);line-height:1.05;font-weight:600;letter-spacing:-.02em;
   display:block;
 }
-.goal-figure.absent{font-size:clamp(1.25rem,3vw,1.75rem);color:var(--slate);font-weight:500;letter-spacing:0}
-.goal-of{display:block;font-size:1rem;color:var(--slate);margin-top:.4rem}
+/* "No reconciled reports available." is a STATUS, not a number. Rendered in the display
+ * monospace it read as a debug dump of a failed fetch; the honest rendering of "we do
+ * not know yet" is a calm line of the page's own prose. The amount keeps the monospace
+ * above, because an amount is a figure you compare against the ruler. */
+.goal-figure.absent{
+  font-family:inherit;font-variant-numeric:normal;
+  font-size:1.0625rem;line-height:1.55;font-weight:400;letter-spacing:0;
+  color:var(--muted);
+}
+.goal-of{display:block;font-size:1rem;color:var(--muted);margin-top:.4rem}
 .goal-of b{font-family:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
-  font-variant-numeric:tabular-nums;color:var(--ink);font-weight:600}
+  font-variant-numeric:tabular-nums;color:var(--text);font-weight:600}
+.goal-figure.absent + .goal-of{margin-top:.25rem}
 
 /* The ruler. A measuring instrument: a trough, an optional fill, and six labelled
  * ticks. With no data it is still a ruler showing where $250,000 is, which is the
  * honest rendering of "we do not know yet" — not a 0% bar. */
 .ruler{margin-top:1.5rem}
 .ruler-trough{
-  position:relative;height:1.25rem;background:var(--pale);
+  position:relative;height:1.25rem;background:var(--tint);
   border:1px solid var(--line);border-radius:var(--r-s);overflow:hidden;
 }
-.ruler-fill{height:100%;width:0;background:var(--ocean);border-radius:2px 0 0 2px}
+.ruler-fill{height:100%;width:0;background:var(--accent);border-radius:2px 0 0 2px}
 .ruler-scale{display:flex;justify-content:space-between;margin-top:.4rem}
 .ruler-scale span{
   position:relative;padding-top:.5rem;
-  font-size:.75rem;color:var(--slate);
+  font-size:.75rem;color:var(--muted);
   font-variant-numeric:tabular-nums;
 }
 .ruler-scale span::before{
@@ -200,34 +356,41 @@ td small,th small{display:block;font-weight:400;color:var(--slate);font-size:.84
 .ruler-scale span:first-child::before{left:0}
 .ruler-scale span:last-child::before{right:0}
 .ruler-scale span:not(:first-child):not(:last-child)::before{left:50%}
-.ruler-scale span:last-child{color:var(--ink);font-weight:650}
+.ruler-scale span:last-child{color:var(--text);font-weight:650}
 
 .beyond{margin-top:.9rem;font-size:1rem}
 .beyond b{font-family:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;font-variant-numeric:tabular-nums}
-.stale{margin-top:.9rem;font-size:1rem;border-left:3px solid var(--line);padding-left:.9rem;color:var(--slate)}
+.stale{margin-top:.9rem;font-size:1rem;border-left:3px solid var(--line);padding-left:.9rem;color:var(--muted)}
 
 .channels{margin-top:2.25rem;border-top:1px solid var(--line);max-width:var(--spine)}
 .channels > div{display:flex;flex-wrap:wrap;gap:.25rem 1rem;justify-content:space-between;
   padding:.8rem 0;border-bottom:1px solid var(--line)}
 .channels dt{font-weight:650}
-.channels dd{font-variant-numeric:tabular-nums;color:var(--slate)}
-.channels dd.amount{font-family:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;color:var(--ink)}
+.channels dd{font-variant-numeric:tabular-nums;color:var(--muted)}
+.channels dd.amount{font-family:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;color:var(--text)}
 
-.asof{margin-top:1.1rem;font-size:.84375rem;color:var(--slate)}
+.asof{margin-top:1.1rem;font-size:.84375rem;color:var(--muted)}
 
-/* ── the letter ──────────────────────────────────────────────────────────── */
+/* ── the letter ──────────────────────────────────────────────────────────────
+ * A reading panel, in the app's own system type. The old Iowan Old Style setting was
+ * the one thing on this page that came from no part of the product — Cliphoard ships a
+ * serif in exactly one of its seventeen themes — and at 19px over a full measure it
+ * read as a printed pamphlet pasted into a Mac app. The distinction now comes from
+ * composition rather than a borrowed typeface: a flat panel, a 38rem measure, and more
+ * line spacing than the rest of the page gets.
+ */
 .letter{
-  background:var(--white);border:1px solid var(--line);border-radius:var(--r-l);
+  background:var(--panel);border:1px solid var(--line);border-radius:var(--r-l);
   padding:clamp(1.5rem,4vw,3rem);margin-top:2.5rem;max-width:calc(var(--letter-measure) + 6rem);
 }
 .letter p{
-  font-family:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,"Times New Roman",serif;
-  font-size:1.1875rem;line-height:1.72;max-width:var(--letter-measure);
+  font-size:1.125rem;line-height:1.72;max-width:var(--letter-measure);
+  text-wrap:pretty;
 }
-.letter p + p{margin-top:1.1rem}
+.letter p + p{margin-top:1.15rem}
 .letter h2{margin-bottom:1.25rem}
-.letter .signoff{margin-top:1.5rem;font-family:inherit;font-size:1rem;color:var(--slate)}
-.letter .signoff b{color:var(--ink);font-weight:650;display:block;font-size:1.0625rem}
+.letter .signoff{margin-top:1.75rem;font-size:1rem;color:var(--muted)}
+.letter .signoff b{color:var(--text);font-weight:650;display:block;font-size:1.0625rem}
 
 .links{display:flex;flex-wrap:wrap;gap:.4rem 1.25rem;margin-top:1.5rem;list-style:none;font-size:1rem}
 
@@ -243,22 +406,32 @@ details.deep > summary{
   display:flex;align-items:center;gap:.5rem;
 }
 details.deep > summary::-webkit-details-marker{display:none}
-details.deep > summary::before{content:"+";color:var(--ocean);font-weight:700;width:1ch}
+details.deep > summary::before{content:"+";color:var(--accent);font-weight:700;width:1ch}
 details.deep[open] > summary::before{content:"–"}
-details.deep > summary:hover{color:var(--ocean)}
+details.deep > summary:hover{color:var(--accent)}
 details.deep > *:last-child{margin-bottom:1.5rem}
 
 /* ── footer ──────────────────────────────────────────────────────────────── */
-footer{border-top:1px solid var(--line);padding-block:2.5rem;font-size:.9375rem;color:var(--slate)}
+footer{border-top:1px solid var(--line);padding-block:2.5rem;font-size:.9375rem;color:var(--muted)}
 footer .page{display:flex;flex-wrap:wrap;gap:.75rem 2rem;justify-content:space-between;align-items:center}
 footer ul{display:flex;flex-wrap:wrap;gap:.4rem 1.25rem;list-style:none}
 
 /* ── responsive: 320px is the floor ──────────────────────────────────────── */
 @media (max-width:52rem){
+  /* The nav takes a row of its own rather than competing with the appearance control
+     for what is left of the wordmark's row. */
+  .topbar nav{order:3;flex-basis:100%}
   .facts > div{grid-template-columns:1fr;gap:.25rem}
   .plates-2{grid-template-columns:1fr}
 }
 @media (max-width:30rem){
+  /* The topbar's three items cannot be fitted by arithmetic at 320px: their widths
+     come from text metrics, and a near-miss is a horizontal scrollbar on the whole
+     page. So the narrow layout is made DETERMINISTIC instead — the appearance control
+     takes a row of its own, right-aligned, after the nav. Nothing here depends on how
+     wide "Cliphoard" or "Appearance" happen to render. */
+  .topbar .page{gap:.5rem 1rem}
+  .appearance{order:4;flex-basis:100%;justify-content:flex-end}
   section{padding-block:3rem}
   .hero{padding-block:2.25rem 0}
   .hero-head{flex-direction:column;gap:1rem}
@@ -269,6 +442,12 @@ footer ul{display:flex;flex-wrap:wrap;gap:.4rem 1.25rem;list-style:none}
      keeps the headline at its two intended lines instead of wrapping to three. */
   h1{font-size:1.875rem;letter-spacing:-.015em}
   .actions .btn{width:100%;text-align:center}
+  /* 19% of a 288px content box is 54.7px. At the 0.9rem desktop padding that leaves
+     26px for "Yes", which wraps; at 0.4rem it leaves 42px, which does not. The
+     comparison is the one table that must fit, so it is the one that gets the tighter
+     cells. */
+  table.compare{font-size:.9375rem}
+  table.compare th,table.compare td{padding:.6rem .4rem}
   /* Narrow screens thin the scale out, but NEVER at the ends. The old rule hid every
      even span, and the goal tick is the sixth — so a 320px phone showed $0, $100k and
      $200k and no $250,000 at all, which is the one label the ruler exists to carry.
@@ -285,7 +464,38 @@ footer ul{display:flex;flex-wrap:wrap;gap:.4rem 1.25rem;list-style:none}
   *,*::before,*::after{animation-duration:.01ms !important;animation-iteration-count:1 !important;
     transition-duration:.01ms !important;scroll-behavior:auto !important}
 }
+
+/* ── print ───────────────────────────────────────────────────────────────────
+ * A print palette, not a copy of the light one. It is applied to `[data-theme="dark"]`
+ * as well, because somebody who chose Dark and then pressed Cmd-P wants a readable
+ * page, not #21252b sprayed across a sheet of paper.
+ */
 @media print{
-  .topbar,.skip{display:none}
+  /* EVERY root selector a screen palette can match, because `prefers-color-scheme` is
+   * a user preference and keeps matching while printing. On a dark Mac left at System
+   * the screen palette matches `:root:not([data-theme="light"])` at (0,2,0), so a print
+   * block selecting only `:root` at (0,1,0) lost the cascade wherever it sat in the
+   * file: #D7DAE0 text on the white `body` below, 1.4:1. Listing all three ties or
+   * beats each of them on specificity, and the print block being last breaks the ties.
+   */
+  :root,
+  :root:not([data-theme="light"]),
+  :root[data-theme="dark"]{
+    color-scheme:light;
+    --ground:#FFFFFF;
+    --panel:#FFFFFF;
+    --text:#111111;
+    --muted:#444444;
+    --line:#999999;
+    --accent:#13457F;
+    --tint:#EEEEEE;
+    --accent-hover:#13457F;
+    --on-accent:#FFFFFF;
+    --focus:#13457F;
+    --disabled-fg:#666666;
+    --disabled-bg:#EEEEEE;
+  }
+  .topbar,.skip,.appearance{display:none}
   body{background:#fff}
+  figure.plate,figure.shot,.plates-2 figure,table{break-inside:avoid}
 }

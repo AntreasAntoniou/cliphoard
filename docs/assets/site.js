@@ -1,8 +1,14 @@
-/* Cliphoard — the page's only entry point.
+/* Cliphoard — the page's deferred entry point.
  *
  * Two jobs, and deliberately nothing else: boot the funding figure, and mark which
  * section the reader is currently in. No analytics, no tracking, no remote script, no
  * font request, no cookie, no storage. The page is fully usable with this file blocked.
+ *
+ * The appearance choice is NOT here, and the split is not arbitrary: this is a module,
+ * so it is deferred and runs after first paint, and a saved Dark choice applied from
+ * here would flash the light page first. `assets/appearance.js` is a blocking classic
+ * script in <head> for exactly that reason, and it is the only file on this site that
+ * touches storage.
  */
 
 import { bootFunding } from "./funding.js";

@@ -12,6 +12,21 @@
 <link rel="canonical" href="https://cliphoard.dev/">
 <link rel="icon" type="image/png" href="img/icon.png">
 <link rel="apple-touch-icon" href="img/icon@512.png">
+
+<!-- The two grounds of the two themes, and the only place these hexes appear outside
+     the stylesheet. They are media-scoped so the browser chrome follows the OS with no
+     JavaScript at all; appearance.js rewrites BOTH entries to the chosen ground when a
+     visitor has made an explicit choice, so whichever one the browser matches is the
+     colour actually on screen. A test pins all three copies together. -->
+<meta name="theme-color" content="#F5F5F5" media="(prefers-color-scheme: light)" data-scheme="light">
+<meta name="theme-color" content="#21252B" media="(prefers-color-scheme: dark)" data-scheme="dark">
+
+<!-- BEFORE the stylesheet, and a classic script rather than a module, because a module
+     is deferred: it would run after first paint and a visitor who chose Dark would see
+     the light page flash first. This is the only reason it is not in site.js. It stores
+     nothing but the appearance choice and talks to nothing. -->
+<script src="assets/appearance.js"></script>
+
 <link rel="stylesheet" href="assets/site.css">
 
 <!-- The description states the INTENDED purpose of the net sales. It deliberately does
@@ -24,7 +39,6 @@
 <meta property="og:image" content="https://raw.githubusercontent.com/AntreasAntoniou/cliphoard/main/docs/img/logo.png">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:image" content="https://raw.githubusercontent.com/AntreasAntoniou/cliphoard/main/docs/img/logo.png">
-<meta name="theme-color" content="#F4F8FC">
 </head>
 <body>
 
@@ -36,6 +50,17 @@
       <img src="img/icon.png" alt="" width="28" height="28">
       Cliphoard
     </a>
+    <!-- Shipped hidden and unhidden by assets/appearance.js. With JavaScript blocked
+         the control is never offered and the stylesheet's prefers-color-scheme block
+         follows the OS instead, which is the same behaviour System gives. -->
+    <div class="appearance" id="appearance-control" hidden>
+      <label for="appearance">Appearance</label>
+      <select id="appearance">
+        <option value="system">System</option>
+        <option value="light">Light</option>
+        <option value="dark">Dark</option>
+      </select>
+    </div>
     <nav aria-label="Sections of this page">
       <ul>
         <li><a href="#funding">The goal</a></li>
@@ -81,7 +106,8 @@
 
   <figure class="plate">
     <img src="img/bar-oneDark.png" alt="The Cliphoard bar across the bottom of the screen, showing recent clips as a row of cards with tags and timestamps" width="3456" height="724">
-    <figcaption>The bar, in the One Dark theme. It opens over whatever you were doing and closes again.</figcaption>
+    <figcaption>The bar, in the One Dark theme. It opens over whatever you were doing and
+      closes again. <a class="full-size" href="img/bar-oneDark.png">View full size</a></figcaption>
   </figure>
 </header>
 
@@ -242,25 +268,34 @@
   <h3>Search, actually working</h3>
   <p class="lead">Two real queries against a real history. Neither result shares a word with
     the query that found it.</p>
-  <div class="plates-2">
-    <figure>
+  <!-- One per row, not side by side. These two are the page's evidence rather than its
+       decoration: you have to be able to READ the query and the clip it found, and at
+       half the content width a 3456px-wide bar makes that type too small to read. -->
+  <div class="shots">
+    <figure class="shot">
       <img src="img/search-neural.png" alt="Cliphoard in Neural search mode: the query 'revert my last commit' has returned the clip 'git reset --soft HEAD~1'" width="3456" height="724" loading="lazy">
-      <figcaption><b>Neural</b> — “revert my last commit” finds <code>git reset --soft HEAD~1</code></figcaption>
+      <figcaption><b>Neural</b> — “revert my last commit” finds <code>git reset --soft HEAD~1</code>.
+        <a class="full-size" href="img/search-neural.png">View full size</a></figcaption>
     </figure>
-    <figure>
+    <figure class="shot">
       <img src="img/search-smart.png" alt="Cliphoard in Smart search mode: the query 'catchy' has returned the clip 'Copy anything. Hoard everything.'" width="3456" height="724" loading="lazy">
-      <figcaption><b>Smart</b> — “catchy” finds “Copy anything. Hoard everything.”</figcaption>
+      <figcaption><b>Smart</b> — “catchy” finds “Copy anything. Hoard everything.”
+        <a class="full-size" href="img/search-smart.png">View full size</a></figcaption>
     </figure>
   </div>
 
+  <!-- These two stay side by side: what is being compared is the COLOUR, which reads
+       fine small, and seeing them together is the point. -->
   <div class="plates-2">
     <figure>
       <img src="img/bar-swiss.png" alt="Cliphoard in the Swiss Grayscale theme, the light-mode default" width="3456" height="724" loading="lazy">
-      <figcaption><b>Swiss Grayscale</b> — the light-mode default</figcaption>
+      <figcaption><b>Swiss Grayscale</b> — the light-mode default.
+        <a class="full-size" href="img/bar-swiss.png">View full size</a></figcaption>
     </figure>
     <figure>
       <img src="img/bar-tokyoNight.png" alt="Cliphoard in the Tokyo Night theme" width="3456" height="724" loading="lazy">
-      <figcaption><b>Tokyo Night</b> — one of seventeen</figcaption>
+      <figcaption><b>Tokyo Night</b> — one of seventeen.
+        <a class="full-size" href="img/bar-tokyoNight.png">View full size</a></figcaption>
     </figure>
   </div>
 
@@ -269,7 +304,11 @@
     licensed too, and each one keeps its own terms and its own credit — listed below.</p>
   <details class="deep">
     <summary>Model tiers, parameter counts, licences and credits</summary>
-    <div class="tablewrap">
+    <!-- Six columns of model metadata genuinely cannot fold into 320px, so this one
+         scrolls sideways. `tabindex="0"` and the labelled region are what let a
+         keyboard reach that scroll: a focusable scroll container is the only way to
+         pan it without a pointer. -->
+    <div class="tablewrap scrolls" tabindex="0" role="region" aria-label="Model tiers, scrollable sideways">
       <table>
         <caption>Retrieval measured on a clipboard-realistic set of 21 queries, so the numbers
           are small and the methodology matters more than the ranking —
@@ -377,8 +416,11 @@
     themes, every importer and encrypted export and import between Macs. Pro adds specialist
     image features and offers a way to support the research.</p>
 
+  <!-- `table.compare` carries no minimum width and a fixed 62/19/19 layout, because the
+       shared `min-width:34rem` used to push Free and Pro off the right edge of a phone:
+       the reader saw a list of features and none of the answers. -->
   <div class="tablewrap">
-    <table>
+    <table class="compare">
       <caption>This is the split in the <b>1.0.1</b> build, which is not published yet. It does
         not describe the 1.0.0 download above.</caption>
       <thead>

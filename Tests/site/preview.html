@@ -107,6 +107,14 @@
   </fieldset>
 
   <fieldset>
+    <legend>Appearance (drives the framed page's own control)</legend>
+    <button type="button" data-appearance="system" aria-pressed="true">System</button>
+    <button type="button" data-appearance="light">Light</button>
+    <button type="button" data-appearance="dark">Dark</button>
+    <button type="button" id="forget">Forget saved choice</button>
+  </fieldset>
+
+  <fieldset>
     <legend>Jump to section</legend>
     <button type="button" data-jump="top">Top</button>
     <button type="button" data-jump="funding">Funding</button>
@@ -123,6 +131,7 @@
   <fieldset>
     <legend>Readback</legend>
     <p class="readback" id="readback">measuring…</p>
+    <p class="readback" id="themeback">theme ?</p>
     <p class="readback"><a id="direct" href="../../docs/" target="_blank" rel="noopener">../../docs/</a></p>
   </fieldset>
 </div>
@@ -133,7 +142,8 @@
   <iframe id="site" src="../../docs/" title="Cliphoard site under test"></iframe>
 </div>
 
-<p id="log">Press a width to check layout and overflow, a jump button to scroll the framed
+<p id="log">Press a width to check layout and overflow, an appearance button to drive the
+  framed page's own System/Light/Dark control, a jump button to scroll the framed
   page, or a fixture to drive the real funding module with fake data. To see the reset
   behaviour, press <b>$500,000.00</b> and then <b>unavailable</b> or <b>invalid payload</b>:
   the figure must go back to "No reconciled reports available." with no reload. Screenshot
@@ -341,9 +351,99 @@ function measure() {
   );
 }
 
+/* ── appearance ───────────────────────────────────────────────────────────────
+ * These press the framed page's OWN <select> rather than setting `data-theme`
+ * directly, so what is under test is the shipped control and the shipped listener —
+ * including the write to localStorage. Reloading after pressing Dark is therefore a
+ * real persistence check, not a simulated one.
+ *
+ * The OS half cannot be driven from here: `prefers-color-scheme` comes from macOS
+ * System Settings > Appearance, and the readback below is how you confirm the framed
+ * page saw the change. Denied storage is Chrome Settings > Privacy > Site settings >
+ * Cookies and site data > "Don't allow sites to save data", then reload.
+ */
+function appearanceSelect() {
+  return framedDocument()?.getElementById("appearance") ?? null;
+}
+
+for (const button of document.querySelectorAll("button[data-appearance]")) {
+  button.addEventListener("click", () => {
+    const field = appearanceSelect();
+    if (!field) {
+      note("Cannot reach the framed page's appearance control. Serve the REPOSITORY "
+         + "ROOT over HTTP, and check the control is not hidden (which means "
+         + "appearance.js did not run).", true);
+      return;
+    }
+    for (const other of document.querySelectorAll("button[data-appearance]")) {
+      other.setAttribute("aria-pressed", String(other === button));
+    }
+    field.value = button.dataset.appearance;
+    // The real `change` event the shipped listener is bound to.
+    field.dispatchEvent(new Event("change", { bubbles: true }));
+    note(`Pressed the framed page's own control: ${button.dataset.appearance}. `
+       + "Reload the frame to check it persisted.");
+    themeState();
+  });
+}
+
+document.getElementById("forget").addEventListener("click", () => {
+  const win = frame.contentWindow;
+  try {
+    win.localStorage.removeItem("cliphoard.appearance");
+    note("Removed the saved choice. Reload the frame: it must come back as System.");
+  } catch {
+    note("Could not reach the framed page's storage (cross-origin, or storage is "
+       + "denied — which is itself one of the states worth testing).", true);
+  }
+  themeState();
+});
+
+/** What state the framed page is ACTUALLY in. `data-resolved` is the page's own
+ *  readback of which palette is live; `data-theme` is the override, and its absence is
+ *  System. The stored value is read straight out of the framed origin. */
+function themeState() {
+  const back = document.getElementById("themeback");
+  const doc = framedDocument();
+  const html = doc?.documentElement;
+  let saved = "?";
+  try {
+    saved = frame.contentWindow.localStorage.getItem("cliphoard.appearance") ?? "(none)";
+  } catch {
+    saved = "(unreadable: denied or cross-origin)";
+  }
+  const control = doc?.getElementById("appearance");
+  const hidden = control?.closest(".appearance")?.hasAttribute("hidden");
+  back.textContent = "";
+  back.append(
+    document.createTextNode("data-appearance "),
+    Object.assign(document.createElement("b"),
+      { textContent: html?.getAttribute("data-appearance") ?? "?" }),
+    document.createTextNode("  data-theme "),
+    Object.assign(document.createElement("b"),
+      { textContent: html?.getAttribute("data-theme") ?? "(absent = System)" }),
+    document.createTextNode("  resolved "),
+    Object.assign(document.createElement("b"),
+      { textContent: html?.getAttribute("data-resolved") ?? "?" }),
+    document.createTextNode("  OS prefers "),
+    Object.assign(document.createElement("b"),
+      { textContent: window.matchMedia("(prefers-color-scheme: dark)").matches
+                     ? "dark" : "light" }),
+    document.createTextNode("  stored "),
+    Object.assign(document.createElement("b"), { textContent: saved }),
+    document.createTextNode("  control "),
+    Object.assign(document.createElement("b"),
+      { textContent: control === undefined || control === null ? "missing"
+                     : hidden ? "HIDDEN (no JS?)" : "visible" }),
+  );
+}
+
 frame.addEventListener("load", measure);
+frame.addEventListener("load", themeState);
 window.addEventListener("resize", measure);
+window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", themeState);
 measure();
+themeState();
 </script>
 </body>
 </html>

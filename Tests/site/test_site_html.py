@@ -127,6 +127,131 @@ def narrow_block() -> str:
     return match.group(1)
 
 
+def appearance_js() -> str:
+    return (DOCS / "assets" / "appearance.js").read_text(encoding="utf-8")
+
+
+def declarations(block: str) -> dict[str, str]:
+    """The `name: value` pairs of one CSS block, comments discarded."""
+    body = re.sub(r"/\*.*?\*/", "", block, flags=re.S)
+    pairs = {}
+    for piece in body.split(";"):
+        name, sep, value = piece.partition(":")
+        if sep and name.strip():
+            pairs[name.strip()] = value.strip()
+    return pairs
+
+
+PALETTES = {
+    # `:root` is light. The copy inside prefers-color-scheme is the WHOLE
+    # no-JavaScript dark path; the copy on the attribute is what an explicit choice
+    # activates. The last two must be identical, and a test below says so.
+    "light": r"\n:root\{([^}]*)\}",
+    "system-dark": (r"@media \(prefers-color-scheme:dark\)\{\s*"
+                    r":root:not\(\[data-theme=\"light\"\]\)\{([^}]*)\}"),
+    "chosen-dark": r"\n:root\[data-theme=\"dark\"\]\{([^}]*)\}",
+}
+
+
+def palette(which: str) -> dict[str, str]:
+    match = re.search(PALETTES[which], css(), re.S)
+    assert match, "no %s palette in the stylesheet" % which
+    return declarations(match.group(1))
+
+
+def colours(which: str) -> dict[str, str]:
+    """Just the hex tokens — measures and radii are not part of a palette."""
+    return {name: value for name, value in palette(which).items()
+            if value.startswith("#")}
+
+
+def theme_swift() -> str:
+    return (REPO / "Sources/Cliphoard/UI/Theme.swift").read_text(encoding="utf-8")
+
+
+def swift_one_dark() -> dict[str, str]:
+    """The hexes `Theme.swift` passes to `editor(...)` for the oneDark preset."""
+    match = re.search(r"case \.oneDark:\s*\n\s*return Self\.editor\(([^)]*)\)",
+                      theme_swift())
+    assert match, "Theme.swift no longer builds oneDark from Self.editor"
+    return dict(re.findall(r'(\w+): "(#[0-9a-fA-F]{6})"', match.group(1)))
+
+
+def swift_swiss_whites() -> dict[str, float]:
+    """The `Color(.sRGB, white:)` levels of the swiss preset, by role."""
+    # Anchored on the ThemeTokens switch: `case .swiss:` also appears in `title`.
+    block = re.search(r"case \.swiss:\s*\n\s*return ThemeTokens\((.*?)scheme: \.light\)",
+                      theme_swift(), re.S).group(1)
+    return {name: float(level) for name, level in
+            re.findall(r"(\w+): Color\(\.sRGB, white: ([\d.]+)", block)}
+
+
+def guarded_spans(source: str) -> list[tuple[int, int]]:
+    """(start, end) of the body of every `try { ... }` in `source`."""
+    spans = []
+    for match in re.finditer(r"\btry\s*\{", source):
+        depth, index = 0, match.end() - 1
+        while index < len(source):
+            if source[index] == "{":
+                depth += 1
+            elif source[index] == "}":
+                depth -= 1
+                if depth == 0:
+                    spans.append((match.end(), index))
+                    break
+            index += 1
+    return spans
+
+
+def specificity(selector: str) -> tuple[int, int, int]:
+    """(ids, classes/attributes/pseudo-classes, elements) of one simple selector.
+
+    Only as general as the root selectors in this stylesheet need. `:not()` contributes
+    the specificity of its argument, which is the rule the print defect turned on.
+    """
+    arguments = re.findall(r":not\(([^)]*)\)", selector)
+    bare = re.sub(r":not\([^)]*\)", "", selector)
+    found = (bare.count("#"),
+             len(re.findall(r"\[[^\]]*\]", bare)) + bare.count(".")
+             + len(re.findall(r"(?<!:):[a-z-]+", bare)),
+             len(re.findall(r"^[a-z]+", bare)))
+    for argument in arguments:
+        found = tuple(a + b for a, b in zip(found, specificity(argument)))
+    return found
+
+
+def root_matches(selector: str, data_theme: str | None) -> bool:
+    """Does this root selector match an <html> carrying `data-theme`?
+
+    Specificity only decides between declarations that BOTH APPLY to the element. A
+    print selector can tie on specificity and still be irrelevant — which is exactly
+    how the dark-System print defect survived a specificity-only check.
+    """
+    if selector == ":root":
+        return True
+    attribute = re.fullmatch(r':root\[data-theme="(\w+)"\]', selector)
+    if attribute:
+        return data_theme == attribute.group(1)
+    negated = re.fullmatch(r':root:not\(\[data-theme="(\w+)"\]\)', selector)
+    if negated:
+        return data_theme != negated.group(1)
+    raise AssertionError("unmodelled root selector: %s" % selector)
+
+
+def relative_luminance(hex_colour: str) -> float:
+    """WCAG 2.x relative luminance of an #rrggbb string."""
+    channels = [int(hex_colour[i:i + 2], 16) / 255 for i in (1, 3, 5)]
+    linear = [c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
+              for c in channels]
+    return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
+
+
+def contrast(one: str, two: str) -> float:
+    a, b = relative_luminance(one), relative_luminance(two)
+    lighter, darker = max(a, b), min(a, b)
+    return (lighter + 0.05) / (darker + 0.05)
+
+
 class Resolution(unittest.TestCase):
 
     def setUp(self):
@@ -223,11 +348,61 @@ class NoRemoteDependencies(unittest.TestCase):
                        "navigator.sendbeacon", "new image("):
             self.assertNotIn(needle, raw, "%s has no business being here" % needle)
 
-    def test_no_inline_script_runs_outside_the_one_module(self):
+    def test_no_script_stores_or_sends_anything_except_the_appearance_choice(self):
+        """The `localstorage` ban above covers index.html; this covers the scripts.
+
+        The ONE exception, and the reason this assertion is split out rather than
+        loosened: `appearance.js` keeps the visitor's Light/Dark choice. That is a
+        preference, not a measurement — it is never read back by anything else, never
+        transmitted, and holds one of two fixed words, so it cannot carry an id. Every
+        way of actually counting a visitor stays banned in every script, including that
+        one. If a second key or any transmission appears here, this fails.
+        """
+        for path in (DOCS / "assets" / "site.js", DOCS / "assets" / "funding.js",
+                     DOCS / "assets" / "appearance.js"):
+            code = strip_comments(path.read_text(encoding="utf-8"))
+            for needle in ("document.cookie", "sendBeacon", "navigator.userAgent",
+                           "Math.random", "crypto.randomUUID", "XMLHttpRequest",
+                           "indexedDB", "sessionStorage", "gtag(", "new Image("):
+                self.assertNotIn(needle, code,
+                                 "%s uses %s" % (path.name, needle))
+            if path.name != "appearance.js":
+                self.assertNotIn("localStorage", code,
+                                 "%s touches storage; only appearance.js may" % path.name)
+
+        appearance = strip_comments(
+            (DOCS / "assets" / "appearance.js").read_text(encoding="utf-8"))
+        self.assertEqual(re.findall(r'var KEY = "([^"]+)"', appearance),
+                         ["cliphoard.appearance"],
+                         "the preference key is not the single scoped Cliphoard one")
+        # Only the key constant is ever passed to storage, so there is no second slot.
+        for call in re.findall(r"localStorage\.(\w+)\(([^)]*)\)", appearance):
+            self.assertIn(call[0], ("getItem", "setItem", "removeItem"))
+            self.assertTrue(call[1].startswith("KEY"),
+                            "a storage call uses %r rather than KEY" % call[1])
+        self.assertNotIn("fetch(", appearance, "the appearance script must not fetch")
+
+    def test_exactly_two_local_scripts_load_and_nothing_inline(self):
+        """Was a one-script allowlist. It is now exactly two, named, and ordered.
+
+        WHY THE SECOND ONE IS JUSTIFIED: `site.js` is a module, so it is deferred and
+        runs after first paint. A saved Dark choice applied from there flashes the light
+        page first — the visitor sees the wrong theme and then a jump. The fix has to be
+        a BLOCKING classic script in <head>, which is a different tag with a different
+        type, so the allowlist has to name both. Still local, still no inline script, so
+        a strict `script-src 'self'` policy would be satisfied by both.
+        """
         scripts = parse().of("script")
-        self.assertEqual(len(scripts), 1, "there should be exactly one script tag")
-        self.assertEqual(scripts[0].get("type"), "module")
-        self.assertEqual(scripts[0].get("src"), "assets/site.js")
+        self.assertEqual([(s.get("src"), s.get("type")) for s in scripts],
+                         [("assets/appearance.js", None), ("assets/site.js", "module")],
+                         "the script allowlist changed")
+        self.assertEqual(INDEX.read_text(encoding="utf-8").count("<script"), 2,
+                         "an inline script appeared")
+        raw = INDEX.read_text(encoding="utf-8")
+        self.assertLess(raw.index('src="assets/appearance.js"'),
+                        raw.index('href="assets/site.css"'),
+                        "the appearance script must precede the stylesheet or the "
+                        "saved theme can paint late")
 
 
 class Accessibility(unittest.TestCase):
@@ -985,7 +1160,8 @@ class QAHarness(unittest.TestCase):
         for flag in ["location.search", "URLSearchParams", "?fixture", "?demo",
                      "?preview", "debug=true"]:
             for path in (INDEX, DOCS / "assets" / "site.js",
-                         DOCS / "assets" / "funding.js"):
+                         DOCS / "assets" / "funding.js",
+                         DOCS / "assets" / "appearance.js"):
                 self.assertNotIn(flag, path.read_text(encoding="utf-8"),
                                  "%s reads %s; a fixture must not be reachable from "
                                  "the published site" % (path.name, flag))
@@ -1067,6 +1243,49 @@ class HarnessViewportAndNavigation(unittest.TestCase):
         self.assertIn("with no reload", prose)
 
 
+class HarnessAppearanceControls(unittest.TestCase):
+    """Root inspects both themes in Chrome, so the harness has to be able to reach the
+    state and report it. These controls exist for that and only for that."""
+
+    def setUp(self):
+        self.raw = HARNESS.read_text(encoding="utf-8")
+
+    def test_the_three_choices_are_offered(self):
+        self.assertEqual(re.findall(r'data-appearance="(\w+)"', self.raw),
+                         ["system", "light", "dark"])
+
+    def test_it_presses_the_shipped_control_rather_than_setting_the_attribute(self):
+        """The point of driving the real <select> is that the shipped change handler
+        and its write to storage are what get exercised. Setting `data-theme` from the
+        harness would test the stylesheet and nothing else."""
+        self.assertIn('field.value = button.dataset.appearance', self.raw)
+        self.assertIn('dispatchEvent(new Event("change"', self.raw)
+        self.assertNotIn('setAttribute("data-theme"', self.raw,
+                         "the harness sets the override itself and tests nothing")
+
+    def test_the_readback_reports_every_part_of_the_state(self):
+        for token in ["data-appearance", "data-theme", "resolved", "OS prefers",
+                      "stored", "(absent = System)", "HIDDEN (no JS?)"]:
+            self.assertIn(token, self.raw, "the readback omits %s" % token)
+
+    def test_it_says_how_to_reach_the_states_it_cannot_drive_itself(self):
+        prose = self.raw
+        self.assertIn("System Settings", prose,
+                      "nothing tells the reviewer where the OS preference lives")
+        self.assertIn("Site settings", prose,
+                      "nothing tells the reviewer how to deny storage")
+
+    def test_the_fixture_flags_still_cannot_reach_the_published_site(self):
+        """The harness reads the framed page's storage; the SITE must not grow a flag.
+
+        `data-appearance` lives in the harness only — docs/ never reads a query
+        parameter, and the site's own attributes are written by the page itself.
+        """
+        self.assertNotIn("data-appearance=", INDEX.read_text(encoding="utf-8"))
+        for flag in ("location.search", "URLSearchParams"):
+            self.assertNotIn(flag, appearance_js())
+
+
 class TheResetIsWiredEverywhere(unittest.TestCase):
     """The DOM behaviour is regressed in the Node suite; this pins the WIRING, so the
     reset cannot be quietly removed from a path without a test noticing."""
@@ -1121,6 +1340,597 @@ class TheResetIsWiredEverywhere(unittest.TestCase):
         scan = re.search(r"export function hasDuplicateKeys.*?\n\}", self.js, re.S).group(0)
         self.assertIn("readJSONString(text, i)", scan)
         self.assertNotIn("raw +=", scan, "the scan still accumulates raw characters")
+
+
+class ThePalettesAreTheApps(unittest.TestCase):
+    """The page is an advertisement for a Mac app, so it may not invent its own colours.
+
+    These read `Sources/Cliphoard/UI/Theme.swift` — the shipped presets — and fail when
+    the site drifts away from the thing a visitor downloads. Theme.swift is NOT edited
+    by anything here; it is the reference.
+    """
+
+    def test_the_dark_theme_is_the_apps_one_dark_at_its_own_values(self):
+        app, web = swift_one_dark(), colours("chosen-dark")
+        self.assertEqual(web["--ground"].lower(), app["bg"].lower(),
+                         "the dark ground is not One Dark's editor background")
+        self.assertEqual(web["--panel"].lower(), app["panel"].lower())
+        self.assertEqual(web["--accent"].lower(), app["accent"].lower())
+
+    def test_the_light_theme_is_the_apps_swiss_greyscale(self):
+        app, web = swift_swiss_whites(), colours("light")
+        for token, role in (("--ground", "barFill"), ("--line", "border"),
+                            ("--tint", "tagFill")):
+            level = round(app[role] * 255)
+            self.assertEqual(web[token].lower(), "#%02x%02x%02x" % (level, level, level),
+                             "%s is not the app's swiss %s (white %.2f)"
+                             % (token, role, app[role]))
+        self.assertEqual(web["--panel"].upper(), "#FFFFFF", "swiss cardFill is .white")
+
+    def test_the_light_theme_is_actually_greyscale_apart_from_the_accent(self):
+        """"Swiss Grayscale" with a blue cast in the greys is not Swiss Grayscale."""
+        for token, value in colours("light").items():
+            if "accent" in token or token == "--focus":
+                continue
+            red, green, blue = (value[1:3], value[3:5], value[5:7])
+            self.assertEqual({red.lower()}, {green.lower(), blue.lower()},
+                             "%s=%s is tinted, not grey" % (token, value))
+
+    def test_the_two_dark_palettes_cannot_drift_apart(self):
+        """The one real cost of not using `light-dark()`, pinned so it stays a non-cost.
+
+        The dark values are written twice — once for the System path inside the media
+        query, once for an explicit choice — and a page where those disagree would
+        retint itself when someone picked the theme it was already showing.
+        """
+        self.assertEqual(palette("system-dark"), palette("chosen-dark"))
+        self.assertEqual(palette("chosen-dark")["color-scheme"], "dark")
+
+    def test_both_themes_define_every_role_the_other_does(self):
+        self.assertEqual(set(colours("light")), set(colours("chosen-dark")))
+
+    def test_every_token_the_stylesheet_uses_is_declared(self):
+        used = set(re.findall(r"var\((--[\w-]+)\)", css()))
+        declared = set(palette("light"))
+        self.assertEqual(used - declared, set(),
+                         "the stylesheet reads tokens nothing declares")
+
+    def test_the_primary_button_has_a_foreground_of_its_own(self):
+        """The trap: `color: var(--panel)` on a solid button.
+
+        In the light theme `--panel` is white and it looks right, so it survives review.
+        In the dark theme `--panel` is #282C34 — near-black text on a light blue fill,
+        which is the one combination this page must not produce. `--on-accent` exists so
+        the button's foreground is a decision rather than a side effect of the surface.
+        """
+        rule = re.search(r"\.btn-solid\{([^}]*)\}", css()).group(1)
+        self.assertIn("color:var(--on-accent)", rule.replace(" ", ""))
+        self.assertNotIn("var(--panel)", rule)
+        self.assertNotIn("var(--white)", rule, "--white is gone; it was never a role")
+        # In the light theme the two values coincide — both are white — and that is
+        # fine. The bug is only ever reachable in the dark theme, where `--panel` is
+        # #282C34: near-black text on a light blue fill.
+        dark = colours("chosen-dark")
+        self.assertNotEqual(dark["--on-accent"], dark["--panel"],
+                            "the dark button's label is just its surface again")
+        self.assertLess(relative_luminance(dark["--on-accent"]),
+                        relative_luminance(dark["--accent"]),
+                        "the dark theme needs DARK text on its light blue accent")
+        for theme in ("light", "chosen-dark"):
+            tokens = colours(theme)
+            self.assertGreaterEqual(
+                round(contrast(tokens["--on-accent"], tokens["--accent"]), 2), 4.5,
+                "%s: the solid button's own label fails AA" % theme)
+
+    def test_every_foreground_clears_aa_on_every_surface_it_lands_on(self):
+        """Calculated, not asserted. Disabled text is exempt by 1.4.3 and excluded."""
+        for theme in ("light", "chosen-dark"):
+            tokens = colours(theme)
+            for foreground in ("--text", "--muted", "--accent", "--accent-hover"):
+                for surface in ("--ground", "--panel", "--tint"):
+                    ratio = contrast(tokens[foreground], tokens[surface])
+                    self.assertGreaterEqual(
+                        round(ratio, 2), 4.5,
+                        "%s: %s on %s is %.2f:1" % (theme, foreground, surface, ratio))
+
+    def test_the_focus_ring_and_the_ruler_fill_clear_three_to_one(self):
+        for theme in ("light", "chosen-dark"):
+            tokens = colours(theme)
+            for surface in ("--ground", "--panel"):
+                self.assertGreaterEqual(
+                    round(contrast(tokens["--focus"], tokens[surface]), 2), 3.0,
+                    "%s: the focus ring is invisible on %s" % (theme, surface))
+            # The ruler is the page's only progress indicator: a fill that does not
+            # separate from its trough is a bar that cannot be read.
+            self.assertGreaterEqual(
+                round(contrast(tokens["--accent"], tokens["--tint"]), 2), 3.0,
+                "%s: the ruler fill does not separate from its trough" % theme)
+
+    def test_the_radii_are_the_apps_own(self):
+        app = theme_swift()
+        self.assertIn("cornerRadius: 9", app)       # swiss
+        self.assertIn("cornerRadius: 12", app)      # oneDark, via editor()
+        sheet = palette("light")
+        self.assertEqual((sheet["--r-m"], sheet["--r-l"]), ("9px", "12px"))
+
+    def test_print_wins_the_cascade_against_every_screen_root_including_dark_system(self):
+        """The defect the declaration-level test below could not see.
+
+        `prefers-color-scheme` is a USER preference, not a screen-only feature, so it
+        keeps matching while printing. On a dark Mac with the appearance left at System,
+        the screen palette matched `:root:not([data-theme="light"])` — (0,2,0) — during
+        print, and a print block selecting only `:root` — (0,1,0) — LOST on specificity
+        wherever it sat in the file. `--text` stayed #D7DAE0 while `body{background:#fff}`
+        forced the page white: 1.40:1, unreadable. Inspecting print's DECLARATIONS
+        passes in that state, because the declarations were never the problem.
+
+        So this walks the four appearance states and, for each, resolves the cascade the
+        way a printer does: of the root rules that actually MATCH, a print one must tie
+        or beat every screen one on specificity. Matching matters as much as specificity
+        — `:root[data-theme="dark"]` ties at (0,2,0) and is irrelevant under System.
+        """
+        sheet = css()
+        # (selector, only applies when the OS is dark)
+        screen = [(":root", False)]
+        screen += [(s, True) for s in
+                   re.findall(r"(:root:not\(\[data-theme=\"light\"\]\))\{", sheet)]
+        screen += [(s, False) for s in
+                   re.findall(r"\n(:root\[data-theme=\"dark\"\])\{", sheet)]
+        self.assertEqual(len(screen), 3, "the screen palettes changed shape: %s" % screen)
+
+        block = re.search(r"@media print\{(.*?)\n\}",
+                          re.sub(r"/\*.*?\*/", "", sheet, flags=re.S), re.S).group(1)
+        printed = [p.strip() for p in block.partition("{")[0].split(",") if p.strip()]
+
+        # Order half, asserted once: every screen palette sits above the print block, so
+        # a specificity tie is broken in print's favour.
+        at = sheet.index("@media print{")
+        for selector, _ in screen:
+            self.assertLess(sheet.rindex(selector + "{", 0, at), at)
+
+        for data_theme, dark_os, state in [(None, True, "System on a dark Mac"),
+                                           (None, False, "System on a light Mac"),
+                                           ("dark", False, "an explicit Dark choice"),
+                                           ("light", True, "an explicit Light choice")]:
+            applying = [s for s, needs_dark in screen
+                        if root_matches(s, data_theme) and (dark_os or not needs_dark)]
+            winners = [p for p in printed if root_matches(p, data_theme)]
+            for selector in applying:
+                self.assertTrue(
+                    any(specificity(w) >= specificity(selector) for w in winners),
+                    "printing with %s: the screen rule %s %s applies and no MATCHING "
+                    "print rule outranks it (matching print rules: %s)"
+                    % (state, selector, specificity(selector), winners or "none"))
+
+        # And the consequence, as the number a reader would experience on paper.
+        self.assertGreaterEqual(
+            round(contrast(colours("light")["--text"], "#FFFFFF"), 2), 4.5,
+            "the printed page is not readable on paper")
+
+    def test_print_stays_readable_even_for_someone_who_chose_dark(self):
+        # Selector-agnostic on purpose: which roots the print palette has to name is the
+        # cascade test's business, above. This one is about the VALUES.
+        block = re.sub(r"/\*.*?\*/", "", css(), flags=re.S)
+        block = re.search(r"@media print\{(.*?)\n\}", block, re.S).group(1)
+        selectors, _, _ = block.partition("{")
+        self.assertIn(':root[data-theme="dark"]', selectors,
+                      "print does not override an explicit dark choice")
+        printed = declarations(re.search(r"\{([^}]*)\}", block).group(1))
+        self.assertEqual(printed["color-scheme"], "light")
+        self.assertGreaterEqual(contrast(printed["--text"], printed["--ground"]), 4.5)
+        self.assertEqual(relative_luminance(printed["--ground"]) > 0.9, True,
+                         "the printed ground is not paper-white")
+        self.assertEqual(set(printed) - {"color-scheme"}, set(colours("light")),
+                         "the print palette leaves a role at its screen value")
+
+
+class TheAppearanceChoice(unittest.TestCase):
+    """System, Light and Dark — and every way that can go wrong."""
+
+    def setUp(self):
+        self.raw = INDEX.read_text(encoding="utf-8")
+        self.js = appearance_js()
+
+    def test_the_control_is_labelled_and_offers_exactly_three_choices(self):
+        block = re.search(r'<div class="appearance"[^>]*>(.*?)</div>', self.raw, re.S)
+        self.assertIsNotNone(block, "there is no appearance control")
+        self.assertIn('<label for="appearance">Appearance</label>', block.group(1),
+                      "the control has no visible label tied to it")
+        self.assertIn('<select id="appearance">', block.group(1))
+        self.assertEqual(re.findall(r'<option value="(\w+)">([^<]+)</option>',
+                                    block.group(1)),
+                         [("system", "System"), ("light", "Light"), ("dark", "Dark")])
+
+    def test_a_native_select_is_used_so_the_keyboard_and_the_reader_get_it_free(self):
+        """A <select> announces its own label, its own value and its own options, and
+        arrows through them, with nothing added. A div-and-aria reimplementation would
+        have to earn all of that back."""
+        self.assertNotIn("appearance:none", css().replace(" ", ""),
+                         "the native control has been painted over")
+        self.assertNotIn('role="radiogroup"', self.raw)
+        self.assertNotIn('role="listbox"', self.raw)
+        self.assertNotIn("keydown", self.js, "a <select> does not need key handling")
+
+    def test_the_controls_own_boundary_clears_three_to_one(self):
+        """WCAG 1.4.11. Styling the select replaces the UA's border, so the boundary
+        becomes this page's problem; `--line` is a table hairline at ~1.5:1 and would
+        leave the one interactive control on the page nearly invisible."""
+        rule = declarations(re.search(r"\.appearance select\{([^}]*)\}",
+                                      re.sub(r"/\*.*?\*/", "", css(), flags=re.S)).group(1))
+        token = re.search(r"var\((--[\w-]+)\)", rule["border"]).group(1)
+        for theme in ("light", "chosen-dark"):
+            tokens = colours(theme)
+            self.assertGreaterEqual(
+                round(contrast(tokens[token], tokens["--panel"]), 2), 3.0,
+                "%s: the appearance control's border is %s, which is %.2f:1 on its own "
+                "background" % (theme, token, contrast(tokens[token], tokens["--panel"])))
+
+    def test_the_control_is_not_offered_at_all_when_javascript_is_blocked(self):
+        """Hidden in the markup, revealed by the script. A control that cannot do
+        anything is worse than no control, and the no-JS page is not WORSE off: the
+        stylesheet's media query gives it System behaviour regardless."""
+        element = re.search(r'<div class="appearance"[^>]*>', self.raw).group(0)
+        self.assertIn("hidden", element)
+        self.assertIn(".appearance[hidden]{display:none}", css(),
+                      "display:flex would defeat the hidden attribute")
+        self.assertIn('removeAttribute("hidden")', self.js)
+
+    def test_the_system_path_is_pure_css_and_needs_no_script(self):
+        """Why this matters: it is the DEFAULT. If System depended on the script, every
+        first-time visitor with JS blocked would get the light theme on a dark Mac."""
+        system = palette("system-dark")
+        self.assertEqual({k: v for k, v in system.items() if k.startswith("--")},
+                         colours("chosen-dark"),
+                         "the no-JavaScript dark path is not the full palette")
+        # And nothing in the script is required to reach it.
+        self.assertIn('removeAttribute("data-theme")', self.js,
+                      "System must clear the override rather than set a third value")
+
+    def test_an_explicit_light_choice_outranks_a_dark_operating_system(self):
+        """The `:not()` is the whole mechanism, and it is easy to drop by accident."""
+        self.assertRegex(css(), r"@media \(prefers-color-scheme:dark\)\{\s*"
+                                r":root:not\(\[data-theme=\"light\"\]\)\{")
+        sheet = css()
+        self.assertLess(sheet.index("@media (prefers-color-scheme:dark)"),
+                        sheet.index('\n:root[data-theme="dark"]{'),
+                        "the explicit palette must come after the media block")
+
+    def test_only_one_scoped_key_is_written_and_only_ever_two_words(self):
+        code = strip_comments(self.js)
+        self.assertEqual(re.findall(r'var KEY = "([^"]+)"', code),
+                         ["cliphoard.appearance"])
+        self.assertEqual(re.findall(r'var EXPLICIT = \[([^\]]*)\]', code),
+                         ['"light", "dark"'],
+                         "the stored vocabulary changed; it must stay unguessable as "
+                         "an identifier")
+        self.assertIn('if (choice === "system") window.localStorage.removeItem(KEY)',
+                      code, "choosing System must delete the key, not store a word")
+
+    def test_every_storage_access_sits_inside_its_own_guard(self):
+        """Reading the `window.localStorage` PROPERTY throws SecurityError when a policy
+        denies site data — before `getItem` is reached — and the individual calls can
+        throw too. A page that dies there shows nothing at all."""
+        code = self.js
+        spans = guarded_spans(code)
+        self.assertGreaterEqual(len(spans), 2, "there are no try blocks")
+        for match in re.finditer(r"window\.localStorage", code):
+            if code[:match.start()].count("*/") < code[:match.start()].count("/*"):
+                continue        # inside a comment
+            self.assertTrue(any(start <= match.start() < end for start, end in spans),
+                            "an unguarded window.localStorage at offset %d"
+                            % match.start())
+
+    def test_a_denied_write_does_not_stop_the_page_from_changing(self):
+        code = strip_comments(self.js)
+        change = re.search(r'addEventListener\("change", function \(\) \{(.*?)\n    \}\)',
+                           code, re.S).group(1)
+        self.assertIn("remember(current)", change)
+        self.assertIn("paint()", change)
+        self.assertLess(change.index("remember(current)"), change.index("paint()"),
+                        "paint() must run whatever remember() reported")
+        self.assertNotIn("if (remember", change,
+                         "a refusal to persist is not a reason to skip the repaint")
+
+    def test_an_unrecognised_saved_value_is_ignored_rather_than_applied(self):
+        code = strip_comments(self.js)
+        self.assertIn('return EXPLICIT.indexOf(raw) === -1 ? "system" : raw', code)
+
+    def test_an_os_change_is_answered_but_never_beats_an_explicit_choice(self):
+        """The INVARIANT, not the line that happens to implement it.
+
+        Mutation testing found that making the media listener unconditional changes
+        nothing — `paint()` reads the choice, so repainting under an explicit one is a
+        no-op — which means an assertion on that `if` would have been a mirror of the
+        source rather than a test of it. What actually makes the OS unable to clobber a
+        choice is that `data-theme` is written from `current` and from nowhere else; a
+        listener that wrote the RESOLVED theme instead is the real bug, and
+        `Tests/site/test_appearance.mjs` catches that one behaviourally.
+        """
+        code = strip_comments(self.js)
+        self.assertIn('window.matchMedia("(prefers-color-scheme: dark)")', code,
+                      "nothing answers an OS appearance change")
+        self.assertIn('addEventListener("change", onSystemChange)', code)
+        writes = re.findall(r'setAttribute\("data-theme", (\w+)\)', code)
+        self.assertEqual(writes, ["current"],
+                         "data-theme is written from %s; only the stored choice may "
+                         "set it, or the OS can overrule the visitor" % writes)
+
+    def test_another_tab_is_followed_but_not_trusted(self):
+        code = strip_comments(self.js)
+        self.assertIn('addEventListener("storage"', code)
+        self.assertIn("var next = stored();", code,
+                      "the storage handler must re-read and revalidate, not take "
+                      "event.newValue on faith")
+        self.assertNotIn("event.newValue", code)
+
+    def test_the_browser_chrome_colour_agrees_with_both_palettes(self):
+        grounds = dict(re.findall(r'(\w+): "(#[0-9A-Fa-f]{6})"',
+                                  re.search(r"var GROUND = \{([^}]*)\}", self.js).group(1)))
+        self.assertEqual(grounds["light"].upper(), colours("light")["--ground"].upper())
+        self.assertEqual(grounds["dark"].upper(),
+                         colours("chosen-dark")["--ground"].upper())
+        metas = {a.get("data-scheme"): a.get("content", "").upper()
+                 for a in parse().of("meta") if a.get("name") == "theme-color"}
+        self.assertEqual(metas, {"light": grounds["light"].upper(),
+                                 "dark": grounds["dark"].upper()},
+                         "the static theme-color metadata disagrees with the palette")
+
+    def test_the_script_sets_the_theme_before_the_stylesheet_is_even_requested(self):
+        """The flash this file exists to prevent."""
+        self.assertLess(self.raw.index('src="assets/appearance.js"'),
+                        self.raw.index('href="assets/site.css"'))
+        scripts = [a for a in parse().of("script")]
+        self.assertIsNone(scripts[0].get("type"),
+                          "a module or defer would run after first paint")
+        body = self.raw.index("<body")
+        self.assertLess(self.raw.index('src="assets/appearance.js"'), body,
+                        "the bootstrap has to be in <head>")
+
+    def test_every_element_the_script_looks_up_exists_in_the_markup(self):
+        """The same wiring check `test_the_slots_the_renderer_writes_into_all_exist`
+        does for funding.js. A renamed wrapper id would silently leave the control
+        hidden forever, and nothing else on the page would look wrong."""
+        ids = parse().ids
+        looked_up = re.findall(r'getElementById\("([^"]+)"\)', self.js)
+        self.assertTrue(looked_up, "the script looks nothing up")
+        for name in set(looked_up):
+            self.assertIn(name, ids,
+                          "appearance.js looks for #%s and the page has no such id"
+                          % name)
+        for selector in re.findall(r'querySelectorAll\(\'([^\']+)\'\)', self.js):
+            attribute = re.search(r'\[([\w-]+)', selector).group(1)
+            self.assertIn(attribute, self.raw,
+                          "the script selects on %s and the markup has none" % attribute)
+
+    def test_binding_the_control_twice_is_a_no_op(self):
+        code = strip_comments(self.js)
+        self.assertIn('if (!field || field.dataset.bound === "yes") return false', code)
+        self.assertIn('field.dataset.bound = "yes"', code)
+
+
+class CrowdingAndSpacing(unittest.TestCase):
+    """Review item: the topbar was tight and the source note touched the buttons."""
+
+    def test_the_topbar_row_has_a_real_gap_and_the_nav_can_take_its_own_line(self):
+        rule = re.search(r"\.topbar \.page\{([^}]*)\}", css()).group(1)
+        row_gap = float(re.search(r"gap:([\d.]+)rem", rule).group(1))
+        self.assertGreaterEqual(row_gap, 0.6, "the wrapped rows still touch")
+        wide = re.search(r"@media \(max-width:52rem\)\{(.*?)\n\}", css(), re.S).group(1)
+        self.assertIn("flex-basis:100%", wide,
+                      "the nav never gets a line of its own, so it competes with the "
+                      "appearance control for the wordmark's row")
+
+    def test_the_narrow_topbar_cannot_overflow_on_text_metrics(self):
+        """No static test can measure rendered text, so the narrow layout is built not
+        to depend on it: the appearance control gets a full row rather than trying to
+        share the wordmark's. A near-miss there is a horizontal scrollbar on the whole
+        page, which is the one 320px failure that cannot be lived with."""
+        narrow = narrow_block()
+        rule = re.search(r"\.appearance\{([^}]*)\}", narrow)
+        self.assertIsNotNone(rule, "the control's narrow layout is left to chance")
+        self.assertIn("flex-basis:100%", rule.group(1))
+        self.assertIn("order:4", rule.group(1), "it must come after the nav")
+        self.assertIn(".topbar nav{order:3;flex-basis:100%}", css(),
+                      "the nav must already own a row of its own by this width")
+
+    def test_the_source_note_is_not_welded_to_the_button_row(self):
+        gap = re.search(r"\.actions \+ \.note\{margin-top:([\d.]+)rem\}", css())
+        self.assertIsNotNone(gap, "nothing separates the actions from the note")
+        self.assertGreaterEqual(float(gap.group(1)), 0.9)
+        # And the note that carries the open-source claim is still the one right there.
+        note = re.search(r'<div class="actions">.*?<p class="note">(.*?)</p>',
+                         hero(), re.S).group(1)
+        self.assertIn("mit licence", visible(note))
+        self.assertIn("including the pro features", visible(note))
+
+    def test_the_source_link_is_still_a_visible_button_in_the_hero(self):
+        self.assertIn('class="btn btn-line"', hero())
+        self.assertIn("read the full source", visible(hero()))
+
+    def test_the_mobile_hero_was_not_made_bigger(self):
+        self.assertIn("h1{font-size:1.875rem", narrow_block())
+        self.assertIn(".hero-head img{width:3.5rem", narrow_block())
+        self.assertIn(".hero{padding-block:2.25rem 0}", narrow_block())
+
+
+class TheUnknownTotalIsCalm(unittest.TestCase):
+    """Review item: the unavailable figure read like a failed fetch."""
+
+    def test_the_absent_figure_is_prose_rather_than_a_display_number(self):
+        block = re.search(r"\.goal-figure\.absent\{([^}]*)\}", css()).group(1)
+        rule = declarations(block)
+        self.assertEqual(rule["font-family"], "inherit",
+                         "a status line in the display monospace reads as a debug dump")
+        self.assertEqual(rule["color"], "var(--muted)")
+        size = float(re.match(r"([\d.]+)rem", rule["font-size"]).group(1))
+        self.assertLessEqual(size * 16, 20, "%.0fpx is still a headline" % (size * 16))
+        # The amount keeps the monospace: a figure IS a number to compare.
+        figure = declarations(re.search(r"\n\.goal-figure\{([^}]*)\}", css()).group(1))
+        self.assertIn("ui-monospace", figure["font-family"])
+
+    def test_the_text_and_every_funding_hook_are_untouched(self):
+        funding = section("funding")
+        self.assertIn("No reconciled reports available.", funding)
+        self.assertIn('class="goal-figure absent" data-funding-figure', funding)
+        for slot in ("figure", "percent", "fill", "status", "asof", "beyond", "stale",
+                     "coverage"):
+            self.assertIn("data-funding-%s" % slot, funding)
+
+
+class TheResearchStoryReadsLikeTheProduct(unittest.TestCase):
+    """Review item: the letter was the one thing on the page from no part of the app."""
+
+    def test_the_letter_is_set_in_the_system_face_not_a_borrowed_serif(self):
+        # Comments stripped first. The stylesheet EXPLAINS why the Iowan setting went,
+        # and a scan over the raw text matched that explanation — the same trap
+        # `strip_comments` exists for on the JavaScript side.
+        sheet = re.sub(r"/\*.*?\*/", "", css(), flags=re.S)
+        for serif in ("Iowan", "Palatino", "Georgia", "Times New Roman"):
+            self.assertNotIn(serif, sheet, "an ornamental serif is back: %s" % serif)
+        self.assertEqual(sheet.count("serif"), 1,
+                         "the only 'serif' left should be the body stack's sans-serif")
+        rule = declarations(re.search(r"\.letter p\{([^}]*)\}", sheet).group(1))
+        self.assertNotIn("font-family", rule,
+                         "the letter declares a face of its own instead of inheriting "
+                         "the page's system stack")
+        self.assertEqual(rule["max-width"], "var(--letter-measure)")
+        self.assertEqual(palette("light")["--letter-measure"], "38rem")
+        self.assertGreaterEqual(float(rule["line-height"]), 1.65,
+                                "a reading panel needs the extra leading")
+
+    def test_the_panel_survives_as_a_flat_surface(self):
+        rule = declarations(re.search(r"\n\.letter\{([^}]*)\}", css()).group(1))
+        self.assertEqual(rule["background"], "var(--panel)")
+        self.assertEqual(rule["border"], "1px solid var(--line)")
+        self.assertNotIn("box-shadow", rule, "a flat app surface casts no shadow")
+
+    def test_every_claim_attribution_and_qualifier_is_still_there(self):
+        text = visible(section("research"))
+        for kept in ["my phd, at the university of edinburgh",
+                     "those three are other people's work, credited as such",
+                     "the research i have published was done with collaborators",
+                     "both are research programmes and open hypotheses",
+                     "i can't promise which experiments will work",
+                     "depends on what the research turns up"]:
+            self.assertIn(kept, text, "a qualifier was lost: %s" % kept)
+
+
+class ScreenshotsCanBeInspected(unittest.TestCase):
+    """Review item: the hero is an overview, and detail has to be reachable."""
+
+    def setUp(self):
+        self.raw = INDEX.read_text(encoding="utf-8")
+
+    def figures(self):
+        return re.findall(r"<figure[^>]*>.*?</figure>", self.raw, re.S)
+
+    def test_the_seven_image_loads_and_their_alt_text_survive(self):
+        images = parse().of("img")
+        self.assertEqual(len(images), 7)
+        self.assertEqual(sorted(a["src"] for a in images),
+                         ["img/bar-oneDark.png", "img/bar-swiss.png",
+                          "img/bar-tokyoNight.png", "img/icon.png", "img/icon.png",
+                          "img/search-neural.png", "img/search-smart.png"])
+
+    def test_every_screenshot_can_be_opened_at_its_real_size(self):
+        self.assertEqual(len(self.figures()), 5)
+        for figure in self.figures():
+            src = re.search(r'<img src="([^"]+)"', figure).group(1)
+            self.assertIn('href="%s"' % src, figure,
+                          "%s cannot be opened full size" % src)
+            self.assertIn("view full size", visible(figure))
+
+    def test_no_lightbox_and_no_second_copy_of_any_image(self):
+        """An ordinary link. No script, no generated thumbnail, no edited media."""
+        for mechanism in ("lightbox", "data-zoom", "srcset", "<picture"):
+            self.assertNotIn(mechanism, self.raw)
+        self.assertNotIn("lightbox", (DOCS / "assets" / "site.js").read_text("utf-8"))
+
+    def test_the_search_evidence_is_not_shown_at_half_width(self):
+        """These two are read, not glanced at: the point is that the query and the clip
+        it found share no words, and at half the content width that type is too small.
+        The theme pair stays paired, because what it compares is the colour."""
+        app = section("app")
+        shots = re.search(r'<div class="shots">(.*?)\n  </div>', app, re.S).group(1)
+        self.assertIn("img/search-neural.png", shots)
+        self.assertIn("img/search-smart.png", shots)
+        self.assertIn("img/bar-swiss.png", app)
+        self.assertNotIn("img/search-neural.png",
+                         re.search(r'<div class="plates-2">.*</div>', app, re.S).group(0))
+        grid = declarations(re.search(r"\n\.shots\{([^}]*)\}", css()).group(1))
+        self.assertEqual(grid["display"], "grid")
+        self.assertNotIn("grid-template-columns", grid, "the shots are one per row")
+
+
+class TheComparisonFitsAPhone(unittest.TestCase):
+    """The defect: `table { min-width: 34rem }` applied to the Free/Pro table too, so a
+    320px phone showed the feature column and neither answer."""
+
+    def test_the_wide_minimum_is_not_inherited_by_the_comparison(self):
+        sheet = css().replace(" ", "")
+        self.assertIn("min-width:34rem", sheet, "the wide table lost its minimum")
+        self.assertIn("table.compare{min-width:0;table-layout:fixed}", sheet)
+        self.assertIn('<table class="compare">', INDEX.read_text(encoding="utf-8"))
+
+    def test_the_three_columns_have_declared_proportions_that_add_up(self):
+        sheet = css()
+        feature = int(re.search(r"table\.compare thead th:first-child\{width:(\d+)%",
+                                sheet).group(1))
+        pair = re.search(r"table\.compare thead th:nth-child\(2\),"
+                         r"table\.compare thead th:nth-child\(3\)\{width:(\d+)%", sheet)
+        self.assertIsNotNone(pair, "the Free and Pro columns have no declared width")
+        value = int(pair.group(1))
+        self.assertEqual(feature + 2 * value, 100,
+                         "%d + 2x%d is not a whole table" % (feature, value))
+        self.assertGreater(feature, 2 * value, "the feature column carries the prose")
+
+    def test_all_three_columns_actually_fit_at_320px(self):
+        """Arithmetic, not an assertion that someone looked.
+
+        320px, less the narrow breakpoint's 1rem of page padding a side, is a 288px
+        content box. A value column is 19% of that, the narrow cell padding comes off
+        both sides, and what remains has to hold the word "Yes".
+        """
+        sheet = css()
+        value = int(re.search(r"table\.compare thead th:nth-child\(2\),"
+                              r"table\.compare thead th:nth-child\(3\)\{width:(\d+)%",
+                              sheet).group(1))
+        narrow = narrow_block()
+        padding = float(re.search(r"table\.compare th,table\.compare td\{"
+                                  r"padding:[\d.]+rem ([\d.]+)rem\}", narrow).group(1))
+        size = float(re.search(r"table\.compare\{font-size:([\d.]+)rem\}",
+                               narrow).group(1)) * 16
+        content = 320 - 2 * 16
+        inner = content * value / 100 - 2 * padding * 16
+        # "Yes" is three characters; 0.6em is a generous advance for a system sans.
+        self.assertGreaterEqual(inner, 3 * 0.6 * size,
+                                'a %d%% column leaves %.1fpx and "Yes" needs %.1fpx'
+                                % (value, inner, 3 * 0.6 * size))
+        self.assertIn("overflow-wrap:break-word", sheet,
+                      "the feature column has nothing to wrap on")
+
+    def test_it_is_still_a_semantic_table_with_scoped_headers_and_words(self):
+        table = re.search(r'<table class="compare">.*?</table>',
+                          INDEX.read_text(encoding="utf-8"), re.S).group(0)
+        self.assertEqual(table.count('<th scope="col">'), 3)
+        self.assertEqual(table.count('<th scope="row">'), 9)
+        self.assertEqual(table.count('class="yes">Yes'), 15)
+        self.assertEqual(table.count('class="no">No'), 3)
+        self.assertIn("<caption>", table)
+        self.assertIn("1.0.1", visible(table))
+        self.assertNotIn("aria-hidden", table)
+
+    def test_the_wide_technical_table_can_be_scrolled_from_the_keyboard(self):
+        raw = INDEX.read_text(encoding="utf-8")
+        wrapper = re.search(r'<div class="tablewrap scrolls"([^>]*)>', raw)
+        self.assertIsNotNone(wrapper, "the wide table has no scrolling wrapper")
+        self.assertIn('tabindex="0"', wrapper.group(1),
+                      "a scroll container no keyboard can focus cannot be panned")
+        self.assertIn('role="region"', wrapper.group(1))
+        self.assertIn("aria-label", wrapper.group(1))
+        self.assertIn(".tablewrap.scrolls{overflow-x:auto", css())
+        # The comparison's wrapper does NOT scroll, because it no longer has to.
+        self.assertEqual(raw.count('class="tablewrap scrolls"'), 1)
 
 
 class ClaimMirror(unittest.TestCase):
