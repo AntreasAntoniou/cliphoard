@@ -1,8 +1,9 @@
 name: Release
 
 # Tag a version (e.g. `git tag v1.0.0 && git push --tags`) to build, sign,
-# notarize, package a DMG, publish a GitHub Release, and commit the DMG's sha256 into
-# Casks/cliphoard.rb on main.
+# notarize and package a candidate DMG. Download the workflow artifact for the
+# clean-machine install/Free/Pro acceptance gate, then promote those exact bytes.
+# No tag or workflow dispatch automatically publishes or pushes the cask.
 #
 # Run it by hand (Actions → Release → Run workflow, or `gh workflow run Release --ref main`)
 # for an UNSIGNED DRY RUN: no secrets needed, signing/notarization/publishing are skipped,
@@ -13,6 +14,7 @@ name: Release
 #   MACOS_CERT_PASSWORD   password for that .p12
 #   KEYCHAIN_PASSWORD     any throwaway password for the temp CI keychain
 #   MACOS_DEVID           e.g. "Developer ID Application: Your Name (TEAMID)"
+#   MACOS_PROVISION_PROFILE_BASE64  base64 of the matching Developer ID profile
 #   APPLE_ID              your Apple ID email (for notarytool)
 #   APPLE_TEAM_ID         your 10-char Team ID
 #   APPLE_APP_PASSWORD    an app-specific password from account.apple.com
@@ -30,7 +32,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   release:
@@ -49,6 +51,7 @@ jobs:
           MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
           KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
           MACOS_DEVID: ${{ secrets.MACOS_DEVID }}
+          MACOS_PROVISION_PROFILE_BASE64: ${{ secrets.MACOS_PROVISION_PROFILE_BASE64 }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
@@ -93,7 +96,9 @@ jobs:
           done
 
       - name: Run regression tests before signing
-        run: env -u CLIPHOARD_LIVE_COPY swift test
+        run: |
+          python3 -m unittest discover -s Tests/release -v
+          env -u CLIPHOARD_LIVE_COPY swift test
 
       - name: Set up signing keychain
         if: env.DRY_RUN != 'true'
@@ -129,12 +134,17 @@ jobs:
       - name: Build, sign, notarize, package DMG
         env:
           DEVID: ${{ secrets.MACOS_DEVID }}
+          MACOS_PROVISION_PROFILE_BASE64: ${{ secrets.MACOS_PROVISION_PROFILE_BASE64 }}
           NOTARY_PROFILE: cliphoard-notary
           RELEASE_TAG: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}
         run: |
           if [ "$DRY_RUN" = "true" ]; then
             echo "unsigned dry run: no signing, no notarization, cask untouched, nothing published"
             unset DEVID NOTARY_PROFILE
+          else
+            export PROVISION_PROFILE="$RUNNER_TEMP/Cliphoard-DeveloperID.provisionprofile"
+            printf '%s' "$MACOS_PROVISION_PROFILE_BASE64" | base64 --decode > "$PROVISION_PROFILE"
+            trap 'rm -f "$PROVISION_PROFILE"' EXIT
           fi
           bash Scripts/release.sh
 
@@ -144,34 +154,14 @@ jobs:
           FILE=$(ls build/Cliphoard-*.dmg)
           echo "path=$FILE" >> "$GITHUB_OUTPUT"
           echo "sha256=$(shasum -a 256 "$FILE" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+          shasum -a 256 "$FILE" > build/candidate.sha256
 
-      - name: Publish GitHub Release
-        if: env.DRY_RUN != 'true' && startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
+      - name: Save candidate for customer-install testing
+        uses: actions/upload-artifact@v4
         with:
-          files: ${{ steps.dmg.outputs.path }}
-          generate_release_notes: true
-          body: |
-            ### Cliphoard ${{ github.ref_name }}
-            A fast, private, open-source clipboard manager for macOS.
-
-            - macOS 13 Ventura or later · Universal (Apple Silicon & Intel) · notarized
-            - **SHA-256:** `${{ steps.dmg.outputs.sha256 }}`
-
-            Install: download the DMG, drag Cliphoard to Applications, and press ⌃⌥⌘V.
-            Or via Homebrew once the cask is published: `brew install --cask antreasantoniou/tap/cliphoard`.
-
-      # After publish, so a push failure never loses the DMG. main is unprotected, so the
-      # GITHUB_TOKEN (contents: write) can push; if main is ever protected, switch this to a PR.
-      - name: Commit the cask checksum to main
-        if: env.DRY_RUN != 'true' && startsWith(github.ref, 'refs/tags/')
-        run: |
-          set -euo pipefail
-          SHA="${{ steps.dmg.outputs.sha256 }}"; V="${GITHUB_REF_NAME#v}"
-          grep -q "^  sha256 \"$SHA\"$" Casks/cliphoard.rb || { echo "::error::release.sh did not write the DMG sha256 into Casks/cliphoard.rb"; exit 1; }
-          cp Casks/cliphoard.rb "$RUNNER_TEMP/cliphoard.rb"; git checkout -- Casks/cliphoard.rb
-          git fetch --no-tags origin main && git checkout -B main origin/main
-          grep -q "^  version \"$V\"$" Casks/cliphoard.rb || { echo "::error::main's cask is not version $V — refusing to commit a checksum for a different release"; exit 1; }
-          cp "$RUNNER_TEMP/cliphoard.rb" Casks/cliphoard.rb
-          git config user.name "github-actions[bot]"; git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add Casks/cliphoard.rb && git commit -m "cask: sha256 of Cliphoard-$V.dmg" -m "$SHA" && git push origin main
+          name: cliphoard-candidate-${{ github.run_id }}
+          path: |
+            ${{ steps.dmg.outputs.path }}
+            build/candidate.sha256
+            Casks/cliphoard.rb
+          if-no-files-found: error

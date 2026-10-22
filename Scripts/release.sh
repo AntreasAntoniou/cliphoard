@@ -2,7 +2,8 @@
 #
 # release.sh — build, Developer-ID sign, notarize, staple, and package Cliphoard as a
 # distributable DMG. Designed to be runnable TODAY (it degrades gracefully to a
-# self-signed local DMG) and to "just work" once you have an Apple Developer ID.
+# self-signed local DMG). Developer ID releases also require a matching provisioning
+# profile authorizing the app's restricted keychain access-group entitlement.
 #
 # One-time setup (needs an Apple Developer Program membership):
 #   1. In Xcode > Settings > Accounts, create a "Developer ID Application" cert,
@@ -12,10 +13,13 @@
 #         xcrun notarytool store-credentials cliphoard-notary \
 #            --apple-id "you@example.com" --team-id "ABCDE12345"
 #      (use an app-specific password from appleid.apple.com)
+#   3. Create a Developer ID distribution profile for the explicit macOS App ID
+#      io.antreas.cliphoard authorizing its Keychain group. See RELEASING.md.
 #
 # Then release with:
 #   DEVID="Developer ID Application: Your Name (ABCDE12345)" \
 #   NOTARY_PROFILE="cliphoard-notary" \
+#   PROVISION_PROFILE="/path/to/Cliphoard-DeveloperID.provisionprofile" \
 #   bash Scripts/release.sh
 # Env: RELEASE_TAG (CI passes the tag) must equal v<Info.plist version>, or nothing is built.
 #      A signed+notarised run ends by writing the DMG's sha256 into Casks/cliphoard.rb; an
@@ -56,14 +60,36 @@ if grep -q "^  sha256 \"$ZERO_SHA\"$" "$CASK"; then
     warn "$CASK carries the all-zero placeholder sha256 — expected before the first cut; a signed+notarised run writes the real one at the end."
 fi
 
-# A public release must never ship the old brand name. Sweep any leftover
-# wrong-brand artifacts so no Ditto-named file can sit alongside the Cliphoard DMG.
-rm -rf build/Ditto.app build/Ditto-*.dmg
-
 APP="build/Cliphoard.app"
 ENTITLEMENTS="Scripts/Cliphoard.entitlements"
 DEVID="${DEVID:-}"                 # Developer ID Application identity (empty = local/self-signed)
 NOTARY_PROFILE="${NOTARY_PROFILE:-}"   # notarytool keychain profile (empty = skip notarization)
+PROVISION_PROFILE="${PROVISION_PROFILE:-}"
+
+# Fail before downloads, builds or signing. A real Developer ID identity alone does
+# not authorize keychain-access-groups: AMFI rejects the process even when codesign,
+# notarization and Gatekeeper all pass. Freeze the supplied profile for this run.
+if [[ -n "$DEVID" ]]; then
+    [[ -f "$PROVISION_PROFILE" ]] || {
+        echo "ERROR: PROVISION_PROFILE must name Cliphoard's Developer ID distribution profile (see RELEASING.md)." >&2
+        exit 1
+    }
+    TEAM_ID="$(printf '%s' "$DEVID" | sed -n 's/.*(\([A-Z0-9]\{10\}\))$/\1/p')"
+    [[ -n "$TEAM_ID" ]] || { echo "ERROR: DEVID must include its 10-character Team ID." >&2; exit 1; }
+    SIGNING_WORK="$(mktemp -d -t cliphoard-signing)"
+    trap 'rm -rf "$SIGNING_WORK"' EXIT
+    cp "$PROVISION_PROFILE" "$SIGNING_WORK/profile.provisionprofile"
+    EXPANDED_ENTITLEMENTS="$SIGNING_WORK/entitlements.plist"
+    BUNDLE_ID="$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' Resources/Info.plist)"
+    python3 Scripts/distribution-profile.py prepare \
+        --profile "$SIGNING_WORK/profile.provisionprofile" \
+        --template "$ENTITLEMENTS" --team-id "$TEAM_ID" --bundle-id "$BUNDLE_ID" \
+        --output "$EXPANDED_ENTITLEMENTS"
+fi
+
+# A public release must never ship the old brand name. Sweep any leftover
+# wrong-brand artifacts so no Ditto-named file can sit alongside the Cliphoard DMG.
+rm -rf build/Ditto.app build/Ditto-*.dmg
 
 # 1. Restore the models the DMG actually BUNDLES: the two OpenVision-Tiny towers (34.6 MB),
 # downloaded by tools/restore-models.sh as one SHA-256-pinned zip from the models-v1 release.
@@ -96,39 +122,16 @@ say "Version $VERSION"
 if [[ -n "$DEVID" ]]; then
     say "Signing with Developer ID + Hardened Runtime…"
 
-    # Expand the keychain access group BEFORE signing.
-    #
-    # The entitlements file carries `$(AppIdentifierPrefix)io.antreas.cliphoard`, which is
-    # an XCODE build-setting substitution. `codesign --entitlements` performs no variable
-    # expansion whatsoever — it embeds the bytes it is given. Signing the file as written
-    # would bake in the literal string `$(AppIdentifierPrefix)…`, which can never match a
-    # real group, so the data-protection keychain would stay unavailable and the app would
-    # silently keep using the legacy keychain. The fix would look applied and do nothing:
-    # exactly the failure family this release is about.
-    TEAM_ID="$(printf '%s' "$DEVID" | sed -n 's/.*(\([A-Z0-9]\{10\}\))$/\1/p')"
-    if [[ -z "$TEAM_ID" ]]; then
-        echo "ERROR: could not extract a 10-character Team ID from signing identity:" >&2
-        echo "         $DEVID" >&2
-        echo "       The keychain-access-group entitlement would be signed as an inert" >&2
-        echo "       placeholder and the data-protection keychain would never activate." >&2
-        echo "       Refusing to ship a signature that silently does nothing." >&2
-        exit 1
-    fi
-    EXPANDED_ENTITLEMENTS="$(mktemp -t cliphoard-entitlements).plist"
-    sed "s/\$(AppIdentifierPrefix)/${TEAM_ID}./g" "$ENTITLEMENTS" > "$EXPANDED_ENTITLEMENTS"
-    plutil -lint "$EXPANDED_ENTITLEMENTS" >/dev/null
-    say "Keychain access group: ${TEAM_ID}.io.antreas.cliphoard"
+    # The profile's App ID prefix need not equal its Team ID. The preflight derives
+    # claims from the profile, and the profile must be sealed into the signature.
+    cp "$SIGNING_WORK/profile.provisionprofile" "$APP/Contents/embedded.provisionprofile"
 
     # Cliphoard is a single Mach-O (static SwiftPM binary); .mlmodelc are data, not code.
     codesign --force --options runtime --timestamp \
              --entitlements "$EXPANDED_ENTITLEMENTS" \
              --sign "$DEVID" "$APP"
-    # Prove the expansion actually landed, rather than trusting the sed.
-    if codesign -d --entitlements - "$APP" 2>/dev/null | grep -q 'AppIdentifierPrefix'; then
-        echo "ERROR: the signed bundle still contains an unexpanded \$(AppIdentifierPrefix)." >&2
-        exit 1
-    fi
-    rm -f "$EXPANDED_ENTITLEMENTS"
+    python3 Scripts/distribution-profile.py verify \
+        --app "$APP" --template "$ENTITLEMENTS" --team-id "$TEAM_ID"
     codesign --verify --strict --verbose=2 "$APP"
     say "Gatekeeper assessment:"
     spctl --assess --type execute --verbose=4 "$APP" || warn "spctl will pass only AFTER notarization."
@@ -147,6 +150,8 @@ if [[ -n "$NOTARY_PROFILE" && -n "$DEVID" ]]; then
     xcrun stapler staple "$APP"
     xcrun stapler validate "$APP"
     codesign --verify --strict --verbose=2 "$APP"
+    python3 Scripts/distribution-profile.py verify \
+        --app "$APP" --template "$ENTITLEMENTS" --team-id "$TEAM_ID"
     spctl --assess --type execute --verbose=4 "$APP"
     rm -f "build/Cliphoard.zip"
 elif [[ -n "$DEVID" ]]; then
@@ -169,6 +174,10 @@ cp "THIRD-PARTY-NOTICES.md" "$STAGE/"
 # what the RECIPIENT receives, not what the repo contains.
 STRICT_BUNDLE=1 BUNDLE_MODELS="openvision-tiny-p8-image openvision-tiny-p8-text" \
     bash Scripts/verify-bundle.sh "$STAGE/Cliphoard.app" "$(pwd)" "$STAGE"
+if [[ -n "$DEVID" ]]; then
+    python3 Scripts/distribution-profile.py verify \
+        --app "$STAGE/Cliphoard.app" --template "$ENTITLEMENTS" --team-id "$TEAM_ID"
+fi
 
 ln -s /Applications "$STAGE/Applications"
 hdiutil create -volname "Cliphoard $VERSION" -srcfolder "$STAGE" -ov -format UDZO "$DMG" >/dev/null
@@ -193,7 +202,7 @@ DMG_SHA="$(shasum -a 256 "$DMG" | cut -d' ' -f1)"
 if [[ -n "$DEVID" && -n "$NOTARY_PROFILE" ]]; then
     sed -i '' -E "s/^  sha256 \"[0-9a-f]{64}\"$/  sha256 \"$DMG_SHA\"/" "$CASK"
     grep -q "^  sha256 \"$DMG_SHA\"$" "$CASK" || { echo "::error::$CASK sha256 line was not rewritten" >&2; exit 1; }
-    say "$CASK sha256 = $DMG_SHA (release.yml commits this to main; for a local release, commit it yourself)"
+    say "$CASK sha256 = $DMG_SHA (candidate only; publish/commit after customer-install acceptance)"
 else
     warn "unsigned or un-notarised run: DMG sha256 $DMG_SHA — $CASK NOT updated (only a notarised DMG's checksum ever enters the cask)."
 fi

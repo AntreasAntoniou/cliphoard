@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
     <!--
-      Ditto is intentionally NOT sandboxed: a clipboard manager that synthesizes
+      Cliphoard's direct-distribution build is intentionally NOT sandboxed: it synthesizes
       ⌘V into other apps and registers a global hotkey cannot run under the macOS
       App Sandbox. It ships with the Hardened Runtime (required for notarization);
       Accessibility is granted by the user at runtime and needs no entitlement.
@@ -26,12 +26,15 @@
       so a correctly-signed app reads its own items with no UI, ever. This
       entitlement is what makes that available.
 
-      IMPORTANT: it only takes effect when the app is signed with a real team
-      identity. A self-signed local build has none, so the request fails with
-      errSecMissingEntitlement (-34018) and Crypto.storeBlob falls back to the
-      legacy keychain — which is why the fallback is load-bearing and not a nicety.
-      Release builds signed with a Developer ID get the prompt-free path; developer
-      builds keep working exactly as before.
+      IMPORTANT: this is a restricted entitlement. Developer ID signing MUST embed
+      a matching Developer ID provisioning profile before codesign. Without one,
+      AMFI rejects the executable before main, even after notarization; Crypto's
+      runtime fallback cannot rescue it. release.sh derives AppIdentifierPrefix from
+      that profile and verifies the profile's claims and signing-certificate allowlist.
+
+      Local builds omit this entitlement. Their data-protection request can fail with
+      errSecMissingEntitlement (-34018), and Crypto.storeBlob then falls back to the
+      legacy keychain. Retain that fallback for those builds.
     -->
     <key>keychain-access-groups</key>
     <array>
