@@ -19,7 +19,7 @@ can't run under the App Sandbox.
    `KEYCHAIN_PASSWORD`, `MACOS_DEVID` (`Developer ID Application: Name (TEAMID)`),
    `APPLE_ID`, `APPLE_TEAM_ID`, `APPLE_APP_PASSWORD`,
    `MACOS_PROVISION_PROFILE_BASE64` (base64 of the profile described below).
-4. Register the explicit App ID **`io.antreas.cliphoard`**, then create a
+4. Register the explicit App ID **`ai.a2-labs.cliphoard`**, then create a
    **Developer ID distribution provisioning profile** for it, selecting the same
    Developer ID Application certificate used for signing. The app's Keychain
    Sharing entitlement is declared in `Scripts/Cliphoard.entitlements`; there is
@@ -34,6 +34,14 @@ can't run under the App Sandbox.
    the final signature's entitlements and certificate against the profile.
    See [Apple's distribution-signing guidance](https://developer.apple.com/documentation/xcode/creating-distribution-signed-code-for-the-mac/)
    and [TN3125](https://developer.apple.com/documentation/technotes/tn3125-inside-code-signing-provisioning-profiles).
+
+The A2 Labs bundle identity replaces `io.antreas.cliphoard` in 1.0.1 (build 2).
+Startup copies missing preferences and the stored licence once, preserving new
+choices and the old preferences domain. Clipboard files, model storage, the
+`ai.axiotic.ditto` Keychain service, the original default Keychain access group,
+archive UTI and existing notification names remain stable compatibility identifiers.
+macOS Accessibility and launch-at-login approvals are tied to app identity and may
+need to be granted again; the app must not copy or bypass those OS permissions.
 
 ## Cut a release
 

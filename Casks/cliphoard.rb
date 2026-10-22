@@ -16,7 +16,7 @@
 #   2. The Ruby preflight below raises if the all-zero sha reaches `brew`,
 #      gated to non-development use so local cask hacking still works.
 cask "cliphoard" do
-  version "1.0.0"
+  version "1.0.1"
   sha256 "0000000000000000000000000000000000000000000000000000000000000000"
 
   # Belt-and-braces: refuse to install/audit a cask that still carries the

@@ -127,7 +127,7 @@ telemetry, analytics, or account. Pasteboards marked transient, concealed or aut
 — what password managers set — are never stored; a clip that still arrives from a known
 password manager is stored encrypted but quarantined: flagged "password app" and never
 indexed, not hidden. Exclude any app with
-`defaults write io.antreas.cliphoard excludedBundleIDs -array com.example.app`. See
+`defaults write ai.a2-labs.cliphoard excludedBundleIDs -array com.example.app`. See
 [PRIVACY.md](PRIVACY.md) — including **why there is, and will be, no cloud sync**.
 
 **Moving to a new Mac:** *Settings → Move to another Mac*. The key never leaves this Mac's

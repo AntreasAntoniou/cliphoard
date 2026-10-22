@@ -61,7 +61,7 @@ why that fallback is load-bearing rather than a nicety. So:
 - Cut releases with `Scripts/release.sh` (it passes `--entitlements`), **not**
   `Scripts/build-app.sh`, which does not.
 - After the first signed build, confirm the debug log shows keys resolving with no
-  `DARK WAKE` or `-34018` lines. `defaults write io.antreas.cliphoard debugLog -bool YES`.
+  `DARK WAKE` or `-34018` lines. `defaults write ai.a2-labs.cliphoard debugLog -bool YES`.
 
 
 ## Local-install incident, 2026-08-08 → 2026-08-12 — read before running anything

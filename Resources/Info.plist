@@ -7,11 +7,11 @@
     <key>CFBundleDisplayName</key>
     <string>Cliphoard</string>
     <key>CFBundleIdentifier</key>
-    <string>io.antreas.cliphoard</string>
+    <string>ai.a2-labs.cliphoard</string>
     <key>CFBundleVersion</key>
-    <string>1.0.0</string>
+    <string>2</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.0.0</string>
+    <string>1.0.1</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleExecutable</key>

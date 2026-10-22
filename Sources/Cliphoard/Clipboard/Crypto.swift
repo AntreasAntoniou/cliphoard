@@ -31,8 +31,6 @@ enum Crypto {
     /// be the single worst bug in this file.
     static let testServicePrefix = "io.antreas.cliphoard.tests."
 
-    private static let productionBundleID = "io.antreas.cliphoard"
-
     /// WHERE keychain items live. Production unless this process is PROVABLY a test harness.
     ///
     /// Keychain items are keyed by service across processes — unlike `UserDefaults`, which
@@ -69,7 +67,7 @@ enum Crypto {
     /// The decision as a PURE function, so a test can assert the SHIPPING direction — which it
     /// can never observe live, because a test process is by definition the other case.
     static func serviceName(xctestLoaded: Bool, bundleID: String?) -> String {
-        guard xctestLoaded, bundleID != productionBundleID else { return productionService }
+        guard xctestLoaded, !AppIdentity.isProductionBundle(bundleID) else { return productionService }
         // A PER-RUN namespace, not a fixed test one. A fixed test service accumulates items
         // across runs, each written by a differently ad-hoc-signed `xctest` binary whose code
         // identity is already gone — so the next run needs a confirmation dialog for every one

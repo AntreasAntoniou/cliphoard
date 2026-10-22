@@ -38,6 +38,8 @@
     -->
     <key>keychain-access-groups</key>
     <array>
+        <!-- Keep the established default group across the A2 Labs bundle-ID change.
+             Changing this storage namespace could strand existing encryption keys. -->
         <string>$(AppIdentifierPrefix)io.antreas.cliphoard</string>
     </array>
 </dict>

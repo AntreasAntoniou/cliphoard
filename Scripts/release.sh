@@ -14,7 +14,7 @@
 #            --apple-id "you@example.com" --team-id "ABCDE12345"
 #      (use an app-specific password from appleid.apple.com)
 #   3. Create a Developer ID distribution profile for the explicit macOS App ID
-#      io.antreas.cliphoard authorizing its Keychain group. See RELEASING.md.
+#      ai.a2-labs.cliphoard authorizing its retained Keychain group. See RELEASING.md.
 #
 # Then release with:
 #   DEVID="Developer ID Application: Your Name (ABCDE12345)" \
