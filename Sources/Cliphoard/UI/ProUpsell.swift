@@ -32,6 +32,9 @@ struct ProBadge: View {
 /// the price, and offers the one button that resolves it.
 struct ProPitchCard: View {
     let message: String
+#if APP_STORE
+    @ObservedObject private var purchase = StorePurchase.shared
+#endif
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -46,6 +49,9 @@ struct ProPitchCard: View {
             }
             HStack {
                 Spacer()
+#if APP_STORE
+                StoreProPurchaseButton()
+#else
                 Button("Get Pro — \(Licence.priceLabel)") {
                     // Hands the URL to the user's browser. The APP makes no request of its
                     // own — PRIVACY.md and the site promise zero network calls, and buying
@@ -53,12 +59,34 @@ struct ProPitchCard: View {
                     NSWorkspace.shared.open(Licence.buyURL)
                 }
                 .controlSize(.small)
+#endif
             }
+#if APP_STORE
+            if let status = purchase.statusMessage {
+                Text(status).font(.system(size: 11)).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+#endif
         }
         .padding(10)
         .background(Theme.accent.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
     }
 }
+
+#if APP_STORE
+/// Price and availability come from StoreKit, never from the direct-download checkout.
+struct StoreProPurchaseButton: View {
+    @ObservedObject private var purchase = StorePurchase.shared
+
+    var body: some View {
+        Button(purchase.purchaseTitle) {
+            Task { await purchase.purchase() }
+        }
+        .controlSize(.small)
+        .disabled(!purchase.canPurchase)
+    }
+}
+#endif
 
 /// Which gated surface raised a pitch. Carried with the message so the explanation renders
 /// UNDER the control the user actually touched — a banner at the top of a long scroll view

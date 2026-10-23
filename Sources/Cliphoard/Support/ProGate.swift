@@ -12,11 +12,8 @@ import Foundation
 /// and the changelog promised this as the 1.0.1 fix for a limitation the encryption design
 /// itself creates; the first paid feature should not be the way out of your own lock-in.
 ///
-/// If that is ever revisited, note what the one-line framing hides. `Licence.swift` now
-/// exists — an offline Ed25519 key verified against a public key compiled in, no network —
-/// so the *check* is answered. What is still not: there is no purchase flow, no StoreKit, no
-/// restore path and no receipt story, so flipping this to `false` would sell a door with
-/// nothing behind it. The gate is one line; the feature behind it is not.
+/// The direct edition verifies signed keys; the App Store edition verifies StoreKit
+/// purchases. Neither purchase path changes this rule: moving your history stays free.
 enum ProGate {
     static var allowsHistoryArchive: Bool { true }
 }

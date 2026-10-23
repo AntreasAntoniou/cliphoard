@@ -1,5 +1,56 @@
 import SwiftUI
 import AppKit
+import Combine
+
+/// Edits the same list ClipboardMonitor reads on each copy. A separate model keeps this
+/// free privacy control independent of Pro and makes its persistence testable in a suite.
+@MainActor
+final class ExcludedAppsSettings: ObservableObject {
+    static let defaultsKey = "excludedBundleIDs"
+    @Published private(set) var bundleIDs: [String]
+    @Published var draft = "" { didSet { validationMessage = nil } }
+    @Published private(set) var validationMessage: String?
+    private let defaults: UserDefaults
+
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+        bundleIDs = defaults.stringArray(forKey: Self.defaultsKey) ?? []
+    }
+
+    func reload() { bundleIDs = defaults.stringArray(forKey: Self.defaultsKey) ?? [] }
+
+    @discardableResult
+    func add() -> Bool {
+        let id = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !id.isEmpty else {
+            validationMessage = "Enter an app’s bundle ID, such as com.example.App."
+            return false
+        }
+        guard id.range(of: "^[A-Za-z0-9-]+(?:\\.[A-Za-z0-9-]+)*$",
+                       options: .regularExpression) != nil else {
+            validationMessage = "Use letters, numbers, hyphens and dots, with no spaces or empty parts."
+            return false
+        }
+        // Preserve saved spellings, including older unusual IDs. Bundle identifiers are
+        // case-insensitive, so a differently capitalised duplicate is still the same app.
+        reload()
+        guard !bundleIDs.contains(where: { $0.caseInsensitiveCompare(id) == .orderedSame }) else {
+            validationMessage = "That app is already excluded."
+            return false
+        }
+        bundleIDs.append(id)
+        defaults.set(bundleIDs, forKey: Self.defaultsKey)
+        draft = ""
+        return true
+    }
+
+    func remove(_ id: String) {
+        reload()
+        bundleIDs.removeAll { $0.caseInsensitiveCompare(id) == .orderedSame }
+        defaults.set(bundleIDs, forKey: Self.defaultsKey)
+        validationMessage = nil
+    }
+}
 
 /// Observable wrapper over the app's persisted settings so the in-bar settings
 /// UI can bind to them with two-way bindings. Reads current values on init and
@@ -46,6 +97,10 @@ final class AppSettings: ObservableObject {
     /// verify is NOT stored: storing it would make Settings show a key while the app behaves
     /// as free, which is the most confusing state a licence UI can be in.
     func verifyLicence() {
+#if APP_STORE
+        licenceKeyField = ""
+        licenceVerdict = .free(reason: "Use App Store purchases in this edition")
+#else
         let typed = licenceKeyField.trimmingCharacters(in: .whitespacesAndNewlines)
         let result = Licence.verify(typed)
         if result.isPro {
@@ -57,20 +112,26 @@ final class AppSettings: ObservableObject {
         store.entitlement = Licence.current
         licenceVerdict = result
         syncGatedSettingsToEntitlement()
+#endif
     }
 
     func removeLicence() {
+#if !APP_STORE
         Licence.remove()
         licenceKeyField = ""
         licenceVerdict = nil
         store.entitlement = Licence.current
         syncGatedSettingsToEntitlement()
+#endif
     }
 
     /// The verdict of the last Verify press, or nil if none. Separate from `entitlement` so
     /// a FAILED paste can say why ("signature does not verify") rather than silently
     /// reverting to a free build with no explanation.
     @Published var licenceVerdict: Entitlement?
+#if APP_STORE
+    private var entitlementObservation: AnyCancellable?
+#endif
 
     /// After a licence change, bring the gated settings back in line with what the build
     /// will actually do. Only ever turns things OFF (or leaves them), never deletes. The
@@ -222,7 +283,9 @@ final class AppSettings: ObservableObject {
         overlayBaskets = TagBaskets.overlayIDs
         assignmentThreshold = Double(TagSpace.assignmentThreshold)
         customTagsText = TagBaskets.custom.tags.joined(separator: "\n")
+#if !APP_STORE
         licenceKeyField = UserDefaults.standard.string(forKey: Licence.defaultsKey) ?? ""
+#endif
         licenceVerdict = store.entitlement.isPro ? store.entitlement : nil
         // A persisted `.image` selection can OUTLIVE the entitlement that allowed it — a
         // removed key, a refund, a fresh free install on a defaults domain that still has the
@@ -243,16 +306,40 @@ final class AppSettings: ObservableObject {
             searchMode = .smart
             DeepSearch.mode = .smart
         }
+#if APP_STORE
+        // @Published emits before ClipStore's value changes. Reconcile on the main actor
+        // afterward so the settings bindings read the actual new entitlement.
+        entitlementObservation = store.$entitlement.removeDuplicates().dropFirst().sink { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                let allowed = ClipStore.imageUnderstandingAllowed(self.entitlement)
+                if self.imageUnderstanding != allowed { self.imageUnderstanding = allowed }
+                if !SearchMode.available(self.entitlement).contains(self.searchMode) {
+                    self.searchMode = .exact
+                }
+                if self.entitlement.isPro { self.proPitch = nil }
+                self.objectWillChange.send()
+            }
+        }
+#endif
     }
 
     func previewSound() { Feedback.play(named: soundName) }
 
     /// Live Accessibility-trust state. Polled while Settings is open so the
     /// "Grant…" row disappears as soon as the grant takes effect.
-    @Published var axTrusted: Bool = AXIsProcessTrusted()
+    @Published var axTrusted: Bool = {
+#if APP_STORE
+        false
+#else
+        AXIsProcessTrusted()
+#endif
+    }()
     func refreshAXTrust() {
+#if !APP_STORE
         let t = AXIsProcessTrusted()
         if t != axTrusted { axTrusted = t }
+#endif
     }
 }
 
@@ -271,12 +358,17 @@ struct SettingsView: View {
     /// Owns the export/import flow for moving a history between Macs. StateObject for the
     /// same reason: the opened file's preview must survive a re-render while it is read.
     @StateObject private var archiveModel = ArchiveModel()
-    /// Embedder lifecycle (ready / downloading N% / installing / failed) for the
-    /// live status line — auto-install progress renders here.
+    @StateObject private var excludedApps = ExcludedAppsSettings()
+    /// Embedder lifecycle for the status line; Store models are bundled, while the
+    /// direct edition can also show download/install progress.
     @ObservedObject private var embedderState = EmbedderState.shared
+#if APP_STORE
+    @ObservedObject private var purchase = StorePurchase.shared
+#else
     /// Live, observable Accessibility-trust state (polled).
     private var axTrusted: Bool { settings.axTrusted }
     private let axTimer = Timer.publish(every: 1.2, on: .main, in: .common).autoconnect()
+#endif
 
     /// The Keep rows, smallest first. `0` is the unlimited sentinel `trim()` already honours.
     private let limits: [(Int, String)] = [
@@ -318,12 +410,35 @@ struct SettingsView: View {
                              : "Free build — a full clipboard manager, with no time limit")
                         Spacer()
                         if !settings.entitlement.isPro {
+#if APP_STORE
+                            StoreProPurchaseButton()
+#else
                             Button("Get Pro — \(Licence.priceLabel)") {
                                 NSWorkspace.shared.open(Licence.buyURL)
                             }
                             .controlSize(.small)
+#endif
                         }
                     }
+#if APP_STORE
+                    Text("Pro unlocks image search and text recognition with a one-time App Store purchase. Free history, text search, imports and encrypted export remain available.")
+                        .font(.system(size: 11)).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    HStack {
+                        Button("Restore Purchases") { Task { await purchase.restore() } }
+                            .disabled(purchase.isPresentingSystemSheet)
+                        if purchase.product == nil {
+                            Button("Reload App Store price") { Task { await purchase.loadProduct() } }
+                                .disabled(purchase.loadingProduct || purchase.isPresentingSystemSheet)
+                        }
+                        if purchase.isPresentingSystemSheet { ProgressView().controlSize(.small) }
+                    }
+                    .controlSize(.small)
+                    if let message = purchase.statusMessage {
+                        Text(message).font(.system(size: 11)).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+#else
                     if let order = settings.proOrderID {
                         HStack {
                             // The order id is shown ONCE VERIFIED and nowhere else: it is what
@@ -361,6 +476,7 @@ struct SettingsView: View {
                          + "Pro is \(Licence.priceLabel) once: one person, every Mac you own.")
                         .font(.system(size: 11)).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
+#endif
                 }
 
                 section("Appearance") {
@@ -477,8 +593,8 @@ struct SettingsView: View {
                         Text("Embedding model")
                         Spacer()
                         Picker("", selection: $settings.deepSearchLevel) {
-                            // ogma micro/small (MIT) ship bundled; MiniLM (Apache-2.0)
-                            // downloads on demand. Every tier is permissively licensed.
+                            // Every tier is permissively licensed. Store builds bundle all
+                            // tiers; the direct edition can download MiniLM on demand.
                             ForEach(DeepSearchLevel.allCases) { Text($0.title).tag($0) }
                         }
                         .labelsHidden().frame(width: 200)
@@ -495,8 +611,13 @@ struct SettingsView: View {
                         // tier (MiniLM) has a fixed output head.
                         .disabled(settings.searchMode == .exact || !settings.deepSearchLevel.isOgma)
                     }
+#if APP_STORE
+                    Text("Vector detail (ogma tiers): Full uses the 1024-d bge-large-distilled head — strongest search; Compact stores 2.7× smaller vectors. High runs bundled MiniLM. All model tiers run on this Mac. Switching re-indexes in the background.")
+                        .font(.system(size: 11)).foregroundStyle(.secondary)
+#else
                     Text("Vector detail (ogma tiers): Full uses the 1024-d bge-large-distilled head — strongest search; Compact stores 2.7× smaller vectors. High runs MiniLM (fast, excellent) and downloads on first use. Switching re-indexes in the background.")
                         .font(.system(size: 11)).foregroundStyle(.secondary)
+#endif
                     embedderStatus
                     Text("Smart = clips containing exactly what you typed first, then the closest in meaning · Exact = only clips containing the typed text, ignoring case · Tag = clips in the auto category (of 100) closest to your query. You can also switch modes from the pill next to the search field. Models run on-device (CoreML).")
                         .font(.system(size: 11)).foregroundStyle(.secondary)
@@ -638,7 +759,43 @@ struct SettingsView: View {
                     }
                 }
 
+                section("Excluded apps") {
+                    Text("Skip new copies while an excluded app is frontmost. Existing clips stay in your history. This control is free.")
+                        .font(.system(size: 11)).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if excludedApps.bundleIDs.isEmpty {
+                        Text("No apps excluded")
+                            .font(.system(size: 12)).foregroundStyle(.secondary)
+                    }
+                    ForEach(Array(excludedApps.bundleIDs.enumerated()), id: \.offset) { _, id in
+                        HStack {
+                            Text(id).font(.system(size: 12, design: .monospaced))
+                                .textSelection(.enabled)
+                            Spacer()
+                            Button("Remove") { excludedApps.remove(id) }
+                                .controlSize(.small)
+                                .accessibilityLabel("Remove \(id) from exclusions")
+                        }
+                    }
+                    HStack {
+                        TextField("Bundle ID, e.g. com.example.App", text: $excludedApps.draft)
+                            .textFieldStyle(.roundedBorder)
+                            .font(.system(size: 12, design: .monospaced))
+                            .accessibilityLabel("App bundle ID to exclude")
+                            .onSubmit { excludedApps.add() }
+                        Button("Add") { excludedApps.add() }.controlSize(.small)
+                    }
+                    if let message = excludedApps.validationMessage {
+                        Text(message).font(.system(size: 11)).foregroundStyle(.orange)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+
                 section("Permissions & Advanced") {
+#if APP_STORE
+                    Text("Selecting a clip copies it to the clipboard. Press ⌘V in your destination app to paste. This edition does not request Accessibility access.")
+                        .font(.system(size: 12)).foregroundStyle(.secondary)
+#else
                     HStack {
                         Image(systemName: axTrusted ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
                             .foregroundStyle(axTrusted ? .green : .orange)
@@ -659,6 +816,7 @@ struct SettingsView: View {
                             Button("Relaunch") { relaunch() }.controlSize(.small)
                         }
                     }
+#endif
                     Toggle("Debug logging", isOn: $settings.debugLogging)
                 }
             }
@@ -668,10 +826,13 @@ struct SettingsView: View {
             .frame(maxWidth: .infinity)
         }
         .frame(maxHeight: .infinity)
+        .onAppear { excludedApps.reload() }
+#if !APP_STORE
         .onReceive(axTimer) { _ in settings.refreshAXTrust() }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             settings.refreshAXTrust()
         }
+#endif
     }
 
     /// Quit and relaunch so a just-granted Accessibility permission is picked up.
@@ -680,10 +841,8 @@ struct SettingsView: View {
 
     // MARK: Building blocks
 
-    /// Live embedder lifecycle line. Distinguishes downloading / installing /
-    /// loading from a real absence — models auto-install when a tier is picked,
-    /// so "not installed" is only ever a transient or an error, never a task
-    /// for the user.
+    /// Live model availability. Store builds load included assets; only the direct
+    /// edition offers automatic downloads for a tier that is not already installed.
     @ViewBuilder
     private var embedderStatus: some View {
         HStack(spacing: 6) {
@@ -691,6 +850,11 @@ struct SettingsView: View {
             case .ready(let signature):
                 Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
                 Text("Semantic model active: \(signature)").foregroundStyle(Color.green)
+#if APP_STORE
+            case .downloading(let name, _), .installing(let name):
+                ProgressView().controlSize(.small)
+                Text("Preparing bundled model \(name)…").foregroundStyle(.secondary)
+#else
             case .downloading(let name, let progress):
                 ProgressView().controlSize(.small)
                 Text("Downloading \(name)… \(Int(progress * 100))%")
@@ -698,20 +862,30 @@ struct SettingsView: View {
             case .installing(let name):
                 ProgressView().controlSize(.small)
                 Text("Installing \(name)… (one-time)").foregroundStyle(.secondary)
+#endif
             case .loading(let name):
                 ProgressView().controlSize(.small)
                 Text("Loading \(name)…").foregroundStyle(.secondary)
             case .failed(let name, let message):
                 Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+#if APP_STORE
+                Text("\(name) could not load: \(message)").foregroundStyle(.secondary)
+#else
                 Text("\(name) install failed: \(message)").foregroundStyle(.secondary)
+#endif
                 Button("Retry") {
                     EmbedderProvider.configureAndReindex(level: settings.deepSearchLevel, store: store)
                 }
                 .controlSize(.small)
             case .fallback:
                 Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+#if APP_STORE
+                Text("Basic matching only — choose an included model tier above")
+                    .foregroundStyle(.secondary)
+#else
                 Text("Basic matching only — pick a model tier above to auto-install one")
                     .foregroundStyle(.secondary)
+#endif
             }
         }
         .font(.system(size: 11))
@@ -757,8 +931,10 @@ struct SettingsView: View {
     }
 
     private func promptAccessibility() {
+#if !APP_STORE
         _ = AXIsProcessTrustedWithOptions(
             [kAXTrustedCheckOptionPrompt.takeRetainedValue() as String: true] as CFDictionary)
+#endif
     }
 
     /// Describes the active vocabulary. After the Wave-4 retirement General owns

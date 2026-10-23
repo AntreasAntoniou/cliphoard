@@ -505,7 +505,9 @@ struct ContentView: View {
             model.onRequestFocus?()
         }
         guard panel.runModal() == .OK, let url = panel.url,
-              let data = try? Data(contentsOf: url) else { return }
+              let data = DistributionChannel.withSecurityScopedAccess(to: url, {
+                  try? Data(contentsOf: url)
+              }) else { return }
         model.referenceImage = (name: url.lastPathComponent, data: data)
         // SWITCH TO IMAGE MODE, visibly. The reference only ranks image clips, so leaving the
         // user in Exact or Tag would give them a file picker that changes nothing — the

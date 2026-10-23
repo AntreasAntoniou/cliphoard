@@ -549,7 +549,7 @@ class Ordering(unittest.TestCase):
         self.assertIn("1.0.0", text)
         self.assertIn("not notarized by apple", text)
         self.assertIn("1.0.1", text)
-        self.assertIn("awaiting notarization", text)
+        self.assertIn("notarized and undergoing customer-install testing", text)
         self.assertLess(len(text.split()), 90, "the release note is a wall again")
         self.assertNotIn('class="status"', self.raw)
         self.assertNotIn("where the release actually stands", visible(self.raw))
@@ -731,8 +731,8 @@ class CodeBackedClaims(unittest.TestCase):
     def test_the_page_does_not_claim_zero_network_calls(self):
         self.assertNotIn("zero network calls", self.text)
         self.assertNotIn("no network calls", self.text)
-        self.assertIn("downloading a search model you have chosen and do not have yet",
-                      self.text)
+        self.assertIn("direct edition downloads search models", self.text)
+        self.assertIn("uses apple for pro purchases", self.text)
 
     def test_touch_id_is_described_as_absent_rather_than_promised(self):
         self.assertIn("there is no touch id prompt anywhere in cliphoard", self.text)
@@ -748,7 +748,7 @@ class CodeBackedClaims(unittest.TestCase):
     def test_the_privacy_intro_is_visitor_facing_rather_than_a_source_tour(self):
         raw = INDEX.read_text(encoding="utf-8")
         self.assertIn("nothing you copy is uploaded", self.text)
-        self.assertIn("no account, no telemetry, no cloud and no sync", self.text)
+        self.assertIn("no cliphoard account, no telemetry, no cloud and no sync", self.text)
         self.assertIn("encrypted on your own mac with a key that cannot leave it",
                       self.text)
         self.assertIn("privacy policy", self.text)

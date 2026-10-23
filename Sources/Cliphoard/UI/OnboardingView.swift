@@ -1,9 +1,12 @@
 import SwiftUI
 import AppKit
+import Combine
+#if !APP_STORE
 import ApplicationServices
+#endif
 
-/// First-run welcome window: explains the hotkey and the one-time Accessibility
-/// grant, then gets out of the way. Shown once (gated on UserDefaults), and
+/// First-run welcome window: explains the hotkey and the channel's paste flow,
+/// then gets out of the way. Shown once (gated on UserDefaults), and
 /// re-openable from the menu-bar menu.
 enum Onboarding {
     private static let key = "didOnboardV1"
@@ -38,8 +41,10 @@ enum Onboarding {
 
 struct OnboardingView: View {
     let onDone: () -> Void
+    #if !APP_STORE
     @State private var trusted = AXIsProcessTrusted()
     private let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
+    #endif
 
     /// The app's own hoard-bag icon (the white filled bag), matching the panel
     /// toolbar; falls back to the ⌘ glyph if the bundle icon can't load.
@@ -77,7 +82,7 @@ struct OnboardingView: View {
 
             Divider().padding(.vertical, 22).padding(.horizontal, 24)
 
-            accessibilitySection.padding(.horizontal, 32)
+            pasteSection.padding(.horizontal, 32)
 
             Spacer(minLength: 16)
 
@@ -93,7 +98,9 @@ struct OnboardingView: View {
         }
         .frame(width: 460, height: 560)
         .background(VisualEffectBackground(material: .windowBackground, blending: .behindWindow))
+        #if !APP_STORE
         .onReceive(timer) { _ in trusted = AXIsProcessTrusted() }
+        #endif
     }
 
     private func feature(_ symbol: String, _ title: String, _ body: String) -> some View {
@@ -125,6 +132,16 @@ struct OnboardingView: View {
         }
     }
 
+    @ViewBuilder private var pasteSection: some View {
+        #if APP_STORE
+        feature("doc.on.clipboard", "Pick, then paste",
+                "Choosing a clip copies it to the clipboard. Return to your app and press ⌘V.")
+        #else
+        accessibilitySection
+        #endif
+    }
+
+    #if !APP_STORE
     private var accessibilitySection: some View {
         HStack(spacing: 14) {
             Image(systemName: trusted ? "checkmark.circle.fill" : "exclamationmark.shield")
@@ -154,4 +171,5 @@ struct OnboardingView: View {
             NSWorkspace.shared.open(url)
         }
     }
+    #endif
 }

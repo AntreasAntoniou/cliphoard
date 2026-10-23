@@ -41,6 +41,19 @@ enum ClipImporters {
         /// @MainActor: adapters call `ClipboardMonitor.detectKind` and build model
         /// objects, both of which are main-actor bound.
         let read: (@MainActor (String, inout PasteImport.Tally) -> [Staged])?
+
+        /// The Powerbox grant in a Store build must cover SQLite's sibling `-wal` and
+        /// `-shm` files. The picker therefore grants the containing directory and the app
+        /// derives this fixed leaf name inside it, rather than accepting an arbitrary file.
+        var storeFilename: String? {
+            candidatePaths.first.map { URL(fileURLWithPath: $0).lastPathComponent }
+        }
+
+        var usesSQLite: Bool {
+            guard let ext = storeFilename.map({ URL(fileURLWithPath: $0).pathExtension.lowercased() })
+            else { return false }
+            return ext == "sqlite" || ext == "alfdb" || ext == "db"
+        }
     }
 
     /// One clip, source-agnostic. Adapters produce these; a single writer consumes them, so
@@ -186,6 +199,48 @@ enum ClipImporters {
             let expanded = (p as NSString).expandingTildeInPath
             if FileManager.default.fileExists(atPath: expanded) { return expanded }
         }
+        return nil
+    }
+
+    /// Resolve the fixed store filename below a user-selected directory and reject symlink
+    /// escapes. Call this while the directory's security-scoped grant is active.
+    static func storeURL(for source: Source, in directory: URL) -> URL? {
+        guard let filename = source.storeFilename, !filename.isEmpty else { return nil }
+        let root = directory.resolvingSymlinksInPath().standardizedFileURL
+        let candidate = directory.appendingPathComponent(filename, isDirectory: false)
+            .resolvingSymlinksInPath().standardizedFileURL
+        let rootPrefix = root.path.hasSuffix("/") ? root.path : root.path + "/"
+        guard candidate.path.hasPrefix(rootPrefix),
+              FileManager.default.fileExists(atPath: candidate.path) else { return nil }
+        return candidate
+    }
+
+    /// A Store import must prove that SQLite can open the live database with its sidecars.
+    /// Falling back to `immutable=1` here would make a valid-looking preview silently omit
+    /// every row still in the WAL.
+    static func liveSQLiteReadError(_ path: String) -> String? {
+        let fm = FileManager.default
+        guard fm.isReadableFile(atPath: path) else { return "the database is not readable" }
+        for suffix in ["-wal", "-shm"] where fm.fileExists(atPath: path + suffix) {
+            guard fm.isReadableFile(atPath: path + suffix) else {
+                return "SQLite's \(suffix) sidecar is not readable"
+            }
+        }
+        var db: OpaquePointer?
+        let uri = "file:\(path)?mode=ro"
+        guard sqlite3_open_v2(uri, &db, SQLITE_OPEN_READONLY | SQLITE_OPEN_URI, nil) == SQLITE_OK else {
+            let reason = db.map { String(cString: sqlite3_errmsg($0)) } ?? "unknown SQLite error"
+            sqlite3_close(db)
+            return "the live database could not be opened with its WAL (\(reason))"
+        }
+        defer { sqlite3_close(db) }
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, "PRAGMA schema_version;", -1, &stmt, nil) == SQLITE_OK,
+              sqlite3_step(stmt) == SQLITE_ROW else {
+            sqlite3_finalize(stmt)
+            return "the live database and its WAL could not be read consistently"
+        }
+        sqlite3_finalize(stmt)
         return nil
     }
 
@@ -381,11 +436,9 @@ enum ClipImporters {
     /// a frozen export with no live writer, and immutability is what stops us disturbing a
     /// snapshot. Correct in one place, silently destructive in the general one.
     ///
-    /// So: `mode=ro` first, which reads the WAL. Fall back to `immutable=1` only if that
-    /// cannot open — a WAL database needs to create a -shm file, which fails on a read-only
-    /// volume or an unwritable directory — and SAY SO when falling back, because in that
-    /// case the results genuinely may be incomplete and the user deserves to know rather
-    /// than receive a confident undercount.
+    /// So: `mode=ro` first, which reads the WAL. A database with a live WAL must fail closed
+    /// if that open fails. Immutable fallback remains available only for a database with no
+    /// WAL sidecar, where there are no committed sidecar rows to omit.
     @discardableResult
     static func openReadOnly(_ path: String, _ db: inout OpaquePointer?) -> Bool {
         let ro = "file:\(path)?mode=ro"
@@ -393,10 +446,13 @@ enum ClipImporters {
             return true
         }
         sqlite3_close(db); db = nil
+        if FileManager.default.fileExists(atPath: path + "-wal") {
+            NSLog("Cliphoard import: refusing %@ because its live WAL could not be read", path)
+            return false
+        }
         let immutable = "file:\(path)?mode=ro&immutable=1"
         if sqlite3_open_v2(immutable, &db, SQLITE_OPEN_READONLY | SQLITE_OPEN_URI, nil) == SQLITE_OK {
-            NSLog("Cliphoard import: %@ could not be opened with its WAL; falling back to "
-                  + "immutable. Recent clips may be missing from this import.", path)
+            NSLog("Cliphoard import: %@ has no WAL and required an immutable read", path)
             return true
         }
         sqlite3_close(db); db = nil

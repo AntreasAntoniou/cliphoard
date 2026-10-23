@@ -1,7 +1,12 @@
 # Privacy Policy
 
-**Short version: Cliphoard keeps everything on your Mac. Nothing you copy ever leaves
-your device. There is no telemetry, no analytics, and no account.**
+**Short version: Cliphoard processes and stores clipboard content on your Mac. It does
+not upload your clips, search queries, or search indexes. There is no Cliphoard account,
+advertising, usage telemetry, or cloud sync.**
+
+The Mac App Store edition uses Apple's StoreKit to purchase and restore Pro. The
+direct-download edition can fetch search models from public model hosts. These
+connections do not carry clipboard content; the network and purchase details are below.
 
 ## What Cliphoard stores, and where
 
@@ -18,6 +23,11 @@ stored **locally** on your Mac, under:
 Semantic-search embeddings are computed **on-device** (Apple CoreML) and stored in
 the same local database. No clipboard content, embedding, or usage data is ever
 transmitted anywhere.
+
+The Mac App Store edition keeps this data inside its macOS sandbox, under
+`~/Library/Containers/ai.a2-labs.cliphoard/Data/Library/Application Support/Ditto/`.
+It cannot silently read the direct edition's history. Use **Move to another Mac**
+to export and import an encrypted archive if moving between editions.
 
 ## Reading text inside images
 
@@ -129,18 +139,29 @@ folder as sensitive and use the exclusion list for apps where you copy secrets.
 Builds before 1.0.0 stored the source-app name in the clear; 1.0.0 seals it on first
 launch and compacts the database, with the same APFS caveat.
 
-## What Cliphoard does NOT do
+## Network connections and purchases
 
-- ❌ No network requests carrying your data. Cliphoard sends your clips to no
-  server — ours or anyone else's. Its single outbound call is an *optional*,
-  user-initiated, download-only fetch of a search model — the ogma models from
-  HuggingFace (`huggingface.co/axiotic/open-ogma-*`), everything else from our GitHub
-  Releases. Nothing about you is sent: these are plain GETs for public files
-  when you select a tier that isn't bundled (nothing about you or your
-  clipboard is sent; just an HTTPS file download).
-- ❌ No telemetry, analytics, crash reporting, or usage tracking.
-- ❌ No account, sign-in, or cloud sync.
-- ❌ No advertising or third-party SDKs.
+**Clipboard processing:** Cliphoard does not send clipboard content, search queries,
+embeddings, recognised image text, or activity logs to us or to a model provider.
+It has no advertising SDK, app telemetry, or automatic crash-report upload.
+
+**Direct edition:** selecting a search model that is not installed downloads public
+files from Hugging Face (`huggingface.co/axiotic/open-ogma-*`) or GitHub Releases.
+An Ogma install also requests that model's public `config.json`, so the install counts
+in Hugging Face's model download statistics. These HTTPS requests reveal ordinary
+connection information, such as your IP address, to the hosting provider. They contain
+no clipboard data, account identifier, or persistent Cliphoard tracking identifier.
+
+**Mac App Store edition:** the search models ship with the app. Apple handles Pro
+purchases, restoration and transaction verification through StoreKit under Apple's
+privacy terms. Cliphoard reads Apple's verified entitlement on your Mac to decide
+whether Pro is unlocked. It does not receive your payment-card details or upload your
+clipboard to Apple. No separate Cliphoard account is required. Apple may provide sales
+and financial reports to the developer through App Store Connect.
+
+**Direct Pro licences:** licence-key verification runs locally. Opening a purchase
+link uses your browser; the checkout provider handles the transaction under its own
+privacy terms. A licence purchase does not upload your clipboard history.
 
 ## Sensitive content
 
@@ -152,12 +173,15 @@ Cliphoard deliberately tries **not** to capture secrets, in three ways:
    Dashlane, LastPass, Apple Passwords, Keychain Access, Secretive, Enpass, Strongbox) are
    stored encrypted but flagged **password app** and excluded from every search index — no
    embedding, no tags, no recognition. They are **not** hidden and **not** locked behind
-   Touch ID: they stay visible and pastable in your history; delete with ⌘⌫. Touch ID
-   hiding is planned for 1.0.1.
+   Touch ID: they stay visible and pastable in your history; delete with ⌘⌫.
 3. You can add any app to an exclusion denylist (`excludedBundleIDs`) so Cliphoard never
-   records what you copy from it:
-   `defaults write io.antreas.cliphoard excludedBundleIDs -array com.example.app`
-   (a Settings UI is planned for 1.0.1).
+   records what you copy from it. In the Mac App Store edition, use **Settings → Excluded
+   apps** and enter the app's bundle identifier. In the direct 1.0.1 edition, quit
+   Cliphoard, run
+   `defaults write ai.a2-labs.cliphoard excludedBundleIDs -array-add com.example.app`,
+   then reopen it. `-array-add` preserves your existing exclusions; the command applies
+   to the direct edition, not the Store edition's sandbox. Excluding an app stops future
+   capture; it does not delete clips already in your history.
 
 Clip contents are never written to logs.
 
@@ -166,21 +190,28 @@ database as sensitive, and use the exclusion list for apps that handle secrets.
 
 ## Permissions
 
-- **Accessibility** — used solely to paste the selected clip into the app you were
-  using (by synthesizing ⌘V). Cliphoard does not read other apps' contents.
-- **Input monitoring / global hotkey** — to summon the bar with ⌃⌥⌘V.
+- **Direct edition Accessibility** — used to paste a selected clip into the app you
+  were using by synthesizing ⌘V. It is not used to read other apps' contents.
+- **Mac App Store edition** — copies the selected clip to the pasteboard; you press
+  ⌘V in the destination app. It does not request Accessibility for automatic paste.
+- **File selection** — imports and exports use files or folders you explicitly choose.
+- **Global shortcut** — summons the bar with ⌃⌥⌘V.
 
 ## Your control
 
 - **Delete a clip:** select it and press ⌘⌫.
 - **Clear history:** remove unpinned items from the bar, or quit Cliphoard and delete
   the folder above.
-- **Uninstall:** drag Cliphoard to the Trash and delete `~/Library/Application Support/Ditto/`.
+- **Uninstall:** quit Cliphoard and drag the app to the Trash. To remove its saved history,
+  delete `~/Library/Application Support/Ditto/` for the direct edition, or
+  `~/Library/Containers/ai.a2-labs.cliphoard/Data/Library/Application Support/Ditto/`
+  for the Mac App Store edition. This also removes local snapshots kept beside the
+  database. Separately delete any encrypted export archives you saved elsewhere if you
+  no longer need them.
 
 ## Why there's no sync (on purpose)
 
-Every other major clipboard manager sells cross-device sync. Cliphoard deliberately
-does not — and never will — and that is a feature, not an omission.
+Cliphoard does not automatically sync your clipboard history between devices.
 
 **Your clipboard is the single most sensitive ambient stream on your computer.**
 In the course of a normal day it transiently holds passwords (copied from your
@@ -188,25 +219,10 @@ password manager), one-time 2FA codes, API keys and tokens, private messages,
 addresses, and card numbers. A clipboard *manager* persists that stream. A
 clipboard history is, in effect, a concentrated archive of your secrets.
 
-Given that, the most important property by far is: **it must be impossible to
-exfiltrate.** If the data never leaves the device, there is no sync server to
-breach, no vendor who can read it, no cloud copy to subpoena, no account to phish,
-and no network path that carries clip data. "Your clips physically cannot leave
-your Mac" is a stronger, simpler promise than any amount of policy. (The only
-outbound request the app can make at all is the optional model download above —
-download-only, carries nothing.)
-
-**But what about end-to-end-encrypted sync?** E2E is genuinely better than
-plaintext cloud — but it still weakens the core guarantee. It requires an account
-(identity + metadata), a server (an attack surface and an availability
-dependency), and key management (a key that can be lost, leaked, or compelled);
-and it means your secrets *do* leave the device, just wrapped. "We sync, but it's
-encrypted" is a caveated story. **"It cannot leave" is not.** For a tool whose
-whole job is to hold your secrets, we choose the absolute.
-
-Being open source makes this auditable: you can read the source and confirm there
-are zero network calls. Add sync and that verifiable fact becomes "trust our
-crypto and our server" — a weaker trust model we're not willing to ask of you.
+Keeping history local avoids a Cliphoard sync server or remotely stored copy.
+This is a design choice, not a claim that a compromised Mac or a file you choose
+to export cannot expose data. The entire application codebase is open source,
+including its network, storage, encryption and purchase-handling code.
 
 **Moving to a new Mac.** Since **1.0.1**, *Settings → Move to another Mac* writes one
 encrypted file. **What is inside:** every clip's content, rich text, file paths, colours,
@@ -240,4 +256,11 @@ work, and still should not be put on iCloud Drive or Syncthing.
 Any future change to this policy will appear in this file in the public repository,
 with the change visible in the Git history.
 
-_Last updated: 2026-09-02._
+## Contact
+
+Cliphoard is developed by Antreas Antoniou and distributed by A SQUARED LABS LIMITED.
+For privacy questions, contact `support@cliphoard.dev`. If you contact support,
+we receive the message and contact details you choose to send. Do not include your
+clipboard database, licence key, passwords or other sensitive content in a report.
+
+_Last updated: 2026-10-23._

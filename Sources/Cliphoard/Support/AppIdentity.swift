@@ -13,8 +13,10 @@ enum AppIdentity {
     /// Run before any store, licence or settings initialization. XCTest and CLI tools
     /// without the shipping bundle identity must never touch these real domains.
     static func migratePreferencesIfNeeded() {
+#if !APP_STORE
         guard Bundle.main.bundleIdentifier == bundleIdentifier else { return }
         migratePreferences(.standard, from: legacyBundleIdentifier, to: bundleIdentifier)
+#endif
     }
 
     /// Merge only missing persistent values, not registered defaults. Retain the old

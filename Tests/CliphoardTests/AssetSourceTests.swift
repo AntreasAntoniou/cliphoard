@@ -1,4 +1,5 @@
 import XCTest
+import SQLite3
 @testable import Cliphoard
 
 /// Where each model tier is fetched from, and why the HuggingFace path has an extra request.
@@ -16,6 +17,7 @@ import XCTest
 ///
 /// That companion request is the thing most likely to be deleted by someone tidying up, so
 /// it is pinned here with the reason attached.
+#if !APP_STORE
 final class AssetSourceTests: XCTestCase {
 
     // MARK: - Routing
@@ -115,6 +117,7 @@ final class AssetSourceTests: XCTestCase {
                       + "install it is supposed to be incidental to")
     }
 }
+#endif
 
 /// Reading another app's live database means reading its WAL.
 ///
@@ -132,44 +135,50 @@ final class AssetSourceTests: XCTestCase {
 /// rule now lives in one function instead of at each call site.
 final class WALHandlingTests: XCTestCase {
 
-    /// The open must prefer `mode=ro`, which reads the WAL, and use `immutable=1` only as a
-    /// fallback — not the other way round.
-    func testTheReadOnlyOpenPrefersWALAwareMode() throws {
-        let root = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-        let source = try String(
-            contentsOf: root.appendingPathComponent("Sources/Cliphoard/Support/ClipImporters.swift"),
-            encoding: .utf8)
-        guard let start = source.range(of: "static func openReadOnly(") else {
-            return XCTFail("openReadOnly was renamed — move this test with it")
+    func testReadOnlyImportActuallySeesACommittedRowThatExistsOnlyInWAL() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("cliphoard-wal-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let path = directory.appendingPathComponent("Storage.sqlite").path
+
+        var writer: OpaquePointer?
+        XCTAssertEqual(sqlite3_open(path, &writer), SQLITE_OK)
+        defer { sqlite3_close(writer) }
+        XCTAssertEqual(sqlite3_exec(writer, "PRAGMA journal_mode=WAL; PRAGMA wal_autocheckpoint=0; "
+                                    + "CREATE TABLE clips(value TEXT); PRAGMA wal_checkpoint(TRUNCATE);",
+                                    nil, nil, nil), SQLITE_OK)
+        XCTAssertEqual(sqlite3_exec(writer, "INSERT INTO clips VALUES ('from-live-wal');",
+                                    nil, nil, nil), SQLITE_OK)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: path + "-wal"))
+        XCTAssertNil(ClipImporters.liveSQLiteReadError(path))
+
+        var values: [String] = []
+        ClipImporters.forEachRow(path, "SELECT value FROM clips;") { statement in
+            if let text = sqlite3_column_text(statement, 0) {
+                values.append(String(cString: text))
+            }
         }
-        let body = String(source[start.upperBound...].prefix(1200))
-        guard let ro = body.range(of: "?mode=ro\""),
-              let immutable = body.range(of: "immutable=1") else {
-            return XCTFail("expected both a WAL-aware attempt and an immutable fallback")
-        }
-        XCTAssertLessThan(ro.lowerBound, immutable.lowerBound,
-                          "immutable=1 is tried FIRST, so a live app's WAL is ignored and the "
-                          + "import silently under-reports — the exact defect this exists to "
-                          + "prevent")
+        XCTAssertEqual(values, ["from-live-wal"],
+                       "a preview that misses committed WAL rows is a silent data-loss report")
     }
 
-    /// Falling back must be announced. An incomplete import that reports a confident total
-    /// is worse than one that says it might be missing recent clips.
-    func testTheImmutableFallbackIsAnnounced() throws {
-        let root = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-        let source = try String(
-            contentsOf: root.appendingPathComponent("Sources/Cliphoard/Support/ClipImporters.swift"),
-            encoding: .utf8)
-        guard let start = source.range(of: "static func openReadOnly(") else { return }
-        let body = String(source[start.upperBound...].prefix(1200))
-        XCTAssertTrue(body.contains("NSLog"),
-                      "the fallback is silent; a user would get an undercount with nothing "
-                      + "indicating the WAL was skipped")
-        XCTAssertTrue(body.lowercased().contains("may be missing"),
-                      "the warning must say what the consequence IS, not merely that a "
-                      + "fallback happened")
+    func testStoreDirectoryResolutionRejectsASymlinkEscape() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("cliphoard-scope-\(UUID().uuidString)", isDirectory: true)
+        let outside = FileManager.default.temporaryDirectory
+            .appendingPathComponent("outside-\(UUID().uuidString).sqlite")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        FileManager.default.createFile(atPath: outside.path, contents: Data())
+        defer {
+            try? FileManager.default.removeItem(at: root)
+            try? FileManager.default.removeItem(at: outside)
+        }
+        try FileManager.default.createSymbolicLink(
+            at: root.appendingPathComponent("Storage.sqlite"), withDestinationURL: outside)
+        let maccy = try XCTUnwrap(ClipImporters.all.first { $0.id == "maccy" })
+        XCTAssertNil(ClipImporters.storeURL(for: maccy, in: root),
+                     "a Powerbox directory grant must not authorize a symlink target outside it")
     }
 
     /// No adapter may re-introduce a hardcoded immutable open. This is the copy-paste that
@@ -182,7 +191,7 @@ final class WALHandlingTests: XCTestCase {
             let source = try String(contentsOf: root.appendingPathComponent(file), encoding: .utf8)
             // sqlite3_open_v2 belongs ONLY inside openReadOnly.
             let opens = source.components(separatedBy: "sqlite3_open_v2(").count - 1
-            let expected = file.hasSuffix("ClipImporters.swift") ? 2 : 0
+            let expected = file.hasSuffix("ClipImporters.swift") ? 3 : 0
             XCTAssertEqual(opens, expected,
                            "\(file) calls sqlite3_open_v2 \(opens) time(s); expected "
                            + "\(expected). Every store must be opened through openReadOnly, "
@@ -209,6 +218,7 @@ final class WALHandlingTests: XCTestCase {
 /// pins. The claim "a CoreML build was missing" was also false — one had been live since
 /// 2026-08-17.
 ///
+#if !APP_STORE
 @MainActor
 final class OgmaLicenceSourceTests: XCTestCase {
 
@@ -271,3 +281,4 @@ final class OgmaLicenceSourceTests: XCTestCase {
                        "this test file's own header still says the models are published at the CC-BY-NC repos")
     }
 }
+#endif

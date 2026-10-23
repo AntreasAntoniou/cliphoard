@@ -18,6 +18,9 @@
 # Usage: verify-bundle.sh <app> <repo-root> [extra-dir-that-must-carry-licences]
 # Env:   BUNDLE_MODELS  the models this build intended to bundle
 #        STRICT_BUNDLE  1 => a missing bundled model is fatal (release.sh sets this)
+#        NOTICE_SOURCE  channel-specific source copied into the bundle under the canonical
+#                       THIRD-PARTY-NOTICES.md name (defaults to the direct-build notice)
+#        CHECKOUTS_DIR  SwiftPM checkouts used to prove linked MIT notices (defaults to .build)
 #
 # Runs under macOS /bin/bash 3.2 (`env bash` resolves to it). In a message, brace a variable
 # that is followed by a non-ASCII character: bash 3.2 lexes the name and the following
@@ -38,6 +41,8 @@ APP="${1:?usage: verify-bundle.sh <app> <repo-root> [stage-dir]}"
 ROOT="${2:?}"
 EXTRA="${3:-}"
 RES="$APP/Contents/Resources"
+NOTICE_SOURCE="${NOTICE_SOURCE:-$ROOT/THIRD-PARTY-NOTICES.md}"
+CHECKOUTS_DIR="${CHECKOUTS_DIR:-$ROOT/.build/checkouts}"
 fail=0
 note() { printf '  %s %s\n' "$1" "$2"; }
 bad()  { note "✗" "$1"; fail=1; }
@@ -48,13 +53,18 @@ echo "verify-bundle: $APP"
 # 1. Licence texts must physically reach the recipient, in every directory that is
 #    itself a distribution channel (the .app, and the DMG staging root).
 for dir in "$RES" ${EXTRA:+"$EXTRA"}; do
-    for f in LICENSE LICENSE-Apache-2.0.txt THIRD-PARTY-NOTICES.md; do
+    for f in LICENSE LICENSE-Apache-2.0.txt; do
         if [ ! -f "$dir/$f" ]; then
             bad "$dir/$f is missing — a recipient gets the software without its licence"
         elif ! cmp -s "$dir/$f" "$ROOT/$f"; then
             bad "$dir/$f differs from the repository copy"
         fi
     done
+    if [ ! -f "$dir/THIRD-PARTY-NOTICES.md" ]; then
+        bad "$dir/THIRD-PARTY-NOTICES.md is missing — a recipient gets no third-party notices"
+    elif ! cmp -s "$dir/THIRD-PARTY-NOTICES.md" "$NOTICE_SOURCE"; then
+        bad "$dir/THIRD-PARTY-NOTICES.md differs from $NOTICE_SOURCE"
+    fi
 done
 
 # 2. LICENSE must be canonical MIT, not merely identical to the repo copy: a repo LICENSE
@@ -110,7 +120,7 @@ linked_mit=0
 while IFS= read -r line; do
     url="${line#linked:}"; url="${url%%|*}"; url="$(printf '%s' "$url" | xargs)"
     name="${url##*/}"; name="${name%.git}"
-    up="$ROOT/.build/checkouts/$name/LICENSE"
+    up="$CHECKOUTS_DIR/$name/LICENSE"
     if [ ! -f "$up" ]; then
         bad "$name is declared linked (MIT) but $up is unreadable — cannot confirm its notice"
         continue

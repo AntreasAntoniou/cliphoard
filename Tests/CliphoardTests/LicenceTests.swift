@@ -25,10 +25,15 @@ final class LicenceTests: XCTestCase {
         guard let key = try? String(contentsOfFile: path, encoding: .utf8) else {
             throw XCTSkip("no maintainer sample key on this machine")
         }
+#if APP_STORE
+        XCTAssertFalse(Licence.verify(key).isPro,
+                       "even a genuine direct-download key must not unlock the Store edition")
+#else
         guard case .pro(let order, _) = Licence.verify(key) else {
             return XCTFail("a key minted by Scripts/issue-licence.swift must verify against the compiled-in public key: \(Licence.verify(key))")
         }
         XCTAssertEqual(order, "test-order-001")
+#endif
     }
 
     func testTheSeparatorIsOutsideTheBase64urlAlphabet() {
@@ -42,7 +47,11 @@ final class LicenceTests: XCTestCase {
         let other = Curve25519.Signing.PrivateKey()
         let forged = mint(#"{"o":"x","i":1,"p":"pro","v":1}"#, with: other)
         guard case .free(let reason) = Licence.verify(forged) else { return XCTFail("a key signed by a different private key must be free") }
+#if APP_STORE
+        XCTAssertEqual(reason, "Use App Store purchases in this edition")
+#else
         XCTAssertEqual(reason, "signature does not verify")
+#endif
     }
 
     func testTamperingWithThePayloadIsFree() throws {
@@ -82,10 +91,20 @@ final class LicenceTests: XCTestCase {
     func testStoreAndRemoveRoundTrip() {
         let saved = UserDefaults.standard.string(forKey: Licence.defaultsKey)
         defer { if let saved { UserDefaults.standard.set(saved, forKey: Licence.defaultsKey) } else { UserDefaults.standard.removeObject(forKey: Licence.defaultsKey) } }
+#if APP_STORE
+        UserDefaults.standard.set("external-fixture", forKey: Licence.defaultsKey)
+        Licence.store("CLIP1-junk.junk")
+        XCTAssertEqual(UserDefaults.standard.string(forKey: Licence.defaultsKey), "external-fixture")
+        XCTAssertFalse(Licence.current.isPro)
+        Licence.remove()
+        XCTAssertEqual(UserDefaults.standard.string(forKey: Licence.defaultsKey), "external-fixture",
+                       "Store builds neither consume nor mutate a direct-download licence")
+#else
         Licence.store("  CLIP1-junk.junk \n")
         XCTAssertEqual(UserDefaults.standard.string(forKey: Licence.defaultsKey), "CLIP1-junk.junk", "stored trimmed")
         XCTAssertFalse(Licence.current.isPro)
         Licence.remove()
         XCTAssertNil(UserDefaults.standard.string(forKey: Licence.defaultsKey))
+#endif
     }
 }

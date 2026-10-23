@@ -460,6 +460,13 @@ footer ul{display:flex;flex-wrap:wrap;gap:.4rem 1.25rem;list-style:none}
   .page{padding-inline:1rem}
 }
 
+/* Support and privacy are reading pages, with a narrower measure than the landing page. */
+.document{max-width:52rem}
+.document h1{margin-bottom:1rem}
+.document h2{margin-top:2rem}
+.document .lead{max-width:none}
+.document code{overflow-wrap:anywhere}
+
 @media (prefers-reduced-motion:reduce){
   *,*::before,*::after{animation-duration:.01ms !important;animation-iteration-count:1 !important;
     transition-duration:.01ms !important;scroll-behavior:auto !important}

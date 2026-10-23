@@ -45,10 +45,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var previousApp: NSRunningApplication?
     private var isVisible = false
     private var isClosing = false
+    #if !APP_STORE
     private var didPromptAX = false
+    #endif
     private var isAskingAboutQuit = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        #if APP_STORE
+        StorePurchase.shared.start(store: store)
+        #endif
         setupMainMenu()
         setupStatusItem()
         setupPanel()
@@ -63,6 +68,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // changes). We prompt lazily the first time an auto-paste actually needs it.
         // First run only: a welcome window that explains the hotkey + the grant.
         Onboarding.showIfNeeded()
+    }
+
+    func applicationDidBecomeActive(_ notification: Notification) {
+        #if APP_STORE
+        // Re-read StoreKit's verified on-device entitlement cache when the user returns.
+        // Unlike AppStore.sync(), this does not ask them to authenticate.
+        Task { await StorePurchase.shared.refreshEntitlements() }
+        #endif
     }
 
     /// A Darwin notification that toggles the bar — lets scripts/tests drive it
@@ -221,10 +234,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(debugItem)
 
         menu.addItem(.separator())
+        #if !APP_STORE
         if !AXIsProcessTrusted() {
             menu.addItem(withTitle: "Grant Accessibility (for auto-paste)…",
                          action: #selector(promptAccessibility), keyEquivalent: "")
         }
+        #endif
         let frozen = store.safeMode
         menu.addItem(withTitle: frozen ? "Clear Unpinned History (frozen — can’t read history)"
                                        : "Clear Unpinned History",
@@ -243,6 +258,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         model.onClose = { [weak self] in self?.hide(paste: false) }
         model.onCopy = { [weak self] item in self?.copyToClipboard(item) }
         model.onFileVerb = { [weak self] item, verb in self?.perform(verb, on: item) }
+        // StoreKit's purchase/restore sheet joins the inspector and file picker as a
+        // key-window transition that must leave the underlying panel visible.
         panel.onResignKey = { [weak self] in
             guard let self, self.isVisible, !self.isClosing else { return }
             // The supercard is presented as a .sheet — a separate key window — so
@@ -250,10 +267,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             // keep the panel up while the inspector is open (dismissing the sheet
             // returns key focus here, and normal hide-on-resign resumes).
             if self.model.inspectedItem != nil { return }
-            // Same reason, different window: an NSOpenPanel we opened ourselves takes key,
-            // and dismissing the interface underneath the picker the user just asked for is
-            // never what they meant.
+            // An NSOpenPanel takes key; keep the requested picker visible underneath it.
             if self.model.isPresentingSystemPanel { return }
+            #if APP_STORE
+            if StorePurchase.shared.isPresentingSystemSheet { return }
+            #endif
             self.hide(paste: false)
         }
         model.onRequestFocus = { [weak self] in
@@ -278,7 +296,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             self.inspector.present(AnyView(view), host: self.panel.frame,
                                    visible: (self.panel.screen ?? NSScreen.main)?.visibleFrame ?? .zero)
         }
+        #if !APP_STORE
         pasteStatus.onOpenAccessibility = { [weak self] in self?.openAccessibilitySettings() }
+        #endif
         panel.setContent { [model, store, pasteStatus] in
             ContentView(model: model, store: store, pasteStatus: pasteStatus)
         }
@@ -388,13 +408,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         store.markUsed(item)
         monitor.suppressOwnWrite()
         // The clip is on the pasteboard. Only the ⌘V keystroke needs Accessibility.
+        #if APP_STORE
+        // The Store target intentionally has no event-injection or Accessibility request
+        // path. The pasteboard write succeeded; restore the user's app and state the
+        // remaining step honestly.
+        let canPaste = false
+        pasteStatus.blockedMessage = nil
+        pasteStatus.noticeMessage = DistributionChannel.manualPasteMessage
+        #else
         let canPaste = AXIsProcessTrusted()
         if canPaste {
             // Success: clear any stale guidance and flash a brief confirmation so
             // a real paste is distinguishable from a silent no-op.
             pasteStatus.blockedMessage = nil
             pasteStatus.pasteConfirmToken &+= 1
-        } else {
+        }
+        else {
             // Blocked: the keystroke can't fire. Surface a persistent, non-modal
             // banner on EVERY blocked pick (not gated by didPromptAX) so the user
             // always gets feedback. Keep the SYSTEM prompt one-shot to avoid OS
@@ -406,6 +435,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 promptAccessibility()
             }
         }
+        #endif
         hide(paste: canPaste)
     }
 
@@ -740,6 +770,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     // MARK: Accessibility
 
+    #if !APP_STORE
     @objc private func promptAccessibility() {
         _ = AXIsProcessTrustedWithOptions(
             [kAXTrustedCheckOptionPrompt.takeRetainedValue() as String: true] as CFDictionary)
@@ -754,4 +785,5 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             NSWorkspace.shared.open(url)
         }
     }
+    #endif
 }

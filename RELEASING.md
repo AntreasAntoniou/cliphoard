@@ -1,8 +1,14 @@
 # Releasing Cliphoard
 
-Cliphoard is distributed directly (Developer ID + notarization), not via the Mac App
-Store — a clipboard manager that synthesizes ⌘V and registers a global hotkey
-can't run under the App Sandbox.
+Cliphoard has two distribution builds from the same open-source codebase:
+
+- **Direct download:** Developer ID signing and notarization, optional Accessibility
+  permission for automatic paste, and offline Pro licence keys. This document covers
+  that release pipeline.
+- **Mac App Store:** an `APP_STORE` build with App Sandbox, user-initiated file access,
+  bundled models and StoreKit Pro purchases. It copies selected clips to the clipboard;
+  the user presses ⌘V. See [MAC_APP_STORE.md](MAC_APP_STORE.md) for its separate signing
+  and upload pipeline. A valid local build does not establish a published Store listing.
 
 ## One-time setup
 
@@ -36,12 +42,15 @@ can't run under the App Sandbox.
    and [TN3125](https://developer.apple.com/documentation/technotes/tn3125-inside-code-signing-provisioning-profiles).
 
 The A2 Labs bundle identity replaces `io.antreas.cliphoard` in 1.0.1 (build 2).
-Startup copies missing preferences and the stored licence once, preserving new
+In the direct edition, startup copies missing preferences and the stored licence once, preserving new
 choices and the old preferences domain. Clipboard files, model storage, the
 `ai.axiotic.ditto` Keychain service, the original default Keychain access group,
 archive UTI and existing notification names remain stable compatibility identifiers.
 macOS Accessibility and launch-at-login approvals are tied to app identity and may
 need to be granted again; the app must not copy or bypass those OS permissions.
+The Store edition uses its own sandbox and keychain group. It does not read the old
+preferences domain or migrate a direct licence; history transfer is an explicit encrypted
+archive export/import chosen by the user.
 
 ## Cut a release
 

@@ -2,6 +2,13 @@ import XCTest
 @testable import Cliphoard
 
 final class CaptureSkipTests: XCTestCase {
+    func testExclusionMatchesBundleIDRegardlessOfCapitalization() {
+        XCTAssertTrue(ClipboardMonitor.shouldSkip(frontmostBundleID: "com.Example.SecretApp",
+                                                  types: [], excluded: ["COM.EXAMPLE.SECRETAPP"]))
+        XCTAssertFalse(ClipboardMonitor.shouldSkip(frontmostBundleID: "com.Example.SecretAppHelper",
+                                                   types: [], excluded: ["COM.EXAMPLE.SECRETAPP"]))
+    }
+
     func testExcludedBundleIsSkipped() {
         XCTAssertTrue(ClipboardMonitor.shouldSkip(
             frontmostBundleID: "com.example.secret",

@@ -17,6 +17,7 @@ import CryptoKit
 /// Progress/state is published through `EmbedderState` so Settings can show
 /// "Downloading… 42%" instead of a misleading "not installed".
 enum ModelAssets {
+    #if !APP_STORE
     /// Release that hosts the downloadable model zips.
     static let releaseBase = URL(string:
         "https://github.com/AntreasAntoniou/cliphoard/releases/download/models-v1/")!
@@ -123,16 +124,19 @@ enum ModelAssets {
         }
         return hasher.finalize().map { String(format: "%02x", $0) }.joined()
     }
+    #endif
 
     struct Located {
         let compiledModel: URL      // .mlmodelc, ready for MLModel(contentsOf:)
         let tokenizerFolder: URL
     }
 
+    #if !APP_STORE
     static var storeDir: URL {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Ditto/models", isDirectory: true)
     }
+    #endif
 
     /// Bundle → local store. `nil` means "needs download".
     static func locate(_ name: String) -> Located? {
@@ -140,12 +144,14 @@ enum ModelAssets {
            let t = Bundle.main.url(forResource: "\(name)-tokenizer", withExtension: nil) {
             return Located(compiledModel: m, tokenizerFolder: t)
         }
+        #if !APP_STORE
         let m = storeDir.appendingPathComponent("\(name).mlmodelc")
         let t = storeDir.appendingPathComponent("\(name)-tokenizer")
         if FileManager.default.fileExists(atPath: m.path),
            FileManager.default.fileExists(atPath: t.appendingPathComponent("tokenizer.json").path) {
             return Located(compiledModel: m, tokenizerFolder: t)
         }
+        #endif
         return nil
     }
 
@@ -153,6 +159,16 @@ enum ModelAssets {
     /// Reports progress through `EmbedderState.shared`.
     static func ensure(_ name: String) async throws -> Located {
         if let found = locate(name) { return found }
+        #if APP_STORE
+        // Every selectable Store tier is part of the reviewed app. Never turn a packaging
+        // defect into an unreviewed post-install feature download (or its analytics ping).
+        // The caller renders this localized failure and keeps the hashing fallback available.
+        throw CocoaError(.fileNoSuchFile, userInfo: [
+            NSLocalizedDescriptionKey:
+                "Required model \(name) is missing from this App Store installation. "
+                + "Reinstall Cliphoard from the App Store."
+        ])
+        #else
         let fm = FileManager.default
         try fm.createDirectory(at: storeDir, withIntermediateDirectories: true)
 
@@ -222,8 +238,10 @@ enum ModelAssets {
         try fm.moveItem(at: compiled, to: mDst)
         try fm.copyItem(at: tokSrc, to: tDst)
         return Located(compiledModel: mDst, tokenizerFolder: tDst)
+        #endif
     }
 
+    #if !APP_STORE
     /// Download with byte-level progress (URLSession.download has no callback
     /// without a delegate; stream to disk in chunks instead).
     private static func download(url: URL,
@@ -252,6 +270,7 @@ enum ModelAssets {
         if !buffer.isEmpty { try handle.write(contentsOf: buffer) }
         return (tmp, response)
     }
+    #endif
 }
 
 /// Observable embedder lifecycle, driven by `EmbedderProvider` and rendered by

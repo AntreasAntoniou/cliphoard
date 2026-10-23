@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Privacy — Cliphoard</title>
+<link rel="canonical" href="https://cliphoard.dev/privacy.html">
+<link rel="icon" href="img/icon.png">
+<meta name="theme-color" content="#F5F5F5" media="(prefers-color-scheme: light)" data-scheme="light">
+<meta name="theme-color" content="#21252B" media="(prefers-color-scheme: dark)" data-scheme="dark">
+<script src="assets/appearance.js"></script>
+<link rel="stylesheet" href="assets/site.css?v=20261023">
+<meta name="description" content="How Cliphoard stores clipboard history locally, handles purchases, and protects your privacy.">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<div class="topbar"><div class="page">
+  <a class="wordmark" href="index.html"><img src="img/icon.png" alt="" width="28" height="28">Cliphoard</a>
+  <div class="appearance" id="appearance-control" hidden><label for="appearance">Appearance</label><select id="appearance"><option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option></select></div>
+  <nav aria-label="Main"><ul><li><a href="index.html">Home</a></li><li><a href="support.html">Support</a></li></ul></nav>
+</div></div>
+<main id="main"><section class="page document">
+  <h1>Your clipboard stays yours.</h1>
+  <p class="lead">Cliphoard processes and stores your clipboard on your Mac. It does not upload your clips, search queries, or search indexes. There is no Cliphoard account, advertising, usage telemetry, or automatic cloud sync.</p>
+  <p>Updated 23 October 2026. Cliphoard is developed by Antreas Antoniou and distributed by A SQUARED LABS LIMITED.</p>
+  <h2>What is stored</h2>
+  <p>The app keeps clipboard history, image payloads, tags, source-app information and local search indexes. Clip content and image payloads are encrypted at rest using keys held on your Mac. Small operational fields, including timestamps, clip kind, pin state and usage counts, remain readable in the local database.</p>
+  <p>The direct edition stores its files in <code>~/Library/Application Support/Ditto/</code>. The Mac App Store edition uses the corresponding folder inside its macOS app sandbox. It does not silently import the direct edition's data.</p>
+  <h2>Search and image recognition</h2>
+  <p>Search models and image-text recognition run on your Mac. Image recognition can make words in screenshots searchable, so the app filters likely secrets and excludes designated apps. Recognition and secret detection are imperfect. You can turn image-text recognition off and use <b>Forget recognised text</b> to remove previously recognised text.</p>
+  <h2>Network connections and purchases</h2>
+  <p>The direct edition downloads optional search models from GitHub or Hugging Face when needed. Ogma installs also fetch a public configuration file so the install counts in Hugging Face's model download statistics. These requests contain no clipboard data or persistent Cliphoard tracking identifier; the hosting provider receives ordinary connection information such as your IP address.</p>
+  <p>The Mac App Store edition bundles its search models. Apple handles Pro purchases, restoration and transaction verification through StoreKit under <a href="https://www.apple.com/legal/privacy/">Apple's privacy policy</a>. Cliphoard reads the verified entitlement locally. It does not receive payment-card details or send clipboard content to Apple. Apple may provide sales and financial reports to the developer.</p>
+  <p>Direct-edition licence keys are verified locally. If you open a purchase link, your browser and the checkout provider handle that transaction under the provider's privacy terms.</p>
+  <h2>Permissions and control</h2>
+  <p>The direct edition can use Accessibility permission to paste a selected clip. The Store edition copies the selection to the clipboard and asks you to press <kbd>⌘V</kbd> in the destination app. Import and export work with files or folders you choose.</p>
+  <p>You can delete individual clips, clear history, exclude apps, and export or import an encrypted archive without buying Pro. An exported archive is protected by the passphrase you choose; there is no recovery if you lose it. You control where that file goes.</p>
+  <p>A clipboard manager stores sensitive material. Exclude apps that handle secrets, protect your Mac, and treat backups and exported history as sensitive. Encryption does not protect an unlocked or compromised device.</p>
+  <h2>Support and further detail</h2>
+  <p>If you email <a href="mailto:support@cliphoard.dev">support@cliphoard.dev</a>, we receive the message and contact details you choose to send. Please do not send clipboard databases, passwords, licence keys or private screenshots.</p>
+  <p>The <a href="https://github.com/AntreasAntoniou/cliphoard/blob/main/PRIVACY.md">full privacy policy</a> explains encryption, screenshot-format handling, sensitive-content limits and archive transfers. Changes remain visible in the repository's history. The entire application codebase is open source, including the Pro features.</p>
+</section></main>
+<footer><div class="page">© 2026 Antreas Antoniou · <a href="support.html">Support</a> · <a href="index.html">Cliphoard</a></div></footer>
+</body>
+</html>

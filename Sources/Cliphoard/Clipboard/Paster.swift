@@ -1,5 +1,7 @@
 import AppKit
+#if !APP_STORE
 import Carbon.HIToolbox
+#endif
 
 /// Writes a clip back to the system pasteboard and (optionally) issues a paste
 /// into whichever app was frontmost before Cliphoard opened.
@@ -116,12 +118,15 @@ enum Paster {
     /// Activate the previously-frontmost app and simulate ⌘V.
     static func paste(into app: NSRunningApplication?) {
         app?.activate(options: [])
+        #if !APP_STORE
         // Small delay so activation completes before the keystroke lands.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
             sendCommandV()
         }
+        #endif
     }
 
+    #if !APP_STORE
     private static func sendCommandV() {
         guard let src = CGEventSource(stateID: .combinedSessionState) else { return }
         let vKey: CGKeyCode = 0x09 // 'v'
@@ -132,4 +137,5 @@ enum Paster {
         down?.post(tap: .cghidEventTap)
         up?.post(tap: .cghidEventTap)
     }
+    #endif
 }

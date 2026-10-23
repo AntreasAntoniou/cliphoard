@@ -1,8 +1,31 @@
 # Cliphoard — Release Readiness Status
 
-**Last updated:** 2026-10-18 · **Branch:** `main`
-**Verdict: RELEASED — v1.0.0 is public (unsigned; the notarized build and Homebrew tap ship in 1.0.1).**
+**Last updated:** 2026-10-23 · **Branch:** `main`
+**Verdict: v1.0.0 is public; the corrected notarized 1.0.1 installer is in customer-install testing. The Mac App Store build is implemented but not submitted.**
 **Download:** https://github.com/AntreasAntoniou/cliphoard/releases/tag/v1.0.0 · **Live site:** https://antreas.io/cliphoard/
+
+## Launch preparation — 23 October 2026
+
+- The corrected A2 Labs direct build includes its authorized Developer ID provisioning
+  profile. Apple accepted both the app archive and final DMG. Strict signatures, stapled
+  tickets, Gatekeeper, image integrity and mounted contents pass. The final DMG SHA-256 is
+  `645d92652d02ddd7200de900abd5c504a2db074b205ae5cb3c6da8e0a75f495d`.
+  Customer installation, activation and restart tests of these exact bytes remain open.
+- The Mac App Store channel is one free app with a non-consumable Pro purchase. It uses
+  App Sandbox, copies selected clips for the user to paste, bundles all model tiers, and
+  isolates StoreKit entitlements from direct-edition licence keys. A universal ad-hoc
+  inspection build passes bundle and signature checks; this is not an uploadable package.
+- Independent review led to folder-scoped imports that read live SQLite WAL data,
+  stricter Store profile/certificate checks, removal of the direct model-download path
+  from the Store build, and an exclusion editor available without Pro. The fresh direct
+  suite passed 733 tests with one intentional skip; focused Store import/channel tests
+  passed 8 cases, and release-profile checks passed 18 cases.
+- Store certificates/profile, App Store Connect setup, live purchase testing, screenshots
+  and review submission are still outstanding. The direct checkout and licence-delivery
+  route is not live. No new app release or paid purchase availability is claimed.
+
+The dated entries below are historical snapshots. Their missing-certificate and
+missing-notarization statements are superseded by the current entry above.
 
 ## Local release verification — 18 October 2026
 

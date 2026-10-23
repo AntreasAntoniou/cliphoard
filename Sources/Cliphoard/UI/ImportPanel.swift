@@ -44,13 +44,25 @@ final class ImportModel: ObservableObject {
     @Published private(set) var preview: Preview?
     @Published private(set) var busy: String?
     @Published private(set) var result: String?
+    /// Directory URLs returned by NSOpenPanel are retained for the preview -> commit flow.
+    /// A directory grant is required because SQLite may need the database's sibling WAL/SHM.
+    /// Store builds start and stop their security scope around each read; no bookmark persists.
+    private var selectedURLs: [String: URL] = [:]
 
     /// Only sources whose store actually exists here. Listing all ten would present nine
     /// dead rows to someone who uses one clipboard manager.
     func scan() {
-        candidates = ClipImporters.all.compactMap { source in
-            guard let path = ClipImporters.resolve(source) else { return nil }
-            return Candidate(source: source, path: path)
+        if DistributionChannel.canDiscoverExternalStores {
+            candidates = ClipImporters.all.compactMap { source in
+                guard let path = ClipImporters.resolve(source) else { return nil }
+                return Candidate(source: source, path: path)
+            }
+        } else {
+            // A sandbox must not probe other apps' containers. List only implemented adapters
+            // and let the user grant one URL through the system picker.
+            candidates = ClipImporters.all.compactMap { source in
+                source.read == nil ? nil : Candidate(source: source, path: "")
+            }
         }
         result = candidates.isEmpty
             ? "No other clipboard managers found on this Mac."
@@ -68,19 +80,23 @@ final class ImportModel: ObservableObject {
         let chosen = SystemPanel.run(viewModel) { () -> URL? in
             let panel = NSOpenPanel()
             panel.allowsMultipleSelection = false
-            panel.canChooseDirectories = false
+            panel.canChooseDirectories = true
+            panel.canChooseFiles = false
             panel.prompt = "Preview"
-            panel.message = "Pick the other manager's database or export."
+            let filename = candidate?.source.storeFilename ?? "database"
+            panel.message = "Choose the folder containing \(filename). This also grants "
+                + "read access to SQLite's live WAL."
             return panel.runModal() == .OK ? panel.url : nil
         }
         guard let url = chosen else { return }
         if let candidate {
+            selectedURLs[candidate.id] = url
             dryRun(candidate, path: url.path, store: store)
         }
     }
 
     func dryRun(_ candidate: Candidate, path: String? = nil, store: ClipStore) {
-        guard let read = candidate.source.read else {
+        guard let adapter = candidate.source.read else {
             result = "\(candidate.source.name): no importer yet — \(candidate.source.note)"
             return
         }
@@ -88,7 +104,12 @@ final class ImportModel: ObservableObject {
         preview = nil
         result = nil
         var tally = PasteImport.Tally()
-        let staged = read(path ?? candidate.path, &tally)
+        let selected = selectedURLs[candidate.id]
+        guard let staged = read(candidate, explicitPath: path, selectedDirectory: selected,
+                                adapter: adapter, tally: &tally) else {
+            busy = nil
+            return
+        }
         // Count against the real writer so the preview reflects dedup exactly, then discard.
         ClipImporters.write(staged, marker: "import-\(candidate.source.id)",
                             store: store, dryRun: true, tally: &tally)
@@ -106,10 +127,16 @@ final class ImportModel: ObservableObject {
     /// ten adapters have never been run against real data) and the commit is the same writer
     /// the preview counted with, so the tally shown is the tally that lands.
     func commit(_ candidate: Candidate, path: String? = nil, store: ClipStore) {
-        guard let read = candidate.source.read else { return }
+        guard let adapter = candidate.source.read else { return }
         busy = "Importing \(candidate.source.name)…"
         var tally = PasteImport.Tally()
-        let staged = read(path ?? candidate.path, &tally)
+        let selected = selectedURLs[candidate.id]
+        guard let staged = read(candidate, explicitPath: path, selectedDirectory: selected,
+                                adapter: adapter, tally: &tally) else {
+            busy = nil
+            preview = nil
+            return
+        }
         ClipImporters.write(staged, marker: "import-\(candidate.source.id)",
                             store: store, dryRun: false, tally: &tally)
         busy = nil
@@ -118,6 +145,37 @@ final class ImportModel: ObservableObject {
             + "\(candidate.source.name), tagged “import-\(candidate.source.id)”."
             + Self.leftBehind(tally.leftInSource, in: candidate.source.name,
                               limit: store.historyLimit)
+    }
+
+    /// Resolve and validate the database while the Powerbox directory grant is active. The
+    /// same validation runs again at commit, because the source app may have changed its WAL
+    /// after preview. A failure is visible and imports nothing.
+    private func read(
+        _ candidate: Candidate,
+        explicitPath: String?,
+        selectedDirectory: URL?,
+        adapter: (String, inout PasteImport.Tally) -> [ClipImporters.Staged],
+        tally: inout PasteImport.Tally
+    ) -> [ClipImporters.Staged]? {
+        guard let selectedDirectory else {
+            return adapter(explicitPath ?? candidate.path, &tally)
+        }
+        return DistributionChannel.withSecurityScopedAccess(to: selectedDirectory) {
+            guard let sourceURL = ClipImporters.storeURL(for: candidate.source,
+                                                         in: selectedDirectory) else {
+                let expected = candidate.source.storeFilename ?? "the expected store"
+                result = "\(candidate.source.name): \(expected) was not found inside the "
+                    + "chosen folder. Nothing was imported."
+                return nil
+            }
+            if candidate.source.usesSQLite,
+               let error = ClipImporters.liveSQLiteReadError(sourceURL.path) {
+                result = "\(candidate.source.name): \(error). Cliphoard will not use an "
+                    + "immutable fallback because that could omit recent clips. Nothing was imported."
+                return nil
+            }
+            return adapter(sourceURL.path, &tally)
+        }
     }
 
     /// The clips that did not fit, said plainly and true for every build: Unlimited is a row
@@ -191,7 +249,13 @@ struct ImportSection: View {
                 }
             }
             Spacer()
-            Button("Preview…") { model.dryRun(candidate, store: store) }
+            Button(DistributionChannel.canDiscoverExternalStores ? "Preview…" : "Choose…") {
+                if DistributionChannel.canDiscoverExternalStores {
+                    model.dryRun(candidate, store: store)
+                } else {
+                    chooseOther(candidate)
+                }
+            }
                 .controlSize(.small)
                 .disabled(candidate.source.read == nil || store.safeMode)
         }

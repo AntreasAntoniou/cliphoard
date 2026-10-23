@@ -103,8 +103,10 @@ class ProfileTests(unittest.TestCase):
                 if "--entitlements" in command:
                     # Recent codesign defaults to an abstract [Dict]/[Key] view.
                     return plistlib.dumps(claims) if "--xml" in command else b"[Dict]\n"
-                if "--extract-certificates" in command:
-                    Path(command[-2] + "0").write_bytes(leaf)
+                extraction = next((part for part in command
+                                   if part.startswith("--extract-certificates=")), None)
+                if extraction:
+                    Path(extraction.split("=", 1)[1] + "0").write_bytes(leaf)
                 return b""
 
             with patch.object(module, "decode", return_value=self.profile), \
@@ -124,6 +126,14 @@ class ProfileTests(unittest.TestCase):
         data = module.run("/usr/bin/codesign", "-d", "--entitlements", "-", "--xml",
                           "/System/Library/CoreServices/Finder.app")
         self.assertIsInstance(plistlib.loads(data), dict)
+
+    @unittest.skipUnless(platform.system() == "Darwin", "requires macOS codesign")
+    def test_current_codesign_can_extract_real_certificate_chain(self):
+        with tempfile.TemporaryDirectory() as directory:
+            prefix = str(Path(directory) / "certificate-")
+            module.run("/usr/bin/codesign", "-d", "--extract-certificates=" + prefix,
+                       "/System/Library/CoreServices/Finder.app")
+            self.assertGreater(Path(prefix + "0").stat().st_size, 0)
 
 
 if __name__ == "__main__":

@@ -129,8 +129,12 @@ final class CLIPEmbedder {
         if let bundled = Bundle.main.url(forResource: name, withExtension: "mlmodelc") {
             return bundled
         }
+        #if !APP_STORE
         let stored = ModelAssets.storeDir.appendingPathComponent("\(name).mlmodelc")
         return FileManager.default.fileExists(atPath: stored.path) ? stored : nil
+        #else
+        return nil
+        #endif
     }
 
     private static func locateFolder(_ name: String) -> URL? {
@@ -139,9 +143,13 @@ final class CLIPEmbedder {
                 atPath: bundled.appendingPathComponent("tokenizer.json").path) {
             return bundled
         }
+        #if !APP_STORE
         let stored = ModelAssets.storeDir.appendingPathComponent(name)
         return FileManager.default.fileExists(
             atPath: stored.appendingPathComponent("tokenizer.json").path) ? stored : nil
+        #else
+        return nil
+        #endif
     }
 
     // MARK: - Text → 192-d

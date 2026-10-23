@@ -99,8 +99,10 @@ final class ArchiveModel: ObservableObject {
 
         busy = "Writing the export…"
         result = nil
-        var report = store.exportArchive(to: url, passphrase: passphrase) { _, message in
-            self.busy = message
+        var report = DistributionChannel.withSecurityScopedAccess(to: url) {
+            store.exportArchive(to: url, passphrase: passphrase) { _, message in
+                self.busy = message
+            }
         }
         // The one refusal a user may legitimately override: some of this history cannot be
         // decrypted on this Mac. Never silently — the manifest records the counts so the
@@ -122,9 +124,11 @@ final class ArchiveModel: ObservableObject {
                 return alert.runModal() == .alertFirstButtonReturn
             }
             guard proceed else { busy = nil; result = "Nothing was exported."; return }
-            report = store.exportArchive(to: url, passphrase: passphrase,
-                                         acknowledgingUnreadable: true) { _, message in
-                self.busy = message
+            report = DistributionChannel.withSecurityScopedAccess(to: url) {
+                store.exportArchive(to: url, passphrase: passphrase,
+                                    acknowledgingUnreadable: true) { _, message in
+                    self.busy = message
+                }
             }
         }
         busy = nil
@@ -160,7 +164,9 @@ final class ArchiveModel: ObservableObject {
 
         busy = "Opening the file…"
         result = nil
-        let preview = HistoryArchiveIO.preview(url: url, passphrase: passphrase)
+        let preview = DistributionChannel.withSecurityScopedAccess(to: url) {
+            HistoryArchiveIO.preview(url: url, passphrase: passphrase)
+        }
         busy = nil
         switch preview {
         case .failure(let error):
@@ -179,8 +185,10 @@ final class ArchiveModel: ObservableObject {
         self.pending = nil
         busy = "Reading the file…"
         result = nil
-        let staged = store.stageImport(from: pending.url, passphrase: pending.passphrase) {
-            _, message in self.busy = message
+        let staged = DistributionChannel.withSecurityScopedAccess(to: pending.url) {
+            store.stageImport(from: pending.url, passphrase: pending.passphrase) {
+                _, message in self.busy = message
+            }
         }
         switch staged {
         case .failure(let error):

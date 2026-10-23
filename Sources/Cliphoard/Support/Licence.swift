@@ -41,6 +41,11 @@ enum Licence {
 
     /// Pure verification. Never throws, never blocks, touches nothing outside its arguments.
     static func verify(_ key: String, now: Date = Date()) -> Entitlement {
+#if APP_STORE
+        // The Store edition accepts only verified StoreKit entitlements. In particular,
+        // a genuine direct-download key cannot bypass the App Store purchase path.
+        return .free(reason: key.isEmpty ? nil : "Use App Store purchases in this edition")
+#else
         let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.hasPrefix(prefix) else { return .free(reason: trimmed.isEmpty ? nil : "not a Cliphoard key") }
         let parts = trimmed.dropFirst(prefix.count).split(separator: ".", omittingEmptySubsequences: false)
@@ -58,16 +63,30 @@ enum Licence {
               let v = obj["v"] as? Int, v >= 1
         else { return .free(reason: "signature valid but payload unrecognised") }
         return .pro(orderID: order, issued: Date(timeIntervalSince1970: issued))
+#endif
     }
 
     /// The stored key's entitlement. Read live, never cached, so a paste in Settings takes
     /// effect at once and a removed key takes effect at once.
     static var current: Entitlement {
+#if APP_STORE
+        // Fail closed during startup. StorePurchase supplies the verified entitlement.
+        .free(reason: nil)
+#else
         verify(UserDefaults.standard.string(forKey: defaultsKey) ?? "")
+#endif
     }
 
-    static func store(_ key: String) { UserDefaults.standard.set(key.trimmingCharacters(in: .whitespacesAndNewlines), forKey: defaultsKey) }
-    static func remove() { UserDefaults.standard.removeObject(forKey: defaultsKey) }
+    static func store(_ key: String) {
+#if !APP_STORE
+        UserDefaults.standard.set(key.trimmingCharacters(in: .whitespacesAndNewlines), forKey: defaultsKey)
+#endif
+    }
+    static func remove() {
+#if !APP_STORE
+        UserDefaults.standard.removeObject(forKey: defaultsKey)
+#endif
+    }
 
     /// Where to buy. One place, so the upsell surfaces cannot drift.
     static let buyURL = URL(string: "https://cliphoard.dev/#pro")!
@@ -80,7 +99,11 @@ enum Licence {
     /// What the gated surfaces say when they refuse. One sentence, one place, so the two
     /// search-mode pickers and the image-text toggle cannot end up describing different
     /// products.
+#if APP_STORE
+    static let pitch = "Unlock Cliphoard Pro with a one-time App Store purchase."
+#else
     static let pitch = "Cliphoard Pro — \(priceLabel) once, on this Mac and every Mac you own."
+#endif
 
     private static func b64urlDecode(_ s: String) -> Data? {
         var t = s.replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")

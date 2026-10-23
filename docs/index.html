@@ -99,8 +99,8 @@
 
   <p class="note release">The current public release is <b>1.0.0</b>, which is not notarized
     by Apple, so macOS will refuse to open it the first time.<br>
-    A signed <b>1.0.1</b> build is awaiting notarization and release; it is not available here
-    yet, and it will not appear until I publish it.</p>
+    The signed <b>1.0.1</b> build is notarized and undergoing customer-install testing;
+    it is not available here yet, and it will not appear until I publish it.</p>
   <p class="note">macOS 13 Ventura or later. Universal, for Apple Silicon and Intel.
     <a href="https://github.com/AntreasAntoniou/cliphoard/releases">All releases</a>.</p>
 
@@ -332,7 +332,7 @@
 
 <section id="privacy" class="page">
   <h2>Your clipboard holds passwords, so it is treated that way</h2>
-  <p class="lead">Nothing you copy is uploaded, to me or to anyone. There is no account, no
+  <p class="lead">Nothing you copy is uploaded, to me or to anyone. There is no Cliphoard account, no
     telemetry, no cloud and no sync. Your history is encrypted on your own Mac with a key that
     cannot leave it. The
     <a href="https://github.com/AntreasAntoniou/cliphoard/blob/main/PRIVACY.md">privacy policy</a>
@@ -390,10 +390,11 @@
     </div>
     <div>
       <dt>What the app does use the network for</dt>
-      <dd>One thing, and it is worth being precise rather than absolute about it: downloading a
-        search model you have chosen and do not have yet. Those are one-time, download-only
-        requests that carry none of your clipboard. Every search, every screenshot read and
-        every image embedding then runs on your Mac.</dd>
+      <dd>The direct edition downloads search models you choose when they are not installed.
+        The App Store edition bundles its models and uses Apple for Pro purchases and
+        restoration. Neither sends your clipboard content. Every search, every screenshot
+        read and every image embedding runs on your Mac. The
+        <a href="privacy.html">privacy policy</a> explains provider connection metadata.</dd>
     </div>
     <div>
       <dt>The one thing it writes to your clipboard</dt>
@@ -458,7 +459,8 @@
     <ul>
       <li><a href="https://github.com/AntreasAntoniou/cliphoard">Source</a></li>
       <li><a href="https://github.com/AntreasAntoniou/cliphoard/releases">Releases</a></li>
-      <li><a href="https://github.com/AntreasAntoniou/cliphoard/blob/main/PRIVACY.md">Privacy</a></li>
+      <li><a href="privacy.html">Privacy</a></li>
+      <li><a href="support.html">Support</a></li>
       <li><a href="https://github.com/AntreasAntoniou/cliphoard/blob/main/THIRD-PARTY-NOTICES.md">Licences</a></li>
     </ul>
   </div>

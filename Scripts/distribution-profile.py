@@ -105,7 +105,7 @@ def verify(app, template, team_id):
     run("/usr/bin/codesign", "--verify", "--strict", str(app))
     with tempfile.TemporaryDirectory(prefix="cliphoard-profile-check-") as directory:
         prefix = str(Path(directory) / "cert-")
-        run("/usr/bin/codesign", "-d", "--extract-certificates", prefix, str(app))
+        run("/usr/bin/codesign", "-d", "--extract-certificates=" + prefix, str(app))
         leaf = Path(prefix + "0").read_bytes()
     require(leaf in profile["DeveloperCertificates"],
             "profile does not authorize the app's actual signing certificate")

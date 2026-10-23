@@ -237,7 +237,8 @@ final class ClipboardMonitor {
     /// user denylist, or when the pasteboard declares a private/auto-generated
     /// type (transient, concealed, or auto-generated).
     nonisolated static func shouldSkip(frontmostBundleID: String?, types: [String], excluded: [String]) -> Bool {
-        if let id = frontmostBundleID, excluded.contains(id) { return true }
+        if let id = frontmostBundleID,
+           excluded.contains(where: { $0.caseInsensitiveCompare(id) == .orderedSame }) { return true }
         let privateTypes: Set<String> = [
             "org.nspasteboard.TransientType",
             "org.nspasteboard.ConcealedType",
