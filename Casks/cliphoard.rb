@@ -19,13 +19,12 @@ cask "cliphoard" do
          "released DMG's sha256 (see RELEASING.md) before publishing."
   end
 
-  url "https://github.com/AntreasAntoniou/cliphoard/releases/download/v#{version}/Cliphoard-#{version}.dmg",
-      verified: "github.com/AntreasAntoniou/cliphoard/"
+  url "https://github.com/AntreasAntoniou/cliphoard/releases/download/v#{version}/Cliphoard-#{version}.dmg"
   name "Cliphoard"
   desc "Fast, private clipboard manager with on-device semantic search"
   homepage "https://github.com/AntreasAntoniou/cliphoard"
 
-  depends_on macos: ">= :ventura"
+  depends_on macos: :ventura
 
   app "Cliphoard.app"
 
