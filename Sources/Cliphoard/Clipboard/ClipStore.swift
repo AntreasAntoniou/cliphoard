@@ -1191,12 +1191,54 @@ final class ClipStore: ObservableObject {
                        acknowledgingUnreadable: Bool = false,
                        progress: (Double, String) -> Void = { _, _ in })
         -> Result<HistoryArchiveIO.ExportReport, HistoryArchive.ArchiveError> {
-        guard let proof = historyProof else { return .failure(.historyNotProvenComplete) }
-        return HistoryArchiveIO.export(items: items, proof: proof, directory: dir,
+        guard historyProof != nil, storageComplete else {
+            return .failure(.historyNotProvenComplete)
+        }
+        guard passphrase.count >= HistoryArchive.passphraseMinimumLength else {
+            return .failure(.passphraseTooShort(passphrase.count))
+        }
+        if let refusal = HistoryArchiveIO.healthRefusal(safeMode: safeMode) {
+            return .failure(refusal)
+        }
+
+        // The startup proof becomes stale after an ordinary capture, trim or deletion.
+        // Pair a fresh complete read with its own token, without replacing the live
+        // objects or refreshing the proof used by destructive maintenance. A failed
+        // write can leave the UI ahead of SQLite, so completeness alone is insufficient:
+        // exporting either side of a divergence would silently omit authored data.
+        guard let db, case .complete(let snapshot, let proof) = db.loadAllStatus(),
+              Self.archiveSnapshot(snapshot, matches: items) else {
+            return .failure(.historyNotProvenComplete)
+        }
+        return HistoryArchiveIO.export(items: snapshot, proof: proof, directory: dir,
                                        dismissals: userTagDismissalList, safeMode: safeMode,
                                        to: url, passphrase: passphrase,
                                        acknowledgingUnreadable: acknowledgingUnreadable,
                                        progress: progress)
+    }
+
+    /// Compare exactly what the archive carries, independently of display order and
+    /// derived caches. Check UUID uniqueness BEFORE constructing a dictionary: SQLite
+    /// can hold differently cased spellings of the same UUID as distinct TEXT keys.
+    private static func archiveSnapshot(_ snapshot: [ClipItem], matches live: [ClipItem]) -> Bool {
+        guard snapshot.count == live.count else { return false }
+        let snapshotIDs = Set(snapshot.map(\.id))
+        let liveIDs = Set(live.map(\.id))
+        guard snapshotIDs.count == snapshot.count, liveIDs.count == live.count,
+              snapshotIDs == liveIDs else { return false }
+        let liveByID = Dictionary(uniqueKeysWithValues: live.map { ($0.id, $0) })
+        return snapshot.allSatisfy { stored in
+            guard let visible = liveByID[stored.id] else { return false }
+            return HistoryArchiveIO.archiveClip(stored) == HistoryArchiveIO.archiveClip(visible)
+                && archiveFeature(stored) == archiveFeature(visible)
+        }
+    }
+
+    private static func archiveFeature(_ item: ClipItem) -> HistoryArchive.FeatureRecord? {
+        guard let feature = item.imageFeature, !feature.vector.isEmpty else { return nil }
+        // Preserve Float32 bit patterns, including NaNs, rather than Float equality.
+        return HistoryArchive.FeatureRecord(revision: feature.revision,
+            vectorB64: HistoryArchive.vectorBase64(feature.vector))
     }
 
     /// Phase B: read the file into quarantine inside this store's directory. Nothing in
