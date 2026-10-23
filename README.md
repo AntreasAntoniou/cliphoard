@@ -75,13 +75,13 @@ right inside the bar (theme, layout, search mode, sound, history limit, permissi
 
 ## Install
 
-Download [**Cliphoard 1.0.1 for macOS**](https://github.com/AntreasAntoniou/cliphoard/releases/download/v1.0.1/Cliphoard-1.0.1.dmg),
+Download [**Cliphoard 1.0.2 for macOS**](https://github.com/AntreasAntoniou/cliphoard/releases/download/v1.0.2/Cliphoard-1.0.2.dmg),
 open the DMG, drag **Cliphoard** to Applications, and open it there. Press **⌃⌥⌘V**
 to show your clipboard. Or build from source (below).
 
 The universal installer is signed by **A SQUARED LABS LIMITED**, notarized by Apple,
 and tested through a quarantined Finder installation. It supports Apple silicon and Intel
-Macs running macOS 13 or later. [Release notes and checksum](https://github.com/AntreasAntoniou/cliphoard/releases/tag/v1.0.1).
+Macs running macOS 13 or later. [Release notes and checksum](https://github.com/AntreasAntoniou/cliphoard/releases/tag/v1.0.2).
 
 **Upgrading from 1.0.0:** quit the older app before replacing it. The A2 Labs application
 identity retains the existing history location and encryption namespace and includes

@@ -1,42 +1,57 @@
 # Cliphoard — Release Readiness Status
 
 **Last updated:** 2026-10-23 · **Branch:** `main`
-**Verdict: the signed, notarized v1.0.1 direct installer is public and its download checksum is verified. The Mac App Store build is implemented but not submitted.**
-**Download:** https://github.com/AntreasAntoniou/cliphoard/releases/tag/v1.0.1 · **Live site:** https://cliphoard.dev/
+**Verdict: the signed, notarized v1.0.2 direct installer is public. The Mac App Store build is prepared but not submitted; paid purchasing is not live.**
+**Download:** https://github.com/AntreasAntoniou/cliphoard/releases/tag/v1.0.2 · **Live site:** https://cliphoard.dev/
 
 ## Launch preparation — 23 October 2026
 
-- The reviewed website is live over HTTPS at `cliphoard.dev` and `www.cliphoard.dev`
-  through Cloudflare static assets. All 17 assets match the source; 22 public HTTPS
-  checks pass. Chrome verifies light/dark appearance and persistence after reload.
-  Purchase links and funding totals remain unavailable until their underlying evidence exists.
-- The direct-edition licence service is implemented in `commerce/`, with 24 passing
-  tests including the real Swift verifier and fresh workerd instances. It remains
-  disabled and undeployed; real Lemon checkout/receipt verification is outstanding.
-- The corrected A2 Labs direct build includes its authorized Developer ID provisioning
-  profile. Apple accepted both the app archive and final DMG. Strict signatures, stapled
-  tickets, Gatekeeper, image integrity and mounted contents pass. The final DMG SHA-256 is
-  `645d92652d02ddd7200de900abd5c504a2db074b205ae5cb3c6da8e0a75f495d`.
-  These exact bytes are published as v1.0.1 from frozen source `80a92ea`; an anonymous
-  public download matches the 39,379,848-byte original and the published checksum.
-  Chrome download, Finder drag, Gatekeeper launch, Free capture/search/pinning, relaunch
-  and guest reboot persistence, and offline-fixture Pro activation/removal, OCR and image
-  similarity passed. The legacy-ID probe used synthetic preferences, not an old-binary
-  upgrade. Live paid checkout and Accessibility auto-paste were not tested.
-  The main-repository cask now contains the verified DMG checksum; the separate Homebrew
-  tap has not been published.
-- The Mac App Store channel is one free app with a non-consumable Pro purchase. It uses
-  App Sandbox, copies selected clips for the user to paste, bundles all model tiers, and
-  isolates StoreKit entitlements from direct-edition licence keys. A universal ad-hoc
-  inspection build passes bundle and signature checks; this is not an uploadable package.
-- Independent review led to folder-scoped imports that read live SQLite WAL data,
-  stricter Store profile/certificate checks, removal of the direct model-download path
-  from the Store build, and an exclusion editor available without Pro. The fresh direct
-  suite passed 733 tests with one intentional skip; focused Store import/channel tests
-  passed 8 cases, and release-profile checks passed 18 cases.
-- Store certificates/profile, App Store Connect setup, live purchase testing, screenshots
-  and review submission are still outstanding. The direct checkout and licence-delivery
-  route is not live. The direct app is released; paid purchase availability is not claimed.
+- The HTTPS website supports light/dark appearance and persists the selected theme.
+  It describes the fully featured Free edition and the MIT-licensed application
+  codebase, including Pro. Purchase links and funding totals remain unavailable
+  until the underlying checkout and reconciled proceeds are verified.
+- Direct **1.0.2/build 4** fixes export after ordinary clipboard changes, adds
+  safer encrypted backup replacement, a free Excluded apps editor and safer
+  fallback handling when importing a live SQLite database.
+  Frozen source: `9f4e5b74ade22f832b5ac8f91ef9cc6f1e5dfc16`. The original public
+  1.0.1 tag and installer remain unchanged.
+- Apple accepted both the app archive and final DMG. The app and DMG are
+  company-signed, stapled and Gatekeeper-accepted; the mounted installer matches all expected app
+  files and licence notices. The 39,471,050-byte DMG SHA-256 is
+  `3412a573fe949d518f632814903dda487202b71eae0f57315870914aeac852fb`.
+  The retained customer history from 1.0.1 passed the corrected upgrade, immediate
+  capture-to-export, backup replacement/import/refusal cases, app restart and a full
+  guest reboot with Pro active. Normal licence removal returned the app to Free;
+  capture, exact search, pinning, manual paste and Free relaunch persistence passed.
+  The retained upgrade chain included an earlier held candidate. Testing used a
+  signed licence fixture; optional automatic paste was not exercised.
+- The full direct test suite ran **757 tests: 756 passed, one opt-in real-data test
+  skipped, zero failures**. Focused archive and distribution checks passed 73
+  Direct and 74 Store tests, including 17 new live-mutation regressions. Physical Intel hardware, the minimum supported macOS,
+  and live paid checkout remain untested.
+- Homebrew distribution is available through
+  `brew install --cask antreasantoniou/tap/cliphoard`. The cask download and checksum
+  are verified; this does not claim installation into the development host.
+- The Mac App Store channel is **one free app with a non-consumable Pro purchase**.
+  It uses App Sandbox, copies selected clips for manual paste, bundles all model
+  tiers, and isolates StoreKit entitlements from direct-edition licence keys.
+  Certificates and the matching profile exist; the corrected 1.0.1/build 3 candidate includes the same shared export fix.
+  Its company-signed app and explicitly unsigned installer package are frozen;
+  the packaged app matches all 47 signed file hashes. The installer is not uploadable
+  until it is signed with the installer certificate.
+- The previous Store inspection build passed native backup export/replacement,
+  duplicate import, wrong-password and truncated-file refusal. Failed and duplicate
+  imports retained the same history fingerprint and left no import residue. Final
+  quit/relaunch retained history and theme. This is not a production Store receipt
+  or real StoreKit purchase test, and the final inspection build was not fully
+  reboot-tested. Real dark/light screenshots and review notes are saved in App
+  Store Connect; its provisional IAP screenshot still needs a loaded product price.
+- Store installer signing/upload require normal local Keychain authorization.
+  Paid Apps terms, bank/tax setup, EU trader contacts, production StoreKit testing,
+  build upload and App Review remain incomplete.
+- The direct-edition licence service in `commerce/` passes 24 tests, including the
+  real Swift verifier and fresh workerd instances. It remains undeployed. Lemon
+  Squeezy merchant sign-in, checkout and real licence delivery are outstanding.
 
 The dated entries below are historical snapshots. Their missing-certificate and
 missing-notarization statements are superseded by the current entry above.

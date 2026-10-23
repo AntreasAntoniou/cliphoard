@@ -545,12 +545,12 @@ class Ordering(unittest.TestCase):
         release = re.search(r'<p class="note release">(.*?)</p>', hero(), re.S)
         self.assertIsNotNone(release, "the two-line release note is missing")
         text = visible(release.group(1))
-        self.assertIn("1.0.1 is available now", text)
+        self.assertIn("1.0.2 is available now", text)
         self.assertIn("signed by a squared labs limited", text)
         self.assertIn("notarized by apple", text)
         self.assertIn("verified through a customer installation", text)
         self.assertIn("https://github.com/AntreasAntoniou/cliphoard/releases/download/"
-                      "v1.0.1/Cliphoard-1.0.1.dmg", hero())
+                      "v1.0.2/Cliphoard-1.0.2.dmg", hero())
         self.assertNotIn("1.0.0", text)
         self.assertLess(len(text.split()), 90, "the release note is a wall again")
         self.assertNotIn('class="status"', self.raw)
@@ -562,7 +562,7 @@ class Ordering(unittest.TestCase):
 
     def test_apple_acceptance_is_not_described_as_publishing_anything(self):
         text = visible(self.raw)
-        self.assertIn("1.0.1 is available now", text)
+        self.assertIn("1.0.2 is available now", text)
         for wrong in ["once apple approves it will", "will be released automatically",
                       "automatically published", "goes live when apple"]:
             self.assertNotIn(wrong, text)
@@ -683,7 +683,7 @@ class CopyHygiene(unittest.TestCase):
             self.assertNotIn(shape, self.text)
 
     def test_the_pro_table_matches_the_released_build_without_claiming_checkout(self):
-        self.assertIn("included in the 1.0.1 direct download above", self.text)
+        self.assertIn("included in the 1.0.2 direct download above", self.text)
         self.assertIn("pro purchasing is being prepared", self.text)
         self.assertIn("free needs no account or licence key", self.text)
         self.assertNotIn("which is not published yet", self.text)
@@ -1920,7 +1920,7 @@ class TheComparisonFitsAPhone(unittest.TestCase):
         self.assertEqual(table.count('class="yes">Yes'), 15)
         self.assertEqual(table.count('class="no">No'), 3)
         self.assertIn("<caption>", table)
-        self.assertIn("1.0.1", visible(table))
+        self.assertIn("1.0.2", visible(table))
         self.assertNotIn("aria-hidden", table)
 
     def test_the_wide_technical_table_can_be_scrolled_from_the_keyboard(self):

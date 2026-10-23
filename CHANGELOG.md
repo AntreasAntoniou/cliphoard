@@ -1,5 +1,30 @@
 # Changelog
 
+## 1.0.2 — 2026-10-23
+
+### Safer encrypted backups
+
+- Export works after copying, deleting or trimming clips in the current session,
+  without requiring a restart. It checks a fresh complete database snapshot
+  against the visible history and refuses if a failed write left them different.
+- Export finishes the encrypted backup in private temporary storage before
+  replacing the file you selected. It leaves unrelated neighbouring files alone.
+- If macOS reports a recoverable original after a replacement failure, Cliphoard
+  preserves it and shows its location.
+- The encrypted archive format is unchanged; existing backups remain compatible.
+
+### Capture controls and imports
+
+- **Excluded apps** is editable in Settings without Pro. Existing exclusions are
+  preserved, and bundle identifiers match without regard to letter case.
+- SQLite imports refuse an unsafe fallback that could omit recent clipboard items
+  from an active database.
+- The direct edition keeps its encryption Keychain group and existing licence
+  storage and format unchanged.
+  The retained customer installation passed the corrected upgrade and encrypted
+  archive checks, Pro persistence through an app restart and full guest reboot,
+  and normal return to Free with capture/search/pin/manual-paste persistence.
+
 ## 1.0.1
 
 ### Move to another Mac

@@ -6,8 +6,8 @@
 # into a tap; the Ruby guard also refuses an all-zero placeholder.
 # A cask in this source repository does not establish a published Homebrew tap.
 cask "cliphoard" do
-  version "1.0.1"
-  sha256 "645d92652d02ddd7200de900abd5c504a2db074b205ae5cb3c6da8e0a75f495d"
+  version "1.0.2"
+  sha256 "3412a573fe949d518f632814903dda487202b71eae0f57315870914aeac852fb"
 
   # Belt-and-braces: refuse to install/audit a cask that still carries the
   # all-zero placeholder sha256. Gated to non-development runs so `--debug`/local
