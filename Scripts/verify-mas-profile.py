@@ -18,11 +18,23 @@ TEAM_ID = "com.apple.developer.team-identifier"
 GROUPS = "keychain-access-groups"
 SANDBOX = "com.apple.security.app-sandbox"
 USER_SELECTED_RW = "com.apple.security.files.user-selected.read-write"
+DEBUGGER_ENTITLEMENTS = ("get-task-allow", "com.apple.security.get-task-allow")
 
 
 def require(condition, message):
     if not condition:
         raise ValueError(message)
+
+
+def reject_debugger_access(entitlements, source):
+    # TN3125: macOS's com.apple.security.get-task-allow is unrestricted; unlike
+    # iOS's get-task-allow, it need not appear in a Mac distribution profile.
+    # Absence grants no debugger access. Present values must be Boolean false,
+    # including on the intended and actual app signature, not just the profile.
+    for key in DEBUGGER_ENTITLEMENTS:
+        if key in entitlements:
+            require(entitlements[key] is False,
+                    source + " must not authorize debugger access: " + key)
 
 
 def allows(allowed, claimed):
@@ -59,8 +71,8 @@ def verify_profile(profile, intended, bundle_id, team_id, now=None):
     prefix = prefixes[0]
     permitted = profile.get("Entitlements", {})
     require(isinstance(permitted, dict), "profile entitlements are invalid")
-    require(permitted.get("get-task-allow") is False,
-            "debug/development profile is not acceptable for App Store distribution")
+    reject_debugger_access(permitted, "profile")
+    reject_debugger_access(intended, "intended entitlements")
 
     require(intended.get(SANDBOX) is True, "intended entitlements must enable App Sandbox")
     require(intended.get(USER_SELECTED_RW) is True,
@@ -86,6 +98,8 @@ def verify_profile(profile, intended, bundle_id, team_id, now=None):
 
 
 def verify_signed(profile, intended, actual, leaf_certificate):
+    reject_debugger_access(intended, "intended entitlements")
+    reject_debugger_access(actual, "signed entitlements")
     require(actual == intended,
             "signed entitlements do not exactly match the intended expanded template")
     allowed = profile.get("DeveloperCertificates", [])

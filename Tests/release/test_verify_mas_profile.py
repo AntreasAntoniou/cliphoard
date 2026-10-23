@@ -51,6 +51,57 @@ class VerifyMASProfileTests(unittest.TestCase):
         self.assertNotIn(MODULE.USER_SELECTED_RW, self.profile["Entitlements"])
         self.assertEqual(self.verify(), self.prefix)
 
+    def test_macos_profile_may_omit_debugger_entitlements(self):
+        # A profile issued by Apple's Mac App Store portal has neither key.
+        self.profile["Entitlements"].pop("get-task-allow")
+        self.assertEqual(self.verify(), self.prefix)
+
+    def test_debugger_entitlements_may_be_explicitly_false(self):
+        for key in ("get-task-allow", "com.apple.security.get-task-allow"):
+            with self.subTest(key=key):
+                self.profile["Entitlements"][key] = False
+                self.intended[key] = False
+                self.assertEqual(self.verify(), self.prefix)
+                MODULE.verify_signed(self.profile, self.intended,
+                                     dict(self.intended), self.cert)
+
+    def test_profile_rejects_enabled_or_malformed_debugger_entitlements(self):
+        for key in ("get-task-allow", "com.apple.security.get-task-allow"):
+            for value in (True, 0, 1, "false", None, [], {}):
+                with self.subTest(key=key, value=value):
+                    self.setUp()
+                    self.profile["Entitlements"][key] = value
+                    with self.assertRaisesRegex(ValueError, "debugger access"):
+                        self.verify()
+
+    def test_intended_rejects_enabled_or_malformed_debugger_entitlements(self):
+        for key in ("get-task-allow", "com.apple.security.get-task-allow"):
+            for value in (True, 0, 1, "false", None, [], {}):
+                with self.subTest(key=key, value=value):
+                    self.setUp()
+                    self.intended[key] = value
+                    with self.assertRaisesRegex(ValueError, "debugger access"):
+                        self.verify()
+
+    def test_signed_matching_debugger_claims_are_still_rejected(self):
+        # Exact signed/intended equality must not authorize debugging by itself.
+        for key in ("get-task-allow", "com.apple.security.get-task-allow"):
+            for value in (True, 0, 1, "false", None, [], {}):
+                with self.subTest(key=key, value=value):
+                    self.setUp()
+                    self.intended[key] = value
+                    with self.assertRaisesRegex(ValueError, "debugger access"):
+                        MODULE.verify_signed(self.profile, self.intended,
+                                             dict(self.intended), self.cert)
+
+    def test_signed_debugger_claim_cannot_be_added_after_preflight(self):
+        for key in ("get-task-allow", "com.apple.security.get-task-allow"):
+            with self.subTest(key=key):
+                actual = dict(self.intended)
+                actual[key] = True
+                with self.assertRaisesRegex(ValueError, "debugger access"):
+                    MODULE.verify_signed(self.profile, self.intended, actual, self.cert)
+
     def test_rejects_expired_non_macos_and_non_distribution_profiles(self):
         cases = [
             ("ExpirationDate", dt.datetime(2028, 1, 1, tzinfo=dt.timezone.utc)),
