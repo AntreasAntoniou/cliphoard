@@ -37,8 +37,8 @@ cloud.** Everything you copy stays on your Mac.
   detector flags stay in the clear. The key is derived from a P-256 key generated inside the
   **Secure Enclave** where your Mac has one (a random login-Keychain key otherwise).
   Concealed pasteboards are never stored; clips from known password managers are
-  quarantined — flagged and never indexed, not hidden. Open source: read it and confirm
-  there are zero network calls. ([Details →](PRIVACY.md))
+  quarantined — flagged and never indexed, not hidden. Open source: inspect how content
+  stays local and how optional models are downloaded. ([Details →](PRIVACY.md))
 - **🎨 17 themes, 3 layouts.** A clean Swiss greyscale, One Dark, Dracula, Tokyo Night,
   Catppuccin and more — follows your macOS Light/Dark appearance. Card strip, compact
   list, or a Spotlight-style palette with live preview.
@@ -75,14 +75,18 @@ right inside the bar (theme, layout, search mode, sound, history limit, permissi
 
 ## Install
 
-Download the latest DMG from [**Releases**](https://github.com/AntreasAntoniou/cliphoard/releases),
-drag **Cliphoard** to Applications, and press **⌃⌥⌘V**. Or build from source (below).
+Download [**Cliphoard 1.0.1 for macOS**](https://github.com/AntreasAntoniou/cliphoard/releases/download/v1.0.1/Cliphoard-1.0.1.dmg),
+open the DMG, drag **Cliphoard** to Applications, and open it there. Press **⌃⌥⌘V**
+to show your clipboard. Or build from source (below).
 
-> **1.0.0 is not yet notarized by Apple** (the notarized build and Homebrew tap ship in 1.0.1).
-> First launch: open it once, then *System Settings → Privacy & Security → Open Anyway*, or
-> `xattr -dr com.apple.quarantine /Applications/Cliphoard.app`. When 1.0.1 replaces it, macOS
-> treats it as a new app: re-grant Accessibility once and click **Always Allow** when Cliphoard
-> asks for its keychain key (Deny freezes history read-only; nothing is deleted).
+The universal installer is signed by **A SQUARED LABS LIMITED**, notarized by Apple,
+and tested through a quarantined Finder installation. It supports Apple silicon and Intel
+Macs running macOS 13 or later. [Release notes and checksum](https://github.com/AntreasAntoniou/cliphoard/releases/tag/v1.0.1).
+
+**Upgrading from 1.0.0:** quit the older app before replacing it. The A2 Labs application
+identity retains the existing history location and encryption namespace and includes
+preference and licence migration. macOS may ask you to grant Accessibility or
+launch-at-login permission again. Keep your existing history folder and Keychain items.
 
 On first launch macOS asks for **Accessibility** access — Cliphoard needs it to send the
 ⌘V keystroke that pastes into the focused app (*System Settings → Privacy & Security →
@@ -102,8 +106,14 @@ Other targets: `make app` (build `build/Cliphoard.app`) · `make install` (copy 
 
 ## Free, and staying that way
 
-MIT licensed. No paid tier, no locked features, no crippled build — everyone gets everything,
-and `make install` above gives you the same app as the download.
+Free is a complete clipboard manager, with no time limit: clipboard history, every text
+search mode, pinning, themes, importers and encrypted history export/import are included.
+Pro adds on-device image search, OCR and visually similar images. The entire application
+codebase, **including Pro**, is open source under the MIT licence.
+
+The direct edition accepts signed offline licence keys. New Pro purchases will be enabled
+after checkout and key delivery are verified. The Mac App Store edition is being prepared
+as one free app with an optional Pro purchase; it is not in the Store yet.
 
 If it earns a place on your Mac, you can [sponsor the
 work](https://github.com/sponsors/AntreasAntoniou). That is closer to Patreon than to a shop:
@@ -180,11 +190,11 @@ reimplemented in Swift). To produce/bundle the models, see [`tools/`](tools/READ
 | Global hotkey (Carbon) + slide-up panel | `Sources/Cliphoard/App/HotKey.swift`, `UI/FloatingPanel.swift` |
 | Bar, cards, themes, layouts (SwiftUI) | `Sources/Cliphoard/UI/ContentView.swift`, `ClipCardView.swift`, `Theme.swift` |
 
-## Coming in 1.0.1
+## Next
 
 - Touch ID hiding for password-manager clips
 - A Settings UI for excluded apps
-- The notarized build and Homebrew tap
+- The Homebrew tap (the signed, notarized direct installer is available now)
 
 Later: clip stack · customizable hotkey · smart actions on links & colors.
 

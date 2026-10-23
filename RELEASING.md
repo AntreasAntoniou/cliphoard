@@ -119,8 +119,11 @@ by hand, with the automation kept out of the way:
 
 ## Homebrew cask
 
-`Casks/cliphoard.rb` is the cask source; its `sha256` is written by `Scripts/release.sh`
-from the notarised DMG (never by hand). Publish it into the tap
+`Casks/cliphoard.rb` is the cask source; its `sha256` is normally written by
+`Scripts/release.sh` from the notarised DMG. For an already frozen, customer-tested
+artifact, compute the checksum from that file with `shasum -a 256`, verify it against
+an anonymous download of the published asset, and promote that computed value without
+rebuilding. Never type an invented checksum or change the tested bytes. Publish it into the tap
 (`github.com/AntreasAntoniou/homebrew-tap`) with
 ```sh
 bash Scripts/publish-cask.sh ../homebrew-tap   # refuses the placeholder; verifies the released DMG's sha256

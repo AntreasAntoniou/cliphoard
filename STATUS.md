@@ -1,8 +1,8 @@
 # Cliphoard — Release Readiness Status
 
 **Last updated:** 2026-10-23 · **Branch:** `main`
-**Verdict: v1.0.0 is public; the corrected notarized 1.0.1 installer is in customer-install testing. The Mac App Store build is implemented but not submitted.**
-**Download:** https://github.com/AntreasAntoniou/cliphoard/releases/tag/v1.0.0 · **Live site:** https://cliphoard.dev/
+**Verdict: the signed, notarized v1.0.1 direct installer is public and its download checksum is verified. The Mac App Store build is implemented but not submitted.**
+**Download:** https://github.com/AntreasAntoniou/cliphoard/releases/tag/v1.0.1 · **Live site:** https://cliphoard.dev/
 
 ## Launch preparation — 23 October 2026
 
@@ -17,7 +17,14 @@
   profile. Apple accepted both the app archive and final DMG. Strict signatures, stapled
   tickets, Gatekeeper, image integrity and mounted contents pass. The final DMG SHA-256 is
   `645d92652d02ddd7200de900abd5c504a2db074b205ae5cb3c6da8e0a75f495d`.
-  Customer installation, activation and restart tests of these exact bytes remain open.
+  These exact bytes are published as v1.0.1 from frozen source `80a92ea`; an anonymous
+  public download matches the 39,379,848-byte original and the published checksum.
+  Chrome download, Finder drag, Gatekeeper launch, Free capture/search/pinning, relaunch
+  and guest reboot persistence, and offline-fixture Pro activation/removal, OCR and image
+  similarity passed. The legacy-ID probe used synthetic preferences, not an old-binary
+  upgrade. Live paid checkout and Accessibility auto-paste were not tested.
+  The main-repository cask now contains the verified DMG checksum; the separate Homebrew
+  tap has not been published.
 - The Mac App Store channel is one free app with a non-consumable Pro purchase. It uses
   App Sandbox, copies selected clips for the user to paste, bundles all model tiers, and
   isolates StoreKit entitlements from direct-edition licence keys. A universal ad-hoc
@@ -29,7 +36,7 @@
   passed 8 cases, and release-profile checks passed 18 cases.
 - Store certificates/profile, App Store Connect setup, live purchase testing, screenshots
   and review submission are still outstanding. The direct checkout and licence-delivery
-  route is not live. No new app release or paid purchase availability is claimed.
+  route is not live. The direct app is released; paid purchase availability is not claimed.
 
 The dated entries below are historical snapshots. Their missing-certificate and
 missing-notarization statements are superseded by the current entry above.

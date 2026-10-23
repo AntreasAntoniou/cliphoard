@@ -4,13 +4,12 @@
 Five kinds of assertion, kept separate on purpose:
 
   * RESOLUTION — every relative URL resolves, under BOTH roots the site is served from
-    (`/` on cliphoard.dev and `/cliphoard/` on antreas.io). Not hypothetical: STATUS.md
-    records cliphoard.dev as not resolving, so the subpath is the live one today.
+    (`/` on cliphoard.dev and the historical `/cliphoard/` project subpath).
   * ACCESSIBILITY — one h1, no skipped heading levels, a working skip link, alt text,
     labelled landmarks, scoped table headers, a 320px breakpoint.
   * CLAIMS — what the page is allowed and not allowed to say, measured against the code
-    where there is code behind it. This page makes claims about money and about an
-    unreleased build, so the negative assertions matter as much as the positive ones.
+    where there is code behind it. This page makes claims about money, releases and
+    purchase availability, so negative assertions matter as much as positive ones.
   * MOBILE — the first viewport on a phone, and the ruler's endpoints.
   * HARNESS — that `Tests/site/preview.html` is local-only, unmistakably synthetic,
     renders at the exact widths it offers, and drives the real module.
@@ -546,10 +545,13 @@ class Ordering(unittest.TestCase):
         release = re.search(r'<p class="note release">(.*?)</p>', hero(), re.S)
         self.assertIsNotNone(release, "the two-line release note is missing")
         text = visible(release.group(1))
-        self.assertIn("1.0.0", text)
-        self.assertIn("not notarized by apple", text)
-        self.assertIn("1.0.1", text)
-        self.assertIn("notarized and undergoing customer-install testing", text)
+        self.assertIn("1.0.1 is available now", text)
+        self.assertIn("signed by a squared labs limited", text)
+        self.assertIn("notarized by apple", text)
+        self.assertIn("verified through a customer installation", text)
+        self.assertIn("https://github.com/AntreasAntoniou/cliphoard/releases/download/"
+                      "v1.0.1/Cliphoard-1.0.1.dmg", hero())
+        self.assertNotIn("1.0.0", text)
         self.assertLess(len(text.split()), 90, "the release note is a wall again")
         self.assertNotIn('class="status"', self.raw)
         self.assertNotIn("where the release actually stands", visible(self.raw))
@@ -560,7 +562,7 @@ class Ordering(unittest.TestCase):
 
     def test_apple_acceptance_is_not_described_as_publishing_anything(self):
         text = visible(self.raw)
-        self.assertIn("it will not appear until i publish it", text)
+        self.assertIn("1.0.1 is available now", text)
         for wrong in ["once apple approves it will", "will be released automatically",
                       "automatically published", "goes live when apple"]:
             self.assertNotIn(wrong, text)
@@ -680,10 +682,11 @@ class CopyHygiene(unittest.TestCase):
         for shape in ["subscription for", "/month", "monthly plan", "price: $"]:
             self.assertNotIn(shape, self.text)
 
-    def test_the_pro_table_is_attributed_to_the_unpublished_build(self):
-        self.assertIn("this is the split in the 1.0.1 build, which is not published yet",
-                      self.text)
-        self.assertIn("it does not describe the 1.0.0 download above", self.text)
+    def test_the_pro_table_matches_the_released_build_without_claiming_checkout(self):
+        self.assertIn("included in the 1.0.1 direct download above", self.text)
+        self.assertIn("pro purchasing is being prepared", self.text)
+        self.assertIn("free needs no account or licence key", self.text)
+        self.assertNotIn("which is not published yet", self.text)
 
 
 class CodeBackedClaims(unittest.TestCase):

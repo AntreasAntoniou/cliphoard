@@ -1,32 +1,22 @@
 # Homebrew Cask for Cliphoard.
 #
-# Publish this from a tap repo (e.g. github.com/AntreasAntoniou/homebrew-tap)
-# so users can:  brew install --cask antreasantoniou/tap/cliphoard
-#
-# The `sha256` below is an all-zero PLACEHOLDER. It is NOT a real checksum and
-# this cask MUST NOT be published with it. On each release, replace it with the
-# sha256 of the RELEASED DMG (Cliphoard-<version>.dmg): the release CI computes and
-# prints it — see Scripts/release.sh (which packages the DMG) and
-# .github/workflows/release.yml ("Compute DMG checksum" → `shasum -a 256`, also
-# surfaced as "SHA-256:" in the published release notes). Bump `version` too.
-#
-# Two backstops prevent shipping the placeholder by accident:
-#   1. Scripts/release.sh aborts the release if this file still holds the
-#      all-zero sha (the authoritative, publish-blocking guard).
-#   2. The Ruby preflight below raises if the all-zero sha reaches `brew`,
-#      gated to non-development use so local cask hacking still works.
+# The checksum is computed from the exact signed, notarized and customer-tested
+# DMG published on GitHub. Never rebuild it between acceptance and publication.
+# Scripts/publish-cask.sh checks the public download before copying this cask
+# into a tap; the Ruby guard also refuses an all-zero placeholder.
+# A cask in this source repository does not establish a published Homebrew tap.
 cask "cliphoard" do
   version "1.0.1"
-  sha256 "0000000000000000000000000000000000000000000000000000000000000000"
+  sha256 "645d92652d02ddd7200de900abd5c504a2db074b205ae5cb3c6da8e0a75f495d"
 
   # Belt-and-braces: refuse to install/audit a cask that still carries the
   # all-zero placeholder sha256. Gated to non-development runs so `--debug`/local
-  # cask editing is unaffected; the real publish-blocking guard lives in
-  # Scripts/release.sh. Kept side-effect-free so `ruby -c` / `brew` parsing pass.
+  # cask editing is unaffected; the publish-time download check lives in
+  # Scripts/publish-cask.sh. Kept side-effect-free so `ruby -c` / `brew` parsing pass.
   if sha256.to_s == "0000000000000000000000000000000000000000000000000000000000000000" &&
      !Homebrew::EnvConfig.developer?
     odie "Casks/cliphoard.rb still has the all-zero placeholder sha256 — fill in the " \
-         "released DMG's sha256 (see Scripts/release.sh / release.yml) before publishing."
+         "released DMG's sha256 (see RELEASING.md) before publishing."
   end
 
   url "https://github.com/AntreasAntoniou/cliphoard/releases/download/v#{version}/Cliphoard-#{version}.dmg",
