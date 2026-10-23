@@ -823,7 +823,7 @@ struct ContentView: View {
         .contentShape(Rectangle())
         .onTapGesture { model.click(idx) }
         .contextMenu {
-            Button("Paste") { model.onPaste?(item, false) }
+            Button(DistributionChannel.primaryActionTitle) { model.onPaste?(item, false) }
             if item.kind == .file {
                 FileClipMenuItems(item: item) { model.onFileVerb?(item, $0) }
             }
@@ -993,9 +993,9 @@ struct ContentView: View {
         } else {
             HStack(spacing: 14) {
                 hint("←→", "Navigate")
-                hint("↩", "Paste")
+                hint("↩", DistributionChannel.primaryActionTitle)
                 hint("⌘C", "Copy")
-                hint("⌘1–9", "Quick paste")
+                hint("⌘1–9", DistributionChannel.quickActionTitle)
                 hint("⌘P", "Pin")
                 hint("⌘⌫", "Delete")
                 hint("esc", "Close")

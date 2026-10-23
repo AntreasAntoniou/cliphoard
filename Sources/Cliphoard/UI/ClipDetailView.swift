@@ -361,7 +361,7 @@ struct ClipDetailView: View {
 
     private var actions: some View {
         HStack {
-            Button("Paste", action: onPaste).keyboardShortcut(.defaultAction)
+            Button(DistributionChannel.primaryActionTitle, action: onPaste).keyboardShortcut(.defaultAction)
             Button("Copy", action: onCopy)
             if item.kind == .file, let onFileVerb {
                 let reason = FileClipAction.unavailableReason(path: item.filePath)

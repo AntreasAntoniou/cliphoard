@@ -13,6 +13,9 @@ enum DistributionChannel {
     /// Store build deliberately stops at a pasteboard write and asks the user to press Command-V.
     static var supportsAutomaticPaste: Bool { !isAppStore }
 
+    static var primaryActionTitle: String { supportsAutomaticPaste ? "Paste" : "Copy & Close" }
+    static var quickActionTitle: String { supportsAutomaticPaste ? "Quick paste" : "Quick copy" }
+
     /// A sandbox cannot enumerate another app's private or Application Support stores. Store
     /// imports enter through NSOpenPanel, which grants access only to the URL the user chooses.
     static var canDiscoverExternalStores: Bool { !isAppStore }

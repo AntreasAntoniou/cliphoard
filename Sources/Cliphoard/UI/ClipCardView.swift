@@ -412,7 +412,7 @@ struct ClipCardView: View {
         .animation(.spring(response: 0.25, dampingFraction: 0.8), value: selected)
         .onHover { hovering = $0 }
         .contextMenu {
-            Button("Paste") { onActivate() }
+            Button(DistributionChannel.primaryActionTitle) { onActivate() }
             if item.kind == .file, let onFileVerb {
                 FileClipMenuItems(item: item, perform: onFileVerb)
             }
