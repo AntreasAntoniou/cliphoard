@@ -20,3 +20,6 @@ __pycache__/
 # Licence signing key — lives in ~/.cliphoard-licensing/, never here.
 *.ed25519
 licence-signing-key*
+
+# Local deployment state and caches never belong in public source.
+.wrangler/

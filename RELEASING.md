@@ -149,3 +149,23 @@ before tagging — `Scripts/build-app.sh` copies that plist into the bundle verb
 so the version must be edited at the source. Keep the git tag (`vX.Y.Z`), the
 `Info.plist` version, and `Casks/cliphoard.rb`'s `version` in lockstep: the DMG is
 named from the plist while the release-download URL directory comes from the tag.
+
+## Public website
+
+`docs/` is served as static assets by the `cliphoard-site` Cloudflare Worker at
+`https://cliphoard.dev` and `https://www.cliphoard.dev`. Static requests use
+Cloudflare's free asset hosting; there is no server code, licence secret or checkout
+service in this deployment. `docs/.assetsignore` excludes the GitHub CNAME and design
+notes. GitHub Pages retains the older project URL's custom-domain handoff.
+
+After reviewing and testing site changes, use the scoped Cloudflare credential from
+the approved secret store in the process environment, then run
+`bash Scripts/deploy-site.sh`. The script pins Wrangler, disables its metrics and
+local logs, and uses `wrangler.site.json`. Never put the token in a command argument,
+repository file or release log. Verify the public pages, assets, HTTPS and appearance
+after deployment; a Git push alone does not deploy the Cloudflare site.
+
+Keep installer links and trust claims tied to the exact public, customer-tested
+artifact. Keep purchase links disabled until their checkout and licence delivery pass
+an end-to-end test. Publish only reconciled net-sales reports to `docs/data/net-sales.json`;
+missing reports remain unavailable rather than zero.

@@ -2,10 +2,17 @@
 
 **Last updated:** 2026-10-23 · **Branch:** `main`
 **Verdict: v1.0.0 is public; the corrected notarized 1.0.1 installer is in customer-install testing. The Mac App Store build is implemented but not submitted.**
-**Download:** https://github.com/AntreasAntoniou/cliphoard/releases/tag/v1.0.0 · **Live site:** https://antreas.io/cliphoard/
+**Download:** https://github.com/AntreasAntoniou/cliphoard/releases/tag/v1.0.0 · **Live site:** https://cliphoard.dev/
 
 ## Launch preparation — 23 October 2026
 
+- The reviewed website is live over HTTPS at `cliphoard.dev` and `www.cliphoard.dev`
+  through Cloudflare static assets. All 17 assets match the source; 22 public HTTPS
+  checks pass. Chrome verifies light/dark appearance and persistence after reload.
+  Purchase links and funding totals remain unavailable until their underlying evidence exists.
+- The direct-edition licence service is implemented in `commerce/`, with 24 passing
+  tests including the real Swift verifier and fresh workerd instances. It remains
+  disabled and undeployed; real Lemon checkout/receipt verification is outstanding.
 - The corrected A2 Labs direct build includes its authorized Developer ID provisioning
   profile. Apple accepted both the app archive and final DMG. Strict signatures, stapled
   tickets, Gatekeeper, image integrity and mounted contents pass. The final DMG SHA-256 is
