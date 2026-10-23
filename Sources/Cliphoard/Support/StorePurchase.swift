@@ -4,7 +4,8 @@ import Foundation
 /// This value also lets tests exercise refunds, wrong products and failed verification
 /// without making a purchase or trusting a persisted "Pro" flag.
 struct StoreProTransaction: Equatable {
-    static let productID = "ai.a2-labs.cliphoard.pro"
+    // App Store Connect product IDs cannot contain the hyphen used by our bundle ID.
+    static let productID = "ai.a2labs.cliphoard.pro"
 
     let id: UInt64
     let originalID: UInt64

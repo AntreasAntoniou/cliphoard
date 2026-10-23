@@ -12,9 +12,10 @@ final class StoreProEntitlementTests: XCTestCase {
     }
 
     func testOnlyVerifiedMatchingNonConsumableUnlocksPro() {
-        XCTAssertEqual(StoreProTransaction.entitlement(from: [transaction()], now: now),
+        XCTAssertEqual(StoreProTransaction.entitlement(from: [transaction(productID: "ai.a2labs.cliphoard.pro")], now: now),
                        .pro(orderID: "10", issued: Date(timeIntervalSince1970: 100)))
-        for rejected in [transaction(productID: "unrelated.product"), transaction(verified: false),
+        for rejected in [transaction(productID: "unrelated.product"),
+                         transaction(productID: "ai.a2-labs.cliphoard.pro"), transaction(verified: false),
                          transaction(nonConsumable: false)] {
             XCTAssertFalse(StoreProTransaction.entitlement(from: [rejected], now: now).isPro)
         }
