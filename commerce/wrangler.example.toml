@@ -1,0 +1,31 @@
+# TEMPLATE ONLY. No namespace/route, no secret and no enabled issuance.
+# Copy to ignored wrangler.local.toml / wrangler.live.toml after review.
+name = "cliphoard-fulfilment"
+main = "src/worker.mjs"
+compatibility_date = "2026-07-01"
+workers_dev = false
+preview_urls = false
+
+[observability]
+enabled = false
+[observability.logs]
+enabled = false
+invocation_logs = false
+
+[vars]
+LEMON_MODE = "test"
+LEMON_STORE_ID = "REPLACE"
+LEMON_PRODUCT_ID = "REPLACE"
+LEMON_VARIANT_ID = "REPLACE"
+PUBLIC_ORIGIN = "https://REPLACE.invalid"
+DOWNLOAD_URL = "https://github.com/AntreasAntoniou/cliphoard/releases/latest"
+ISSUANCE_ENABLED = "false"
+DELIVERY_ENABLED = "false"
+# Direct app's public key; replace with synthetic key for test-mode rehearsal.
+EXPECTED_PUBLIC_KEY_HEX = "df8505008123f0790aa4c8f071c9fcf38e31475da851ace28ec63ca59a8cbf26"
+
+# After explicit approval: bind a NEW namespace, separate for test and live.
+# [[kv_namespaces]]
+# binding = "RECEIPTS"
+# id = "REPLACE"
+# Secrets, never placed here: LEMON_WEBHOOK_SECRET, CLIPHOARD_SIGNING_SEED

@@ -1,0 +1,11 @@
+node_modules/
+.wrangler/
+.dev.vars*
+.env*
+wrangler.local.toml
+wrangler.live.toml
+evidence/
+.test-tmp/
+*.key
+*.pem
+*.ed25519

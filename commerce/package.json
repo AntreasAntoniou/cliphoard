@@ -1,0 +1,23 @@
+{
+  "name": "cliphoard-fulfilment",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test --test-concurrency=1 test/*.test.mjs",
+    "test:unit": "node --test test/worker.test.mjs",
+    "test:interop": "node --test test/swift-interop.test.mjs",
+    "test:runtime": "node --test test/workerd.test.mjs"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "devDependencies": {
+    "miniflare": "4.20260730.0"
+  },
+  "overrides": {
+    "miniflare": {
+      "undici": "7.29.1",
+      "sharp": "0.35.5"
+    }
+  }
+}
