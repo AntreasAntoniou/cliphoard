@@ -430,7 +430,9 @@ struct ClipCardView: View {
         // .combine)` above folds the expand button into this one element, so a
         // VoiceOver user cannot reach the button itself. The shortcut is the
         // route that remains (AppDelegate routes ⌘-Return to `inspectSelection`).
-        .accessibilityHint("Press Return to paste, Command-C to copy, "
+        .accessibilityHint((DistributionChannel.supportsAutomaticPaste
+                            ? "Press Return to paste, " : "Press Return to copy and close, ")
+                           + "Command-C to copy, "
                            + "Command-Return to inspect"
                            + (item.kind == .file ? ", Command-O to open the file" : ""))
         .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)

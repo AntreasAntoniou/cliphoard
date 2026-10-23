@@ -68,6 +68,103 @@ enum HistoryArchiveIO {
 
     // MARK: - Export
 
+    /// A save-panel grant covers the selected URL, not an invented sibling such as
+    /// `history.cliphoard-partial`. Foundation supplies a writable replacement directory
+    /// on the destination's volume, so the encrypted stream can stay private until complete.
+    /// Call `cleanup` on every path; only ciphertext is ever written to this handle.
+    final class ExportFile {
+        let destination: URL
+        let partialDirectory: URL
+        let partial: URL
+        let handle: FileHandle
+        private(set) var recoveryURL: URL?
+
+        init(destination: URL) throws {
+            self.destination = destination
+            let manager = FileManager.default
+            partialDirectory = try manager.url(for: .itemReplacementDirectory,
+                                                in: .userDomainMask,
+                                                appropriateFor: destination, create: true)
+            partial = partialDirectory.appendingPathComponent("archive.partial")
+            do {
+                try manager.setAttributes([.posixPermissions: 0o700],
+                                          ofItemAtPath: partialDirectory.path)
+                guard manager.createFile(atPath: partial.path, contents: nil,
+                                         attributes: [.posixPermissions: 0o600]) else {
+                    throw ArchiveError.cannotWrite("the temporary file could not be created")
+                }
+                handle = try FileHandle(forWritingTo: partial)
+            } catch {
+                try? manager.removeItem(at: partialDirectory)
+                throw error
+            }
+        }
+
+        func cleanup() {
+            try? handle.close()
+            if let recoveryURL {
+                let recovered = recoveryURL.standardizedFileURL.resolvingSymlinksInPath().pathComponents
+                let staging = partialDirectory.standardizedFileURL.resolvingSymlinksInPath().pathComponents
+                // Foundation can relocate the ORIGINAL into our directory on a failed
+                // replacement. Retain that directory instead of deleting the old backup.
+                if recovered.starts(with: staging) { return }
+            }
+            try? FileManager.default.removeItem(at: partialDirectory)
+        }
+
+        func finish(replace: (URL, URL) throws -> Void = { original, replacement in
+            _ = try FileManager.default.replaceItemAt(original, withItemAt: replacement,
+                                                       options: .usingNewMetadataOnly)
+        }) throws {
+            try handle.synchronize()
+            try handle.close()
+
+            var coordinationError: NSError?
+            var result: Result<Void, Error>?
+            NSFileCoordinator().coordinate(writingItemAt: destination, options: .forReplacing,
+                                           error: &coordinationError) { selectedURL in
+                result = Result {
+                    let manager = FileManager.default
+                    if manager.fileExists(atPath: selectedURL.path) {
+                        // Never delete an old backup before its replacement succeeds. Keep
+                        // the new file's private mode instead of inheriting weaker metadata.
+                        try replace(selectedURL, partial)
+                    } else {
+                        // The OS placed the temporary file on this same volume, so this
+                        // publishes the complete archive with a move, not a streamed copy.
+                        try manager.moveItem(at: partial, to: selectedURL)
+                    }
+                }
+            }
+            if let coordinationError { throw coordinationError }
+            guard let result else {
+                throw ArchiveError.cannotWrite("the destination could not be coordinated")
+            }
+            do { try result.get() }
+            catch {
+                if let recovered = Self.originalItemLocation(in: error) {
+                    recoveryURL = recovered
+                    throw ArchiveError.exportRecoveryRequired(recovered)
+                }
+                throw error
+            }
+        }
+
+        /// FileManager may wrap its safe-save error. Only an actual file URL supplied
+        /// under the documented recovery key can suppress deletion of our staging tree.
+        private static func originalItemLocation(in error: Error, depth: Int = 0) -> URL? {
+            guard depth < 8 else { return nil }
+            let cocoa = error as NSError
+            if let url = cocoa.userInfo["NSFileOriginalItemLocationKey"] as? URL, url.isFileURL {
+                return url
+            }
+            if let underlying = cocoa.userInfo[NSUnderlyingErrorKey] as? Error {
+                return originalItemLocation(in: underlying, depth: depth + 1)
+            }
+            return nil
+        }
+    }
+
     /// Write the whole history to `url` as one encrypted file.
     ///
     /// The export takes `Database.CompleteHistory` AS A PARAMETER rather than a `Bool`,
@@ -171,21 +268,16 @@ enum HistoryArchiveIO {
                                   skippedUnreadableClips: skippedUnreadableClips,
                                   skippedUnreadablePayloads: skippedUnreadablePayloads)
 
-        // 5. OPEN a partial next to the destination. There is NO partial export: a
-        //    half-written file that looks like a backup is worse than no file at all.
-        let partial = URL(fileURLWithPath: url.path + "-partial")
-        try? FileManager.default.removeItem(at: partial)
-        guard FileManager.default.createFile(atPath: partial.path, contents: nil,
-                                             attributes: [.posixPermissions: 0o600]),
-              let handle = try? FileHandle(forWritingTo: partial) else {
+        // 5. OPEN encrypted staging outside the selected file's parent. A Save panel
+        //    does not grant access to arbitrary siblings of the selected destination.
+        let file: ExportFile
+        do { file = try ExportFile(destination: url) }
+        catch {
             return .failure(.cannotWrite("the file could not be created"))
         }
+        defer { file.cleanup() }
+        let handle = file.handle
         var wrote = 0
-        func abort(_ error: ArchiveError) -> Result<ExportReport, ArchiveError> {
-            try? handle.close()
-            try? FileManager.default.removeItem(at: partial)
-            return .failure(error)
-        }
 
         do {
             // 6. header ‖ sealed summary.
@@ -246,22 +338,17 @@ enum HistoryArchiveIO {
             }
             try records.finishWithPadAndEnd()
 
-            // 8-9. fsync, close, 0600, rename. Nothing is named `.cliphoard` until the
-            //      bytes are on the platter.
-            try handle.synchronize()
-            try handle.close()
         } catch let error as ArchiveError {
-            return abort(error)
+            return .failure(error)
         } catch {
-            return abort(.cannotWrite("\(error.localizedDescription)"))
+            return .failure(.cannotWrite("\(error.localizedDescription)"))
         }
 
-        try? FileManager.default.setAttributes([.posixPermissions: 0o600],
-                                               ofItemAtPath: partial.path)
-        try? FileManager.default.removeItem(at: url)
-        do { try FileManager.default.moveItem(at: partial, to: url) }
+        // 8-9. fsync, close and install the complete 0600 archive. An existing backup
+        //      remains in place until the coordinated replacement succeeds.
+        do { try file.finish() }
+        catch let error as ArchiveError { return .failure(error) }
         catch {
-            try? FileManager.default.removeItem(at: partial)
             return .failure(.cannotWrite("the finished file could not be put in place"))
         }
         progress(1.0, "Done.")

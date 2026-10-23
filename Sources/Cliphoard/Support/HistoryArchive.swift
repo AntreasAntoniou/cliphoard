@@ -114,6 +114,7 @@ enum HistoryArchive {
         case unreadableContent(clips: Int, payloads: Int)
         case licenceRequired
         case cannotWrite(String)
+        case exportRecoveryRequired(URL)
         case cannotRead(String)
         case noDatabase
 
@@ -191,6 +192,10 @@ enum HistoryArchive {
                 return "Moving your history to another Mac is a Pro feature."
             case .cannotWrite(let what):
                 return "Could not write the export (\(what)). Nothing was left behind."
+            case .exportRecoveryRequired(let url):
+                return "Could not replace the export. macOS returned a recovery location "
+                     + "for your previous backup: \(url.path). Move that file somewhere safe "
+                     + "before trying again."
             case .cannotRead(let what):
                 return "Could not read that file (\(what))."
             case .noDatabase:

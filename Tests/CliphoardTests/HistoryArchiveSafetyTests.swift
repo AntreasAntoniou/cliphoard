@@ -484,6 +484,18 @@ final class HistoryArchiveSafetyTests: ArchiveTestCase {
 
     // MARK: - 25
 
+    func testExportDoesNotTouchAnUnselectedSiblingFile() throws {
+        try skipIfKeychainUnreachable()
+        let (_, store, file) = try exportFixture("selected-file")
+        let sibling = URL(fileURLWithPath: file.path + "-partial")
+        let unrelated = Data("not part of this export".utf8)
+        try unrelated.write(to: sibling)
+        _ = try store.exportArchive(to: file, passphrase: passphrase).get()
+        XCTAssertEqual(try Data(contentsOf: sibling), unrelated,
+                       "NSSavePanel grants only the chosen file, not a temporary sibling")
+        _ = try HistoryArchiveIO.verify(url: file, passphrase: passphrase).get()
+    }
+
     func testTwoExportsOfTheSameStoreDifferFromOffsetSixteenOnward() throws {
         try skipIfKeychainUnreachable()
         let fixture = ArchiveFixture.standard()
