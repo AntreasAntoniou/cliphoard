@@ -12,7 +12,7 @@
  * words. Nothing is sent anywhere, there is no clock, no random value, no cookie, and
  * no network call of any kind in this file.
  *
- * THE CSS DOES THE ACTUAL WORK. `site.css` declares the One Dark palette inside
+ * THE CSS DOES THE ACTUAL WORK. Each page's stylesheet declares its dark palette inside
  * `prefers-color-scheme: dark`, so System needs no JavaScript at all and an OS
  * appearance change retints the page with no reload. This file only ever sets an
  * OVERRIDE: `data-theme="dark"` or `data-theme="light"`. System removes the attribute
@@ -36,11 +36,18 @@
    * then nothing to migrate, and an empty store and a fresh visitor behave the same. */
   var EXPLICIT = ["light", "dark"];
 
-  /* The two grounds, for the theme-color metadata only. These must equal `--ground` in
-   * each palette in site.css and the two <meta> defaults in index.html; a test pins all
-   * three together, because a browser chrome that disagrees with the page is a bug you
-   * only see on a phone. */
+  /* Read the page's own palette before paint() updates its metadata. The homepage and
+   * legal pages share a preference, but can use different backgrounds. Keep the legacy
+   * grounds as a fallback when metadata is absent or malformed. */
   var GROUND = { light: "#F5F5F5", dark: "#21252B" };
+  var defaults = document.querySelectorAll('meta[name="theme-color"][data-scheme]');
+  for (var d = 0; d < defaults.length; d++) {
+    var scheme = defaults[d].getAttribute("data-scheme");
+    var colour = defaults[d].getAttribute("content");
+    if (EXPLICIT.indexOf(scheme) !== -1 && /^#[0-9a-f]{6}$/i.test(colour || "")) {
+      GROUND[scheme] = colour;
+    }
+  }
 
   var root = document.documentElement;
   var current = "system";

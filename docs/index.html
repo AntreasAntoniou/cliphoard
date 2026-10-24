@@ -1,125 +1,125 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Cliphoard — a private clipboard manager for macOS</title>
-
-<!-- SITE URL — cliphoard.dev is the home. docs/CNAME pins it on GitHub Pages; delete that
-     file and this page moves back to antreas.io/cliphoard/, so the three change together.
-     EVERY url below is relative for exactly that reason: a leading slash would 404 the
-     whole page on the subpath. -->
-<link rel="canonical" href="https://cliphoard.dev/">
-<link rel="icon" type="image/png" href="img/icon.png">
-<link rel="apple-touch-icon" href="img/icon@512.png">
-
-<!-- The two grounds of the two themes, and the only place these hexes appear outside
-     the stylesheet. They are media-scoped so the browser chrome follows the OS with no
-     JavaScript at all; appearance.js rewrites BOTH entries to the chosen ground when a
-     visitor has made an explicit choice, so whichever one the browser matches is the
-     colour actually on screen. A test pins all three copies together. -->
-<meta name="theme-color" content="#F5F5F5" media="(prefers-color-scheme: light)" data-scheme="light">
-<meta name="theme-color" content="#21252B" media="(prefers-color-scheme: dark)" data-scheme="dark">
-
-<!-- BEFORE the stylesheet, and a classic script rather than a module, because a module
-     is deferred: it would run after first paint and a visitor who chose Dark would see
-     the light page flash first. This is the only reason it is not in site.js. It stores
-     nothing but the appearance choice and talks to nothing. -->
-<script src="assets/appearance.js"></script>
-
-<link rel="stylesheet" href="assets/site.css">
-
-<!-- The description states the INTENDED purpose of the net sales. It deliberately does
-     not describe buying, selling or collecting as something presently happening. -->
-<meta name="description" content="Cliphoard is a fully featured, free clipboard manager for macOS. The entire application codebase is open source. Pro's net sales proceeds are intended to fund independent AI research at Axiotic toward a US$250,000 goal.">
-<meta property="og:type" content="website">
-<meta property="og:title" content="Cliphoard — a private clipboard manager for macOS">
-<meta property="og:description" content="A fully featured, free clipboard manager for macOS, with the entire application codebase open source. Pro's net sales proceeds are intended to support my independent AI research at Axiotic toward a US$250,000 goal.">
-<meta property="og:url" content="https://cliphoard.dev/">
-<meta property="og:image" content="https://raw.githubusercontent.com/AntreasAntoniou/cliphoard/main/docs/img/logo.png">
-<meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:image" content="https://raw.githubusercontent.com/AntreasAntoniou/cliphoard/main/docs/img/logo.png">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cliphoard — a private clipboard manager for macOS</title>
+  <meta name="description" content="Remember the text, links and images you copy. Find them later and paste them again with Cliphoard, a complete, free clipboard manager for Mac.">
+  <link rel="canonical" href="https://cliphoard.dev/">
+  <link rel="icon" href="img/icon.png" type="image/png">
+  <link rel="apple-touch-icon" href="img/icon@512.png">
+  <meta name="theme-color" content="#edf2f7" media="(prefers-color-scheme: light)" data-scheme="light">
+  <meta name="theme-color" content="#1c2028" media="(prefers-color-scheme: dark)" data-scheme="dark">
+  <!-- Apply a saved appearance before the stylesheets and first paint. -->
+  <script src="assets/appearance.js"></script>
+  <link rel="stylesheet" href="assets/shared.css">
+  <link rel="stylesheet" href="assets/flow.css">
+  <link rel="stylesheet" href="assets/product-details.css">
+  <link rel="stylesheet" href="assets/get-started.css">
+  <script src="assets/shared.js" defer></script>
+  <script src="assets/product-details.js" defer></script>
+  <script src="assets/get-started.js" defer></script>
+  <script src="assets/site.js" type="module"></script>
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Cliphoard — a private clipboard manager for macOS">
+  <meta property="og:description" content="A complete, free clipboard manager for Mac. Remember what you copied, search it on your Mac, and paste it again. The entire application codebase is open source.">
+  <meta property="og:url" content="https://cliphoard.dev/">
+  <meta property="og:image" content="https://cliphoard.dev/img/logo.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:image" content="https://cliphoard.dev/img/logo.png">
 </head>
-<body>
-
-<a class="skip" href="#main">Skip to content</a>
-
-<div class="topbar" id="top">
-  <div class="page">
-    <a class="wordmark" href="#top">
-      <img src="img/icon.png" alt="" width="28" height="28">
-      Cliphoard
-    </a>
-    <!-- Shipped hidden and unhidden by assets/appearance.js. With JavaScript blocked
-         the control is never offered and the stylesheet's prefers-color-scheme block
-         follows the OS instead, which is the same behaviour System gives. -->
-    <div class="appearance" id="appearance-control" hidden>
-      <label for="appearance">Appearance</label>
-      <select id="appearance">
-        <option value="system">System</option>
-        <option value="light">Light</option>
-        <option value="dark">Dark</option>
-      </select>
+<body class="flow-page">
+  <a class="f-skip" href="#main">Skip to content</a>
+  <header class="f-header f-wrap">
+    <a class="f-brand" href="#top" aria-label="Cliphoard home"><img src="img/icon.png" width="42" height="42" alt="">Cliphoard</a>
+    <nav class="f-nav" aria-label="Main navigation"><a href="#features">Features</a><a href="#pro">Free and Pro</a><a href="#all-features">Every feature</a><a href="https://github.com/AntreasAntoniou/cliphoard">Source</a></nav>
+    <div class="f-appearance" id="appearance-control" hidden>
+      <label class="sr-only" for="appearance">Appearance</label>
+      <select id="appearance"><option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option></select>
     </div>
-    <nav aria-label="Sections of this page">
-      <ul>
-        <li><a href="#funding">The goal</a></li>
-        <li><a href="#research">Why</a></li>
-        <li><a href="#app">What it does</a></li>
-        <li><a href="#privacy">Private</a></li>
-        <li><a href="#pro">Free and Pro</a></li>
+  </header>
+
+  <main id="main">
+    <section class="f-hero f-wrap" id="top" aria-labelledby="hero-title">
+      <div class="f-intro">
+        <h1 id="hero-title">Keep your<br> train of thought.</h1>
+        <p class="f-lead">Your Mac usually remembers only the last thing you copied. Cliphoard keeps a history of text, links and images, so you can find something you copied earlier and paste it again.</p><p class="everyday-note">A complete, free clipboard manager for Mac. Search stays on your Mac. No clipboard uploads.</p>
+
+        <section class="install-options" id="install" aria-label="Get Cliphoard for your Mac">
+  <div class="install-main">
+    <div class="install-download"><a class="install-download-button" href="https://github.com/AntreasAntoniou/cliphoard/releases/download/v1.0.2/Cliphoard-1.0.2.dmg">Download free for Mac <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M4 16v5h16v-5"/></svg></a><p>1.0.2 · macOS 13+ · Apple Silicon &amp; Intel<br>Signed and notarized. No account needed.</p></div>
+    <div class="install-brew"><div class="install-channel"><strong>Homebrew</strong><a class="install-help" href="https://brew.sh/">What’s Homebrew?</a></div><div class="install-command"><code id="install-command">brew install --cask antreasantoniou/tap/cliphoard</code><button class="install-copy" type="button" data-copy-install aria-label="Copy Homebrew install command" aria-describedby="install-command" hidden>Copy</button></div><p role="status" aria-live="polite" data-install-status>For Terminal, with Homebrew already installed.</p></div>
+  </div>
+  <div class="install-more"><p class="install-route install-pending"><strong>Mac App Store</strong><span>Coming soon · not yet available</span></p><a class="install-route" href="https://github.com/AntreasAntoniou/cliphoard#build-from-source"><strong>Build from source</strong><span>For developers · MIT open source</span></a><a class="install-route install-preview" href="#preview"><strong>Try the preview</strong><span>Explore example clips</span></a></div>
+</section>
+        <p class="f-release">Download the DMG, drag Cliphoard to Applications, and open it there.
+          <a href="https://github.com/AntreasAntoniou/cliphoard/releases/tag/v1.0.2">Release notes and checksum</a>.</p>
+      </div>
+      <div class="f-journey" aria-label="The copy, find and reuse workflow">
+        <div class="f-journey-heading"><img src="img/icon@512.png" width="76" height="76" alt="Cliphoard’s smiling hoard-bag mascot"><p>A small companion<br> for everything you copy.</p></div>
+        <ol class="f-path">
+          <li><span class="f-step-key"><kbd>⌘ C</kbd></span><h2>Copy</h2><p>A useful link.<br> A line you love.<br> A passing thought.</p></li>
+          <li><span class="f-step-key f-open-shortcut"><kbd aria-label="Control Option Command V">⌃⌥⌘V</kbd></span><h2>Find</h2><p>Remember the idea,<br> even when the exact<br> words escape you.</p></li>
+          <li><span class="f-step-key"><kbd>⌘ V</kbd></span><h2>Reuse</h2><p>Bring it back<br> to the thing<br> you’re making.</p></li>
+        </ol>
+        <p class="f-journey-note">Less retracing your steps. More carrying on.</p>
+      </div>
+      <ul class="f-trust" aria-label="Privacy at a glance">
+        <li><span aria-hidden="true">⌂</span>On-device search</li>
+        <li><span aria-hidden="true">◇</span>Encrypted clip content</li>
+        <li><span aria-hidden="true">◎</span>No telemetry</li>
       </ul>
-    </nav>
+    </section>
+
+    <section id="features" class="f-features" aria-labelledby="features-title">
+      <div class="f-wrap" id="app">
+        <div class="f-section-head"><h2 id="features-title">A longer memory.<br> A lighter workflow.</h2><p>Text, images and links, ready when you need them. Keep Cliphoard close without giving your clipboard away.</p></div>
+        <figure class="f-product">
+          <div class="f-image-scroll" tabindex="0" role="region" aria-label="Actual Cliphoard app bar; scroll horizontally on a small screen"><img src="img/bar-oneDark.png" alt="The real Cliphoard app in One Dark, showing saved text, links and a colour clip, with search and pin controls" width="3456" height="724" loading="lazy"></div>
+          <figcaption><span>The actual app, in One Dark. One of 17 themes and three layouts.</span><a href="img/bar-oneDark.png">View full image</a></figcaption>
+        </figure>
+        <div class="f-preview-section" id="preview">
+          <div class="f-preview-copy"><h3>Find the thought.<br> Not just the phrase.</h3><p>Try a search in this interactive example. In the app, semantic text search helps you rediscover a clip from what it means.</p><p class="f-privacy-note">This is a sample preview. It doesn’t read your clipboard.</p></div>
+          <clip-demo data-examples="everyday"></clip-demo>
+        </div>
+        <div class="f-benefits">
+          <article><span class="f-feature-mark" aria-hidden="true">⌕</span><h3>Search by meaning</h3><p>Find text by the idea you remember, without having to remember every word.</p></article>
+          <article><span class="f-feature-mark" aria-hidden="true">⌁</span><h3>Keep the useful things</h3><p>Pin your regulars. Choose unlimited history when you want to keep everything.</p></article>
+          <article><span class="f-feature-mark" aria-hidden="true">▧</span><h3>Make room for images</h3><p>Keep pictures alongside text and links, in the theme and layout that suit you.</p></article>
+          <article><span class="f-feature-mark" aria-hidden="true">⌂</span><h3>Keep it on your Mac</h3><p>Capture and search run on your Mac. Use encrypted export and import when it’s time to move.</p></article>
+        </div>
+        <aside id="privacy" class="f-protections" aria-labelledby="protections-title">
+          <div><h3 id="protections-title">Your clipboard.<br> Your Mac.</h3><p>No Cliphoard account, telemetry or automatic cloud sync.</p></div>
+          <div class="f-protection-detail"><p>Clip content, images and search data are encrypted at rest with AES-GCM.</p><details><summary>How protection works</summary><div class="f-protection-body"><p>Keys use the Secure Enclave where available, with a login Keychain fallback. Small operational fields, including timestamps and pin state, remain readable locally.</p><p>You can exclude apps from future capture. Sensitive-content filters are imperfect, so you choose what to keep.</p><p>Encrypted export uses AES-256-GCM with a key derived from your passphrase using PBKDF2-HMAC-SHA256 with at least 600,000 iterations. The passphrase is the only key; there is no recovery or escrow.</p><p>Optional model downloads and purchase services use the internet. Clipboard content is not sent with those requests.</p><a class="f-text-link" href="privacy.html">Read the privacy policy</a></div></details></div>
+        </aside>
+      </div>
+    </section>
+
+    <section id="pro" class="f-editions f-wrap" aria-labelledby="editions-title">
+      <div class="f-section-head"><h2 id="editions-title">Start with everything<br> a clipboard should do.</h2><p>Free is a complete clipboard manager. Pro adds more ways to find what’s inside an image.</p></div>
+      <div class="f-edition-grid">
+        <article class="f-free"><div class="f-edition-top"><h3>Cliphoard Free</h3><span>Fully featured</span></div><p class="f-edition-intro">The everyday clipboard, thoughtfully made.</p><ul><li>Semantic text search, images and links</li><li>Pinned clips and optional unlimited history</li><li>17 themes, three layouts</li><li>Encrypted export and import</li></ul><a class="f-button f-primary" href="https://github.com/AntreasAntoniou/cliphoard/releases/download/v1.0.2/Cliphoard-1.0.2.dmg">Download free <span aria-hidden="true">↓</span></a></article>
+        <article class="f-pro"><div class="f-edition-top"><h3>Cliphoard Pro</h3><span>Image intelligence</span></div><p class="f-edition-intro">Everything in Free, with a better eye for images.</p><ul><li>Find images from a description</li><li>Find text inside screenshots with OCR</li><li>Discover visually similar clips</li></ul><p class="f-availability">Pro purchasing is being prepared.<br> Free is available to download today.</p><details class="pro-purchase"><summary class="pro-purchase-button">How to get Pro <span aria-hidden="true">+</span></summary><div class="pro-purchase-options"><p class="pro-purchase-intro">One-time purchase. No subscription.</p><div class="pro-purchase-route"><h4>Direct download · US$10 + tax</h4><p>When checkout opens, buy Pro here through Stripe and receive a licence key by email. In Cliphoard, open <strong>Settings → Cliphoard Pro</strong>, paste your key and choose <strong>Verify</strong>.</p><span class="pro-purchase-status">Checkout coming soon</span></div><div class="pro-purchase-route"><h4>Mac App Store</h4><p>When the Store edition launches, get the free app and buy Pro inside it. Apple shows your local price. Use <strong>Restore Purchases</strong> to restore a previous Store purchase.</p><span class="pro-purchase-status">App Store release coming soon</span></div><p class="pro-purchase-note">Choose the edition you use: direct licence keys and App Store purchases are separate.</p></div></details></article>
+      </div>
+      <div class="f-open-source"><div><h3>Open source. All of it.</h3><p>The entire application codebase, including Pro, is MIT licensed. The models have their own licences.</p></div><a class="f-text-link" href="https://github.com/AntreasAntoniou/cliphoard">Explore the source</a></div>
+    </section>
+
+    <section id="all-features" class="complete-features" aria-labelledby="all-features-title"><div class="complete-features-head"><div><p class="feature-eyebrow">The complete feature menu</p><h2 id="all-features-title">Everything, in detail.</h2><p>Explore the everyday tools and the protections behind them. Everything below is included in Free, except the optional Pro image tools.</p></div><button type="button" class="feature-expand-all" data-expand-features hidden>Expand all</button></div><div class="feature-menu-grid"><details class="feature-group" id="feature-capture"><summary><span class="feature-group-name">Capture &amp; reuse<small>The everyday clipboard, fully covered.</small></span><span class="feature-group-meta"><span class="feature-tier">Free</span><span class="feature-count">6 features</span><span class="feature-expand" aria-hidden="true">+</span></span></summary><dl><div><dt>One shortcut over any app</dt><dd>Open Cliphoard with ⌃⌥⌘V and return a chosen clip to the app you came from.</dd></div><div><dt>Copy without pasting</dt><dd>Retrieve a clip to the clipboard, or paste it as plain text with formatting removed.</dd></div><div><dt>Text, links, colours, files &amp; images</dt><dd>Keep plain and rich text, recognise bare-domain links and hex colours, and browse image thumbnails.</dd></div><div><dt>History on your terms</dt><dd>Start with 200 clips, choose another limit or turn the limit off. Pinned clips are never trimmed.</dd></div><div><dt>Delete and clear</dt><dd>Remove individual clips or clear unpinned history when you no longer want it kept.</dd></div><div><dt>Screenshots that paste into web apps</dt><dd>Optional PNG compatibility rewrites the clipboard to add a browser-friendly format. It is on by default and can be switched off in Settings; the privacy policy explains its trade-offs.</dd></div></dl></details><details class="feature-group" id="feature-search"><summary><span class="feature-group-name">Find &amp; organise<small>Remember an idea, a category or a date.</small></span><span class="feature-group-meta"><span class="feature-tier">Free</span><span class="feature-count">5 features</span><span class="feature-expand" aria-hidden="true">+</span></span></summary><dl><div><dt>Four text search modes</dt><dd>Search exact words, auto-assigned categories, meaning, or all three combined.</dd></div><div><dt>On-device semantic search</dt><dd>Your Mac runs the model. Your clips, queries and search indexes are not uploaded.</dd></div><div><dt>Choose your text model</dt><dd>Low uses open-ogma-micro; Normal uses open-ogma-small; High uses all-MiniLM-L6-v2. The direct edition downloads a selected model if it is not installed. Each model keeps its own licence and credit.</dd></div><div><dt>Tag baskets that stack</dt><dd>Combine developer, writing, business and everyday vocabularies without replacing the others.</dd></div><div><dt>Time filters you can type</dt><dd>Choose today, yesterday, this week or a custom range; queries also accept when:yesterday and explicit date ranges.</dd></div></dl></details><details class="feature-group" id="feature-appearance"><summary><span class="feature-group-name">Make it yours<small>A native tool that fits your desk.</small></span><span class="feature-group-meta"><span class="feature-tier">Free</span><span class="feature-count">5 features</span><span class="feature-expand" aria-hidden="true">+</span></span></summary><dl><div><dt>17 themes</dt><dd>From Swiss Grayscale to One Dark, Dracula, Tokyo Night and Catppuccin.</dd></div><div><dt>Three layouts</dt><dd>Use a horizontal card strip, a dense list or a Spotlight-style palette with a live preview.</dd></div><div><dt>Light, dark or your system</dt><dd>Choose an appearance or let Cliphoard follow macOS.</dd></div><div><dt>No Cliphoard account</dt><dd>Start using Free without creating an account. The everyday clipboard features remain available without Pro.</dd></div><div><dt>The whole application is open source</dt><dd>Free and Pro application code are MIT licensed and open for inspection. Third-party models retain their own licences and credits.</dd></div></dl></details><details class="feature-group" id="feature-privacy"><summary><span class="feature-group-name">Local, private &amp; protected<small>Specific safeguards, with clear limits.</small></span><span class="feature-group-meta"><span class="feature-tier">Free</span><span class="feature-count">6 features</span><span class="feature-expand" aria-hidden="true">+</span></span></summary><dl><div><dt>No clipboard uploads or telemetry</dt><dd>Clipboard processing stays on your Mac. No advertising, usage telemetry, automatic crash-report upload or cloud sync.</dd></div><div><dt>Encrypted clip content</dt><dd>AES-GCM protects stored content, images, thumbnails, source-app names and search indexes. Small operational fields such as timestamps, clip kind and pin state remain readable.</dd></div><div><dt>Keys held on your Mac</dt><dd>Secure Enclave-backed key generation is used where available, with a device-only login Keychain copy of the derived key. Other Macs use a random Keychain key. No Touch ID prompt is required.</dd></div><div><dt>Sensitive capture controls</dt><dd>Transient or concealed pasteboards are skipped, and you can exclude apps. Quarantined clips remain visible and pastable, but receive no embeddings, tags or recognition. Withheld screenshots are not decoded for analysis.</dd></div><div><dt>Private local storage</dt><dd>Owner-only folder and file permissions restrict other ordinary user accounts on the Mac.</dd></div><div><dt>Network use, explained</dt><dd>Selected model downloads and purchase/restore services may use the network. Those connections do not carry your clipboard content.</dd></div></dl></details><details class="feature-group" id="feature-move"><summary><span class="feature-group-name">Import &amp; move your history<small>Your data has a way in—and a way out.</small></span><span class="feature-group-meta"><span class="feature-tier">Free</span><span class="feature-count">5 features</span><span class="feature-expand" aria-hidden="true">+</span></span></summary><dl><div><dt>Supported clipboard importers</dt><dd>Paste, Maccy and Flycut have been verified against real installations. Alfred uses its published schema. Six other catalogued managers do not yet have adapters.</dd></div><div><dt>Preview, merge and undo imports</dt><dd>See what was found before importing. Each batch is tagged for undo; existing clips are not deleted.</dd></div><div><dt>Encrypted export and import</dt><dd>Move history between Macs or editions using one passphrase-protected archive. Both directions are included in Free.</dd></div><div><dt>Protected in transit, re-sealed locally</dt><dd>The archive uses AES-256-GCM and a passphrase-derived key. Import re-encrypts content with the destination Mac’s key and rejects truncated, reordered or modified archives.</dd></div><div><dt>Your passphrase is the only key</dt><dd>There is no recovery or escrowed key. Keep the passphrase safe and treat the archive as sensitive.</dd></div></dl></details><details class="feature-group" id="feature-visual"><summary><span class="feature-group-name">More for visual work<small>Optional image tools, still on your Mac.</small></span><span class="feature-group-meta"><span class="feature-tier">Pro</span><span class="feature-count">3 features</span><span class="feature-expand" aria-hidden="true">+</span></span></summary><dl><div><dt>Find pictures by description</dt><dd>Local image embeddings let you search for an image using words.</dd></div><div><dt>Read text inside screenshots</dt><dd>Apple Vision recognises image text locally so it can be searched. Turn recognition off in Settings; Forget recognised text removes earlier recognition. Recognition and secret detection are imperfect, so excluding sensitive apps remains important.</dd></div><div><dt>Find visually similar clips</dt><dd>Use an image’s local perceptual fingerprint to find related-looking clips.</dd></div></dl></details></div><p class="feature-footnote">Encryption protects stored content; it cannot protect an unlocked or compromised Mac. <a href="privacy.html">Read the privacy details</a> or <a href="https://github.com/AntreasAntoniou/cliphoard">inspect the open-source code</a>.</p></section>
+<section id="research" class="f-research" data-section="funding" aria-labelledby="research-title">
+      <div class="f-wrap f-research-grid"><div><h2 id="research-title">A useful tool.<br> A little more possibility.</h2><p>I’m Antreas. I built Cliphoard, and I’m pursuing independent, high-risk, high-reward AI research at Axiotic. I want to follow worthwhile questions beyond the hype and bring useful results back into tools like this one. I can’t promise which experiments will work.</p><a class="f-text-link" href="https://antreas.io">Meet the person behind Cliphoard</a>
+<div class="direct-support" id="support" aria-labelledby="support-title">
+  <h3 id="support-title">Support my work</h3>
+  <p>If Cliphoard has been useful to you, you can also support me directly. It helps me keep building open-source tools and exploring independent AI research.</p>
+  <div class="support-actions">
+    <a class="support-primary" href="https://github.com/sponsors/AntreasAntoniou?frequency=one-time">Give once on GitHub <span aria-hidden="true">↗</span></a>
+    <a class="support-monthly" href="https://github.com/sponsors/AntreasAntoniou?frequency=recurring">Sponsor monthly <span aria-hidden="true">↗</span></a>
   </div>
+  <p class="support-note">Choose your amount on GitHub. Optional support, separate from Pro and the software-sales goal.</p>
 </div>
-
-<main id="main">
-
-<header class="hero page">
-  <div class="hero-head">
-    <img src="img/icon.png" alt="The Cliphoard mascot: a smiling hoard bag" width="96" height="96">
-    <h1>Copy anything.<br>Hoard everything.</h1>
-  </div>
-
-  <p class="lead">A fully featured, free clipboard manager for macOS. Search your history
-    by meaning with <kbd>⌃⌥⌘V</kbd>. Your clips stay on your Mac.</p>
-
-  <p class="purpose">I'm Antreas. I'm building Cliphoard and working toward
-    <b>US$250,000 in net sales proceeds</b> to support <b>Axiotic</b>, my next chapter in
-    independent AI research — <a href="#funding">what that means, and where the total
-    stands</a>.</p>
-
-  <div class="actions">
-    <a class="btn btn-solid" href="https://github.com/AntreasAntoniou/cliphoard/releases/download/v1.0.2/Cliphoard-1.0.2.dmg">Get Cliphoard</a>
-    <a class="btn btn-line" href="https://github.com/AntreasAntoniou/cliphoard">Read the full source</a>
-  </div>
-  <p class="note">The entire application codebase is open source under the
-    <a href="https://github.com/AntreasAntoniou/cliphoard/blob/main/LICENSE">MIT licence</a>,
-    including the Pro features.</p>
-
-  <p class="note release"><b>1.0.2 is available now.</b> Signed by A SQUARED LABS LIMITED,
-    notarized by Apple, and verified through a customer installation.<br>
-    Download the DMG, drag Cliphoard to Applications, and open it there.
-    <a href="https://github.com/AntreasAntoniou/cliphoard/releases/tag/v1.0.2">Release notes and checksum</a>.</p>
-  <p class="note">macOS 13 Ventura or later. Universal, for Apple Silicon and Intel.
-    <a href="https://github.com/AntreasAntoniou/cliphoard/releases">All releases</a>.</p>
-
-  <figure class="plate">
-    <img src="img/bar-oneDark.png" alt="The Cliphoard bar across the bottom of the screen, showing recent clips as a row of cards with tags and timestamps" width="3456" height="724">
-    <figcaption>The bar, in the One Dark theme. It opens over whatever you were doing and
-      closes again. <a class="full-size" href="img/bar-oneDark.png">View full size</a></figcaption>
-  </figure>
-</header>
-
-<section id="funding" class="page" data-funding>
-  <h2>US$250,000 in net sales proceeds, to fund the research</h2>
-  <p class="lead">Cliphoard is how I intend to pay for independent AI research. The goal is
-    <b>US$250,000 in net sales proceeds</b> across the Apple App Store and Lemon Squeezy,
-    reported here as each reconciliation lands. <b>All figures on this page are in US
-    dollars.</b></p>
-
-  <div class="goal">
-    <p class="goal-figure absent" data-funding-figure>No reconciled reports available.</p>
+</div><section id="funding" class="f-research-note" data-funding aria-labelledby="funding-title">
+  <h3 id="funding-title" class="f-milestone">US$250,000 <span>in net sales proceeds</span></h3>
+  <p>A research milestone, not a cap. Proceeds beyond it would support further work.</p>
+  <div class="goal"><p class="goal-figure absent" data-funding-figure>No reconciled reports available.</p>
     <p class="goal-of" data-funding-percent>The goal is <b>US$250,000</b>.</p>
 
     <div class="ruler">
@@ -135,337 +135,21 @@
 
     <dl class="channels">
       <div><dt>Apple App Store</dt><dd data-channel="app_store">Awaiting reconciled reports</dd></div>
-      <div><dt>Lemon Squeezy</dt><dd data-channel="lemon_squeezy">Awaiting reconciled reports</dd></div>
+      <div><dt>Stripe Managed Payments</dt><dd data-channel="stripe_managed_payments">Awaiting reconciled reports</dd></div>
     </dl>
 
     <p class="note" data-funding-coverage hidden></p>
     <p class="asof" data-funding-asof>Published from reconciled provider reports. All figures in US dollars.</p>
   </div>
-
-  <h3>How the total is counted</h3>
-  <p class="spine">It measures provider-reported net sales proceeds in US dollars — after
-    customer taxes, platform and payment fees, refunds, chargebacks and reported adjustments,
-    and before income tax and running costs. It is not a current bank balance. Reconciliation
-    is monthly, so the figure moves in steps when a report lands rather than as a live stream,
-    and refunds can take it down.</p>
-  <p class="spine">US$250,000 is a milestone rather than a cap; anything beyond it supports
-    further research. Buying Cliphoard buys the software.</p>
-</section>
-
-<section id="research" class="page">
-  <h2>Why I'm asking</h2>
-
-  <div class="letter">
-    <p>I built Cliphoard because finding something you already copied should be easy. The
-      question behind my work is separate, and it came first: how much useful
-      intelligence can we put on a computer people already own?</p>
-
-    <p>I'm Antreas, an AI researcher and engineer. My PhD, at the University of Edinburgh, was
-      in machine learning and meta-learning — how systems learn to learn.</p>
-
-    <p>For Cliphoard specifically, I trained and distilled two small open-ogma text models
-      from open teachers; they are what the meaning-based text search runs on. Finding a
-      picture from a description uses OpenVision, reading the text inside a screenshot uses
-      Apple's Vision framework, and the larger text tier is a sentence-transformers model.
-      Those three are other people's work, credited as such.</p>
-
-    <p>The research I have published was done with collaborators. This next stage I am
-      carrying forward on my own.</p>
-
-    <p>That stage is <b>Axiotic</b>: high-risk, high-reward foundational AI research, chosen
-      because a question is worth testing rather than because it is what funding currently
-      favours. <b>Daedalus</b> comes first — how a system learns from experience, builds a
-      usable model of its world, remembers, reasons, and gets more out of limited computation.
-      <b>Praxis</b> is the physical extension of the same question, where a body and its
-      controller are designed together and tested in simulation first. Both are research
-      programmes and open hypotheses, not finished products, and neither is a capability
-      that is in the clipboard app today.</p>
-
-    <p>US$250,000 buys what that work actually needs: research time, compute, careful
-      evaluation, and the engineering it takes to release a model rather than only train one.
-      The aim is for some of it to come back here as better models inside Cliphoard, running
-      on your Mac with no clipboard uploads — though which improvements arrive, and when,
-      depends on what the research turns up.</p>
-
-    <p>I can't promise which experiments will work. I can run them, report what happens, and
-      bring the useful parts back into tools you can hold. Buying a useful app helps make
-      that time possible. That is the whole arrangement.</p>
-
-    <p class="signoff"><b>Antreas Antoniou</b>Edinburgh</p>
-  </div>
-
-  <ul class="links">
-    <li><a href="https://antreas.io">antreas.io</a></li>
-    <li><a href="https://antreas.io/daedalus/">Daedalus</a></li>
-    <li><a href="https://axiotic.ai">axiotic.ai</a></li>
-    <li><a href="https://github.com/axiotic-ai">github.com/axiotic-ai</a></li>
-  </ul>
-</section>
-
-<section id="app" class="page">
-  <h2>What it does</h2>
-  <p class="lead">A native bar for everything you copy, and a search that works on what you
-    meant rather than only on what you typed.</p>
-
-  <dl class="facts">
-    <div>
-      <dt>Summon it over any app</dt>
-      <dd>A global <kbd>⌃⌥⌘V</kbd> brings the bar up on top of whatever you are using. Pick a
-        clip and it goes back to the app you came from. You can also copy without pasting, or
-        paste as plain text with the formatting stripped.</dd>
-    </div>
-    <div>
-      <dt>Search by meaning</dt>
-      <dd>A small model embeds the text you copy, on your Mac, so “revert my last commit” finds
-        <code>git reset --soft HEAD~1</code> without sharing a word with it. Four modes: the
-        literal words, by auto-assigned category, pure meaning, or all three combined.</dd>
-    </div>
-    <div>
-      <dt>Everything you copy, recognised</dt>
-      <dd>Plain and rich text, links, hex colours, files and images. Images keep a thumbnail for
-        browsing, and a link is spotted even when you copied a bare domain.</dd>
-    </div>
-    <div>
-      <dt>Tag baskets that stack</dt>
-      <dd>Pick the vocabularies that match your work — developer, writing, business,
-        everyday — and tick as many as you like. Each adds its own axes and none overwrite the
-        others.</dd>
-    </div>
-    <div>
-      <dt>Time you can type</dt>
-      <dd>Today, yesterday, this week, a custom range, or type <code>when:yesterday</code> or
-        <code>when:2026-07-01..2026-07-15</code> straight into the search field.</dd>
-    </div>
-    <div>
-      <dt>17 themes, three layouts</dt>
-      <dd>A horizontal card strip, a dense list, or a Spotlight-style palette with a live
-        preview. Themes run from a clean Swiss greyscale to One Dark, Dracula, Tokyo Night and
-        Catppuccin, in both light and dark, and it follows your system appearance if you let
-        it.</dd>
-    </div>
-    <div>
-      <dt>Your history, your limit</dt>
-      <dd>The limit starts at 200 clips. You can set it to anything, and switching it off
-        entirely is one of the options rather than the default. Pinned clips are never
-        trimmed.</dd>
-    </div>
-    <div>
-      <dt>Bring your old history</dt>
-      <dd>Ten clipboard managers are catalogued. <b>Three are verified against real
-        installs</b> — Paste, Maccy and Flycut — and Alfred is read from its published schema;
-        the remaining six do not have an adapter yet. Import shows you exactly what it found
-        before it writes anything, tags each batch so you can undo the whole import, and never
-        deletes a clip you already have.</dd>
-    </div>
-    <div>
-      <dt>Move to another Mac</dt>
-      <dd>Export your whole history as one encrypted file and import it on the new machine.
-        Free, in both directions — charging for the way out of your own data would invert the
-        entire pitch.</dd>
-    </div>
-  </dl>
-
-  <h3>Search, actually working</h3>
-  <p class="lead">Two real queries against a real history. Neither result shares a word with
-    the query that found it.</p>
-  <!-- One per row, not side by side. These two are the page's evidence rather than its
-       decoration: you have to be able to READ the query and the clip it found, and at
-       half the content width a 3456px-wide bar makes that type too small to read. -->
-  <div class="shots">
-    <figure class="shot">
-      <img src="img/search-neural.png" alt="Cliphoard in Neural search mode: the query 'revert my last commit' has returned the clip 'git reset --soft HEAD~1'" width="3456" height="724" loading="lazy">
-      <figcaption><b>Neural</b> — “revert my last commit” finds <code>git reset --soft HEAD~1</code>.
-        <a class="full-size" href="img/search-neural.png">View full size</a></figcaption>
-    </figure>
-    <figure class="shot">
-      <img src="img/search-smart.png" alt="Cliphoard in Smart search mode: the query 'catchy' has returned the clip 'Copy anything. Hoard everything.'" width="3456" height="724" loading="lazy">
-      <figcaption><b>Smart</b> — “catchy” finds “Copy anything. Hoard everything.”
-        <a class="full-size" href="img/search-smart.png">View full size</a></figcaption>
-    </figure>
-  </div>
-
-  <!-- These two stay side by side: what is being compared is the COLOUR, which reads
-       fine small, and seeing them together is the point. -->
-  <div class="plates-2">
-    <figure>
-      <img src="img/bar-swiss.png" alt="Cliphoard in the Swiss Grayscale theme, the light-mode default" width="3456" height="724" loading="lazy">
-      <figcaption><b>Swiss Grayscale</b> — the light-mode default.
-        <a class="full-size" href="img/bar-swiss.png">View full size</a></figcaption>
-    </figure>
-    <figure>
-      <img src="img/bar-tokyoNight.png" alt="Cliphoard in the Tokyo Night theme" width="3456" height="724" loading="lazy">
-      <figcaption><b>Tokyo Night</b> — one of seventeen.
-        <a class="full-size" href="img/bar-tokyoNight.png">View full size</a></figcaption>
-    </figure>
-  </div>
-
-  <h3>The models that do the searching</h3>
-  <p class="lead">Cliphoard itself is MIT licensed. The models it ships are permissively
-    licensed too, and each one keeps its own terms and its own credit — listed below.</p>
-  <details class="deep">
-    <summary>Model tiers, parameter counts, licences and credits</summary>
-    <!-- Six columns of model metadata genuinely cannot fold into 320px, so this one
-         scrolls sideways. `tabindex="0"` and the labelled region are what let a
-         keyboard reach that scroll: a focusable scroll container is the only way to
-         pan it without a pointer. -->
-    <div class="tablewrap scrolls" tabindex="0" role="region" aria-label="Model tiers, scrollable sideways">
-      <table>
-        <caption>Retrieval measured on a clipboard-realistic set of 21 queries, so the numbers
-          are small and the methodology matters more than the ranking —
-          <a href="https://github.com/AntreasAntoniou/cliphoard/blob/main/tools/BENCHMARKS.md">it is written up here</a>.
-          Heavier tiers download themselves when you pick one.</caption>
-        <thead>
-          <tr><th scope="col">Tier</th><th scope="col">Model</th><th scope="col">Parameters</th><th scope="col">Top-1</th><th scope="col">Licence</th><th scope="col">Credit</th></tr>
-        </thead>
-        <tbody>
-          <tr><th scope="row">Low</th><td>open-ogma-micro</td><td>2.5M</td><td>13/21</td><td>MIT</td><td>open-ogma / Antreas Antoniou</td></tr>
-          <tr><th scope="row">Normal, the default</th><td>open-ogma-small</td><td>8.9M</td><td>15/21</td><td>MIT</td><td>open-ogma / Antreas Antoniou</td></tr>
-          <tr><th scope="row">High</th><td>all-MiniLM-L6-v2</td><td>22.7M</td><td>19/21</td><td>Apache-2.0</td><td>sentence-transformers</td></tr>
-          <tr><th scope="row">Pictures</th><td>OpenVision-Tiny</td><td>17.1M</td><td>—</td><td>Apache-2.0</td><td>OpenVision</td></tr>
-        </tbody>
-      </table>
-    </div>
-    <p class="note">Reading the text inside a screenshot uses Apple's Vision framework, which
-      is part of macOS rather than a bundled model.</p>
+  <details><summary>How the total is counted</summary>
+    <p>Provider-reported net sales proceeds across the Apple App Store and Stripe Managed Payments, in US dollars: after customer taxes, platform and payment fees, refunds, chargebacks and reported adjustments, and before income tax and running costs.</p>
+    <p>Reconciliation is monthly. The total moves when a report lands, rather than as a live stream, and refunds can take it down. It is not a current bank balance. Unavailable does not mean zero.</p>
+    <p>Buying Cliphoard buys the software. Optional personal support through GitHub is separate and is excluded from this software-sales goal.</p>
   </details>
-</section>
+</section></div>
+    </section>
+  </main>
 
-<section id="privacy" class="page">
-  <h2>Your clipboard holds passwords, so it is treated that way</h2>
-  <p class="lead">Nothing you copy is uploaded, to me or to anyone. There is no Cliphoard account, no
-    telemetry, no cloud and no sync. Your history is encrypted on your own Mac with a key that
-    cannot leave it. The
-    <a href="https://github.com/AntreasAntoniou/cliphoard/blob/main/PRIVACY.md">privacy policy</a>
-    sets all of it out in detail, and
-    <a href="https://github.com/AntreasAntoniou/cliphoard">the source</a> is open for
-    anyone who would rather check than be told.</p>
-
-  <dl class="facts">
-    <div>
-      <dt>Encrypted at rest</dt>
-      <dd>Every clip — text, rich text, file paths, colours, recognised text, your tags,
-        <b>the app you copied from</b>, images <i>and</i> the semantic search index — is sealed
-        with authenticated <b>AES-GCM</b> before it touches disk. Only timestamps, clip kind,
-        pin state and small detector flags are stored in the clear.</dd>
-    </div>
-    <div>
-      <dt>The key is bound to the Secure Enclave</dt>
-      <dd>The AES key is derived from a P-256 key generated <i>inside</i> your Mac's Secure
-        Enclave, and that private key cannot be extracted. A copy of the derived key sits in
-        your login Keychain marked this-device-only; it is never in the database, so a copy of
-        the database on another Mac is undecryptable. Macs without a Secure Enclave use a
-        random key in the login Keychain instead. There is no Touch ID prompt anywhere in
-        Cliphoard.</dd>
-    </div>
-    <div>
-      <dt>Moving to a new Mac, since <b>1.0.1</b></dt>
-      <dd>Export your history as one encrypted file and import it on the new machine, where
-        every clip is re-sealed under <i>that</i> Mac's own key. One authenticated stream of
-        <b>AES-256-GCM</b>, key from your passphrase (<b>PBKDF2-HMAC-SHA256</b>, at least
-        600,000 iterations). A truncated, reordered or modified file is refused rather
-        than partly read.
-        <b>The passphrase is the only key — there is no recovery</b>: nothing is escrowed, no
-        backup key exists, and the file is as sensitive as the history inside it. Import merges
-        and never deletes; a clip already on the new Mac is kept as it is.</dd>
-    </div>
-    <div>
-      <dt>Secrets are skipped at capture</dt>
-      <dd>Pasteboards marked transient or concealed — what a password manager sets when you
-        copy a password — are not stored. A clip that still arrives from a known password
-        manager is stored encrypted but <b>quarantined</b>: flagged, and kept out of every
-        search index. It is not hidden and not locked; it stays visible and pastable in your own
-        history. You can exclude any app with a one-line <code>defaults write</code>.</dd>
-    </div>
-    <div>
-      <dt>Nothing is analysed that shouldn't be</dt>
-      <dd>The same detectors that quarantine a password-manager clip also veto it from every
-        index — no embedding, no tags, no recognition. A screenshot the detector withholds is
-        not analysed at all; its pixels are never even decoded.</dd>
-    </div>
-    <div>
-      <dt>Owner-only on disk</dt>
-      <dd>The store lives in your Application Support folder with <code>0700</code> and
-        <code>0600</code> permissions, so other user accounts on the same Mac cannot read
-        it.</dd>
-    </div>
-    <div>
-      <dt>What the app does use the network for</dt>
-      <dd>The direct edition downloads search models you choose when they are not installed.
-        The App Store edition bundles its models and uses Apple for Pro purchases and
-        restoration. Neither sends your clipboard content. Every search, every screenshot
-        read and every image embedding runs on your Mac. The
-        <a href="privacy.html">privacy policy</a> explains provider connection metadata.</dd>
-    </div>
-    <div>
-      <dt>The one thing it writes to your clipboard</dt>
-      <dd>macOS puts a screenshot on the clipboard in a format browsers cannot read, so pasting
-        one into a web app silently does nothing. Cliphoard adds a PNG they understand, and
-        because macOS only lets the clipboard's <i>owner</i> add a format, it has to take
-        ownership and write the whole clipboard back. That is the only time Cliphoard touches
-        your clipboard beyond reading it and writing the clip you picked. It is on by default,
-        and there is a switch in Settings to turn it off.</dd>
-    </div>
-  </dl>
-</section>
-
-<section id="pro" class="page">
-  <h2>Free and Pro</h2>
-  <p class="lead"><b>Free is a complete, fully featured clipboard manager.</b> I set out to
-    build something better than the best clipboard managers out there, and to make that
-    everyday experience free.</p>
-  <p>That means every text search mode, the unlimited-history option, pinning, images,
-    themes, every importer and encrypted export and import between Macs. Pro adds specialist
-    image features and offers a way to support the research.</p>
-
-  <!-- `table.compare` carries no minimum width and a fixed 62/19/19 layout, because the
-       shared `min-width:34rem` used to push Free and Pro off the right edge of a phone:
-       the reader saw a list of features and none of the answers. -->
-  <div class="tablewrap">
-    <table class="compare">
-      <caption>Included in the <b>1.0.2</b> direct download above. Pro purchasing is being
-        prepared; Free needs no account or licence key.</caption>
-      <thead>
-        <tr><th scope="col">&nbsp;</th><th scope="col">Free</th><th scope="col">Pro</th></tr>
-      </thead>
-      <tbody>
-        <tr><th scope="row">History, pinning and the unlimited-history option</th><td class="yes">Yes</td><td class="yes">Yes</td></tr>
-        <tr><th scope="row">Searching text by meaning<small>the literal words, by category, pure meaning, or all three</small></th><td class="yes">Yes</td><td class="yes">Yes</td></tr>
-        <tr><th scope="row">Images and thumbnails, encrypted at rest</th><td class="yes">Yes</td><td class="yes">Yes</td></tr>
-        <tr><th scope="row">17 themes and three layouts</th><td class="yes">Yes</td><td class="yes">Yes</td></tr>
-        <tr><th scope="row">Importing from other clipboard managers</th><td class="yes">Yes</td><td class="yes">Yes</td></tr>
-        <tr><th scope="row">Encrypted export and import between Macs</th><td class="yes">Yes</td><td class="yes">Yes</td></tr>
-        <tr><th scope="row">Finding a picture by describing it<small>searches the pixels, not any text in them</small></th><td class="no">No</td><td class="yes">Yes</td></tr>
-        <tr><th scope="row">Reading the text inside your screenshots</th><td class="no">No</td><td class="yes">Yes</td></tr>
-        <tr><th scope="row">Clips that look like this one</th><td class="no">No</td><td class="yes">Yes</td></tr>
-      </tbody>
-    </table>
-  </div>
-
-  <h3>The whole codebase is open source</h3>
-  <p>All of Cliphoard's application code, <b>including the Pro features</b>, is open source
-    under the <a href="https://github.com/AntreasAntoniou/cliphoard/blob/main/LICENSE">MIT licence</a>.
-    You can <a href="https://github.com/AntreasAntoniou/cliphoard">read it</a>, build it,
-    modify it and share it. Third-party models keep their own licences and credits.</p>
-
-  <p class="note">Pro purchasing is being prepared. The intended upgrade is a one-time
-    purchase. A verified purchase link will appear here when ready.</p>
-</section>
-
-</main>
-
-<footer>
-  <div class="page">
-    <div>© 2026 Antreas Antoniou. The entire Cliphoard application is open source under MIT.</div>
-    <ul>
-      <li><a href="https://github.com/AntreasAntoniou/cliphoard">Source</a></li>
-      <li><a href="https://github.com/AntreasAntoniou/cliphoard/releases">Releases</a></li>
-      <li><a href="privacy.html">Privacy</a></li>
-      <li><a href="support.html">Support</a></li>
-      <li><a href="https://github.com/AntreasAntoniou/cliphoard/blob/main/THIRD-PARTY-NOTICES.md">Licences</a></li>
-    </ul>
-  </div>
-</footer>
-
-<script type="module" src="assets/site.js"></script>
+  <footer class="f-footer f-wrap"><a class="f-brand" href="#top"><img src="img/icon.png" width="32" height="32" alt="">Cliphoard</a><p>A small home for what you copy.</p><nav class="f-footer-links" aria-label="Legal and support"><a href="privacy.html">Privacy</a><a href="support.html">Support</a><a href="https://github.com/AntreasAntoniou/cliphoard/blob/main/LICENSE">MIT licence</a></nav></footer>
 </body>
 </html>

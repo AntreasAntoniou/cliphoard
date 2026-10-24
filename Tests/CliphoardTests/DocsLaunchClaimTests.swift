@@ -78,7 +78,7 @@ final class DocsLaunchClaimTests: XCTestCase {
             "README.md": ["the name of the app you copied from — is encrypted at rest"],
             "PRIVACY.md": ["encrypted at rest with aes-gcm: clip content",
                            "the name of the app each clip came from, in the database"],
-            "docs/index.html": ["the app you copied from, images and the semantic search index — is sealed with authenticated aes-gcm"],
+            "docs/index.html": ["aes-gcm protects stored content, images, thumbnails, source-app names and search indexes"],
         ]
         for doc in docs {
             let text = try flat(doc)
@@ -126,17 +126,20 @@ final class DocsLaunchClaimTests: XCTestCase {
         let passphraseAnchors: [String: String] = [
             "README.md": "key stretched from your passphrase with pbkdf2-hmac-sha256",
             "PRIVACY.md": "the key comes from your passphrase by pbkdf2-hmac-sha256",
-            "docs/index.html": "key from your passphrase (pbkdf2-hmac-sha256",
+            "docs/index.html": "key derived from your passphrase using pbkdf2-hmac-sha256",
         ]
         let noRecoveryAnchors: [String: [String]] = [
             "README.md": ["nothing is escrowed, a lost passphrase cannot be recovered"],
             "PRIVACY.md": ["there is no recovery. no escrow, no backup key, no reset link",
                            "its only protection is your passphrase"],
-            "docs/index.html": ["the passphrase is the only key — there is no recovery"],
+            "docs/index.html": ["the passphrase is the only key; there is no recovery or escrow"],
         ]
         for doc in docs {
             let text = try flat(doc)
-            XCTAssertTrue(text.contains("1.0.1"), "\(doc) does not name the release")
+            // The homepage advertises the current release; the longer reference
+            // documents retain the version that introduced encrypted export.
+            let release = doc == "docs/index.html" ? "1.0.2" : "1.0.1"
+            XCTAssertTrue(text.contains(release), "\(doc) does not name the release")
             XCTAssertTrue(text.contains("export"), "\(doc) does not mention the export")
             let anchor = try XCTUnwrap(passphraseAnchors[doc])
             XCTAssertTrue(text.contains(anchor),

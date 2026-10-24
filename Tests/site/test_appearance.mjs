@@ -74,14 +74,14 @@ function element(tag, attributes = {}) {
  * denies site data, where reading the PROPERTY raises), "read-throws" or
  * "write-throws". `ready` is `document.readyState` at the moment the script runs.
  */
-function page({ saved, storage = "ok", systemDark = false, ready = "loading" } = {}) {
+function page({ saved, storage = "ok", systemDark = false, ready = "loading", themeMeta } = {}) {
   const root = element("html");
   const select = element("select");
   const group = element("div", { hidden: "" });
-  const metas = [
-    element("meta", { name: "theme-color", "data-scheme": "light", content: LIGHT_GROUND }),
-    element("meta", { name: "theme-color", "data-scheme": "dark", content: DARK_GROUND }),
-  ];
+  const metas = (themeMeta ?? [
+    { "data-scheme": "light", content: LIGHT_GROUND },
+    { "data-scheme": "dark", content: DARK_GROUND },
+  ]).map((attributes) => element("meta", { name: "theme-color", ...attributes }));
 
   const store = new Map();
   if (saved !== undefined) store.set(KEY, saved);
@@ -345,6 +345,81 @@ test("an explicit choice makes both metadata entries name the chosen ground", ()
   assert.deepEqual(chosenDark.chrome(), [DARK_GROUND, DARK_GROUND]);
   const chosenLight = page({ saved: "light", systemDark: true }).boot();
   assert.deepEqual(chosenLight.chrome(), [LIGHT_GROUND, LIGHT_GROUND]);
+});
+
+const FLOW_META = [
+  { "data-scheme": "light", content: "#edf2f7" },
+  { "data-scheme": "dark", content: "#1c2028" },
+];
+
+test("the homepage uses its own background for an explicit choice before first paint", () => {
+  for (const saved of ["light", "dark"]) {
+    const p = page({ saved, systemDark: saved === "light", themeMeta: FLOW_META }).boot();
+    const expected = saved === "light" ? "#edf2f7" : "#1c2028";
+    assert.deepEqual(p.chrome(), [expected, expected]);
+    assert.equal(p.theme(), saved);
+    assert.equal(p.group.hasAttribute("hidden"), true, "this must work before DOM binding");
+  }
+});
+
+test("returning to System restores both original page colours after either explicit choice", () => {
+  for (const saved of ["dark", "light"]) {
+    const p = page({ saved, themeMeta: FLOW_META }).boot().domReady();
+    p.select.value = "system";
+    p.select.fire("change");
+    assert.deepEqual(p.chrome(), ["#edf2f7", "#1c2028"],
+      "paint must not reread metadata that a previous paint already overwrote");
+    p.media.matches = true;
+    p.media.fire("change");
+    assert.deepEqual(p.chrome(), ["#edf2f7", "#1c2028"]);
+    assert.equal(p.theme(), null);
+  }
+});
+
+test("a preference shared with a legal page retains each page's own palette", () => {
+  const home = page({ themeMeta: FLOW_META }).boot().domReady();
+  const legal = page().boot().domReady();
+  for (const p of [home, legal]) {
+    p.store.set(KEY, "dark");
+    p.window.fire("storage", { key: KEY, newValue: "dark" });
+    assert.equal(p.select.value, "dark");
+  }
+  assert.deepEqual(home.chrome(), ["#1c2028", "#1c2028"]);
+  assert.deepEqual(legal.chrome(), [DARK_GROUND, DARK_GROUND]);
+});
+
+for (const invalid of ["", "#abc", "red", "rgb(0,0,0)", "url(https://example.invalid)", null]) {
+  test(`malformed page colour ${JSON.stringify(invalid)} falls back for that scheme only`, () => {
+    const p = page({ themeMeta: [
+      { "data-scheme": "light", content: "#EdF2F7" },
+      { "data-scheme": "dark", content: invalid },
+    ] }).boot().domReady();
+    assert.deepEqual(p.chrome(), ["#EdF2F7", DARK_GROUND]);
+    p.select.value = "dark";
+    p.select.fire("change");
+    assert.deepEqual(p.chrome(), [DARK_GROUND, DARK_GROUND]);
+    p.select.value = "light";
+    p.select.fire("change");
+    assert.deepEqual(p.chrome(), ["#EdF2F7", "#EdF2F7"]);
+  });
+}
+
+test("a missing scheme uses its fallback without losing a valid page colour", () => {
+  const p = page({ saved: "dark", themeMeta: [FLOW_META[0]] }).boot().domReady();
+  assert.deepEqual(p.chrome(), [DARK_GROUND]);
+  p.select.value = "light";
+  p.select.fire("change");
+  assert.deepEqual(p.chrome(), ["#edf2f7"]);
+});
+
+test("missing theme metadata does not disable appearance choice or persistence", () => {
+  const p = page({ saved: "dark", themeMeta: [] });
+  assert.doesNotThrow(() => p.boot().domReady());
+  assert.equal(p.theme(), "dark");
+  p.select.value = "light";
+  p.select.fire("change");
+  assert.equal(p.theme(), "light");
+  assert.deepEqual(p.writes, [["set", KEY, "light"]]);
 });
 
 test("nothing is published onto window", () => {

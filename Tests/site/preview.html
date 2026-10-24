@@ -14,7 +14,7 @@
 
   Serve the REPO ROOT and open this file:
 
-      python3 -m http.server 4347 --bind 127.0.0.1      # from the repository root
+      /opt/homebrew/bin/python3.13 -m http.server 4347 --bind 127.0.0.1      # from the repository root
       http://127.0.0.1:4347/Tests/site/preview.html
 
   Every amount below is SYNTHETIC. None of it is real revenue, none of it is written to
@@ -176,7 +176,7 @@ function base(over = {}) {
     coverage: { reports: 2, start: "2026-11-01", end: "2026-11-30" },
     channels: [
       { id: "app_store", status: "reported", net: "566.00", as_of: "2026-11-30" },
-      { id: "lemon_squeezy", status: "reported", net: "472.50", as_of: "2026-11-30" },
+      { id: "stripe_managed_payments", status: "reported", net: "472.50", as_of: "2026-11-30" },
     ],
     ...over,
   };
@@ -188,9 +188,9 @@ function base(over = {}) {
  *  from both and refuses a total that is not their sum. The total is derived with the
  *  SHIPPED module's own `toCents`/`formatUSD`, so the harness never carries a second
  *  copy of the money rules it exists to exercise. */
-function split(appAmount, lemonAmount) {
+function split(appAmount, stripeAmount) {
   const plain = (text) => text.replace(/[$,]/g, "");
-  const total = plain(formatUSD(toCents(appAmount) + toCents(lemonAmount)));
+  const total = plain(formatUSD(toCents(appAmount) + toCents(stripeAmount)));
   const channel = (id, amount) => ({
     id,
     status: toCents(amount) === 0 ? "certified_zero" : "reported",
@@ -200,7 +200,7 @@ function split(appAmount, lemonAmount) {
   return base({
     status: toCents(total) === 0 ? "certified_zero" : "reported",
     total_net: total,
-    channels: [channel("app_store", appAmount), channel("lemon_squeezy", lemonAmount)],
+    channels: [channel("app_store", appAmount), channel("stripe_managed_payments", stripeAmount)],
   });
 }
 
@@ -210,7 +210,7 @@ const FIXTURES = {
     coverage: { reports: 0, start: null, end: null },
     channels: [
       { id: "app_store", status: "no_reports", net: null, as_of: null },
-      { id: "lemon_squeezy", status: "no_reports", net: null, as_of: null },
+      { id: "stripe_managed_payments", status: "no_reports", net: null, as_of: null },
     ],
   }) },
   zero: { today: TODAY, payload: split("0.00", "0.00") },
@@ -221,7 +221,7 @@ const FIXTURES = {
     total_net: "-125.40",
     channels: [
       { id: "app_store", status: "reported", net: "-625.40", as_of: "2026-11-30" },
-      { id: "lemon_squeezy", status: "reported", net: "500.00", as_of: "2026-11-30" },
+      { id: "stripe_managed_payments", status: "reported", net: "500.00", as_of: "2026-11-30" },
     ],
   }) },
   // Deliberately broken: a float where a money string belongs. The correct outcome is
@@ -259,7 +259,7 @@ for (const button of document.querySelectorAll("button[data-fixture]")) {
     const root = fundingRoot();
     if (!root) {
       note("Cannot reach the framed document. Serve the REPOSITORY ROOT "
-         + "(python3 -m http.server 4347 --bind 127.0.0.1) and open this file over HTTP.", true);
+         + "(/opt/homebrew/bin/python3.13 -m http.server 4347 --bind 127.0.0.1) and open this file over HTTP.", true);
       return;
     }
     const { payload, today } = FIXTURES[button.dataset.fixture];

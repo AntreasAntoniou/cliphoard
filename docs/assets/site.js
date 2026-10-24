@@ -23,7 +23,7 @@ if (funding) {
 /* Current-section marking. This is navigation, not decoration: the nav is the only
  * wayfinding on a long single page. `IntersectionObserver` rather than a scroll
  * handler so it costs nothing per frame. */
-const links = Array.from(document.querySelectorAll(".topbar nav a[href^='#']"));
+const links = Array.from(document.querySelectorAll(".f-header nav a[href^='#']"));
 const sections = links
   .map((link) => document.getElementById(link.getAttribute("href").slice(1)))
   .filter(Boolean);

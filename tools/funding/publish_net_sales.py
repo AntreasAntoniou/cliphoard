@@ -1,7 +1,7 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python3.13
 """Publish the public net-sales aggregate for cliphoard.dev from private reconciliation.
 
-    python3 tools/funding/publish_net_sales.py \
+    /opt/homebrew/bin/python3.13 tools/funding/publish_net_sales.py \
         --scope  ~/private/cliphoard/scope.json \
         --input  ~/private/cliphoard/reconciliation-2026-12.json \
         --output docs/data/net-sales.json
@@ -13,7 +13,7 @@ explicitly — a scope file and a reconciliation file — refuses them on any of
 specific grounds, and only if nothing is wrong writes a small public aggregate carrying
 no identifier of any kind.
 
-It is NOT a provider integration. There is no Apple or Lemon Squeezy API client here and
+It is NOT a provider integration. There is no Apple or Stripe Managed Payments API client here and
 no invented endpoint. The reconciliation files are produced BY HAND by the operator from
 provider settlement records; `README.md` documents how. Nothing in this directory
 performs or claims automatic native ingestion, and a passing test suite here says
@@ -51,20 +51,23 @@ import tempfile
 from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 
-INPUT_SCHEMA = "cliphoard.net-sales.reconciliation/2"
-SCOPE_SCHEMA = "cliphoard.net-sales.scope/1"
-OUTPUT_SCHEMA = "cliphoard.net-sales/2"
+if sys.version_info < (3, 13):
+    raise SystemExit("python_runtime_below_3_13")
+
+INPUT_SCHEMA = "cliphoard.net-sales.reconciliation/3"
+SCOPE_SCHEMA = "cliphoard.net-sales.scope/2"
+OUTPUT_SCHEMA = "cliphoard.net-sales/3"
 
 #: The two channels this campaign has, in the order the page lists them. Both are
 #: REQUIRED, in the scope file, in the reconciliation file and in the public output.
-CANONICAL_CHANNELS = ("app_store", "lemon_squeezy")
+CANONICAL_CHANNELS = ("app_store", "stripe_managed_payments")
 
 #: Public names come from here and ONLY from here. There is deliberately no `label`
 #: field in either private schema, so there is no arbitrary operator-supplied string
 #: that could be copied into a public file or an error message.
 CHANNEL_LABELS = {
     "app_store": "Apple App Store",
-    "lemon_squeezy": "Lemon Squeezy",
+    "stripe_managed_payments": "Stripe Managed Payments",
 }
 
 #: THE GOAL IS A CONSTANT. `docs/index.html` hard-codes the ruler's tick labels at
@@ -84,6 +87,8 @@ RATE_RE = re.compile(r"^(0|[1-9][0-9]{0,6})\.[0-9]{1,10}$")
 DATE_RE = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$")
 CURRENCY_RE = re.compile(r"^[A-Z]{3}$")
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+STRIPE_ACCOUNT_RE = re.compile(r"acct_[A-Za-z0-9_]{1,180}")
+STRIPE_PRODUCT_PRICE_RE = re.compile(r"prod_[A-Za-z0-9_]{1,180}:price_[A-Za-z0-9_]{1,180}")
 
 #: Amounts that cannot be negative in any real settlement report. A negative fee is not
 #: a fee going the other way, it is a sign error upstream — and a sign error in `fees`
@@ -260,18 +265,18 @@ class ChannelScope:
             raise Rejected("unknown-channel-id", f"{where}.id")
         self.account = identifier(raw, "account", where)
         self.vendor = identifier(raw, "vendor", where)
-        # CHANNEL-SPECIFIC IDENTITY. Apple has no store concept, so a value there means
-        # the operator has normalized the wrong thing; Lemon Squeezy always belongs to a
-        # store, so a missing one means a payout was attributed without checking which
-        # shop it came from. Both directions refuse, and neither names the value.
+        # Neither canonical channel uses a Lemon Squeezy store. Stripe is scoped by
+        # account and exact product:price pairs; legacy store attribution must fail.
         store = raw.get("store", None)
         if self.id == "app_store":
             if store is not None:
                 raise Rejected("app-store-scope-must-not-carry-a-store", f"{where}.store",
                                "the App Store has no store identifier")
         else:
-            if not isinstance(store, str) or not store.strip():
-                raise Rejected("scope-requires-a-store-identifier", f"{where}.store")
+            if store is not None:
+                raise Rejected("stripe-scope-must-not-carry-a-store", f"{where}.store")
+            if not STRIPE_ACCOUNT_RE.fullmatch(self.account):
+                raise Rejected("not-a-stripe-account-id", f"{where}.account")
         self.store = store
         products = raw.get("products", None)
         if not isinstance(products, list) or not products:
@@ -279,6 +284,8 @@ class ChannelScope:
         for i, product in enumerate(products):
             if not isinstance(product, str) or not product.strip():
                 raise Rejected("not-a-product-id", f"{where}.products[{i}]")
+            if self.id == "stripe_managed_payments" and not STRIPE_PRODUCT_PRICE_RE.fullmatch(product):
+                raise Rejected("not-a-stripe-product-price-id", f"{where}.products[{i}]")
         self.products = frozenset(products)
 
 

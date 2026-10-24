@@ -1,0 +1,84 @@
+/* Download routes, Pro acquisition guidance and optional personal support. */
+.everyday-note{font-size:15px!important;line-height:1.65!important;color:var(--muted);max-width:640px;margin:16px auto 0!important}
+.install-options{container-type:inline-size;text-align:left;width:100%;max-width:900px;margin:26px auto 0;font-size:14px;line-height:1.5;letter-spacing:0}
+.install-options .install-main{display:grid;grid-template-columns:minmax(0,.95fr) minmax(0,1.3fr);gap:24px;align-items:center;padding:22px 0;border-block:1px solid var(--line)}
+.install-options p{margin:9px 0 0!important;font-size:13px;line-height:1.6;color:var(--muted);max-width:none}
+.install-options .install-download,.install-options .install-brew{min-width:0}
+.install-options .install-download-button{display:inline-flex;justify-content:center;align-items:center;gap:12px;min-height:48px;padding:12px 20px;background:var(--accent);color:var(--accent-ink);border-radius:min(var(--radius,12px),14px);text-decoration:none;font-size:16px;line-height:1.4;font-weight:650}
+.install-options .install-download-button:hover{filter:brightness(.94)}
+.install-download-button svg{width:18px;height:18px;flex:none}
+.install-options .install-channel{display:flex;flex-wrap:wrap;gap:6px 15px;justify-content:space-between;align-items:baseline;margin-bottom:8px}
+.install-channel strong{font-size:14px;font-weight:650}
+.install-options .install-help{font-size:12px;color:var(--muted);text-underline-offset:3px;min-height:24px;display:inline-flex;align-items:center}
+.install-command{display:flex;align-items:center;gap:8px;min-width:0;padding:9px 10px 9px 14px;border:1px solid var(--line);border-radius:9px;background:var(--surface)}
+.install-command code{display:block;flex:1;min-width:0;font-family:"SFMono-Regular",Consolas,monospace;font-size:12px;line-height:1.6;color:var(--text);overflow-wrap:anywhere;user-select:all}
+.install-options .install-copy{flex:none;border:1px solid var(--line);border-radius:6px;background:var(--surface-2);color:var(--text);font-size:12px;font-weight:600;min-width:48px;min-height:44px;padding:8px;cursor:pointer}
+.install-copy:hover{border-color:var(--accent)}
+.install-options .install-more{display:grid;grid-template-columns:1.2fr 1.1fr .8fr;gap:16px;padding:18px 0 0}
+.install-options .install-route{display:flex;flex-direction:column;justify-content:center;gap:4px;min-width:0;min-height:44px;text-decoration:none;font-size:14px;line-height:1.45;color:var(--text);margin:0!important}
+.install-route strong{font-size:14px;font-weight:600;letter-spacing:0}
+.install-route span{font-size:12px;line-height:1.5;color:var(--muted)}
+a.install-route:hover strong{text-decoration:underline;text-underline-offset:4px}
+.install-route.install-pending strong{font-weight:500}
+.install-options :focus-visible{outline:3px solid var(--accent);outline-offset:4px}
+.studio-intro .everyday-note,.f-intro .everyday-note,.q-hero-description .everyday-note{margin-inline:0!important}
+.studio-intro .install-options,.f-intro .install-options,.q-hero-description .install-options{margin-inline:0}
+.studio-intro>p:first-child{font-size:21px}
+.studio-intro{max-width:none}
+.q-hero{grid-template-columns:1.1fr 1fr;gap:clamp(30px,5vw,70px)}
+.q-hero-description .q-mascot{width:58px;height:58px;margin-bottom:18px;border-radius:14px}
+.q-hero-description .q-lead{max-width:none}
+.hero .hero-lead{margin-bottom:0}
+.hero .trust-line{padding:24px 0}
+.palette-hero .palette-trust{margin-top:25px}
+.ns-hero .ns-trust{margin-top:25px}
+@container (max-width:660px){
+  .install-options .install-main{grid-template-columns:1fr;gap:18px;padding:18px 0}
+  .install-options .install-more{grid-template-columns:1fr 1fr;gap:14px 18px;padding-top:16px}
+  .install-options .install-preview{grid-column:1/-1;display:block}
+  .install-preview span{margin-left:10px}
+}
+@media(max-width:900px){
+  .q-hero{grid-template-columns:1fr;gap:28px}
+  .q-hero-description{display:block}
+}
+@media(max-width:600px){
+  .everyday-note{font-size:14px!important}
+  .install-options{margin-top:22px}
+  .install-options .install-download-button{width:100%;padding-inline:14px}
+  .install-command{padding-left:10px}
+  .install-options .install-more{gap:14px}
+  .install-route span{font-size:12px}
+  .q-hero{grid-template-columns:1fr;gap:28px}
+  .studio-intro>p:first-child{font-size:19px}
+}
+
+/* Keep purchase guidance within its Pro card. */
+#pro :is(.edition-grid,.palette-edition-grid,.studio-edition-grid,.f-edition-grid,.q-edition-grid,.ns-edition-grid):has(.pro-purchase[open]){align-items:start}
+.pro-purchase{margin-top:24px;max-width:100%;min-width:0}
+.pro-purchase>summary.pro-purchase-button{display:flex;align-items:center;justify-content:space-between;gap:20px;width:100%;min-height:48px;padding:14px 18px;border:1px solid transparent;border-radius:min(var(--radius,12px),14px);background:var(--accent);color:var(--accent-ink);list-style:none;font-size:16px;line-height:1.4;letter-spacing:0;font-weight:650;cursor:pointer}
+.pro-purchase-button::-webkit-details-marker{display:none}
+.pro-purchase-button::after{content:none!important}
+.pro-purchase-button>span{font-size:22px;line-height:1;flex:none;transition:transform .15s}
+.pro-purchase[open]>.pro-purchase-button>span{transform:rotate(45deg)}
+.pro-purchase>summary:hover{filter:brightness(.96)}
+.pro-purchase>summary:focus-visible{outline:3px solid var(--accent);outline-offset:4px}
+.pro-purchase .pro-purchase-options{padding:20px 0 0;color:var(--text);text-align:left;font-size:15px;line-height:1.6;letter-spacing:0}
+.pro-purchase .pro-purchase-options p{margin:0;font-size:15px;line-height:1.6;max-width:none;color:var(--muted)}
+.pro-purchase .pro-purchase-options .pro-purchase-intro{color:var(--text);font-weight:600}
+.pro-purchase .pro-purchase-route{padding:18px 0;border-bottom:1px solid var(--line)}
+.pro-purchase .pro-purchase-route h4{margin:0 0 8px;font-size:16px;line-height:1.5;letter-spacing:0;color:var(--text)}
+.pro-purchase .pro-purchase-status{display:block;margin-top:10px;font-size:13px;font-weight:600;color:var(--muted)}
+.pro-purchase .pro-purchase-options .pro-purchase-note{margin-top:16px;font-size:13px}
+@media(prefers-reduced-motion:reduce){.pro-purchase-button>span{transition:none}}
+/* Personal sponsorship stays beside the founder story, distinct from Pro. */
+#research .direct-support{container-type:inline-size;margin-top:30px;padding-top:25px;border-top:1px solid var(--line);text-align:left}
+#research .direct-support h3{margin:0 0 10px;font-size:22px;line-height:1.3;letter-spacing:-.025em;color:var(--text)}
+#research .direct-support p{max-width:580px;margin:0;font-size:15px;line-height:1.65;color:var(--muted)}
+#research .support-actions{display:flex;align-items:center;flex-wrap:wrap;gap:12px 24px;margin-top:19px}
+#research .support-primary{display:inline-flex;align-items:center;justify-content:center;gap:12px;min-height:48px;padding:12px 17px;border:1px solid transparent;border-radius:min(var(--radius,12px),14px);background:var(--accent);color:var(--accent-ink);text-decoration:none;font-size:15px;line-height:1.5;font-weight:650}
+#research .support-primary:hover{filter:brightness(.94)}
+#research .support-monthly{display:inline-flex;align-items:center;gap:8px;min-height:44px;color:var(--text);font-size:14px;line-height:1.5;font-weight:500;text-decoration:underline;text-underline-offset:4px}
+#research .support-actions a:focus-visible{outline:3px solid var(--accent);outline-offset:4px}
+#research .direct-support .support-note{margin-top:15px;font-size:12px;line-height:1.65}
+@container(max-width:360px){#research .support-actions{align-items:flex-start;flex-direction:column;gap:5px}#research .support-primary{width:100%}}
