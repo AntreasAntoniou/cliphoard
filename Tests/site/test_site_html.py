@@ -471,10 +471,14 @@ class SelectedFlowContracts(unittest.TestCase):
         self.assertIn("sample preview", visible(section("preview")))
 
     def test_research_is_first_person_and_has_no_promised_outcome(self):
-        text = visible(section("research"))
+        research = section("research")
+        text = visible(research)
         for phrase in ("i’m antreas", "i built cliphoard", "independent", "high-risk, high-reward",
-                       "ai research at axiotic", "i can’t promise which experiments will work"):
+                       "ai research", "i can’t promise which experiments will work"):
             self.assertIn(phrase, text)
+        self.assertNotIn("axiotic", text)
+        self.assertIn('href="https://antreas.io/daedalus/">Explore my research agenda</a>',
+                      research)
         for overclaim in ("our team", "we trained", "will solve", "guaranteed outcome",
                           "cliphoard is a meta-learning", "meta-learning search"):
             self.assertNotIn(overclaim, text)
