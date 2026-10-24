@@ -17,7 +17,9 @@ export function fromHex(value) {
 export function payloadFor(order) {
   // JSON serialization, never string interpolation of untrusted fields.
   return encoder.encode(JSON.stringify({
-    o: `ls:${order.mode}:${order.storeId}:${order.orderId}`,
+    o: order.provider === "stripe"
+      ? `stripe:${order.mode}:${order.accountId}:${order.orderId}`
+      : `ls:${order.mode}:${order.storeId}:${order.orderId}`,
     i: order.issued,
     p: "pro",
     v: 1,

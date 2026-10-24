@@ -17,7 +17,7 @@ two private files, outside the repo         this tool          the one public fi
 
 ```sh
 # validate and print, writing nothing
-python3 tools/funding/publish_net_sales.py \
+/opt/homebrew/bin/python3.13 tools/funding/publish_net_sales.py \
     --scope  ~/private/cliphoard/scope.json \
     --input  ~/private/cliphoard/reconciliation-2026-12.json \
     --output docs/data/net-sales.json \
@@ -25,24 +25,26 @@ python3 tools/funding/publish_net_sales.py \
     --dry-run
 
 # publish
-python3 tools/funding/publish_net_sales.py \
+/opt/homebrew/bin/python3.13 tools/funding/publish_net_sales.py \
     --scope  ~/private/cliphoard/scope.json \
     --input  ~/private/cliphoard/reconciliation-2026-12.json \
     --output docs/data/net-sales.json
 ```
 
-Python 3.10+, standard library only. No packages to install, no network access, no
-credentials, no provider API keys.
+Python 3.13+, standard library only. Commands below use the verified
+`/opt/homebrew/bin/python3.13`; select and verify an equivalent 3.13+ interpreter on
+another machine. The publisher refuses older runtimes. No packages to install, network
+access, credentials or provider API keys are needed.
 
 ## This is not a provider integration, and the tests do not say it is
 
-There is no Apple or Lemon Squeezy client in this directory, no HTTP call of any kind,
+There is no Apple or Stripe Managed Payments client in this directory, no HTTP call of any kind,
 and no invented endpoint. The reconciliation files are produced **by hand** by the
 operator from provider settlement records, following the steps below. **A passing test
 suite here says nothing whatsoever about any external sales provider** — what it tests is
 the validator standing between a hand-reconciled private file and a public number.
 
-Neither store exposes the figure this page needs, which is why it is manual.
+The combined, product-scoped figure requires manual reconciliation across both providers.
 
 **Apple.** Proceeds are what Apple pays after its commission, and the authoritative
 numbers come from the monthly **financial reports**, not from Sales and Trends, which
@@ -53,16 +55,39 @@ and the
 The monthly cadence is also why a figure more than 45 days past its `as_of` is labelled
 as not current rather than presented as live.
 
-**Lemon Squeezy.** The
-[order object](https://docs.lemonsqueezy.com/api/orders/the-order-object) carries the
-gross total, the refunded amount and tax in USD cents, which is most of the way there —
-but it does not carry the actual payment-processing fee for that order, and
-[the fee itself varies](https://docs.lemonsqueezy.com/help/getting-started/fees) by
-payment method and region. Multiplying gross by an assumed percentage would produce a
-number that looks precise and is not. The settlement or payout reconciliation is the only
-honest source.
+**Stripe Managed Payments.** Use the itemized
+[Balance Change from Activity](https://docs.stripe.com/reports/balance) report for the
+chosen accounting period; reconcile it against
+[Payout Reconciliation and Ending Balance Reconciliation](https://docs.stripe.com/reports/payout-reconciliation)
+without counting those same transactions again. A payout transfer is not another sale.
+Retain the originals, report period/time zone, currency, transaction IDs and the private
+product/price crosswalk. Financial report amounts are in major currency units; do not
+interpret them as API integer cents. Keep each currency separate until the documented FX
+step below. Scope the rows to the verified account and approved product/price pairs.
 
-Adapters that read Apple's financial report TSV and a Lemon Squeezy payout export
+Request `withheld_tax` and `fee_net_of_withheld_tax`. Stripe documents that `fee` already
+includes withheld tax. Normalize tax into `customer_tax` and fees excluding that tax into
+`fees`; **never subtract both `fee` and `withheld_tax`**. See
+[Managed Payments financial reporting](https://docs.stripe.com/payments/managed-payments/how-it-works#financial-reports).
+For example, synthetic gross `120.00`, withheld tax `20.00`, and fee excluding tax `10.00`
+reconcile to `90.00`; using the combined fee `30.00` would incorrectly produce `70.00`.
+
+For the manual worksheet, use positive sales gross for `gross`, refund and dispute
+principal debits for `refunds` and `chargebacks`, and positive tax/fee debits for their
+deduction fields. Put separately evidenced credits, reversals and other signed
+corrections in `adjustments` once. Do not deduct discounts already reflected in gross;
+use `discounts: "0.00"` only when that treatment is evidenced, or reconstruct pre-discount
+gross and its explicit discount together. The resulting identity must equal the scoped
+sum of the provider's `net` column exactly. Missing breakdowns require reconciliation,
+not guessed fees or zero-filled fields.
+
+Only verified live Managed Payments sales belong to this channel. Retain evidence linking
+report charge/payment identifiers to the configured product and price, and to Checkout
+Sessions and PaymentIntents with Managed Payments enabled. The validator checks the
+normalized file's shape, identities and arithmetic; it does not independently establish
+that provider status or perform these joins.
+
+Adapters that read Apple's financial report TSV and a Stripe Managed Payments payout export
 directly are **remaining work**, and they are recorded as remaining work rather than
 stubbed.
 
@@ -78,18 +103,18 @@ on its own.
 
 ```json
 {
-  "schema": "cliphoard.net-sales.scope/1",
+  "schema": "cliphoard.net-sales.scope/2",
   "channels": [
     { "id": "app_store",
       "account": "<Apple vendor number>",
       "vendor":  "<legal entity name as Apple holds it>",
       "store":   null,
       "products": ["<the app SKU>"] },
-    { "id": "lemon_squeezy",
-      "account": "<Lemon Squeezy account id>",
-      "vendor":  "<legal entity name as Lemon Squeezy holds it>",
-      "store":   "<store id>",
-      "products": ["<product id>:<variant id>"] }
+    { "id": "stripe_managed_payments",
+      "account": "acct_REPLACE",
+      "vendor":  "<your legal entity name on the Stripe account>",
+      "store":   null,
+      "products": ["prod_REPLACE:price_REPLACE"] }
   ]
 }
 ```
@@ -107,31 +132,29 @@ the scope file is written, and again whenever an account changes:
 | `app_store.account` | App Store Connect → *Payments and Financial Reports*. The vendor number on the financial report header must equal this value. |
 | `app_store.vendor` | App Store Connect → *Business* → the legal entity name on the paid-apps agreement, and the same name on the financial report. |
 | `app_store.products` | App Store Connect → the app's *App Information* → SKU. The financial report's product identifier column must be one of these. |
-| `lemon_squeezy.account` | Lemon Squeezy → *Settings* → the account identifier shown on the payout statement. |
-| `lemon_squeezy.vendor` | Lemon Squeezy → *Settings → Business* → the registered entity on the payout statement. |
-| `lemon_squeezy.store` | Lemon Squeezy → *Stores* → the store id that the payout belongs to. |
-| `lemon_squeezy.products` | Lemon Squeezy → *Products* → `<product id>:<variant id>` for each variant sold. |
+| `stripe_managed_payments.account` | The verified Stripe account ID, `acct_…`; retain evidence that the financial export belongs to this account. |
+| `stripe_managed_payments.vendor` | Your legal entity recorded on that Stripe account, verified alongside the export's account provenance. |
+| `stripe_managed_payments.store` | Always `null`. Stripe has no Lemon Squeezy store identifier. |
+| `stripe_managed_payments.products` | Exact `prod_…:price_…` pairs from the Stripe product catalog, checked against the related Checkout line items. Retain the private mapping from report transaction IDs to those pairs; a product-only report column does not establish the price. |
 
-**The shape of `store` is channel-specific and enforced.** `app_store.store` must be
-`null`, because Apple has no store identifier and a value there means the operator
-normalized the wrong field. `lemon_squeezy.store` must be a non-empty identifier, because
-every Lemon Squeezy payout belongs to a store and a missing one means a payout was
-attributed without checking which shop it came from. Both directions are refusals, and
-neither echoes the value. A *report* that carries a store Apple cannot have is rejected
-for the same reason.
+**Both `store` fields must be `null`, in the scope and each report.** Any store value is
+rejected without echoing it. Stripe account IDs and product/price pairs also require the
+provider's identifier shape. The public and reconciliation schemas are now `/3`, the
+scope schema is `/2`, and the former `lemon_squeezy` channel is rejected. Do not relabel
+old Lemon Squeezy evidence as Stripe evidence; reconcile new provider records separately.
 
 ### 2. `reconciliation.json` — what sold
 
 ```json
 {
-  "schema": "cliphoard.net-sales.reconciliation/2",
+  "schema": "cliphoard.net-sales.reconciliation/3",
   "campaign_start": "2026-11-01",
   "as_of": "2026-11-30",
   "currency": "USD",
   "goal": "250000.00",
   "channels": [
     { "id": "app_store", "mode": "period", "reports": [ { "...": "see below" } ] },
-    { "id": "lemon_squeezy", "mode": "period", "reports": [] }
+    { "id": "stripe_managed_payments", "mode": "period", "reports": [] }
   ]
 }
 ```
@@ -299,7 +322,7 @@ input, because a filter is one forgotten key away from publishing an account id.
 
 ```json
 {
-  "schema": "cliphoard.net-sales/2",
+  "schema": "cliphoard.net-sales/3",
   "status": "unavailable | reported | certified_zero",
   "currency": "USD",
   "goal": "250000.00",
@@ -311,7 +334,7 @@ input, because a filter is one forgotten key away from publishing an account id.
   "coverage": { "reports": 0, "start": null, "end": null },
   "channels": [
     { "id": "app_store", "status": "no_reports", "net": null, "as_of": null },
-    { "id": "lemon_squeezy", "status": "no_reports", "net": null, "as_of": null }
+    { "id": "stripe_managed_payments", "status": "no_reports", "net": null, "as_of": null }
   ]
 }
 ```
@@ -392,16 +415,16 @@ The rest of the display rules:
 ## Tests
 
 ```sh
-python3 -m unittest discover -s Tests/site -p 'test_*.py'   # publisher + page
-node --test Tests/site/test_funding_render.mjs              # the browser module
+/opt/homebrew/bin/python3.13 -m unittest discover -s Tests/site -p 'test_*.py'   # publisher + page
+/usr/local/bin/node --test Tests/site/test_funding_render.mjs              # the browser module
 ```
 
 The Node tests import `docs/assets/funding.js` directly — the same file the page loads,
 no bundler and no test double — which is possible because `fundingView` is pure and the
 DOM half is separate. One Python test goes the other way: it hands the publisher's real
-output to the real JS renderer in a `node` subprocess and requires it to validate, which
+output to the real JS renderer in an explicit `/usr/local/bin/node` subprocess and requires it to validate, which
 is the only thing that keeps two implementations of the same money rules from drifting.
-It skips with a stated reason if `node` is absent rather than silently passing.
+The subprocess verifies Node `v24.11.0`; a missing or different runtime fails the check.
 
 Every fixture is synthetic. Nothing under `Tests/` is written to
 `docs/data/net-sales.json`, and there is a test asserting no fixture amount has reached
@@ -412,7 +435,7 @@ it.
 Serve the **repository root**:
 
 ```sh
-python3 -m http.server 4347 --bind 127.0.0.1
+/opt/homebrew/bin/python3.13 -m http.server 4347 --bind 127.0.0.1
 # the site:        http://127.0.0.1:4347/docs/
 # the QA harness:  http://127.0.0.1:4347/Tests/site/preview.html
 ```

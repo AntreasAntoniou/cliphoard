@@ -24,10 +24,10 @@
  *      sitting there is read as current, which is the worst failure this page has.
  */
 
-export const SCHEMA = "cliphoard.net-sales/2";
+export const SCHEMA = "cliphoard.net-sales/3";
 
 /** The two channels this campaign has. BOTH are required, exactly once each. */
-export const CHANNEL_IDS = ["app_store", "lemon_squeezy"];
+export const CHANNEL_IDS = ["app_store", "stripe_managed_payments"];
 
 /** Display names come from here and ONLY from here.
  *
@@ -35,7 +35,7 @@ export const CHANNEL_IDS = ["app_store", "lemon_squeezy"];
  *  operator file is a string this page would render without ever having seen it. */
 export const CHANNEL_LABELS = {
   app_store: "Apple App Store",
-  lemon_squeezy: "Lemon Squeezy",
+  stripe_managed_payments: "Stripe Managed Payments",
 };
 
 /** THE GOAL IS A CONSTANT, here and in the publisher. `index.html` hard-codes the

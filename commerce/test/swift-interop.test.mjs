@@ -7,9 +7,9 @@ import { fileURLToPath } from "node:url";
 import { signLicence } from "../src/licence.mjs";
 import { syntheticKeys } from "./fixtures.mjs";
 
-test("actual direct Licence.swift verifies Worker key; CryptoKit raw seed has the same public key", { timeout: 60000 }, async () => {
+for (const provider of ["lemon", "stripe"]) test(`actual direct Licence.swift verifies ${provider} Worker key; CryptoKit raw seed has the same public key`, { timeout: 60000 }, async () => {
   const keys = await syntheticKeys();
-  const order = { mode: "test", storeId: "123", orderId: "1001", issued: 1767323045 };
+  const order = { provider, mode: "test", storeId: "123", accountId: "acct_Synthetic", orderId: "1001", issued: 1767323045 };
   const licence = await signLicence(order, keys.seed, keys.publicHex);
   const source = await readFile(new URL("../../Sources/Cliphoard/Support/Licence.swift", import.meta.url), "utf8");
   const declaration = /static let publicKey: \[UInt8\] = \[[^\]]+\]/g;
@@ -43,7 +43,7 @@ print("PASS: actual verifier, raw-seed public-key parity, valid CryptoKit signat
     const path = dir + "/main.swift";
     await writeFile(path, fixture + harness, { mode: 0o600 });
     const result = spawnSync("/usr/bin/swift", [path], {
-      input: JSON.stringify({ ...keys, licence, orderID: "ls:test:123:1001", issued: order.issued }),
+      input: JSON.stringify({ ...keys, licence, orderID: provider === "stripe" ? "stripe:test:acct_Synthetic:1001" : "ls:test:123:1001", issued: order.issued }),
       encoding: "utf8", timeout: 50000, maxBuffer: 100000,
     });
     // Do not copy arbitrary process diagnostics (or fixture data) into evidence.

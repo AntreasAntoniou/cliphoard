@@ -46,15 +46,15 @@ function payload(over = {}) {
     coverage: { reports: 2, start: START, end: CUTOFF },
     channels: [
       { id: "app_store", status: "reported", net: "566.00", as_of: CUTOFF },
-      { id: "lemon_squeezy", status: "reported", net: "472.50", as_of: CUTOFF },
+      { id: "stripe_managed_payments", status: "reported", net: "472.50", as_of: CUTOFF },
     ],
     ...over,
   };
 }
 
 /** A complete two-channel campaign whose channels net exactly these amounts. */
-function both(appAmount, lemonAmount, over = {}) {
-  const sum = toCents(appAmount) + toCents(lemonAmount);
+function both(appAmount, stripeAmount, over = {}) {
+  const sum = toCents(appAmount) + toCents(stripeAmount);
   const channel = (id, amount) => ({
     id,
     status: toCents(amount) === 0 ? "certified_zero" : "reported",
@@ -64,7 +64,7 @@ function both(appAmount, lemonAmount, over = {}) {
   return payload({
     status: sum === 0 ? "certified_zero" : "reported",
     total_net: formatUSD(sum).replace(/[$,]/g, ""),
-    channels: [channel("app_store", appAmount), channel("lemon_squeezy", lemonAmount)],
+    channels: [channel("app_store", appAmount), channel("stripe_managed_payments", stripeAmount)],
     ...over,
   });
 }
@@ -257,7 +257,7 @@ test("a reported total is shown with both channel figures", () => {
   assert.equal(coverageSentence(view),
                `Reconciled from 2 provider reports, covering ${START} to ${CUTOFF}.`);
   assert.deepEqual(view.channels.map((c) => c.label),
-                   [CHANNEL_LABELS.app_store, CHANNEL_LABELS.lemon_squeezy]);
+                   [CHANNEL_LABELS.app_store, CHANNEL_LABELS.stripe_managed_payments]);
 });
 
 test("display names come from the module's constant, never from the payload", () => {
@@ -265,7 +265,7 @@ test("display names come from the module's constant, never from the payload", ()
     channels: [
       { id: "app_store", status: "reported", net: "566.00", as_of: CUTOFF,
         label: "jane.doe+orders@example.com" },
-      { id: "lemon_squeezy", status: "reported", net: "472.50", as_of: CUTOFF },
+      { id: "stripe_managed_payments", status: "reported", net: "472.50", as_of: CUTOFF },
     ],
   }), "channel-field", "a label field");
   assert.equal(JSON.stringify(fundingView(payload(), TODAY)).includes("example.com"), false);
@@ -296,6 +296,17 @@ test("the report count must be able to account for both evidenced channels", () 
                              TODAY);
     assert.equal(view.ok, true, `${reports} reports was refused`);
   }
+});
+
+test("legacy funding schema and Lemon channel fail closed after the Stripe migration", () => {
+  assert.equal(SCHEMA, "cliphoard.net-sales/3");
+  refuses(payload({ schema: "cliphoard.net-sales/2" }), "schema", "legacy public schema");
+  const old = payload();
+  old.channels[1].id = "lemon_squeezy";
+  assert.equal(fundingView(old, TODAY).ok, false);
+  const current = fundingView(payload(), TODAY);
+  assert.equal(current.ok, true);
+  assert.equal(current.channels[1].label, "Stripe Managed Payments");
 });
 
 test("every malformed payload yields unavailable, never a zero and never a percent", () => {
@@ -359,25 +370,25 @@ test("a numeric total is refused when either channel has no evidence", () => {
     total_net: "566.00",
     coverage: { reports: 2, start: START, end: CUTOFF },
     channels: [payload().channels[0],
-               { id: "lemon_squeezy", status: "no_reports", net: null, as_of: null }],
+               { id: "stripe_managed_payments", status: "no_reports", net: null, as_of: null }],
   }), "incomplete-channel-evidence");
 });
 
 test("a channel with no reports cannot carry a figure or a date", () => {
   refuses(absent({
     channels: [{ id: "app_store", status: "no_reports", net: "566.00", as_of: null },
-               { id: "lemon_squeezy", status: "no_reports", net: null, as_of: null }],
+               { id: "stripe_managed_payments", status: "no_reports", net: null, as_of: null }],
   }), "channel-net", "no_reports with a net");
   refuses(absent({
     channels: [{ id: "app_store", status: "no_reports", net: null, as_of: CUTOFF },
-               { id: "lemon_squeezy", status: "no_reports", net: null, as_of: null }],
+               { id: "stripe_managed_payments", status: "no_reports", net: null, as_of: null }],
   }), "channel-net", "no_reports with a date");
 });
 
 test("numeric channels must share the same as_of", () => {
   refuses(payload({
     channels: [payload().channels[0],
-               { id: "lemon_squeezy", status: "reported", net: "472.50", as_of: "2026-11-29" }],
+               { id: "stripe_managed_payments", status: "reported", net: "472.50", as_of: "2026-11-29" }],
   }), "channel-as-of");
 });
 
@@ -389,7 +400,7 @@ test("a reported channel may not carry a zero", () => {
   refuses(payload({
     total_net: "566.00",
     channels: [payload().channels[0],
-               { id: "lemon_squeezy", status: "reported", net: "0.00", as_of: CUTOFF }],
+               { id: "stripe_managed_payments", status: "reported", net: "0.00", as_of: CUTOFF }],
   }), "channel-net");
 });
 
@@ -480,7 +491,7 @@ test("a total that overflows by addition of two in-range channels is refused", (
     total_net: "999999999999.99",
     channels: [
       { id: "app_store", status: "reported", net: "999999999999.99", as_of: CUTOFF },
-      { id: "lemon_squeezy", status: "reported", net: "999999999999.99", as_of: CUTOFF },
+      { id: "stripe_managed_payments", status: "reported", net: "999999999999.99", as_of: CUTOFF },
     ],
   }), "total_net");
 });

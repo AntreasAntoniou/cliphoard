@@ -1,5 +1,5 @@
 {
-  "schema": "cliphoard.net-sales/2",
+  "schema": "cliphoard.net-sales/3",
   "status": "unavailable",
   "currency": "USD",
   "goal": "250000.00",
@@ -21,7 +21,7 @@
       "as_of": null
     },
     {
-      "id": "lemon_squeezy",
+      "id": "stripe_managed_payments",
       "status": "no_reports",
       "net": null,
       "as_of": null

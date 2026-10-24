@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python3.13
 """Structure, resolution, accessibility and truth-in-advertising checks for docs/.
 
 Five kinds of assertion, kept separate on purpose:
@@ -14,7 +14,7 @@ Five kinds of assertion, kept separate on purpose:
   * HARNESS — that `Tests/site/preview.html` is local-only, unmistakably synthetic,
     renders at the exact widths it offers, and drives the real module.
 
-Run:  python3 -m unittest discover -s Tests/site -p 'test_*.py'
+Run:  /opt/homebrew/bin/python3.13 -m unittest discover -s Tests/site -p 'test_*.py'
 """
 
 import json
@@ -587,7 +587,7 @@ class UnverifiedClaims(unittest.TestCase):
 
     def test_both_channel_rows_are_neutral(self):
         funding = section("funding")
-        for cid in ("app_store", "lemon_squeezy"):
+        for cid in ("app_store", "stripe_managed_payments"):
             row = re.search(r'<dd data-channel="%s">([^<]*)</dd>' % cid, funding)
             self.assertIsNotNone(row, "no row for %s" % cid)
             self.assertEqual(row.group(1).strip(), "Awaiting reconciled reports")
@@ -669,7 +669,7 @@ class CopyHygiene(unittest.TestCase):
 
     def test_there_is_no_purchase_link_or_store_badge_anywhere(self):
         raw = INDEX.read_text(encoding="utf-8").lower()
-        for needle in ["lemonsqueezy", "lemon-squeezy.com", "buy.stripe", "paddle.com",
+        for needle in ["lemonsqueezy", "lemon-squeezy.com", "buy.stripe", "checkout.stripe.com", "paddle.com",
                        "apps.apple.com", "itunes.apple.com", "app-store-badge",
                        "gumroad", "paypal", "github.com/sponsors", "patreon",
                        "buymeacoffee", "ko-fi"]:
