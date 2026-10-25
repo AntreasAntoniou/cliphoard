@@ -28,7 +28,7 @@ function validatePrice(price, cfg, active = false) {
   need(price?.object === "price" && price.id === cfg.priceId && objectId(price.product) === cfg.productId &&
     price.livemode === cfg.live && price.type === "one_time" && price.recurring === null &&
     price.currency === cfg.currency && price.unit_amount === cfg.unitAmount && price.billing_scheme === "per_unit" &&
-    price.tax_behavior === "exclusive" && price.custom_unit_amount === null && price.transform_quantity === null &&
+    price.tax_behavior === cfg.taxBehavior && price.custom_unit_amount === null && price.transform_quantity === null &&
     (!active || price.active === true), 409, "unconfigured_price");
 }
 export async function verifyAccount(stripe, cfg, forCheckout = false) {
@@ -50,9 +50,10 @@ async function itemsFor(stripe, session, cfg) {
   need(items?.object === "list" && items.has_more === false && Array.isArray(items.data) && items.data.length === 1,
     409, "unsupported_line_items");
   const item = items.data[0]; validatePrice(item.price, cfg);
-  need(item.quantity === 1 && item.currency === cfg.currency && item.amount_subtotal === cfg.unitAmount &&
-    item.amount_discount === 0 && integer(item.amount_tax) && item.amount_total === cfg.unitAmount + item.amount_tax &&
-    session.amount_subtotal === cfg.unitAmount && session.amount_total === item.amount_total &&
+  need(item.quantity === 1 && item.currency === cfg.currency && integer(item.amount_subtotal) &&
+    item.amount_discount === 0 && integer(item.amount_tax) && item.amount_total === cfg.unitAmount &&
+    item.amount_subtotal + item.amount_tax === cfg.unitAmount &&
+    session.amount_subtotal === item.amount_subtotal && session.amount_total === item.amount_total &&
     session.total_details?.amount_discount === 0 && session.total_details?.amount_shipping === 0 &&
     session.total_details?.amount_tax === item.amount_tax, 409, "amount_or_quantity_mismatch");
 }

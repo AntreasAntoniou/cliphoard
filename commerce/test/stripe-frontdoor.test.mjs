@@ -24,7 +24,7 @@ test("front door has truthful enabled purchase copy, Free path and hashed inline
   f.env.CANCEL_URL = f.env.PUBLIC_ORIGIN + "/?cancelled=1";
   const response = await createStripeWorker(() => { throw new Error("No provider call expected"); }).fetch(new Request(f.env.PUBLIC_ORIGIN + "/"), f.env);
   assert.equal(response.status, 200); const html = await response.text(), csp = response.headers.get("Content-Security-Policy");
-  for (const text of ["US$10", "one-time", "applicable taxes", "direct-download", "offline", "Free", "Store edition", 'id="checkout"']) assert.ok(html.includes(text), text);
+  for (const text of ["£10", "one-time", "including tax", "direct-download", "offline", "Free", "Store edition", 'id="checkout"']) assert.ok(html.includes(text), text);
   for (const tag of ["script", "style"]) {
     const content = new RegExp(`<${tag}>([\\s\\S]+?)</${tag}>`).exec(html)?.[1]; assert.ok(content);
     assert.ok(csp.includes(`'sha256-${createHash("sha256").update(content).digest("base64")}'`));
@@ -102,4 +102,13 @@ test("client rejects hostile redirects and restores controls when returning from
   const f = clientFixture(); checkoutPageClient(f.runtime); await f.click();
   f.events.get("pageshow")({ persisted: true }); assert.equal(f.button.disabled, false); assert.match(f.button.textContent, /Continue/);
   f.appearance.value = "dark"; f.appearance.listeners.change(); assert.equal(f.runtime.document.documentElement.dataset.appearance, "dark");
+});
+
+test("front door refuses a configuration that disagrees with the advertised GBP price", async () => {
+  for (const override of [{ STRIPE_CURRENCY: "usd" }, { STRIPE_UNIT_AMOUNT: "1200" }]) {
+    const f = await fixture(); wireOrders(f); f.env.STRIPE_API_KEY = "rk_test_synthetic0123456789012345";
+    Object.assign(f.env, override);
+    const html = await (await createStripeWorker().fetch(new Request(f.env.PUBLIC_ORIGIN + "/"), f.env)).text();
+    assert.match(html, /Purchases are not available yet/); assert.ok(!html.includes('id="checkout"'));
+  }
 });

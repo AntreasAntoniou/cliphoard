@@ -19,7 +19,7 @@ test("paid Stripe order produces stable offline CLIP1, encrypted recovery and na
   assert.equal(f.stripe.form["managed_payments[enabled]"], "true");
   assert.equal(f.stripe.form["line_items[0][quantity]"], "1");
   assert.equal(f.stripe.form.mode, "payment");
-  assert.equal(f.stripe.form.currency, "usd");
+  assert.equal(f.stripe.form.currency, "gbp");
   assert.equal(f.stripe.form.ui_mode, "hosted_page");
   for (const unsupported of ["automatic_tax", "adaptive_pricing", "payment_method_types", "invoice_creation"]) assert.ok(!Object.keys(f.stripe.form).some((k) => k.startsWith(unsupported)));
   await f.service().paid(f.ref, f.stripe.s.id);
@@ -39,7 +39,7 @@ test("delayed payment completion cannot issue until server reports paid", async 
 });
 test("manual currency options cannot change the explicitly submitted integration currency", async () => {
   const f = await fixture(); f.stripe.p.currency_options = { eur: { unit_amount: 900 } };
-  await f.service().start(f.ref); assert.equal(f.stripe.form.currency, "usd");
+  await f.service().start(f.ref); assert.equal(f.stripe.form.currency, "gbp");
 });
 test("refund before issue and late paid replay never issue or email", async () => {
   const f = await fixture(); await f.service().start(f.ref); f.stripe.pay();
@@ -255,4 +255,39 @@ test("API client suppresses upstream secrets/errors, bounds responses and does n
     await assert.rejects(() => client.createCheckout({ mode: "payment" }, "synthetic-key"), { code: "stripe_unavailable" });
   }
   assert.equal(requests, 1);
+});
+
+for (const tax of [0, 167, 200]) test(`GBP inclusive payment keeps the total at £10 with tax ${tax}`, async () => {
+  const f = await fixture(); await f.service().start(f.ref);
+  f.stripe.s.amount_subtotal = 1000 - tax; f.stripe.s.total_details.amount_tax = tax;
+  f.stripe.items.data[0].amount_subtotal = 1000 - tax; f.stripe.items.data[0].amount_tax = tax;
+  f.stripe.pay(); assert.equal((await f.service().paid(f.ref, f.stripe.s.id)).result, "issued");
+  assert.equal(f.stripe.pi.amount, 1000); assert.equal(f.stripe.ch.amount_captured, 1000);
+});
+test("exclusive tax price is refused before creating a payable session", async () => {
+  const f = await fixture(); f.stripe.p.tax_behavior = "exclusive";
+  await assert.rejects(() => f.service().start(f.ref), { code: "unconfigured_price" });
+  assert.equal(f.stripe.creates, 0); assert.equal(f.storage.writes, 0);
+});
+for (const [label, change] of [
+  ["tax added on top", f => { f.stripe.s.amount_subtotal = 1000; f.stripe.s.amount_total = 1167; f.stripe.items.data[0].amount_subtotal = 1000; f.stripe.items.data[0].amount_total = 1167; }],
+  ["negative tax", f => { f.stripe.s.total_details.amount_tax = -1; f.stripe.items.data[0].amount_tax = -1; }],
+  ["fractional tax", f => { f.stripe.s.total_details.amount_tax = 167.5; f.stripe.items.data[0].amount_tax = 167.5; }],
+  ["tax exceeds total", f => { f.stripe.s.total_details.amount_tax = 1001; f.stripe.items.data[0].amount_tax = 1001; }],
+  ["subtotal mismatch", f => { f.stripe.items.data[0].amount_subtotal = 834; }],
+  ["session subtotal mismatch", f => { f.stripe.s.amount_subtotal = 834; }],
+  ["line item uses USD", f => { f.stripe.items.data[0].currency = "usd"; }],
+  ["price uses USD", f => { f.stripe.items.data[0].price.currency = "usd"; }],
+]) test(`inclusive settlement rejects ${label}`, async () => {
+  const f = await fixture(); await f.service().start(f.ref); f.stripe.pay(); change(f);
+  await assert.rejects(() => f.service().paid(f.ref, f.stripe.s.id));
+  assert.equal((await f.storage.get("order")).licence, null); assert.equal(f.sent.length, 0);
+});
+
+test("pre-inclusive stored orders cannot be silently reinterpreted", async () => {
+  const f = await issued(), old = await f.storage.get("order"), scope = JSON.parse(old.scope);
+  scope.schema = 1; delete scope.taxBehavior; old.scope = JSON.stringify(scope);
+  await f.storage.put("order", old);
+  await assert.rejects(() => f.service().claim(f.ref, f.token()), { code: "stored_order_invalid" });
+  assert.deepEqual(await f.storage.get("order"), old);
 });

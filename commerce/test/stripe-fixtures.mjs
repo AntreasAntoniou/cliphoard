@@ -14,7 +14,7 @@ export async function fixture() {
   const keys = await syntheticKeys(), sent = [], alarms = [], storage = new Storage();
   const env = {
     STRIPE_ACCOUNT_ID: "acct_TestAccount", STRIPE_MODE: "test", STRIPE_PRODUCT_ID: "prod_Cliphoard",
-    STRIPE_PRICE_ID: "price_Pro", STRIPE_CURRENCY: "usd", STRIPE_UNIT_AMOUNT: "1000",
+    STRIPE_PRICE_ID: "price_Pro", STRIPE_CURRENCY: "gbp", STRIPE_UNIT_AMOUNT: "1000",
     PUBLIC_ORIGIN: "https://purchase.example", CANCEL_URL: "https://purchase.example/?cancelled=1",
     DOWNLOAD_URL: "https://download.example/cliphoard.dmg", CHECKOUT_ENABLED: "true",
     ISSUANCE_ENABLED: "true", DELIVERY_ENABLED: "true", EMAIL_DELIVERY_ENABLED: "true",
@@ -35,8 +35,8 @@ export class FakeStripe {
     this.env = env; this.calls = []; this.creates = 0; this.s = null; this.refundRows = [];
     this.a = { object: "account", id: env.STRIPE_ACCOUNT_ID, charges_enabled: true, details_submitted: true };
     this.p = { object: "price", id: env.STRIPE_PRICE_ID, product: env.STRIPE_PRODUCT_ID, livemode: false,
-      type: "one_time", recurring: null, currency: "usd", unit_amount: 1000, billing_scheme: "per_unit",
-      tax_behavior: "exclusive", custom_unit_amount: null, transform_quantity: null, active: true };
+      type: "one_time", recurring: null, currency: "gbp", unit_amount: 1000, billing_scheme: "per_unit",
+      tax_behavior: "inclusive", custom_unit_amount: null, transform_quantity: null, active: true };
   }
   async account() { this.calls.push("account"); return structuredClone(this.a); }
   async price() { return structuredClone(this.p); }
@@ -47,21 +47,21 @@ export class FakeStripe {
     this.s = { object: "checkout.session", id: "cs_test_Session1", livemode: false, mode: "payment", ui_mode: "hosted_page",
       managed_payments: { enabled: true }, metadata: { cliphoard_order: form.client_reference_id, fulfilment: "cliphoard-stripe-v1" },
       client_reference_id: form.client_reference_id, payment_link: null, subscription: null, recovered_from: null,
-      created: Number(form.expires_at) - 3600, currency: "usd", status: "open", payment_status: "unpaid", payment_intent: null,
-      success_url: form.success_url, cancel_url: form.cancel_url, amount_subtotal: 1000, amount_total: 1200,
-      total_details: { amount_discount: 0, amount_shipping: 0, amount_tax: 200 },
+      created: Number(form.expires_at) - 3600, currency: "gbp", status: "open", payment_status: "unpaid", payment_intent: null,
+      success_url: form.success_url, cancel_url: form.cancel_url, amount_subtotal: 833, amount_total: 1000,
+      total_details: { amount_discount: 0, amount_shipping: 0, amount_tax: 167 },
       url: "https://checkout.stripe.com/c/pay/cs_test_Session1", customer_details: { email: "synthetic-buyer@example.invalid" } };
     this.items = { object: "list", has_more: false, data: [{ object: "item", id: "li_Test1", price: structuredClone(this.p),
-      quantity: 1, currency: "usd", amount_subtotal: 1000, amount_total: 1200, amount_discount: 0, amount_tax: 200 }] };
+      quantity: 1, currency: "gbp", amount_subtotal: 833, amount_total: 1000, amount_discount: 0, amount_tax: 167 }] };
     return structuredClone(this.s);
   }
   pay() {
     this.s.status = "complete"; this.s.payment_status = "paid"; this.s.payment_intent = "pi_Payment1";
     this.pi = { object: "payment_intent", id: "pi_Payment1", livemode: false, managed_payments: { enabled: true },
-      metadata: structuredClone(this.s.metadata), currency: "usd", amount: 1200, amount_received: 1200,
+      metadata: structuredClone(this.s.metadata), currency: "gbp", amount: 1000, amount_received: 1000,
       status: "succeeded", latest_charge: "ch_Charge1" };
-    this.ch = { object: "charge", id: "ch_Charge1", livemode: false, payment_intent: "pi_Payment1", currency: "usd",
-      status: "succeeded", paid: true, captured: true, amount: 1200, amount_captured: 1200,
+    this.ch = { object: "charge", id: "ch_Charge1", livemode: false, payment_intent: "pi_Payment1", currency: "gbp",
+      status: "succeeded", paid: true, captured: true, amount: 1000, amount_captured: 1000,
       amount_refunded: 0, refunded: false, disputed: false };
   }
   async session(id) { this.calls.push("session"); if (id !== this.s?.id) throw new Error("missing session"); return structuredClone(this.s); }

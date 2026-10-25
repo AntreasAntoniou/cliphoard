@@ -115,9 +115,9 @@ export function config(env) {
     cancel.pathname === "/" && !cancel.hash &&
     (!cancel.search || (cancel.searchParams.size === 1 && cancel.searchParams.get("cancelled") === "1")), 503, "configuration_unavailable");
   const scope = {
-    schema: 1, provider: "stripe", apiVersion: API_VERSION, accountId: env.STRIPE_ACCOUNT_ID,
+    schema: 2, provider: "stripe", apiVersion: API_VERSION, accountId: env.STRIPE_ACCOUNT_ID,
     mode: env.STRIPE_MODE, productId: env.STRIPE_PRODUCT_ID, priceId: env.STRIPE_PRICE_ID,
-    currency: env.STRIPE_CURRENCY, unitAmount: Number(env.STRIPE_UNIT_AMOUNT),
+    currency: env.STRIPE_CURRENCY, unitAmount: Number(env.STRIPE_UNIT_AMOUNT), taxBehavior: "inclusive",
     publicKey: env.EXPECTED_PUBLIC_KEY_HEX, origin: origin.origin,
   };
   return { ...scope, scope: JSON.stringify(scope), download: download.href, cancel: cancel.href, live: env.STRIPE_MODE === "live" };

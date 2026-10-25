@@ -489,7 +489,7 @@ class PurchaseAndSupport(unittest.TestCase):
     def test_both_pro_routes_are_explicitly_unavailable_and_separate(self):
         text = visible(section("pro"))
         for phrase in ("pro purchasing is being prepared", "one-time purchase", "no subscription",
-                       "direct download · us$10 + tax", "stripe", "licence key by email",
+                       "direct download · £10 including tax", "stripe", "licence key by email",
                        "settings → cliphoard pro", "verify", "checkout coming soon",
                        "app store release coming soon", "restore purchases",
                        "direct licence keys and app store purchases are separate"):
