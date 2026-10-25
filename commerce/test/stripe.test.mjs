@@ -257,10 +257,25 @@ test("API client suppresses upstream secrets/errors, bounds responses and does n
   assert.equal(requests, 1);
 });
 
-for (const tax of [0, 167, 200]) test(`GBP inclusive payment keeps the total at £10 with tax ${tax}`, async () => {
+test("recorded Stripe inclusive amounts remain pending until a verified payment", async () => {
   const f = await fixture(); await f.service().start(f.ref);
-  f.stripe.s.amount_subtotal = 1000 - tax; f.stripe.s.total_details.amount_tax = tax;
-  f.stripe.items.data[0].amount_subtotal = 1000 - tax; f.stripe.items.data[0].amount_tax = tax;
+  // Observed in the 2026-09-30.endive test API: the inclusive subtotal is
+  // 1000, not the 833 tax-exclusive component. This is still an unpaid order.
+  f.stripe.s.amount_subtotal = 1000; f.stripe.s.amount_total = 1000;
+  f.stripe.s.total_details.amount_tax = 167;
+  Object.assign(f.stripe.items.data[0], { amount_subtotal: 1000, amount_tax: 167, amount_total: 1000 });
+  assert.equal((await f.service().paid(f.ref, f.stripe.s.id)).result, "payment_pending");
+  assert.equal((await f.storage.get("order")).licence, null); assert.equal(f.sent.length, 0);
+  // Payment below is synthetic; the real response used for this regression
+  // was open/unpaid and cannot establish a provider purchase or delivery.
+  f.stripe.pay(); assert.equal((await f.service().paid(f.ref, f.stripe.s.id)).result, "issued");
+  assert.equal((await f.service().claim(f.ref, f.token())).result, "ready");
+});
+
+for (const tax of [0, 167, 200, 1000]) test(`GBP inclusive payment keeps the total at £10 with tax ${tax}`, async () => {
+  const f = await fixture(); await f.service().start(f.ref);
+  f.stripe.s.total_details.amount_tax = tax; f.stripe.items.data[0].amount_tax = tax;
+  assert.equal(f.stripe.s.amount_subtotal, 1000); assert.equal(f.stripe.items.data[0].amount_subtotal, 1000);
   f.stripe.pay(); assert.equal((await f.service().paid(f.ref, f.stripe.s.id)).result, "issued");
   assert.equal(f.stripe.pi.amount, 1000); assert.equal(f.stripe.ch.amount_captured, 1000);
 });
@@ -273,9 +288,14 @@ for (const [label, change] of [
   ["tax added on top", f => { f.stripe.s.amount_subtotal = 1000; f.stripe.s.amount_total = 1167; f.stripe.items.data[0].amount_subtotal = 1000; f.stripe.items.data[0].amount_total = 1167; }],
   ["negative tax", f => { f.stripe.s.total_details.amount_tax = -1; f.stripe.items.data[0].amount_tax = -1; }],
   ["fractional tax", f => { f.stripe.s.total_details.amount_tax = 167.5; f.stripe.items.data[0].amount_tax = 167.5; }],
+  ["string tax", f => { f.stripe.s.total_details.amount_tax = "167"; f.stripe.items.data[0].amount_tax = "167"; }],
   ["tax exceeds total", f => { f.stripe.s.total_details.amount_tax = 1001; f.stripe.items.data[0].amount_tax = 1001; }],
+  ["Session/line tax disagreement", f => { f.stripe.s.total_details.amount_tax = 166; }],
+  ["net subtotal convention", f => { f.stripe.s.amount_subtotal = 833; f.stripe.items.data[0].amount_subtotal = 833; }],
   ["subtotal mismatch", f => { f.stripe.items.data[0].amount_subtotal = 834; }],
   ["session subtotal mismatch", f => { f.stripe.s.amount_subtotal = 834; }],
+  ["line discount", f => { f.stripe.items.data[0].amount_discount = 1; }],
+  ["shipping", f => { f.stripe.s.total_details.amount_shipping = 1; }],
   ["line item uses USD", f => { f.stripe.items.data[0].currency = "usd"; }],
   ["price uses USD", f => { f.stripe.items.data[0].price.currency = "usd"; }],
 ]) test(`inclusive settlement rejects ${label}`, async () => {

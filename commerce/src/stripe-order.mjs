@@ -50,9 +50,11 @@ async function itemsFor(stripe, session, cfg) {
   need(items?.object === "list" && items.has_more === false && Array.isArray(items.data) && items.data.length === 1,
     409, "unsupported_line_items");
   const item = items.data[0]; validatePrice(item.price, cfg);
-  need(item.quantity === 1 && item.currency === cfg.currency && integer(item.amount_subtotal) &&
-    item.amount_discount === 0 && integer(item.amount_tax) && item.amount_total === cfg.unitAmount &&
-    item.amount_subtotal + item.amount_tax === cfg.unitAmount &&
+  // With an inclusive price and no discounts, Stripe's subtotal already
+  // contains the tax component. Adding amount_tax would count it twice.
+  need(item.quantity === 1 && item.currency === cfg.currency && item.amount_subtotal === cfg.unitAmount &&
+    item.amount_discount === 0 && integer(item.amount_tax) && item.amount_tax <= cfg.unitAmount &&
+    item.amount_total === cfg.unitAmount &&
     session.amount_subtotal === item.amount_subtotal && session.amount_total === item.amount_total &&
     session.total_details?.amount_discount === 0 && session.total_details?.amount_shipping === 0 &&
     session.total_details?.amount_tax === item.amount_tax, 409, "amount_or_quantity_mismatch");

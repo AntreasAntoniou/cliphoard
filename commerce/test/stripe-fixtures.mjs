@@ -48,11 +48,11 @@ export class FakeStripe {
       managed_payments: { enabled: true }, metadata: { cliphoard_order: form.client_reference_id, fulfilment: "cliphoard-stripe-v1" },
       client_reference_id: form.client_reference_id, payment_link: null, subscription: null, recovered_from: null,
       created: Number(form.expires_at) - 3600, currency: "gbp", status: "open", payment_status: "unpaid", payment_intent: null,
-      success_url: form.success_url, cancel_url: form.cancel_url, amount_subtotal: 833, amount_total: 1000,
+      success_url: form.success_url, cancel_url: form.cancel_url, amount_subtotal: 1000, amount_total: 1000,
       total_details: { amount_discount: 0, amount_shipping: 0, amount_tax: 167 },
       url: "https://checkout.stripe.com/c/pay/cs_test_Session1", customer_details: { email: "synthetic-buyer@example.invalid" } };
     this.items = { object: "list", has_more: false, data: [{ object: "item", id: "li_Test1", price: structuredClone(this.p),
-      quantity: 1, currency: "gbp", amount_subtotal: 833, amount_total: 1000, amount_discount: 0, amount_tax: 167 }] };
+      quantity: 1, currency: "gbp", amount_subtotal: 1000, amount_total: 1000, amount_discount: 0, amount_tax: 167 }] };
     return structuredClone(this.s);
   }
   pay() {
