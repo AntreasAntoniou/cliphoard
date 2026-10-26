@@ -2,6 +2,8 @@
 name = "cliphoard-stripe-fulfilment"
 main = "src/stripe-worker.mjs"
 compatibility_date = "2026-07-01"
+# The inline browser client is serialized from a function; keep it self-contained.
+keep_names = false
 workers_dev = false
 preview_urls = false
 

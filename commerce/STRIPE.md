@@ -46,6 +46,8 @@ For webhook failures, inspect Stripe's delivery status and resend the original e
 
 Prepare separate test/live deployments, Durable Object namespaces, webhook signing secrets, encryption keys and rate-limit namespaces. Use synthetic signing keys in test. Keep production purchases disabled until the rehearsal below passes. Do not reuse or route over the existing Lemon claim path; choose a dedicated approved origin or an explicitly reviewed route migration.
 
+Keep the template's top-level `keep_names = false` setting in both test and live Wrangler configurations. The front door serializes its self-contained browser client with `Function.toString()`. Wrangler 4.151.1 otherwise inserts function-name helpers whose `__name` reference is unavailable inside the browser script, breaking appearance and checkout controls. Before deployment, validate the inline script from a freshly emitted Worker bundle in an isolated browser-like runtime, including appearance and same-attempt retry behavior; source-module tests alone do not cover this bundling boundary.
+
 | Configuration | Requirement |
 | --- | --- |
 | `STRIPE_ACCOUNT_ID`, `STRIPE_MODE` | Exact account ID and literal `test` or `live`. |
