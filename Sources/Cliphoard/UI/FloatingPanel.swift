@@ -62,6 +62,7 @@ final class FloatingPanel: NSPanel {
     /// True only while the bar is fully presented and NOT animating. Both `fit`
     /// and the bottom re-anchor are gated on it so neither fights the slide.
     private var isSettled = false
+    private var presentationRevision: UInt64 = 0
 
     init() {
         super.init(
@@ -202,6 +203,8 @@ final class FloatingPanel: NSPanel {
     /// Slide the bar up from below the screen edge.
     func slideIn() {
         guard let screen = targetScreen() else { return }
+        presentationRevision &+= 1
+        let revision = presentationRevision
         isSettled = false
         presentedScreen = screen
         let visible = screen.visibleFrame
@@ -220,7 +223,7 @@ final class FloatingPanel: NSPanel {
             ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
             animator().setFrame(onScreen, display: true)
         }, completionHandler: { [weak self] in
-            guard let self else { return }
+            guard let self, self.presentationRevision == revision else { return }
             self.isSettled = true
             self.fit()
             self.startFitting()
@@ -228,6 +231,8 @@ final class FloatingPanel: NSPanel {
     }
 
     func slideOut(completion: (() -> Void)? = nil) {
+        presentationRevision &+= 1
+        let revision = presentationRevision
         isSettled = false
         stopFitting()
         // The screen the bar came up on, NOT the one under the mouse now.
@@ -240,10 +245,21 @@ final class FloatingPanel: NSPanel {
             ctx.timingFunction = CAMediaTimingFunction(name: .easeIn)
             animator().setFrame(offScreen, display: true)
         }, completionHandler: {
+            guard self.presentationRevision == revision else { return }
             self.orderOut(nil)
             self.presentedScreen = nil
             completion?()
         })
+    }
+
+    /// Settings has its own regular window. Suspend the bar without restoring the
+    /// previous app or leaving its fitting timer running behind the new window.
+    func suspendForSettings() {
+        presentationRevision &+= 1
+        isSettled = false
+        stopFitting()
+        orderOut(nil)
+        presentedScreen = nil
     }
 
     /// The screen containing the mouse, falling back to the main screen. Used to
@@ -256,6 +272,85 @@ final class FloatingPanel: NSPanel {
     override func resignKey() {
         super.resignKey()
         onResignKey?()
+    }
+}
+
+/// A normal, resizable window gives StoreKit and file panels a stable, generously
+/// sized parent. It never participates in the bar's 30 Hz content fitting or its
+/// hide-on-resign behavior, so system authentication may safely take key focus.
+@MainActor
+final class SettingsWindowController: NSWindowController, NSWindowDelegate {
+    nonisolated static let preferredSize = NSSize(width: 980, height: 900)
+    nonisolated static let minimumSize = NSSize(width: 640, height: 480)
+    var onClose: (() -> Void)?
+    var canClose: () -> Bool = { true }
+    private var hasPresented = false
+
+    init() {
+        let window = NSWindow(contentRect: NSRect(origin: .zero, size: Self.preferredSize),
+                              styleMask: [.titled, .closable, .miniaturizable, .resizable],
+                              backing: .buffered, defer: false)
+        window.title = "Cliphoard Settings"
+        window.isReleasedWhenClosed = false
+        window.level = .normal
+        window.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
+        super.init(window: window)
+        window.delegate = self
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    /// Full window frame, including titlebar. Coordinates may be negative on a
+    /// secondary display. Small screens win over the usual minimum dimensions.
+    static func settingsFrame(visible: NSRect, preferred: NSSize = preferredSize) -> NSRect {
+        guard visible.width > 1, visible.height > 1 else { return .zero }
+        let width = min(max(preferred.width, minimumSize.width), visible.width * 0.94)
+        let height = min(max(preferred.height, minimumSize.height), visible.height * 0.94)
+        return NSRect(x: visible.midX - width / 2, y: visible.midY - height / 2,
+                      width: width, height: height)
+    }
+
+    func present<Content: View>(on screen: NSScreen?, @ViewBuilder content: () -> Content) {
+        guard let window, let screen = screen ?? NSScreen.main else { return }
+        guard screen.visibleFrame.width > 1, screen.visibleFrame.height > 1 else { return }
+        window.minSize = NSSize(width: min(Self.minimumSize.width, screen.visibleFrame.width * 0.94),
+                                height: min(Self.minimumSize.height, screen.visibleFrame.height * 0.94))
+        if window.isMiniaturized { window.deminiaturize(nil) }
+        if window.contentViewController == nil {
+            let host = NSHostingController(rootView: content())
+            // Settings scrolls within a user-sized window; intrinsic content must
+            // never grow it to the height of the entire form.
+            host.sizingOptions = []
+            host.view.autoresizingMask = [.width, .height]
+            window.contentViewController = host
+            let frame = Self.settingsFrame(visible: screen.visibleFrame,
+                                           preferred: hasPresented ? window.frame.size : Self.preferredSize)
+            guard frame != .zero else { return }
+            window.setFrame(frame, display: false)
+            hasPresented = true
+        }
+        // Reopening an existing window after changing displays must also fit the
+        // current screen. Preserve a user resize when it still fits.
+        if !screen.visibleFrame.contains(window.frame) {
+            window.setFrame(Self.settingsFrame(visible: screen.visibleFrame, preferred: window.frame.size),
+                            display: false)
+        }
+        NSApp.activate(ignoringOtherApps: true)
+        window.makeKeyAndOrderFront(nil)
+    }
+
+    func dismiss() {
+        window?.orderOut(nil)
+        window?.contentViewController = nil
+    }
+
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        canClose() && sender.attachedSheet == nil
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        window?.contentViewController = nil
+        onClose?()
     }
 }
 

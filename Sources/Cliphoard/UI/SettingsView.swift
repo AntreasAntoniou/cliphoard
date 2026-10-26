@@ -343,14 +343,42 @@ final class AppSettings: ObservableObject {
     }
 }
 
-/// The settings surface shown *inside* the bar (toggled from the toolbar gear).
+struct SettingsWindowContent: View {
+    @ObservedObject var store: ClipStore
+    @ObservedObject var model: PanelViewModel
+    @StateObject private var settings: AppSettings
+
+    init(store: ClipStore, model: PanelViewModel) {
+        self.store = store
+        self.model = model
+        _settings = StateObject(wrappedValue: AppSettings(store: store))
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            SettingsView(settings: settings, store: store, model: model)
+            Divider()
+            HStack {
+                Text("esc Close Settings")
+                Spacer()
+                Text("⌘Q Quit Cliphoard")
+            }
+            .font(.system(size: 11)).foregroundStyle(.secondary)
+            .padding(.horizontal, 24).padding(.vertical, 10)
+        }
+        .background(Theme.barBackground())
+        .tint(Theme.accent)
+        .preferredColorScheme(Theme.t.scheme)
+        .fontDesign(Theme.t.fontDesign)
+    }
+}
+
+/// The scrollable contents of the dedicated Settings window.
 struct SettingsView: View {
     @ObservedObject var settings: AppSettings
     @ObservedObject var store: ClipStore
-    /// The bar's view model. Settings is rendered IN-BAR, so the host window is the
-    /// floating panel and `onResignKey` hides the whole thing the moment an NSOpenPanel,
-    /// NSSavePanel or NSAlert takes key. Every system window opened from here therefore
-    /// needs `isPresentingSystemPanel`, and this view had no way to reach it.
+    /// Shared modal ownership keeps the global shortcut from dismissing a file picker
+    /// and returns focus to the Settings window when a system panel closes.
     var model: PanelViewModel?
     /// Owns the import scan/preview/commit flow. StateObject rather than a plain
     /// property so a preview survives the view re-rendering while the user reads it.
@@ -376,8 +404,7 @@ struct SettingsView: View {
     ]
 
     var body: some View {
-        ScrollView(.vertical, showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 16) {
+        SettingsForm {
                 section("General") {
                     Toggle("Launch at login", isOn: $settings.launchAtLogin)
                     HStack {
@@ -427,10 +454,8 @@ struct SettingsView: View {
                     HStack {
                         Button("Restore Purchases") { Task { await purchase.restore() } }
                             .disabled(purchase.isPresentingSystemSheet)
-                        if purchase.product == nil {
-                            Button("Reload App Store price") { Task { await purchase.loadProduct() } }
-                                .disabled(purchase.loadingProduct || purchase.isPresentingSystemSheet)
-                        }
+                        Button("Reload App Store price") { Task { await purchase.loadProduct() } }
+                            .disabled(purchase.loadingProduct || purchase.isPresentingSystemSheet)
                         if purchase.isPresentingSystemSheet { ProgressView().controlSize(.small) }
                     }
                     .controlSize(.small)
@@ -819,14 +844,13 @@ struct SettingsView: View {
 #endif
                     Toggle("Debug logging", isOn: $settings.debugLogging)
                 }
-            }
-            .padding(.horizontal, 24)
-            .padding(.vertical, 16)
-            .frame(maxWidth: 820, alignment: .leading)
-            .frame(maxWidth: .infinity)
         }
-        .frame(maxHeight: .infinity)
         .onAppear { excludedApps.reload() }
+#if APP_STORE
+        // The singleton owns the price request; closing this view must not cancel
+        // a coalesced request that a storefront update is also waiting on.
+        .onAppear { Task { await purchase.loadProduct() } }
+#endif
 #if !APP_STORE
         .onReceive(axTimer) { _ in settings.refreshAXTrust() }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
@@ -902,25 +926,13 @@ struct SettingsView: View {
     }
 
     private var averageAutomaticTags: Double {
-        let signature = EmbedderProvider.active.signature
-        let counts = store.items
-            .filter { $0.embeddings[signature] != nil }
-            .map { store.tags(of: $0).count }
-        guard !counts.isEmpty else { return 0 }
-        return Double(counts.reduce(0, +)) / Double(counts.count)
+        SettingsTagSummary.average(items: store.items, tagIndex: store.tagIndex,
+                                   signature: EmbedderProvider.active.signature)
     }
 
-    @ViewBuilder
-    private func section<Content: View>(_ title: String, @ViewBuilder _ content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(title.uppercased())
-                .font(.system(size: 10, weight: .bold))
-                .foregroundStyle(.secondary)   // was .tertiary — too dim on the panel material
-            VStack(alignment: .leading, spacing: 10) { content() }
-                .padding(12)
-                .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 10))
-        }
-        .font(.system(size: 13))
+    private func section<Content: View>(_ title: String,
+                                       @ViewBuilder _ content: @escaping () -> Content) -> some View {
+        SettingsSection(title: title, content: content)
     }
 
     private func keycap(_ text: String) -> some View {
@@ -954,4 +966,53 @@ struct SettingsView: View {
         return "\(b.dimensions.count) axes × 8 + \(b.topical.count) topical tags — weak matches stay blank."
     }
 
+}
+
+/// Uses the already maintained tag index. Reclassifying every vector from a SwiftUI
+/// body made opening Settings and every settings update scale with model dimensions
+/// times vocabulary size times history length. The denominator retains the previous
+/// meaning: clips with a vector for the active model, including those with zero tags.
+enum SettingsTagSummary {
+    static func average(items: [ClipItem], tagIndex: [Int: [ClipItem]], signature: String) -> Double {
+        let embeddedCount = items.reduce(into: 0) { count, item in
+            if item.embeddings[signature] != nil { count += 1 }
+        }
+        guard embeddedCount > 0 else { return 0 }
+        let assignments = tagIndex.values.reduce(0) { $0 + $1.count }
+        return Double(assignments) / Double(embeddedCount)
+    }
+}
+
+/// Separate section views are essential: a LazyVStack alone still evaluates an
+/// eagerly built section's content closure in SettingsView.body.
+struct SettingsSection<Content: View>: View {
+    let title: String
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title.uppercased())
+                .font(.system(size: 10, weight: .bold))
+                .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 10) { content() }
+                .padding(12)
+                .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 10))
+        }
+        .font(.system(size: 13))
+    }
+}
+
+struct SettingsForm<Content: View>: View {
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        ScrollView(.vertical, showsIndicators: true) {
+            LazyVStack(alignment: .leading, spacing: 16, content: content)
+                .padding(.horizontal, 24)
+                .padding(.vertical, 16)
+                .frame(maxWidth: 900, alignment: .leading)
+                .frame(maxWidth: .infinity)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
 }

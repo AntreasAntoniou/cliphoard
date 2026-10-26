@@ -34,6 +34,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private lazy var model = PanelViewModel(store: store)
     private let pasteStatus = PasteStatus()
     private let panel = FloatingPanel()
+    private let settingsWindow = SettingsWindowController()
+    private var returnToHistoryAfterSettings = false
     private let inspector = InspectorWindowController()
     private let hotKey = HotKey()
 
@@ -101,7 +103,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         CFNotificationCenterAddObserver(center, ctx, { _, observer, _, _, _ in
             guard let observer else { return }
             let me = Unmanaged<AppDelegate>.fromOpaque(observer).takeUnretainedValue()
-            DispatchQueue.main.async { if !me.isVisible { me.show() }; me.model.showSettings = true }
+            DispatchQueue.main.async { me.openSettings() }
         }, "io.antreas.cliphoard.opensettings" as CFString, nil, .deliverImmediately)
         #endif
     }
@@ -196,6 +198,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let menu = statusMenu
         menu.removeAllItems()
         menu.addItem(withTitle: "Open Cliphoard  (⌃⌥⌘V)", action: #selector(toggle), keyEquivalent: "")
+        menu.addItem(withTitle: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
         menu.addItem(.separator())
 
         let limitItem = NSMenuItem(title: "History Limit", action: nil, keyEquivalent: "")
@@ -258,6 +261,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         model.onClose = { [weak self] in self?.hide(paste: false) }
         model.onCopy = { [weak self] item in self?.copyToClipboard(item) }
         model.onFileVerb = { [weak self] item, verb in self?.perform(verb, on: item) }
+        model.onSettingsChange = { [weak self] showing in
+            if showing { self?.presentSettings() } else { self?.dismissSettings() }
+        }
+        settingsWindow.onClose = { [weak self] in self?.model.showSettings = false }
+        settingsWindow.canClose = { [weak self] in self?.canDismissSettings ?? true }
+        #if APP_STORE
+        // Every upsell (including one in the history bar) presents StoreKit from
+        // the same regular window, never whichever short panel happens to be key.
+        StorePurchase.shared.presentationWindow = { [weak self] in
+            guard let self else { return nil }
+            self.openSettings()
+            return self.settingsWindow.window
+        }
+        #endif
         // StoreKit's purchase/restore sheet joins the inspector and file picker as a
         // key-window transition that must leave the underlying panel visible.
         panel.onResignKey = { [weak self] in
@@ -275,7 +292,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             self.hide(paste: false)
         }
         model.onRequestFocus = { [weak self] in
-            guard let self, self.isVisible else { return }
+            guard let self else { return }
+            if self.model.showSettings, let window = self.settingsWindow.window, window.isVisible {
+                NSApp.activate(ignoringOtherApps: true)
+                window.makeKeyAndOrderFront(nil)
+                return
+            }
+            guard self.isVisible else { return }
             NSApp.activate(ignoringOtherApps: true)
             self.panel.makeKeyAndOrderFront(nil)
         }
@@ -315,6 +338,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self else { return event }
+            if self.settingsWindow.window?.isKeyWindow == true {
+                return self.handleSettingsKey(event)
+            }
             if event.keyCode == 53, self.inspector.panel.isKeyWindow { self.model.closeInspector(); return nil }
             guard self.panel.isKeyWindow else { return event }
             return self.handleKey(event)
@@ -322,7 +348,62 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func toggle() {
+        if model.showSettings {
+            guard canDismissSettings else { return }
+            returnToHistoryAfterSettings = true
+            model.showSettings = false
+            return
+        }
         isVisible ? hide(paste: false) : show()
+    }
+
+    @objc private func openSettings() {
+        if model.showSettings { presentSettings() }
+        else { model.showSettings = true }
+    }
+
+    private var canDismissSettings: Bool {
+        guard !model.isPresentingSystemPanel, settingsWindow.window?.attachedSheet == nil else { return false }
+        #if APP_STORE
+        if StorePurchase.shared.isPresentingSystemSheet { return false }
+        #endif
+        return true
+    }
+
+    private func presentSettings() {
+        let screen = panel.isVisible ? panel.screen : NSScreen.screens.first {
+            NSMouseInRect(NSEvent.mouseLocation, $0.frame, false)
+        }
+        if settingsWindow.window?.contentViewController == nil {
+            returnToHistoryAfterSettings = isVisible
+            if !isVisible, let frontmost = NSWorkspace.shared.frontmostApplication,
+               frontmost.processIdentifier != ProcessInfo.processInfo.processIdentifier {
+                previousApp = frontmost
+            }
+            // Set visibility before orderOut: that call can synchronously resign key.
+            isVisible = false
+            isClosing = false
+            model.closeInspector()
+            panel.suspendForSettings()
+        }
+        settingsWindow.present(on: screen) { [store, model] in
+            SettingsWindowContent(store: store, model: model)
+        }
+    }
+
+    private func dismissSettings() {
+        settingsWindow.dismiss()
+        if returnToHistoryAfterSettings {
+            returnToHistoryAfterSettings = false
+            // Refresh settings bindings without resetting the user's search or selection.
+            panel.refresh()
+            isVisible = true
+            isClosing = false
+            model.presentToken &+= 1
+            panel.slideIn()
+        } else {
+            previousApp?.activate(options: [])
+        }
     }
 
     private func show() {
@@ -541,19 +622,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     // MARK: Keyboard
 
+    private func handleSettingsKey(_ event: NSEvent) -> NSEvent? {
+        let cmd = event.modifierFlags.contains(.command)
+        if Int(event.keyCode) == kVK_Escape || (cmd && Int(event.keyCode) == kVK_ANSI_W) {
+            guard canDismissSettings else { return event }
+            model.showSettings = false
+            return nil
+        }
+        // This accessory app has no Edit menu. Keep native text editing working
+        // here without allowing history's copy/paste/arrow shortcuts into the form.
+        guard cmd, let editor = settingsWindow.window?.firstResponder as? NSTextView else { return event }
+        switch Int(event.keyCode) {
+        case kVK_ANSI_A: editor.selectAll(nil)
+        case kVK_ANSI_C: editor.copy(nil)
+        case kVK_ANSI_V: editor.paste(nil)
+        case kVK_ANSI_X: editor.cut(nil)
+        default: return event
+        }
+        return nil
+    }
+
     private func handleKey(_ event: NSEvent) -> NSEvent? {
         let cmd = event.modifierFlags.contains(.command)
         let control = event.modifierFlags.contains(.control)
         // Holding Option at commit time requests "paste as plain text" — the
         // clip is written without its RTF representation (⌥↩ or ⌥+⌘1–9).
         let plain = event.modifierFlags.contains(.option)
-
-        // In settings, let the controls handle keys; only intercept Esc (which
-        // returns to the clipboard view rather than dismissing the bar).
-        if model.showSettings {
-            if Int(event.keyCode) == kVK_Escape { model.showSettings = false; return nil }
-            return event
-        }
 
         switch Int(event.keyCode) {
         case kVK_Escape:

@@ -22,8 +22,12 @@ final class PanelViewModel: ObservableObject {
     /// Mouse clicks deliberately do NOT set this — a clicked card is already
     /// under the cursor, so re-centering it would feel like lag.
     @Published var scrollRequest: Int = 0
-    /// When true the bar shows the settings surface instead of the card strip.
-    @Published var showSettings: Bool = false
+    /// Settings is hosted separately; notify after the value changes so window
+    /// focus callbacks can already see the new presentation state.
+    @Published var showSettings: Bool = false {
+        didSet { if showSettings != oldValue { onSettingsChange?(showSettings) } }
+    }
+    var onSettingsChange: ((Bool) -> Void)?
     /// Clip currently expanded into the detail supercard.
     ///
     /// Observed with `didSet`, NOT `$inspectedItem.sink`: `@Published` emits in `willSet`,

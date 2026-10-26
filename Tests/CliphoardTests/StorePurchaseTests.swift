@@ -39,6 +39,7 @@ final class StoreProEntitlementTests: XCTestCase {
 }
 
 #if APP_STORE
+import AppKit
 @MainActor
 private final class FakeStorePurchaseClient: StorePurchaseClient {
     var current: [StoreProTransaction] = []
@@ -67,7 +68,7 @@ private final class FakeStorePurchaseClient: StorePurchaseClient {
         return current
     }
     func product() async throws -> StoreProProduct? { offeredProduct }
-    func purchase() async throws -> StoreProPurchaseResult {
+    func purchase(confirmIn window: NSWindow?) async throws -> StoreProPurchaseResult {
         purchases += 1
         if purchaseError { throw NSError(domain: "StorePurchaseTests", code: 2) }
         return outcome

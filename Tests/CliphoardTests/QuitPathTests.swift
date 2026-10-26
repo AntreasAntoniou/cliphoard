@@ -242,9 +242,10 @@ final class QuitPathTests: XCTestCase {
 
     func testTheFooterTeachesTheQuitKeyInBothStates() throws {
         let ui = try source("Sources/Cliphoard/UI/ContentView.swift")
-        XCTAssertEqual(ui.components(separatedBy: "hint(\"⌘Q\", \"Quit\")").count - 1, 2,
-                       "expected the hint in BOTH footer branches. The settings branch is "
-                       + "the one a user reaches by clicking the gear looking for a way out.")
+        let settings = try source("Sources/Cliphoard/UI/SettingsView.swift")
+        XCTAssertTrue(ui.contains("hint(\"⌘Q\", \"Quit\")"))
+        XCTAssertTrue(settings.contains("Text(\"⌘Q Quit Cliphoard\")"),
+                      "the dedicated Settings window must retain the quit hint")
     }
 
     func testSettingsCarriesAMouseReachableQuit() throws {

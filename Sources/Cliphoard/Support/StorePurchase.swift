@@ -39,6 +39,11 @@ import StoreKit
 struct StoreProProduct: Equatable {
     let id: String
     let displayPrice: String
+    // Localized labels alone are not an offer identity: USD and CAD may both
+    // display as "$10.00". Production supplies all three StoreKit values.
+    var price: Decimal? = nil
+    var currencyCode: String? = nil
+    var storefrontID: String? = nil
 }
 
 enum StoreProPurchaseResult {
@@ -51,11 +56,16 @@ enum StoreProPurchaseResult {
 @MainActor
 protocol StorePurchaseClient: AnyObject {
     func updates() -> AsyncStream<StoreProTransaction>
+    func storefrontUpdates() -> AsyncStream<Void>
     func currentEntitlements() async -> [StoreProTransaction]
     func product() async throws -> StoreProProduct?
-    func purchase() async throws -> StoreProPurchaseResult
+    func purchase(confirmIn window: NSWindow?) async throws -> StoreProPurchaseResult
     func synchronize() async throws
     func finish(_ transactionID: UInt64) async
+}
+
+extension StorePurchaseClient {
+    func storefrontUpdates() -> AsyncStream<Void> { AsyncStream { $0.finish() } }
 }
 
 @MainActor
@@ -68,7 +78,10 @@ final class StorePurchase: ObservableObject {
     @Published private(set) var isPresentingSystemSheet = false
     @Published private(set) var statusMessage: String?
 
-    var canPurchase: Bool { product != nil && !entitlement.isPro && !isPresentingSystemSheet }
+    var canPurchase: Bool { product != nil && !loadingProduct && !entitlement.isPro && !isPresentingSystemSheet }
+    /// AppDelegate supplies the dedicated Settings window for every purchase entry
+    /// point. A key window may be the short history panel, an inspector, or a sheet.
+    var presentationWindow: (() -> NSWindow?)?
     var purchaseTitle: String {
         if loadingProduct { return "Loading Pro…" }
         return product.map { "Unlock Pro — \($0.displayPrice)" } ?? "Pro unavailable"
@@ -78,6 +91,9 @@ final class StorePurchase: ObservableObject {
     private weak var store: ClipStore?
     private var updatesTask: Task<Void, Never>?
     private var startupTask: Task<Void, Never>?
+    private var storefrontTask: Task<Void, Never>?
+    private var productLoadTask: Task<Void, Never>?
+    private var productRevision: UInt64 = 0
     /// A slower startup/restore read must not undo a newer refund or purchase update.
     private var entitlementRevision: UInt64 = 0
 
@@ -86,12 +102,20 @@ final class StorePurchase: ObservableObject {
     deinit {
         updatesTask?.cancel()
         startupTask?.cancel()
+        storefrontTask?.cancel()
+        productLoadTask?.cancel()
     }
 
     /// Called once at launch, before any purchase UI. Rebinding cannot add a listener.
     func start(store: ClipStore) {
         self.store = store
         store.entitlement = entitlement
+        startObserving()
+    }
+
+    /// Kept independent of the clipboard database so the StoreKit adapter lifecycle
+    /// can be exercised without opening history or accessing its encryption keys.
+    func startObserving() {
         guard updatesTask == nil else { return }
         let updates = client.updates()
         updatesTask = Task { [weak self] in
@@ -104,21 +128,54 @@ final class StorePurchase: ObservableObject {
             await self?.refreshEntitlements()
             await self?.loadProduct()
         }
+        let storefronts = client.storefrontUpdates()
+        storefrontTask = Task { [weak self] in
+            for await _ in storefronts {
+                guard !Task.isCancelled else { break }
+                self?.product = nil
+                await self?.loadProduct()
+            }
+        }
     }
 
     func loadProduct() async {
-        guard !loadingProduct else { return }
+        // Coalesce requests, but never let a storefront change get dropped behind
+        // a slower request for the old price. The old result is not published.
+        productRevision &+= 1
+        if let productLoadTask {
+            await productLoadTask.value
+            return
+        }
         loadingProduct = true
-        defer { loadingProduct = false }
-        do {
-            let loaded = try await client.product()
-            product = loaded?.id == StoreProTransaction.productID ? loaded : nil
-            statusMessage = product == nil
-                ? "Pro is currently unavailable from the App Store. Try again later, or restore a previous purchase."
-                : nil
-        } catch {
-            product = nil
-            statusMessage = "Could not load the App Store price. Check your connection and try again."
+        // All callers await the same owned request, including purchase preflight.
+        // Cancelling a view task cannot cancel another caller's price refresh.
+        let task = Task<Void, Never> { [weak self] in await self?.reloadProduct() }
+        productLoadTask = task
+        await task.value
+    }
+
+    private func reloadProduct() async {
+        defer {
+            productLoadTask = nil
+            loadingProduct = false
+        }
+        while !Task.isCancelled {
+            let revision = productRevision
+            do {
+                let loaded = try await client.product()
+                guard revision == productRevision else { continue }
+                guard !Task.isCancelled else { return }
+                product = loaded?.id == StoreProTransaction.productID ? loaded : nil
+                statusMessage = product == nil
+                    ? "Pro is currently unavailable from the App Store. Try again later, or restore a previous purchase."
+                    : nil
+            } catch {
+                guard revision == productRevision else { continue }
+                guard !Task.isCancelled else { return }
+                product = nil
+                statusMessage = "Could not load the App Store price. Check your connection and try again."
+            }
+            return
         }
     }
 
@@ -131,12 +188,22 @@ final class StorePurchase: ObservableObject {
     }
 
     func purchase() async {
-        guard canPurchase else { return }
+        guard canPurchase, let offered = product else { return }
         isPresentingSystemSheet = true
+        let window = presentationWindow?()
         statusMessage = nil
         defer { isPresentingSystemSheet = false }
+        // Prices are StoreKit values, including their currency. If the account's
+        // storefront changed since display, ask the user to review its fresh price.
+        await loadProduct()
+        guard !entitlement.isPro else { return }
+        guard let current = product else { return }
+        guard current == offered else {
+            statusMessage = "The App Store offer has updated. Review it, then choose Unlock Pro again."
+            return
+        }
         do {
-            switch try await client.purchase() {
+            switch try await client.purchase(confirmIn: window) {
             case .success(let transaction):
                 guard transaction.productID == StoreProTransaction.productID else {
                     statusMessage = "The App Store returned a different product. Pro remains locked; try Restore Purchases."
@@ -157,6 +224,9 @@ final class StorePurchase: ObservableObject {
     func restore() async {
         guard !isPresentingSystemSheet else { return }
         isPresentingSystemSheet = true
+        // AppStore.sync has no window parameter. Make our regular Settings window
+        // key before it can ask for authentication.
+        _ = presentationWindow?()
         statusMessage = nil
         defer { isPresentingSystemSheet = false }
         do {
@@ -227,16 +297,42 @@ private final class StoreKitClient: StorePurchaseClient {
         return result
     }
 
-    func product() async throws -> StoreProProduct? {
-        cachedProduct = try await Product.products(for: [StoreProTransaction.productID])
-            .first { $0.id == StoreProTransaction.productID && $0.type == .nonConsumable }
-        return cachedProduct.map { StoreProProduct(id: $0.id, displayPrice: $0.displayPrice) }
+    func storefrontUpdates() -> AsyncStream<Void> {
+        AsyncStream { continuation in
+            let task = Task {
+                for await _ in Storefront.updates {
+                    guard !Task.isCancelled else { break }
+                    continuation.yield(())
+                }
+                continuation.finish()
+            }
+            continuation.onTermination = { _ in task.cancel() }
+        }
     }
 
-    func purchase() async throws -> StoreProPurchaseResult {
-        guard let product = cachedProduct else { throw StorePurchaseError.unavailable }
+    func product() async throws -> StoreProProduct? {
+        let storefrontID = await Storefront.current?.id
+        cachedProduct = try await Product.products(for: [StoreProTransaction.productID])
+            .first { $0.id == StoreProTransaction.productID && $0.type == .nonConsumable }
+        // A fetch spanning a storefront change cannot establish which offer was
+        // loaded. Let the storefront listener retry rather than attach a new
+        // storefront identity to an old price.
+        guard storefrontID == (await Storefront.current?.id) else {
+            cachedProduct = nil
+            throw StorePurchaseError.unavailable
+        }
+        return cachedProduct.map {
+            StoreProProduct(id: $0.id, displayPrice: $0.displayPrice, price: $0.price,
+                            currencyCode: $0.priceFormatStyle.currencyCode, storefrontID: storefrontID)
+        }
+    }
+
+    func purchase(confirmIn window: NSWindow?) async throws -> StoreProPurchaseResult {
+        guard let product = cachedProduct, let window, window.isVisible else {
+            throw StorePurchaseError.unavailable
+        }
         let result: Product.PurchaseResult
-        if #available(macOS 15.2, *), let window = NSApp.keyWindow {
+        if #available(macOS 15.2, *) {
             result = try await product.purchase(confirmIn: window)
         } else {
             result = try await product.purchase()

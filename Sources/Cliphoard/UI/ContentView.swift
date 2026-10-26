@@ -150,18 +150,14 @@ struct ContentView: View {
             // you?" with whatever height it was offered, so feeding that back
             // into the window is a fixed point at any value, including the wrong
             // one. Pinned, the answer is a constant and the window converges in
-            // one step. It also stops a vertical layout (Settings, list,
-            // spotlight) from reporting its entire scrollable content — measured
-            // at 1992pt for a settings pane — and inflating the bar to match.
+            // one step. It also stops a vertical layout (list,
+            // spotlight) from reporting its entire scrollable content and inflating
+            // the bar to match. Settings uses its own resizable window.
             Group {
-                if model.showSettings {
-                    SettingsView(settings: settings, store: store, model: model)
-                } else {
-                    switch settings.layoutMode {
-                    case .strip:     cards
-                    case .spotlight: spotlightLayout
-                    case .list:      listLayout
-                    }
+                switch settings.layoutMode {
+                case .strip:     cards
+                case .spotlight: spotlightLayout
+                case .list:      listLayout
                 }
             }
             .frame(height: Theme.stripHeight)
@@ -287,15 +283,15 @@ struct ContentView: View {
         HStack(spacing: 12) {
             HStack(spacing: 6) {
                 brandMark
-                Text(model.showSettings ? "Settings" : "Cliphoard")
+                Text("Cliphoard")
                     .font(.system(size: 22, weight: .bold, design: .rounded))
             }
 
-            if !model.showSettings { categoryChips }
+            categoryChips
 
             Spacer()
 
-            if !model.showSettings {
+            Group {
                 HStack(spacing: 8) {
                     timeMenu
                     // Always available now: the signal facets (flags, shape,
@@ -328,15 +324,15 @@ struct ContentView: View {
             }
 
             Button {
-                model.showSettings.toggle()
+                model.showSettings = true
             } label: {
-                Image(systemName: model.showSettings ? "xmark.circle.fill" : "gearshape.fill")
+                Image(systemName: "gearshape.fill")
                     .font(.system(size: 15))
-                    .foregroundStyle(model.showSettings ? Color.secondary : Theme.accent)
+                    .foregroundStyle(Theme.accent)
             }
             .buttonStyle(.plain)
-            .help(model.showSettings ? "Close settings" : "Settings")
-            .accessibilityLabel(model.showSettings ? "Close settings" : "Settings")
+            .help("Settings")
+            .accessibilityLabel("Settings")
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
@@ -980,17 +976,7 @@ struct ContentView: View {
 
     @ViewBuilder
     private var footer: some View {
-        if model.showSettings {
-            HStack(spacing: 16) {
-                hint("esc", "Back")
-                hint("⌘Q", "Quit")
-                Spacer()
-                Text("Cliphoard · ⌃⌥⌘V").font(.system(size: 11)).foregroundStyle(.tertiary)
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 8)
-            .background(Color.primary.opacity(0.04))
-        } else {
+        Group {
             HStack(spacing: 14) {
                 hint("←→", "Navigate")
                 hint("↩", DistributionChannel.primaryActionTitle)
