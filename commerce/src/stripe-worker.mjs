@@ -2,25 +2,12 @@ import { sha256 } from "./licence.mjs";
 import { stripeClient } from "./stripe-client.mjs";
 import { orderService, verifyAccount } from "./stripe-order.mjs";
 import { purchasePage } from "./stripe-frontdoor.mjs";
+import { claimPage } from "./stripe-claim-page.mjs";
 import { API_VERSION, boundedBody, config, failure, identifier, need, objectId, ORDER_REF,
-  parseJSON, response, SECURITY, verifyStripeSignature } from "./stripe-security.mjs";
+  parseJSON, response, verifyStripeSignature } from "./stripe-security.mjs";
 
 const CHECKOUT_EVENTS = new Set(["checkout.session.completed", "checkout.session.async_payment_succeeded", "checkout.session.async_payment_failed"]);
 const REFUND_EVENTS = new Set(["refund.created", "refund.updated", "refund.failed", "charge.refunded"]);
-function escapeHtml(value) {
-  return value.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
-}
-function claimPage(result) {
-  let status = 202, html = "<h1>Your key is being prepared</h1><p>Payment confirmation may take a little time. Reload this page later. Your private recovery link will also arrive by email after payment is confirmed.</p>";
-  if (result.result === "payment_blocked") {
-    status = 410; html = "<h1>Key delivery is unavailable</h1><p>This purchase has a refund or dispute record. Contact product support from your purchase email.</p>";
-  } else if (result.result === "ready") {
-    status = 200; html = `<h1>Your Cliphoard Pro key</h1><p>In the direct-download edition, open Settings → Pro, paste this key and choose Verify.</p><textarea aria-label="Cliphoard Pro key" readonly rows="6" cols="60">${escapeHtml(result.licence)}</textarea><p><a href="${escapeHtml(result.download)}" rel="noreferrer">Download Cliphoard</a></p><p>Keep this private link. This key works on every Mac you own using the direct-download edition; the Mac App Store edition uses its separate purchase.</p>`;
-  }
-  return new Response(`<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Cliphoard Pro key</title><main>${html}</main></html>`, {
-    status, headers: { ...SECURITY, "Content-Type": "text/html; charset=utf-8", ...(status === 202 ? { "Retry-After": "60" } : {}) },
-  });
-}
 async function orderCall(env, cfg, orderRef, action, value) {
   need(ORDER_REF.test(orderRef ?? ""), 400, "invalid_order_reference");
   need(env.STRIPE_ORDERS?.idFromName && env.STRIPE_ORDERS?.get, 503, "storage_unavailable");
