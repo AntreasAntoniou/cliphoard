@@ -56,6 +56,7 @@ test("workerd: actual Stripe DO storage/serialization, encrypted token, webhook,
     assert.ok((await (await mf.dispatchFetch(f.stripe.s.success_url)).text()).includes(key));
     for (let count = 0; count < 30 && !deliveries.length; count++) await new Promise((resolve) => setTimeout(resolve, 100));
     assert.equal(deliveries.length, 1); assert.ok(deliveries[0].text.includes(f.stripe.s.success_url));
+    assert.ok(deliveries[0].text.split("\n").includes(key), "delivered email contains exactly the same key as the claim page");
     assert.ok(outbound.includes("https://api.stripe.com/v1/refunds"));
     assert.equal((await dispatch(webhookRequest(f, event(f, "refund.created")))).status, 200);
     assert.equal((await mf.dispatchFetch(f.stripe.s.success_url)).status, 410);

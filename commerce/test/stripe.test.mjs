@@ -27,6 +27,8 @@ test("paid Stripe order produces stable offline CLIP1, encrypted recovery and na
   assert.equal((await f.service().claim(f.ref, f.token())).licence, before.licence);
   assert.equal((await f.service().drain()).result, "email_accepted");
   assert.equal(f.sent.length, 1); assert.ok(f.sent[0].text.includes(f.stripe.s.success_url));
+  assert.ok(f.sent[0].text.split("\n").includes(before.licence), "email contains the complete issued key on its own line");
+  assert.match(f.sent[0].text, /Settings → Pro/); assert.match(f.sent[0].text, /Verify/);
   assert.equal(f.sent[0].to, "synthetic-buyer@example.invalid");
   assert.equal((await f.storage.get("order")).mail.status, "accepted");
   await f.service().paid(f.ref, f.stripe.s.id); await f.service().drain(); assert.equal(f.sent.length, 1);
@@ -146,6 +148,14 @@ test("delivery outbox survives failure and uses same link after retry", async ()
   await assert.rejects(() => f.service().drain()); assert.equal((await f.storage.get("order")).mail.status, "pending");
   assert.ok(f.alarms.length >= 2); f.env.EMAIL.send = send;
   await f.service().drain(); assert.equal(f.sent.length, 1); assert.ok(f.sent[0].text.includes(f.stripe.s.success_url));
+  assert.ok(f.sent[0].text.split("\n").includes((await f.storage.get("order")).licence));
+});
+test("delivery rejects a tampered stored key without emailing it", async () => {
+  const f = await issued(), record = await f.storage.get("order");
+  record.licence = "CLIP1-tampered.invalid"; await f.storage.put("order", record);
+  await assert.rejects(() => f.service().drain(), { code: "stored_licence_invalid" });
+  assert.equal(f.sent.length, 0);
+  assert.equal((await f.storage.get("order")).mail.status, "pending");
 });
 test("native email and alarm failures suppress provider details", async () => {
   const f = await issued();
@@ -163,6 +173,7 @@ test("private operator recovery resends the same key/link to the current Stripe 
   await f.service().drain();
   assert.equal(f.sent.length, 2); assert.equal(f.sent[1].to, "synthetic-recovered@example.invalid");
   assert.equal(f.sent[0].text, f.sent[1].text); assert.equal((await f.storage.get("order")).licence, licence);
+  assert.ok(f.sent[1].text.split("\n").includes(licence));
   assert.ok(!JSON.stringify(await f.storage.get("order")).includes("synthetic-recovered"));
   f.stripe.ch.amount_refunded = 1;
   assert.equal((await f.service().retryDelivery(f.ref)).result, "payment_blocked");

@@ -7,17 +7,17 @@ export function deliveryConfigured(env) {
   return env.EMAIL_DELIVERY_ENABLED === "true" && typeof env.EMAIL?.send === "function" &&
     typeof env.EMAIL_FROM === "string" && /^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9.-]+$/.test(env.EMAIL_FROM);
 }
-export async function nativeDelivery(env, { email, claimUrl }) {
+export async function nativeDelivery(env, { email, licence, claimUrl }) {
   need(deliveryConfigured(env), 503, "email_delivery_unavailable");
   need(typeof email === "string" && email.length <= 254 && /^[^\s@<>\r\n]+@[^\s@<>\r\n]+\.[^\s@<>\r\n]+$/.test(email), 503, "recipient_unavailable");
   // Native API acceptance is not inbox delivery and has no idempotency contract.
-  // After an ambiguous crash a retry can send the SAME recovery link again.
+  // After an ambiguous crash a retry can send the SAME key and recovery link again.
   let result;
   try {
     result = await env.EMAIL.send({
       from: env.EMAIL_FROM, to: email, replyTo: env.EMAIL_FROM,
       subject: "Your Cliphoard Pro key",
-      text: `Thanks for supporting Cliphoard. Your direct-download Pro key is ready:\n\n${claimUrl}\n\nOpen this private link, then paste your key into Cliphoard Settings → Pro and choose Verify. It works with the direct-download edition on every Mac you own. The Mac App Store edition uses its separate App Store purchase.\n\nKeep this email: the same link lets you retrieve your key later. For product help, reply to this email. Your payment receipt comes separately from Link.`,
+      text: `Thanks for supporting Cliphoard. Your direct-download Pro key is ready.\n\nYour licence key:\n${licence}\n\nActivate Cliphoard Pro:\n1. Copy the entire key above, including the CLIP1- prefix.\n2. Open the direct-download Cliphoard app and go to Settings → Pro.\n3. Paste your key and choose Verify.\n\nYour key works on every Mac you own. The Mac App Store edition uses its separate App Store purchase.\n\nKeep this email and key private. You can also retrieve the same key using your private recovery link:\n${claimUrl}\n\nFor product help, reply to this email. Your payment receipt comes separately from Link.`,
     });
   } catch { need(false, 503, "email_unavailable"); }
   need(result && typeof result.messageId === "string" && result.messageId.length > 0 && result.messageId.length < 256, 503, "email_not_accepted");
@@ -215,7 +215,7 @@ export function orderService({ env, storage, stripe, schedule = async () => {}, 
     const current = await refresh(record);
     if (current.result !== "eligible") return { result: current.result };
     need(await verifyLicence(record.licence, licenceOrder(record), cfg.publicKey), 503, "stored_licence_invalid");
-    const acceptance = await send({ email: current.session.customer_details?.email, claimUrl: current.claimUrl });
+    const acceptance = await send({ email: current.session.customer_details?.email, licence: record.licence, claimUrl: current.claimUrl });
     need(/^[0-9a-f]{64}$/.test(acceptance?.acceptanceHash ?? ""), 503, "email_not_accepted");
     record.mail = { status: "accepted", attempts: record.mail.attempts, acceptanceHash: acceptance.acceptanceHash };
     await save(record); return { result: "email_accepted" };
