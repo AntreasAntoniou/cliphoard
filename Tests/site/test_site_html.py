@@ -268,7 +268,7 @@ class Resolution(unittest.TestCase):
 class NoRemoteDependencies(unittest.TestCase):
     def script_paths(self):
         paths = [DOCS / a["src"] for a in parse().of("script") if a.get("src")]
-        return paths + [DOCS / "assets/funding.js"]
+        return paths + [DOCS / "assets/funding.js", DOCS / "assets/telemetry.mjs"]
 
     def test_no_executable_or_style_dependency_comes_from_another_origin(self):
         for tag, a in parse().tags:
@@ -301,7 +301,7 @@ class NoRemoteDependencies(unittest.TestCase):
                 self.assertNotIn(forbidden, code, "%s uses %s" % (path.name, forbidden))
             if path.name != "appearance.js":
                 self.assertNotIn("localStorage", code, "%s adds storage" % path.name)
-            if path.name != "funding.js":
+            if path.name not in ("funding.js", "telemetry.mjs"):
                 self.assertNotIn("fetch(", code, "%s adds a network call" % path.name)
         code = strip_comments(appearance_js())
         self.assertEqual(re.findall(r'var KEY = "([^"]+)"', code), ["cliphoard.appearance"])
@@ -553,7 +553,7 @@ class CodeBackedClaims(unittest.TestCase):
         self.assertIn("six other catalogued managers do not yet have adapters", self.text)
 
     def test_privacy_promises_keep_their_limits(self):
-        for phrase in ("no cliphoard account, telemetry or automatic cloud sync",
+        for phrase in ("no cliphoard account, app telemetry or automatic cloud sync",
                        "source-app names and search indexes", "timestamps, clip kind and pin state remain readable",
                        "sensitive-content filters are imperfect", "recognition and secret detection are imperfect",
                        "cannot protect an unlocked or compromised mac", "no touch id prompt is required",

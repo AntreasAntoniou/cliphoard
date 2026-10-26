@@ -163,6 +163,29 @@ and financial reports to the developer through App Store Connect.
 link uses your browser; the checkout provider handles the transaction under its own
 privacy terms. A licence purchase does not upload your clipboard history.
 
+## Website and purchase counters
+
+Updated 26 October 2026: the **Mac app still has no usage telemetry**. On
+cliphoard.dev, first-party website counters record page loads, Free download clicks,
+Pro interest, feature disclosures and selected outbound links. Events include only
+fixed event/placement names, a coarse referral category and a country code supplied
+by Cloudflare. They contain no full page/referring URLs, search terms, email addresses,
+order IDs, licence keys, cookies, persistent visitor IDs, fingerprints or app activity.
+The browser respects Do Not Track and Global Privacy Control; the site works without
+these events. One event of each kind/placement is counted per page load.
+
+Cloudflare receives ordinary network connection information. The event endpoint
+hashes IP addresses only for transient edge throttling, never for analytics storage
+or cross-visit identification. Analytics Engine event records expire after three
+months. Daily aggregate exports may be kept longer. Counts are not unique people or
+installations; GitHub separately supplies installer download counts.
+
+Purchase operational counters cover checkout creation, licence issuance, recovery,
+email attempts/acceptance/failure and blocked payments. Test and live modes remain
+separate. Counters do not contain customer identifiers or payment details. Operational
+transaction records used for fulfilment and support are separate. Email API acceptance
+is not proof of inbox arrival, and aggregate counters are not accounting records.
+
 ## Sensitive content
 
 Cliphoard deliberately tries **not** to capture secrets, in three ways:

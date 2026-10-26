@@ -1,4 +1,4 @@
-# Internal design notes are not part of the public website.
-/CNAME
 /superpowers/
-**/.DS_Store
+**/*.md
+CNAME
+.DS_Store

@@ -32,6 +32,10 @@ CLAIM_KEY_ID = "claim-v1"
 EXPECTED_PUBLIC_KEY_HEX = "REPLACE_WITH_SYNTHETIC_TEST_KEY"
 
 # Add after reviewed resource/secret/sender approval, separate for test/live:
+# Optional aggregate operational counters, separated by STRIPE_MODE. No identities.
+# [[analytics_engine_datasets]]
+# binding = "METRICS"
+# dataset = "cliphoard_metrics_v1"
 # [[durable_objects.bindings]]
 # name = "STRIPE_ORDERS"
 # class_name = "StripeOrder"

@@ -1,4 +1,5 @@
 import { sha256 } from "./licence.mjs";
+import { commerceMetric } from "../../telemetry/metrics.mjs";
 import { stripeClient } from "./stripe-client.mjs";
 import { orderService, verifyAccount } from "./stripe-order.mjs";
 import { purchasePage } from "./stripe-frontdoor.mjs";
@@ -59,7 +60,7 @@ async function webhook(request, env, cfg, stripe) {
   return orderCall(env, cfg, session.metadata.cliphoard_order, REFUND_EVENTS.has(event.type) ? "refund" : "paid", { sessionId: session.id });
 }
 export function createStripeWorker(clientFactory = stripeClient) {
-  return {
+  const handler = {
     async fetch(request, env) {
       try {
         const url = new URL(request.url);
@@ -95,6 +96,15 @@ export function createStripeWorker(clientFactory = stripeClient) {
         }
         return response(404, "not_found");
       } catch (error) { return failure(error); }
+    },
+  };
+  return {
+    async fetch(request, env) {
+      const path = new URL(request.url).pathname;
+      const placement = ({ "/": "frontdoor", "/checkout/stripe": "checkout", "/webhooks/stripe": "webhook", "/pro/claim": "claim" })[path] ?? "other";
+      const result = await handler.fetch(request, env);
+      commerceMetric(env, result.status >= 500 ? "request_error" : result.status >= 400 ? "request_rejected" : "request_ok", placement);
+      return result;
     },
   };
 }

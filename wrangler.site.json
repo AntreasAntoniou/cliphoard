@@ -1,16 +1,22 @@
 {
   "$schema": "https://raw.githubusercontent.com/cloudflare/workers-sdk/main/packages/wrangler/config-schema.json",
   "name": "cliphoard-site",
+  "main": "site/worker.mjs",
   "account_id": "f785b36f14fd12a5fd289bfb3a8a9daf",
   "compatibility_date": "2026-10-23",
   "send_metrics": false,
   "workers_dev": false,
   "preview_urls": false,
+  "observability": { "enabled": false, "logs": { "enabled": false, "invocation_logs": false } },
+  "analytics_engine_datasets": [{ "binding": "METRICS", "dataset": "cliphoard_metrics_v1" }],
+  "ratelimits": [{ "name": "METRICS_RATE_LIMITER", "namespace_id": "7310264102", "simple": { "limit": 30, "period": 60 } }],
   "routes": [
     { "pattern": "cliphoard.dev", "custom_domain": true },
     { "pattern": "www.cliphoard.dev", "custom_domain": true }
   ],
   "assets": {
+    "binding": "ASSETS",
+    "run_worker_first": ["/__events"],
     "directory": "./docs",
     "html_handling": "auto-trailing-slash",
     "not_found_handling": "none"

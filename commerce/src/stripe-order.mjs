@@ -85,7 +85,9 @@ export function orderService({ env, storage, stripe, schedule = async () => {}, 
     return { provider: "stripe", mode: cfg.mode, accountId: cfg.accountId, orderId: record.sessionId, issued: record.issued };
   }
   async function block(record) {
+    const first = !record.blocked;
     record.blocked = true; record.mail.status = "blocked"; await save(record);
+    if (first) commerceMetric(env, "payment_blocked");
     return { result: "payment_blocked" };
   }
   async function refresh(record, sessionId = record.sessionId) {
@@ -140,6 +142,7 @@ export function orderService({ env, storage, stripe, schedule = async () => {}, 
     // Also check signer BEFORE accepting payment, using an unpersisted probe.
     await signLicence({ provider: "stripe", mode: cfg.mode, accountId: cfg.accountId, orderId: "probe", issued: record.created },
       env.CLIPHOARD_SIGNING_SEED, cfg.publicKey);
+    const firstSession = !record.sessionId;
     let session;
     if (record.sessionId) session = await stripe.session(record.sessionId);
     else {
@@ -164,6 +167,7 @@ export function orderService({ env, storage, stripe, schedule = async () => {}, 
     let url; try { url = new URL(session.url); } catch { need(false, 503, "checkout_url_invalid"); }
     need(url.protocol === "https:" && url.hostname === "checkout.stripe.com" && !url.username && !url.password &&
       url.port === "", 503, "checkout_url_invalid");
+    if (firstSession) commerceMetric(env, "checkout_created");
     return { result: "checkout_ready", url: url.href };
   }
   async function paid(orderRef, sessionId) {
@@ -176,6 +180,7 @@ export function orderService({ env, storage, stripe, schedule = async () => {}, 
       record.issued = current.session.created;
       record.licence = await signLicence(licenceOrder(record), env.CLIPHOARD_SIGNING_SEED, cfg.publicKey);
       record.mail.status = "pending"; await save(record);
+      commerceMetric(env, "licence_issued");
     } else {
       need(record.issued === current.session.created && await verifyLicence(record.licence, licenceOrder(record), cfg.publicKey),
         503, "stored_licence_invalid");
@@ -201,6 +206,7 @@ export function orderService({ env, storage, stripe, schedule = async () => {}, 
     if (current.result !== "eligible") return { result: current.result };
     need(record.issued === current.session.created && await verifyLicence(record.licence, licenceOrder(record), cfg.publicKey),
       503, "stored_licence_invalid");
+    commerceMetric(env, "claim_ready");
     return { result: "ready", licence: record.licence, download: cfg.download };
   }
   async function drain() {
@@ -208,17 +214,24 @@ export function orderService({ env, storage, stripe, schedule = async () => {}, 
     const record = await load(stored.orderRef);
     if (record.blocked || record.mail.status !== "pending") return { result: record.mail.status };
     need(deliveryConfigured(env) && env.DELIVERY_ENABLED === "true", 503, "delivery_paused");
-    if (record.mail.attempts >= MAX_MAIL_ATTEMPTS) { record.mail.status = "exhausted"; await save(record); return { result: "exhausted" }; }
+    if (record.mail.attempts >= MAX_MAIL_ATTEMPTS) {
+      record.mail.status = "exhausted"; await save(record);
+      commerceMetric(env, "email_exhausted"); return { result: "exhausted" };
+    }
     record.mail.attempts++; await save(record);
     // Arm before network: a crash after send/acceptance still has a recovery run.
     await schedule(now() + Math.min(60 * 2 ** record.mail.attempts, 21600));
     const current = await refresh(record);
     if (current.result !== "eligible") return { result: current.result };
     need(await verifyLicence(record.licence, licenceOrder(record), cfg.publicKey), 503, "stored_licence_invalid");
-    const acceptance = await send({ email: current.session.customer_details?.email, licence: record.licence, claimUrl: current.claimUrl });
-    need(/^[0-9a-f]{64}$/.test(acceptance?.acceptanceHash ?? ""), 503, "email_not_accepted");
+    commerceMetric(env, "email_attempt");
+    let acceptance;
+    try {
+      acceptance = await send({ email: current.session.customer_details?.email, licence: record.licence, claimUrl: current.claimUrl });
+      need(/^[0-9a-f]{64}$/.test(acceptance?.acceptanceHash ?? ""), 503, "email_not_accepted");
+    } catch (error) { commerceMetric(env, "email_failed"); throw error; }
     record.mail = { status: "accepted", attempts: record.mail.attempts, acceptanceHash: acceptance.acceptanceHash };
-    await save(record); return { result: "email_accepted" };
+    await save(record); commerceMetric(env, "email_accepted"); return { result: "email_accepted" };
   }
   async function retryDelivery(orderRef) {
     // This is a private Durable Object action for an authenticated operator.
@@ -232,7 +245,9 @@ export function orderService({ env, storage, stripe, schedule = async () => {}, 
     need(record.issued === current.session.created && await verifyLicence(record.licence, licenceOrder(record), cfg.publicKey),
       503, "stored_licence_invalid");
     record.mail = { status: "pending", attempts: 0 }; await save(record); await schedule(now() + 1);
+    commerceMetric(env, "email_retry_queued");
     return { result: "email_queued" };
   }
   return { start, paid, refund, claim, drain, retryDelivery };
 }
+import { commerceMetric } from "../../telemetry/metrics.mjs";

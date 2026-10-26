@@ -1,8 +1,8 @@
 /* Cliphoard — the page's deferred entry point.
  *
- * Two jobs, and deliberately nothing else: boot the funding figure, and mark which
- * section the reader is currently in. No analytics, no tracking, no remote script, no
- * font request, no cookie, no storage. The page is fully usable with this file blocked.
+ * Boot funding, current-section navigation and coarse first-party website counters.
+ * No remote script, font request, cookie or visitor identifier. The page remains
+ * fully usable with this file blocked; the privacy page describes the counters.
  *
  * The appearance choice is NOT here, and the split is not arbitrary: this is a module,
  * so it is deferred and runs after first paint, and a saved Dark choice applied from
@@ -12,6 +12,9 @@
  */
 
 import { bootFunding } from "./funding.js";
+import { bootTelemetry } from "./telemetry.mjs";
+
+bootTelemetry();
 
 const funding = document.querySelector("[data-funding]");
 if (funding) {
