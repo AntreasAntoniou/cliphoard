@@ -59,8 +59,22 @@ async function itemsFor(stripe, session, cfg) {
     session.total_details?.amount_discount === 0 && session.total_details?.amount_shipping === 0 &&
     session.total_details?.amount_tax === item.amount_tax, 409, "amount_or_quantity_mismatch");
 }
-export function orderService({ env, storage, stripe, schedule = async () => {}, now = () => Math.floor(Date.now() / 1000), deliver }) {
+export function orderService({ env, storage, stripe, schedule = async () => {}, now = () => Math.floor(Date.now() / 1000), deliver, deviceAuthority }) {
   const cfg = config(env);
+  // Trusted construction only. No Worker route supplies this opt-in or its IDs.
+  let authorityScope;
+  if (deviceAuthority !== undefined) {
+    need(deviceAuthority && Object.getPrototypeOf(deviceAuthority) === Object.prototype,
+      503, "device_authority_configuration");
+    const fields = Object.getOwnPropertyDescriptors(deviceAuthority);
+    need(Reflect.ownKeys(fields).every(key => typeof key === "string" && "value" in fields[key]) &&
+      [true, false].includes(fields.enabled?.value), 503, "device_authority_configuration");
+    if (fields.enabled.value === true) {
+      need(Reflect.ownKeys(fields).length === 3 && typeof fields.orderRef?.value === "string" && ORDER_REF.test(fields.orderRef.value) &&
+        identifier(fields.sessionId?.value, "cs"), 503, "device_authority_configuration");
+      authorityScope = Object.freeze({ orderRef: fields.orderRef.value, sessionId: fields.sessionId.value });
+    } else need(Reflect.ownKeys(fields).length === 1, 503, "device_authority_configuration");
+  }
   const send = deliver ?? ((message) => nativeDelivery(env, message));
   const save = (record) => storage.put("order", record);
   async function load(orderRef, optional = false) {
@@ -90,16 +104,16 @@ export function orderService({ env, storage, stripe, schedule = async () => {}, 
     if (first) commerceMetric(env, "payment_blocked");
     return { result: "payment_blocked" };
   }
-  async function refresh(record, sessionId = record.sessionId) {
+  async function inspectCheckout(record, sessionId) {
     await verifyAccount(stripe, cfg);
     const session = await stripe.session(sessionId); validateSession(session, record, cfg);
     await itemsFor(stripe, session, cfg);
     // A success URL must be the exact link minted for this order, not customer input.
     const token = await tokenFor(record), claimUrl = `${cfg.origin}/pro/claim?order=${record.orderRef}&token=${token}`;
     need(session.success_url === claimUrl && session.cancel_url === cfg.cancel, 409, "session_link_mismatch");
-    if (!record.sessionId) { record.sessionId = session.id; await save(record); }
-    if (record.blocked) return { result: "payment_blocked" };
-    if (session.status !== "complete" || session.payment_status !== "paid") return { result: "payment_pending" };
+    return { session, claimUrl };
+  }
+  async function inspectPayment(record, session) {
     need(identifier(objectId(session.payment_intent), "pi"), 409, "payment_mismatch");
     const payment = await stripe.paymentIntent(objectId(session.payment_intent));
     need(payment?.object === "payment_intent" && payment.id === objectId(session.payment_intent) &&
@@ -119,9 +133,41 @@ export function orderService({ env, storage, stripe, schedule = async () => {}, 
     // Fail closed on any refund attempt, even one still pending or later failed.
     // This conservative tombstone is never undone by a late paid notification.
     if (charge.refunded || charge.amount_refunded > 0 || charge.disputed || refunds.data.length > 0 || refunds.has_more) {
-      return await block(record);
+      return false;
     }
+    return true;
+  }
+  async function refresh(record, sessionId = record.sessionId) {
+    const { session, claimUrl } = await inspectCheckout(record, sessionId);
+    if (!record.sessionId) { record.sessionId = session.id; await save(record); }
+    if (record.blocked) return { result: "payment_blocked" };
+    if (session.status !== "complete" || session.payment_status !== "paid") return { result: "payment_pending" };
+    if (!await inspectPayment(record, session)) return await block(record);
     return { result: "eligible", session, claimUrl };
+  }
+  async function inspectDeviceAuthority(...args) {
+    need(authorityScope, 503, "device_authority_disabled");
+    need(args.length === 0, 400, "device_authority_arguments");
+    let record;
+    try { record = await load(authorityScope.orderRef); }
+    catch { need(false, 503, "device_authority_unavailable"); }
+    need(record.sessionId === authorityScope.sessionId, 409, "device_authority_scope_mismatch");
+    try {
+      const { session } = await inspectCheckout(record, authorityScope.sessionId);
+      let state = "pending", ownerEmail = null;
+      if (record.blocked) state = "blocked";
+      else if (session.status === "complete" && session.payment_status === "paid") {
+        state = await inspectPayment(record, session) ? "active" : "blocked";
+        if (state === "active") {
+          ownerEmail = session.customer_details?.email;
+          need(typeof ownerEmail === "string" && ownerEmail.length <= 254 &&
+            /^[^\s@<>\r\n]+@[^\s@<>\r\n]+\.[^\s@<>\r\n]+$/.test(ownerEmail), 503, "recipient_unavailable");
+        }
+      }
+      return { accountId: cfg.accountId, mode: cfg.mode, orderRef: authorityScope.orderRef,
+        sessionId: authorityScope.sessionId, productId: cfg.productId, priceId: cfg.priceId,
+        currency: cfg.currency, unitAmount: cfg.unitAmount, taxBehavior: cfg.taxBehavior, state, ownerEmail };
+    } catch { need(false, 503, "device_authority_unavailable"); }
   }
   async function start(orderRef) {
     need(ORDER_REF.test(orderRef), 400, "invalid_order_reference");
@@ -248,6 +294,6 @@ export function orderService({ env, storage, stripe, schedule = async () => {}, 
     commerceMetric(env, "email_retry_queued");
     return { result: "email_queued" };
   }
-  return { start, paid, refund, claim, drain, retryDelivery };
+  return { start, paid, refund, claim, drain, retryDelivery, inspectDeviceAuthority };
 }
 import { commerceMetric } from "../../telemetry/metrics.mjs";
