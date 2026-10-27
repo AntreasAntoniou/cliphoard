@@ -20,11 +20,14 @@ const disabled = Object.freeze(Object.fromEntries(['begin', 'approve', 'alarm', 
 
 export function createDeliveryRunner(options = {}) {
   if (Object.getOwnPropertyDescriptor(options, 'enabled')?.value !== true) return disabled;
-  let makeService, alarmStorage, busy, clockMilliseconds, monotonicMilliseconds, policy;
+  let makeService, alarmStorage, busy, clockMilliseconds, monotonicMilliseconds, policy,
+    refreshFeeds, isTerminalAuthority;
   try {
+    const optional = ['refreshFeeds', 'isTerminalAuthority'].filter(key => Object.hasOwn(options, key));
     const value = data(options, ['enabled', 'makeService', 'alarmStorage', 'mail', 'clockMilliseconds',
-      'monotonicMilliseconds', 'operational']);
-    ({ makeService, clockMilliseconds, monotonicMilliseconds } = value);
+      'monotonicMilliseconds', 'operational', ...optional]);
+    ({ makeService, clockMilliseconds, monotonicMilliseconds, refreshFeeds, isTerminalAuthority } = value);
+    require(optional.every(key => typeof value[key] === 'function'));
     require(typeof makeService === 'function' && typeof clockMilliseconds === 'function'
       && typeof monotonicMilliseconds === 'function');
     alarmStorage = data(value.alarmStorage, ['getAlarm', 'setAlarm', 'deleteAlarm', 'sync']);
@@ -111,6 +114,26 @@ export function createDeliveryRunner(options = {}) {
     }
     await alarmStorage.sync();
   });
+  const refresh = async () => {
+    if (refreshFeeds === undefined) return;
+    try { await refreshFeeds(); }
+    catch {
+      // A feed may have reconciled a terminal transition before another feed
+      // failed. Restore a durable retry wake on any failed refresh invocation.
+      await prearm();
+      fail('runner_unavailable');
+    }
+  };
+  const reconcileTerminal = () => serialWake(async () => {
+    // A supplied notification is not authority to delete a command's failsafe.
+    // Re-read the same durable projection here, after earlier wake writes finish.
+    const terminal = isTerminalAuthority();
+    require(typeof terminal === 'boolean', 'runner_unavailable');
+    if (terminal && due() === null) {
+      await alarmStorage.deleteAlarm();
+      await alarmStorage.sync();
+    }
+  });
   function command(name, input) {
     let snapshot;
     try {
@@ -121,6 +144,7 @@ export function createDeliveryRunner(options = {}) {
     } catch { return Promise.reject(new RunnerError('runner_rejected')); }
     return serial(async () => {
       const previous = await prearm(); // Must succeed before any enqueue opportunity.
+      await refresh();
       const result = await getService()[name](snapshot);
       await reconcile(previous, policy.continuationDelayMilliseconds);
       return result;
@@ -128,7 +152,11 @@ export function createDeliveryRunner(options = {}) {
   }
   async function feed(name, value) {
     // Never queue committed authority/refund/hold facts behind mail or signing.
-    try { return await getService()[name](value); }
+    try {
+      const result = await getService()[name](value);
+      if (name === 'observeEntitlement' && isTerminalAuthority !== undefined) await reconcileTerminal();
+      return result;
+    }
     catch { fail('runner_unavailable'); }
   }
   return Object.freeze({
@@ -137,7 +165,9 @@ export function createDeliveryRunner(options = {}) {
     observeEntitlement: value => feed('observeEntitlement', value),
     observeAdmission: value => feed('observeAdmission', value),
     recover: () => serial(async () => {
-      const previous = alarmTime(await alarmStorage.getAlarm());
+      const previous = refreshFeeds === undefined
+        ? alarmTime(await alarmStorage.getAlarm()) : await prearm();
+      await refresh();
       await reconcile(previous, policy.continuationDelayMilliseconds);
       return Object.freeze({ ok: true, code: 'wake_reconciled' });
     }),
@@ -153,6 +183,7 @@ export function createDeliveryRunner(options = {}) {
         const armed = await entry;
         require(!armed.failed, 'runner_unavailable');
         await prearm(); // Refresh the failsafe after waiting, before any external work.
+        await refresh();
         const previous = armed.previous;
         const start = elapsedTime(); let last = start, attempts = 0, deferred = false;
         while (attempts < policy.maximumAttemptsPerInvocation) {

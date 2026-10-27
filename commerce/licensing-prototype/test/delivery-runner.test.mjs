@@ -227,3 +227,84 @@ test('monotonic soft budget survives epoch reversal and stops on monotonic regre
     assert.equal(f.service.snapshot().pending, 2); assert.ok(await f.alarmStorage.getAlarm());
   }
 });
+
+test('lifecycle hooks refresh after durable prearm for commands, recover and empty alarms', async t => {
+  const f = await deliveryFixture(t), observed = [];
+  const run = runner(f, undefined, { refreshFeeds: async () => {
+    assert.ok(await f.alarmStorage.getAlarm()); observed.push('refresh');
+  }, isTerminalAuthority: () => false });
+  await run.recover(); assert.deepEqual(observed, ['refresh']);
+  await run.alarm(); assert.equal(observed.length, 2);
+  await run.begin(f.input()); assert.equal(observed.length, 3);
+  assert.equal(f.contexts.length, 0);
+});
+
+test('lifecycle hook failure retains a durable wake and prevents cached-active commands or delivery', async t => {
+  const f = await deliveryFixture(t); await f.service.begin(f.input());
+  const run = runner(f, undefined, { refreshFeeds: async () => { throw new Error('private dependency'); } });
+  for (const operation of [() => run.begin(f.input()), () => run.recover(), () => run.alarm()]) {
+    await assert.rejects(operation(), { code: 'runner_unavailable', message: 'runner_unavailable' });
+    assert.ok(await f.alarmStorage.getAlarm());
+  }
+  assert.equal(f.service.snapshot().challenges, 1); assert.equal(f.contexts.length, 0);
+});
+
+test('lifecycle terminal cleanup bypasses paused signing but stale blocked notification and hold preserve prearm', async t => {
+  const f = await deliveryFixture(t), entered = gate(), release = gate();
+  const run = runner(f, undefined, { isTerminalAuthority: () => f.state.fence.status === 'blocked' });
+  const first = await run.begin(f.input()); await run.alarm();
+  const request = await f.approval(first.challenge);
+  f.state.signGate = async () => { entered.resolve(); await release.promise; };
+  const approving = assert.rejects(run.approve(request), { code: 'runner_unavailable' });
+  await entered.promise;
+  await run.observeAdmission({ entitlementID: f.id, revision: 2, decision: 'hold' });
+  assert.ok(await f.alarmStorage.getAlarm(), 'hold must not delete prearm');
+  // An old blocked observation cannot authorize deletion while the current
+  // same-ledger fence is active; here its revision is stale to the ledger too.
+  await run.observeEntitlement({ ...f.fact(), revision: 2 });
+  await run.observeEntitlement({ ...f.fact(), revision: 1, status: 'blocked' });
+  assert.ok(await f.alarmStorage.getAlarm(), 'stale notification must not delete prearm');
+  f.state.fence = { id: f.id, revision: 3, status: 'blocked' };
+  await run.observeEntitlement({ ...f.fact(), revision: 3, status: 'blocked' });
+  assert.equal(await f.alarmStorage.getAlarm(), null, 'terminal feed cleans wake before signer resumes');
+  release.resolve(); await approving;
+  assert.equal(f.service.snapshot().issued, 0);
+});
+
+test('lifecycle terminal probe is checked inside wake chain and failing or nonboolean probes never clear wake', async t => {
+  for (const outcome of ['throws', 'promise', 'false']) {
+    const f = await deliveryFixture(t);
+    await f.alarmStorage.setAlarm(f.state.milliseconds + 5000);
+    const run = runner(f, undefined, { isTerminalAuthority: () => {
+      if (outcome === 'throws') throw new Error('private');
+      return outcome === 'promise' ? Promise.resolve(true) : false;
+    } });
+    const feed = run.observeEntitlement({ ...f.fact(), revision: 2, status: 'blocked' });
+    if (outcome === 'false') await feed;
+    else await assert.rejects(feed, { code: 'runner_unavailable' });
+    assert.ok(await f.alarmStorage.getAlarm());
+  }
+  const f = await deliveryFixture(t), entered = gate(), release = gate();
+  let terminal = true;
+  f.state.afterArm = async () => { entered.resolve(); await release.promise; };
+  const run = runner(f, undefined, { isTerminalAuthority: () => terminal });
+  const command = run.begin(f.input()); await entered.promise;
+  const feed = run.observeEntitlement({ ...f.fact(), revision: 2, status: 'blocked' });
+  terminal = false; release.resolve(); await feed;
+  await assert.rejects(command, { code: 'runner_unavailable' });
+  assert.ok(await f.alarmStorage.getAlarm());
+});
+
+test('lifecycle hook options reject accessors and unknown fields without invocation', async t => {
+  const f = await deliveryFixture(t); let calls = 0;
+  const options = { enabled: true, makeService: () => f.service, alarmStorage: f.alarmStorage,
+    mail: { hasUnsettledSend: () => false }, clockMilliseconds: () => f.state.milliseconds,
+    monotonicMilliseconds: () => 1, operational };
+  for (const field of ['refreshFeeds', 'isTerminalAuthority']) {
+    const bad = { ...options };
+    Object.defineProperty(bad, field, { enumerable: true, get() { calls++; return () => true; } });
+    assert.throws(() => createDeliveryRunner(bad), { code: 'runner_configuration' });
+    assert.throws(() => createDeliveryRunner({ ...options, [field]: true }), { code: 'runner_configuration' });
+  }
+  assert.equal(calls, 0);
+});
