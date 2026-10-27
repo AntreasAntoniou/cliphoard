@@ -7,7 +7,7 @@ import { approvalDecision } from './activation-state.mjs';
 function entitlement(value, expectedID, recipient = false) {
   need(value && value.id === expectedID && value.product === 'pro'
     && Number.isSafeInteger(value.revision) && value.revision >= 1
-    && ['active', 'refunded', 'disputed'].includes(value.status), 'entitlement_ineligible');
+    && ['active', 'refunded', 'disputed', 'blocked'].includes(value.status), 'entitlement_ineligible');
   if (recipient) need(typeof value.ownerEmail === 'string' && value.ownerEmail.length <= 254
     && /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(value.ownerEmail), 'entitlement_ineligible');
   return { id: value.id, revision: value.revision, status: value.status,
@@ -16,12 +16,14 @@ function entitlement(value, expectedID, recipient = false) {
 
 export function createSqliteActivationService({ storage, entitlementID, issuerKeyID,
   issuerPublicKey, issueReceipt, resolveEntitlement, readEntitlement, sealToken, openToken,
-  deliverApproval, deliverReceipt, admission, clock, challengeTTLSeconds, deliveryLeaseSeconds }) {
+  deliverApproval, deliverReceipt, admission, clock, challengeTTLSeconds, deliveryLeaseSeconds,
+  readAuthorityFence }) {
   decode(entitlementID, 16);
   need(storage?.sql?.exec && typeof storage.transactionSync === 'function'
     && typeof storage.sync === 'function', 'configuration');
   for (const callback of [issueReceipt, resolveEntitlement, readEntitlement, sealToken,
     openToken, deliverApproval, deliverReceipt, admission, clock]) need(typeof callback === 'function', 'configuration');
+  need(readAuthorityFence === undefined || typeof readAuthorityFence === 'function', 'configuration');
   need(Number.isSafeInteger(challengeTTLSeconds) && challengeTTLSeconds > 0
     && challengeTTLSeconds <= 1800 && Number.isSafeInteger(deliveryLeaseSeconds)
     && deliveryLeaseSeconds > 0 && deliveryLeaseSeconds <= 1800, 'configuration');
@@ -57,6 +59,22 @@ export function createSqliteActivationService({ storage, entitlementID, issuerKe
     const current = meta();
     need(current.status === 'active', 'entitlement_ineligible');
     need(current.revision === revision, 'entitlement_revision_changed');
+    if (readAuthorityFence !== undefined) {
+      // A same-database committed block must win even while its asynchronous
+      // observeEntitlement notification is pending. No I/O or Promise is allowed.
+      try {
+        const fact = readAuthorityFence();
+        need(fact && typeof fact === 'object'
+          && [Object.prototype, null].includes(Object.getPrototypeOf(fact)));
+        const descriptors = Object.getOwnPropertyDescriptors(fact);
+        const keys = Reflect.ownKeys(descriptors);
+        need(keys.length === 3 && ['id', 'revision', 'status'].every(key =>
+          descriptors[key] && Object.hasOwn(descriptors[key], 'value')));
+        need(descriptors.id.value === entitlementID && Number.isSafeInteger(descriptors.revision.value)
+          && descriptors.revision.value >= 1 && descriptors.revision.value === revision
+          && descriptors.status.value === 'active');
+      } catch { need(false, 'authority_fence_rejected'); }
+    }
   };
   function observe(value) {
     const current = meta();
@@ -281,16 +299,22 @@ export function createSqliteActivationService({ storage, entitlementID, issuerKe
           need(sameTokenHash(record.approvalTokenHash, await tokenDigest(token)), 'sealed_token_invalid');
         }
         const owner = await refresh();
-        tx(() => {
+        const authorizeDispatch = () => tx(() => {
           requireCurrent(record.entitlementRevision);
           const current = exec('SELECT * FROM device_licence_outbox WHERE id=?', row.id)[0];
           need(current.status === 'leased' && current.lease_id === leaseID
             && now() < current.lease_until, 'delivery_superseded');
+          const latest = recordFor(row.challenge_id);
+          need(latest.entitlementRevision === record.entitlementRevision, 'delivery_superseded');
           if (row.kind === 'approval') need(now() >= record.createdAt
-            && now() < record.challenge.expiresAt && recordFor(row.challenge_id).status === 'pending', 'challenge_expired');
+            && now() < record.challenge.expiresAt && latest.status === 'pending', 'challenge_expired');
+          else need(latest.status === 'issued' && latest.receipt === record.receipt, 'delivery_superseded');
         });
+        authorizeDispatch();
         dispatched = true;
-        const common = { to: owner.ownerEmail, deliveryID: row.id, challengeID: row.challenge_id };
+        const common = { to: owner.ownerEmail, deliveryID: row.id, challengeID: row.challenge_id,
+          entitlementID, entitlementRevision: record.entitlementRevision,
+          deviceKeyHash: record.challenge.deviceKeyHash, authorizeDispatch };
         const result = await (row.kind === 'approval'
           ? deliverApproval({ ...common, token, expiresAt: record.challenge.expiresAt })
           : deliverReceipt({ ...common, receipt: record.receipt }));
@@ -317,6 +341,12 @@ export function createSqliteActivationService({ storage, entitlementID, issuerKe
         await storage.sync();
         return { ok: false, code: dispatched ? 'delivery_uncertain' : 'delivery_deferred' };
       }
+    },
+    nextDeliveryAt() {
+      // Scheduling metadata only: no customer, device, token or outbox identifier.
+      const value = exec(`SELECT MIN(CASE WHEN status='pending' THEN ? ELSE lease_until END) AS due
+        FROM device_licence_outbox WHERE status IN ('pending','leased')`, now())[0].due;
+      return value === null ? null : epoch(value);
     },
     snapshot() {
       // Fixed aggregate counters only. No email, token, key, device or customer IDs.
