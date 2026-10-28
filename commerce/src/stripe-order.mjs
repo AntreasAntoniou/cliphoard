@@ -328,6 +328,25 @@ export function orderService({ env, storage, stripe, schedule = async () => {}, 
     commerceMetric(env, "email_retry_queued");
     return { result: "email_queued" };
   }
-  return { start, paid, refund, claim, drain, retryDelivery, inspectDeviceAuthority };
+  async function authorizeSetupRecovery(...args) {
+    need(args.length === 2 && typeof args[1] === "string" && TOKEN.test(args[1]), 404, "claim_unavailable");
+    const [orderRef, token] = args, record = await load(orderRef);
+    need(record.fulfilment === "device-v1" && record.sessionId && await sha256(token) === record.tokenHash, 404, "claim_unavailable");
+    need(env.DELIVERY_ENABLED === "true" && env.EMAIL_DELIVERY_ENABLED === "true", 503, "delivery_paused");
+    const current = await refresh(record);
+    need(current.result === "eligible", 409, "setup_unavailable");
+    return { accountId: cfg.accountId, mode: cfg.mode, orderRef, sessionId: record.sessionId,
+      productId: cfg.productId, priceId: cfg.priceId, currency: cfg.currency, unitAmount: cfg.unitAmount, taxBehavior: cfg.taxBehavior };
+  }
+  async function setupRecoveryLink(...args) {
+    // Trusted RPC capability only, never a public GET/claim response. Keep usable
+    // for blocked/paused target reconstruction; this is not payment authority.
+    need(args.length === 0 && authorityScope, 503, "device_authority_disabled");
+    const record = await load(authorityScope.orderRef);
+    need(record.fulfilment === "device-v1" && record.sessionId === authorityScope.sessionId, 409, "device_authority_scope_mismatch");
+    const token = await tokenFor(record);
+    return { claimURL: `${cfg.origin}/pro/claim?order=${record.orderRef}&token=${token}` };
+  }
+  return { start, paid, refund, claim, drain, retryDelivery, inspectDeviceAuthority, authorizeSetupRecovery, setupRecoveryLink };
 }
 import { commerceMetric } from "../../telemetry/metrics.mjs";

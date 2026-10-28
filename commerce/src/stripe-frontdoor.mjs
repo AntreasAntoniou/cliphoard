@@ -16,31 +16,57 @@ const style = `
 `;
 function escape(value) { return String(value).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]); }
 async function hash(value) { return btoa(String.fromCharCode(...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value))))); }
-async function ready(env, cfg) {
+function deviceCapability(options) {
+  if (options === undefined) return { requested: false, readiness: null };
+  try {
+    const exact = (value, fields) => {
+      need(value && typeof value === 'object' && [Object.prototype, null].includes(Object.getPrototypeOf(value)));
+      const d = Object.getOwnPropertyDescriptors(value);
+      need(Reflect.ownKeys(d).length === fields.length && fields.every(k => d[k] && Object.hasOwn(d[k], 'value')));
+      return Object.fromEntries(fields.map(k => [k, d[k].value]));
+    };
+    const outer = exact(options, ['deviceFulfilment']), capability = exact(outer.deviceFulfilment, ['enabled', 'readiness']);
+    need(capability.enabled === true && typeof capability.readiness === 'function');
+    return { requested: true, readiness: capability.readiness };
+  } catch { return { requested: true, readiness: null }; }
+}
+async function ready(env, cfg, device) {
   try {
     need(cfg && cfg.currency === "gbp" && cfg.unitAmount === 1000 && env.CHECKOUT_ENABLED === "true" && env.ISSUANCE_ENABLED === "true" &&
       env.DELIVERY_ENABLED === "true" && deliveryConfigured(env) && validWebhookSecret(env.STRIPE_WEBHOOK_SECRET) &&
       typeof env.STRIPE_ORDERS?.idFromName === "function" && typeof env.STRIPE_ORDERS?.get === "function" &&
       typeof env.CHECKOUT_RATE_LIMITER?.limit === "function");
     stripeClient(env); // Syntax/mode check only. A GET page never calls Stripe.
+    const deviceFlag = env.DEVICE_FULFILMENT_ENABLED === 'true';
+    if (device.requested || deviceFlag) {
+      need(deviceFlag && device.readiness !== null);
+      await sealToken("A".repeat(43), "frontdoor-readiness", env);
+      const available = await device.readiness();
+      // Readiness may suspend. A pause during that work must also remove the
+      // advertised checkout action, even though order creation fences it again.
+      return available === true && env.DEVICE_FULFILMENT_ENABLED === 'true' &&
+        env.CHECKOUT_ENABLED === 'true' && env.ISSUANCE_ENABLED === 'true' &&
+        env.DELIVERY_ENABLED === 'true' && deliveryConfigured(env);
+    }
     await sealToken("A".repeat(43), "frontdoor-readiness", env);
     await signLicence({ provider: "stripe", mode: cfg.mode, accountId: cfg.accountId, orderId: "frontdoor-readiness", issued: 0 },
       env.CLIPHOARD_SIGNING_SEED, cfg.publicKey);
     return true;
   } catch { return false; }
 }
-export async function purchasePage(env, url) {
+export async function purchasePage(env, url, options) {
+  const device = deviceCapability(options), deviceCopy = device.readiness !== null && env.DEVICE_FULFILMENT_ENABLED === 'true';
   need(!url.search || (url.searchParams.size === 1 && url.searchParams.get("cancelled") === "1"), 400, "unexpected_query");
   let cfg = null; try { cfg = config(env); } catch {}
   if (cfg) need(url.origin === cfg.origin, 400, "invalid_origin");
-  const enabled = await ready(env, cfg), download = cfg?.download ?? "https://cliphoard.dev/#download";
+  const enabled = await ready(env, cfg, device), download = cfg?.download ?? "https://cliphoard.dev/#download";
   const script = `(${checkoutPageClient.toString()})();`;
   const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark"><title>Cliphoard Pro · Direct download</title><style>${style}</style></head><body><div class="wrap"><header><a class="brand" href="https://cliphoard.dev/" aria-label="Cliphoard home"><span class="mark" aria-hidden="true"></span>Cliphoard</a><label class="appearance"><span>Appearance</span><select id="appearance" aria-label="Appearance"><option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option></select></label></header><main>
-${url.searchParams.has("cancelled") ? '<p class="cancelled">You left checkout. You can continue your existing attempt below. If you already paid, check your email for your key.</p>' : ""}
-<div class="layout"><section aria-labelledby="headline"><p class="eyebrow">For your Mac. On your Mac.</p><h1 id="headline">Your copy history.<span>A little smarter.</span></h1><p class="lead">Cliphoard remembers what you copy so you can find and paste it again. Pro adds image search that runs on your own Mac.</p><ul class="features"><li><span class="check" aria-hidden="true">✓</span><div><div class="feature-title">Find images by what’s in them</div><p class="feature-note">Search by meaning, without remembering a filename.</p></div></li><li><span class="check" aria-hidden="true">✓</span><div><div class="feature-title">Search the words inside images</div><p class="feature-note">Bring copied screenshots and their text back into reach.</p></div></li><li><span class="check" aria-hidden="true">✓</span><div><div class="feature-title">Find similar images</div><p class="feature-note">Start with one image to find others like it.</p></div></li></ul><p class="local-note">Your image search stays on your Mac. Your Pro key works offline after activation.</p></section>
-<section class="card" aria-labelledby="product"><div class="card-heading"><h2 id="product">Cliphoard Pro</h2><span class="badge">Direct-download edition</span></div><p class="price">£10<small>one-time</small></p><p class="tax">GBP, including tax. £10 total.<br>No subscription.</p><ul class="purchase-details"><li><span aria-hidden="true">✓</span><span>One offline key for every Mac you own</span></li><li><span aria-hidden="true">✓</span><span>Private recovery link delivered by email</span></li><li><span aria-hidden="true">✓</span><span>Secure payment through Stripe and Link</span></li></ul>
-${enabled ? `${cfg.mode === "test" ? '<p class="test-notice">Test checkout · No live purchase</p>' : ""}<button type="button" class="primary" id="checkout">Continue to checkout</button><p class="checkout-note">Enter your email and payment details at checkout.</p><noscript><p class="status">Please enable JavaScript to open checkout. The free download remains available below.</p></noscript>` : '<div class="unavailable" role="status"><strong>Purchases are not available yet</strong><p>You can use the complete Free edition now. Pro checkout will open when payment and key delivery are ready.</p></div>'}
-<p id="checkout-status" class="status" role="status" aria-live="polite"></p><p class="edition-note"><strong>For the direct-download app only.</strong> The Mac App Store edition uses its own in-app purchase. This key does not unlock the Store edition.</p></section></div>
+${url.searchParams.has("cancelled") ? `<p class="cancelled">You left checkout. You can continue your existing attempt below. If you already paid, check your email for ${deviceCopy ? 'your setup instructions' : 'your key'}.</p>` : ""}
+<div class="layout"><section aria-labelledby="headline"><p class="eyebrow">For your Mac. On your Mac.</p><h1 id="headline">Your copy history.<span>A little smarter.</span></h1><p class="lead">Cliphoard remembers what you copy so you can find and paste it again. Pro adds image search that runs on your own Mac.</p><ul class="features"><li><span class="check" aria-hidden="true">✓</span><div><div class="feature-title">Find images by what’s in them</div><p class="feature-note">Search by meaning, without remembering a filename.</p></div></li><li><span class="check" aria-hidden="true">✓</span><div><div class="feature-title">Search the words inside images</div><p class="feature-note">Bring copied screenshots and their text back into reach.</p></div></li><li><span class="check" aria-hidden="true">✓</span><div><div class="feature-title">Find similar images</div><p class="feature-note">Start with one image to find others like it.</p></div></li></ul><p class="local-note">Your image search stays on your Mac. ${deviceCopy ? 'Pro works offline after approval on each Mac.' : 'Your Pro key works offline after activation.'}</p></section>
+<section class="card" aria-labelledby="product"><div class="card-heading"><h2 id="product">Cliphoard Pro</h2><span class="badge">Direct-download edition</span></div><p class="price">£10<small>one-time</small></p><p class="tax">GBP, including tax. £10 total.<br>No subscription.</p><ul class="purchase-details"><li><span aria-hidden="true">✓</span><span>${deviceCopy ? 'All the Macs you own · no fixed device cap' : 'One offline key for every Mac you own'}</span></li><li><span aria-hidden="true">✓</span><span>${deviceCopy ? 'Approve each new Mac by email' : 'Private recovery link delivered by email'}</span></li><li><span aria-hidden="true">✓</span><span>Secure payment through Stripe and Link</span></li></ul>
+${enabled ? `${cfg.mode === "test" ? '<p class="test-notice">Test checkout · No live purchase</p>' : ""}<button type="button" class="primary" id="checkout">Continue to checkout</button><p class="checkout-note">Enter your email and payment details at checkout.</p><noscript><p class="status">Please enable JavaScript to open checkout. The free download remains available below.</p></noscript>` : `<div class="unavailable" role="status"><strong>Purchases are not available yet</strong><p>You can use the complete Free edition now. Pro checkout will open when payment and ${deviceCopy ? 'Mac approval' : 'key delivery'} are ready.</p></div>`}
+<p id="checkout-status" class="status" role="status" aria-live="polite"></p><p class="edition-note"><strong>For the direct-download app only.</strong> The Mac App Store edition uses its own in-app purchase. ${deviceCopy ? 'This purchase does not unlock the Store edition.' : 'This key does not unlock the Store edition.'}</p></section></div>
 <section class="free" aria-labelledby="free-title"><div><h2 id="free-title">Free is already a complete clipboard manager.</h2><p>Save what you copy, find it later, and paste it again. You don’t need Pro to make Cliphoard part of your day.</p></div><a class="secondary" href="${escape(download)}" rel="noreferrer">Download Free <span aria-hidden="true">&nbsp;↗</span></a></section></main><footer><span>A SQUARED LABS LIMITED</span><div><a href="mailto:support@cliphoard.dev">Contact support</a><a href="https://cliphoard.dev/privacy.html">Privacy</a><a href="https://cliphoard.dev/">Back to Cliphoard</a></div></footer></div><script>${script}</script></body></html>`;
   const csp = `default-src 'none'; script-src 'sha256-${await hash(script)}'; style-src 'sha256-${await hash(style)}'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'`;
   return new Response(html, { headers: { ...SECURITY, "Content-Type": "text/html; charset=utf-8", "Content-Security-Policy": csp } });

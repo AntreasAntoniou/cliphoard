@@ -239,7 +239,14 @@ struct Main {
             }
         }
         let app = NSApplication.shared
+#if CLIPHOARD_DEVICE_LICENSING_PROTOTYPE && CLIPHOARD_DEVICE_LICENSING_CONFIGURED && !APP_STORE
+        let runtime = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first.flatMap {
+            DeviceLicenceReleaseConfiguration.makeRuntime(bundleIdentifier: Bundle.main.bundleIdentifier, applicationSupport: $0)
+        }
+        let delegate = runtime.map { AppDelegate(deviceLicenceRuntime: $0) } ?? AppDelegate()
+#else
         let delegate = AppDelegate()
+#endif
         app.delegate = delegate
         app.setActivationPolicy(.accessory)
         // Retain the delegate for the lifetime of the app.

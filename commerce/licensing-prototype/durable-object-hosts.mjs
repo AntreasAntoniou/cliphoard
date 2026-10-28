@@ -93,6 +93,15 @@ export function createDeviceLicenceDurableObjectClasses(options = {}) {
         return captureResult(await this.#config.targetNamespace.getByName(targetName(this.#config.realm, ack.entitlementID)).refreshAuthority(ack), ['authority_refreshed']);
       });
     }
+    requestRecovery(...args) {
+      return guarded(async () => {
+        need(args.length === 2); const pinned = scope(args[0]); decode(args[1], 16);
+        const original = await this.#directory.lookupReservation(pinned); need(original !== null);
+        const ack = await this.#directory.lookupReady(original.entitlementID); need(ack !== null);
+        return captureResult(await this.#config.targetNamespace.getByName(targetName(this.#config.realm, ack.entitlementID))
+          .requestRecovery(ack, args[1]), ['delivery_requested']);
+      });
+    }
     fetch() { return unavailable(404); }
   }
   class Entitlement extends o.DurableObject {

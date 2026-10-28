@@ -156,6 +156,40 @@ export function createStripeDeviceOrderHost(options = {}) {
         return this.#core(this.#scope(row)).inspectDeviceAuthority();
       });
     }
+    setupRecoveryLink(...args) {
+      return this.#order.serial(async () => {
+        requireValue(args.length === 0); const row = await this.#stored();
+        return this.#core(this.#scope(row)).setupRecoveryLink();
+      });
+    }
+    async requestSetupRecovery(...args) {
+      requireValue(args.length === 1);
+      const input = data(args[0], ['orderRef', 'token', 'requestID']); decode(input.requestID, 16);
+      const scope = await this.#order.serial(async () => {
+        const row = await this.#stored();
+        requireValue(row.fulfilment === 'device-v1' && row.orderRef === input.orderRef
+          && typeof input.token === 'string' && TOKEN.test(input.token) && await sha256(input.token) === row.tokenHash);
+        try { return await this.#core().authorizeSetupRecovery(input.orderRef, input.token); }
+        catch (error) {
+          // A recovery request must never enqueue provisioning for a missing
+          // reservation. Only a newly observed terminal block needs a feed wake.
+          const current = await this.#stored();
+          if (current.blocked) await this.#wake(current);
+          throw error;
+        }
+      });
+      // Outside original order serial gate: recovery service refreshes this order.
+      const value = await this.#config.directoryNamespace.getByName(this.#config.directoryName)
+        .requestRecovery(scope, input.requestID);
+      let dispose;
+      try {
+        const d = Object.getOwnPropertyDescriptors(value);
+        if (d[Symbol.dispose]) { requireValue(Object.hasOwn(d[Symbol.dispose], 'value') && typeof d[Symbol.dispose].value === 'function'); dispose = d[Symbol.dispose].value; }
+        requireValue(Reflect.ownKeys(d).every(k => ['ok','code'].includes(k) || k === Symbol.dispose)
+          && d.ok?.value === true && d.code?.value === 'delivery_requested');
+        return { ok: true, code: 'delivery_requested' };
+      } finally { if (dispose) Reflect.apply(dispose, value, []); }
+    }
     async #legacyAlarm() {
       try {
         return await this.#order.serial(async () => {
