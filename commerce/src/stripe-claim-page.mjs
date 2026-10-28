@@ -31,6 +31,10 @@ export async function claimPage(result) {
     status = 410; state = "blocked"; label = "Key delivery unavailable"; title = "This key can’t be recovered.";
     lead = "This purchase has a refund or dispute record, so key delivery is unavailable.";
     content = `<section class="message-panel" aria-labelledby="next-step"><h2 id="next-step">Need a hand with your purchase?</h2><p>Email support from the address you used at checkout. We can help you check the purchase and what to do next.</p><div class="message-actions"><a class="primary" href="mailto:support@cliphoard.dev">Contact support</a><a class="secondary" href="https://cliphoard.dev/">Back to Cliphoard</a></div><p class="message-note">You can continue using Cliphoard Free.</p></section>`;
+  } else if (result.result === "device_pending") {
+    label = "Payment confirmed"; title = "Check your email to set up Pro.";
+    lead = "Your setup instructions are being prepared for the email address you used at checkout.";
+    content = `<section class="message-panel" aria-labelledby="next-step"><h2 id="next-step">Approve each new Mac by email.</h2><p>Use the setup instructions in the direct-download app. Once you approve a Mac, you can use Pro offline without a subscription. You can set up all the Macs you own.</p><p>If the email hasn’t arrived, check your spam folder or contact support. You don’t need to buy again.</p><div class="message-actions"><a class="primary" href="mailto:support@cliphoard.dev">Contact support</a><a class="secondary" href="https://cliphoard.dev/">Back to Cliphoard</a></div></section>`;
   } else if (result.result === "ready") {
     status = 200; state = "ready"; label = "Ready to activate"; title = "Your Pro key is ready.";
     lead = "One key for every Mac you own. Copy it below and make Cliphoard Pro yours.";

@@ -109,7 +109,11 @@ final class AppSettings: ObservableObject {
         } else {
             Licence.remove()
         }
+#if CLIPHOARD_DEVICE_LICENSING_PROTOTYPE && !APP_STORE
+        store.refreshDirectEntitlement()
+#else
         store.entitlement = Licence.current
+#endif
         licenceVerdict = result
         syncGatedSettingsToEntitlement()
 #endif
@@ -120,7 +124,11 @@ final class AppSettings: ObservableObject {
         Licence.remove()
         licenceKeyField = ""
         licenceVerdict = nil
+#if CLIPHOARD_DEVICE_LICENSING_PROTOTYPE && !APP_STORE
+        store.refreshDirectEntitlement()
+#else
         store.entitlement = Licence.current
+#endif
         syncGatedSettingsToEntitlement()
 #endif
     }
@@ -129,7 +137,7 @@ final class AppSettings: ObservableObject {
     /// a FAILED paste can say why ("signature does not verify") rather than silently
     /// reverting to a free build with no explanation.
     @Published var licenceVerdict: Entitlement?
-#if APP_STORE
+#if APP_STORE || CLIPHOARD_DEVICE_LICENSING_PROTOTYPE
     private var entitlementObservation: AnyCancellable?
 #endif
 
@@ -306,7 +314,7 @@ final class AppSettings: ObservableObject {
             searchMode = .smart
             DeepSearch.mode = .smart
         }
-#if APP_STORE
+#if APP_STORE || CLIPHOARD_DEVICE_LICENSING_PROTOTYPE
         // @Published emits before ClipStore's value changes. Reconcile on the main actor
         // afterward so the settings bindings read the actual new entitlement.
         entitlementObservation = store.$entitlement.removeDuplicates().dropFirst().sink { [weak self] _ in
@@ -495,12 +503,21 @@ struct SettingsView: View {
                         Text("That key did not verify — \(error). Nothing was saved.")
                             .font(.system(size: 11)).foregroundStyle(.orange)
                     }
+#if CLIPHOARD_DEVICE_LICENSING_PROTOTYPE
+                    if let runtime = settings.store.deviceLicenceRuntime, runtime.isConfigured {
+                        DeviceLicenceDirectSettingsView(runtime: runtime)
+                    }
+                    Text("Legacy CLIP1 keys remain valid offline. New purchases use an emailed setup code and approval for each Mac; an approved Mac can then use Pro offline.")
+                        .font(.system(size: 11)).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+#else
                     Text("Your key is checked on this Mac, offline, against a public key "
                          + "compiled into the app. There is no licence server, no activation "
                          + "and no call of any kind — and so nothing anyone could switch off. "
                          + "Pro is \(Licence.priceLabel) once: one person, every Mac you own.")
                         .font(.system(size: 11)).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
+#endif
 #endif
                 }
 

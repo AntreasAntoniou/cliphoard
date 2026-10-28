@@ -22,6 +22,7 @@ struct DeviceLicenceApplicationState: Equatable, Sendable {
     var lifecycle: DeviceLicenceApplicationLifecycle = .idle
     var isPanelPresented = false
     var isProApproved = false
+    var approvedReceipt: DeviceLicenceReceipt?
     var approval = DeviceLicenceApprovalState()
 }
 /// One owner per application lifetime. Panel values borrow this session; they do
@@ -33,6 +34,7 @@ final class DeviceLicenceApplicationSession: ObservableObject {
     var lifecycle: DeviceLicenceApplicationLifecycle { state.lifecycle }
     var isPanelPresented: Bool { state.isPanelPresented }
     var isProApproved: Bool { state.isProApproved }
+    var approvedReceipt: DeviceLicenceReceipt? { state.approvedReceipt }
     var approvalState: DeviceLicenceApprovalState { state.approval }
     private let flow: DeviceLicenceApprovalFlow
     private var observation: AnyCancellable?
@@ -40,7 +42,7 @@ final class DeviceLicenceApplicationSession: ObservableObject {
     private var phase: DeviceLicenceApplicationLifecycle = .idle
     private var presented = false
     private var approval = DeviceLicenceApprovalState()
-    private var verifiedPro = false
+    private var verifiedReceipt: DeviceLicenceReceipt?
     private var forwarding = false, publishing = false, flushing = false
     private var cancellationRequested = false
 
@@ -180,7 +182,7 @@ final class DeviceLicenceApplicationSession: ObservableObject {
                 approval = flow.state
                 // This receipt is set only after fresh proof + successful local
                 // persistence/readback. Remote success alone never publishes Pro.
-                if approval.isApproved, flow.approvedReceipt != nil { verifiedPro = true }
+                if approval.isApproved, let receipt = flow.approvedReceipt { verifiedReceipt = receipt }
             }
             var gated = approval
             if phase != .running {
@@ -188,7 +190,7 @@ final class DeviceLicenceApplicationSession: ObservableObject {
                 gated.canRestore = false; gated.canImport = false; gated.canCancel = false; gated.retry = nil
             }
             let next = DeviceLicenceApplicationState(lifecycle: phase, isPanelPresented: presented,
-                isProApproved: verifiedPro, approval: gated)
+                isProApproved: verifiedReceipt != nil, approvedReceipt: verifiedReceipt, approval: gated)
             if state != next { publishing = true; state = next; publishing = false }
         } while cancellationRequested || state.lifecycle != phase || state.isPanelPresented != presented
     }

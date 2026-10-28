@@ -8,7 +8,17 @@ enum Entitlement: Equatable {
     case free(reason: String?)
     case pro(orderID: String, issued: Date)
 
-    var isPro: Bool { if case .pro = self { return true }; return false }
+#if CLIPHOARD_DEVICE_LICENSING_PROTOTYPE && !APP_STORE
+    /// Actual verified receipt metadata, never a fabricated legacy order/date.
+    case devicePro(DeviceLicenceReceipt)
+#endif
+    var isPro: Bool {
+        if case .pro = self { return true }
+#if CLIPHOARD_DEVICE_LICENSING_PROTOTYPE && !APP_STORE
+        if case .devicePro = self { return true }
+#endif
+        return false
+    }
 }
 
 /// Offline Pro licence: an Ed25519 signature over a small JSON payload, verified against a

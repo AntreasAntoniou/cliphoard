@@ -35,6 +35,7 @@ struct DeviceLicenceBootstrapTrustProfile: Sendable {
 /// This is authenticated onboarding data, never an approval or a Pro entitlement.
 /// Its only constructor is in this file and is used after full pin verification.
 struct VerifiedDeviceLicenceBootstrap: Sendable, CustomStringConvertible, CustomDebugStringConvertible {
+    private let admissionEnvelope: String
     let profileID: String
     let bootstrapKeyID: String
     let receiptIssuerKeyID: String
@@ -44,14 +45,18 @@ struct VerifiedDeviceLicenceBootstrap: Sendable, CustomStringConvertible, Custom
     let issuedAt: UInt64
     var description: String { "VerifiedDeviceLicenceBootstrap" }
     var debugDescription: String { description }
+    /// Internal transport capability. Descriptions and UI never expose this
+    /// exact signed credential, and transport never reconstructs it from fields.
+    func setupAdmissionEnvelope() -> String { admissionEnvelope }
 
     fileprivate init(profileID: String, bootstrapKeyID: String, receiptIssuerKeyID: String,
                      receiptIssuerPublicKey: Data, entitlementID: String,
-                     activationHandle: String, issuedAt: UInt64) {
+                     activationHandle: String, issuedAt: UInt64, admissionEnvelope: String) {
         self.profileID = profileID; self.bootstrapKeyID = bootstrapKeyID
         self.receiptIssuerKeyID = receiptIssuerKeyID
         self.receiptIssuerPublicKey = Data(Array(receiptIssuerPublicKey))
         self.entitlementID = entitlementID; self.activationHandle = activationHandle; self.issuedAt = issuedAt
+        self.admissionEnvelope = admissionEnvelope
     }
 }
 
@@ -97,7 +102,7 @@ enum DeviceLicenceBootstrapVerifier {
         if Task.isCancelled { throw DeviceLicenceBootstrapFailure.cancelled }
         return .init(profileID: profile.profileID, bootstrapKeyID: profile.bootstrapKeyID,
                      receiptIssuerKeyID: fields[5], receiptIssuerPublicKey: receiptIssuer,
-                     entitlementID: fields[6], activationHandle: fields[7], issuedAt: issuedAt)
+                     entitlementID: fields[6], activationHandle: fields[7], issuedAt: issuedAt, admissionEnvelope: envelope)
     }
 }
 

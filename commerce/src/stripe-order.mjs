@@ -59,8 +59,23 @@ async function itemsFor(stripe, session, cfg) {
     session.total_details?.amount_discount === 0 && session.total_details?.amount_shipping === 0 &&
     session.total_details?.amount_tax === item.amount_tax, 409, "amount_or_quantity_mismatch");
 }
-export function orderService({ env, storage, stripe, schedule = async () => {}, now = () => Math.floor(Date.now() / 1000), deliver, deviceAuthority }) {
+export function orderService({ env, storage, stripe, schedule = async () => {}, now = () => Math.floor(Date.now() / 1000), deliver, deviceAuthority, deviceFulfilment }) {
   const cfg = config(env);
+  let deviceReadiness;
+  if (deviceFulfilment !== undefined) {
+    need(deviceFulfilment && Object.getPrototypeOf(deviceFulfilment) === Object.prototype, 503, "device_fulfilment_configuration");
+    const d = Object.getOwnPropertyDescriptors(deviceFulfilment);
+    need(Reflect.ownKeys(d).every(k => typeof k === "string" && "value" in d[k]) &&
+      [true, false].includes(d.enabled?.value), 503, "device_fulfilment_configuration");
+    if (d.enabled.value) {
+      need(Reflect.ownKeys(d).length === 2 && typeof d.readiness?.value === "function", 503, "device_fulfilment_configuration");
+      deviceReadiness = d.readiness.value;
+    } else need(Reflect.ownKeys(d).length === 1, 503, "device_fulfilment_configuration");
+  }
+  async function requireDeviceReady() {
+    try { need(await deviceReadiness() === true, 503, "device_fulfilment_unavailable"); }
+    catch { need(false, 503, "device_fulfilment_unavailable"); }
+  }
   // Trusted construction only. No Worker route supplies this opt-in or its IDs.
   let authorityScope;
   if (deviceAuthority !== undefined) {
@@ -89,6 +104,13 @@ export function orderService({ env, storage, stripe, schedule = async () => {}, 
       ["idle", "pending", "accepted", "blocked", "exhausted"].includes(record.mail?.status) &&
       integer(record.mail.attempts) && record.mail.attempts <= MAX_MAIL_ATTEMPTS,
       503, "stored_order_invalid");
+    need(record.fulfilment === undefined || record.fulfilment === "device-v1", 503, "stored_order_invalid");
+    if (record.fulfilment === "device-v1") {
+      // Persisted selection is immutable. An older/default host must never issue
+      // a legacy bearer licence when it encounters a device-policy order.
+      need(deviceReadiness && record.issued === null && record.licence === null &&
+        ["idle", "blocked"].includes(record.mail.status) && record.mail.attempts === 0, 503, "device_fulfilment_unavailable");
+    }
     return record;
   }
   async function tokenFor(record) {
@@ -176,18 +198,21 @@ export function orderService({ env, storage, stripe, schedule = async () => {}, 
     need(validWebhookSecret(env.STRIPE_WEBHOOK_SECRET), 503, "webhook_unavailable");
     await verifyAccount(stripe, cfg, true); validatePrice(await stripe.price(cfg.priceId), cfg, true);
     let record = await load(orderRef, true);
+    if ((!record && deviceReadiness) || record?.fulfilment === "device-v1") await requireDeviceReady();
     if (!record) {
       const token = randomToken();
       record = { scope: cfg.scope, orderRef, created: now(), tokenHash: await sha256(token),
         sealed: await sealToken(token, aadFor(cfg, orderRef), env), sessionId: null, issued: null,
         licence: null, blocked: false, mail: { status: "idle", attempts: 0 } };
+      if (deviceReadiness) record.fulfilment = "device-v1";
       await save(record);
     }
     need(!record.blocked, 409, "payment_blocked");
     const token = await tokenFor(record);
     // Also check signer BEFORE accepting payment, using an unpersisted probe.
-    await signLicence({ provider: "stripe", mode: cfg.mode, accountId: cfg.accountId, orderId: "probe", issued: record.created },
-      env.CLIPHOARD_SIGNING_SEED, cfg.publicKey);
+    if (record.fulfilment !== "device-v1")
+      await signLicence({ provider: "stripe", mode: cfg.mode, accountId: cfg.accountId, orderId: "probe", issued: record.created },
+        env.CLIPHOARD_SIGNING_SEED, cfg.publicKey);
     const firstSession = !record.sessionId;
     let session;
     if (record.sessionId) session = await stripe.session(record.sessionId);
@@ -221,6 +246,10 @@ export function orderService({ env, storage, stripe, schedule = async () => {}, 
     if (record.blocked) return { result: "payment_blocked" };
     const current = await refresh(record, sessionId);
     if (current.result !== "eligible") return { result: current.result };
+    if (record.fulfilment === "device-v1") {
+      need(env.ISSUANCE_ENABLED === "true", 503, "issuance_paused");
+      return { result: "device_pending" };
+    }
     if (!record.licence) {
       need(env.ISSUANCE_ENABLED === "true", 503, "issuance_paused");
       record.issued = current.session.created;
@@ -247,6 +276,11 @@ export function orderService({ env, storage, stripe, schedule = async () => {}, 
     need(await sha256(token) === record.tokenHash, 404, "claim_unavailable");
     need(env.DELIVERY_ENABLED === "true", 503, "delivery_paused");
     if (record.blocked) return { result: "payment_blocked" };
+    if (record.fulfilment === "device-v1") {
+      if (!record.sessionId) return { result: "payment_pending" };
+      const current = await refresh(record);
+      return { result: current.result === "eligible" ? "device_pending" : current.result };
+    }
     if (!record.licence || !record.sessionId) return { result: "payment_pending" };
     const current = await refresh(record);
     if (current.result !== "eligible") return { result: current.result };

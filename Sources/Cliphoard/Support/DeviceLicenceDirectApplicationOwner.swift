@@ -52,6 +52,12 @@ extension DeviceLicenceApplicationSession: DeviceLicenceDirectOwnedSession {}
 final class DeviceLicenceDirectApplicationOwner: ObservableObject {
     @Published private(set) var state: DeviceLicenceDirectApplicationState = .idle
     var hasSession: Bool { session != nil }
+    /// Typed presentation/entitlement access only to the exact installed session.
+    /// A generic test/provider session cannot impersonate receipt approval.
+    var applicationSession: DeviceLicenceApplicationSession? {
+        guard !closed else { return nil }
+        return session as? DeviceLicenceApplicationSession
+    }
     private let repository: DeviceLicenceBootstrapRepository
     private let configuration: DeviceLicenceDirectApplicationConfiguration
     private let makeSession: (DeviceLicenceBootstrapApplicationConfiguration) throws -> any DeviceLicenceDirectOwnedSession

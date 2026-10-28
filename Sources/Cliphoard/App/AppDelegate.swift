@@ -29,6 +29,16 @@ final class PasteStatus: ObservableObject {
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
+#if CLIPHOARD_DEVICE_LICENSING_PROTOTYPE && !APP_STORE
+    private let deviceLicenceRuntime: DeviceLicenceDirectRuntime?
+    override init() { deviceLicenceRuntime = nil; super.init() }
+    /// Trusted composition root supplies an explicitly configured, inert runtime.
+    /// No production pins/endpoints or native identity are inferred in this app.
+    init(deviceLicenceRuntime: DeviceLicenceDirectRuntime) {
+        self.deviceLicenceRuntime = deviceLicenceRuntime
+        super.init()
+    }
+#endif
     private let store = ClipStore()
     private lazy var monitor = ClipboardMonitor(store: store)
     private lazy var model = PanelViewModel(store: store)
@@ -53,6 +63,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var isAskingAboutQuit = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+#if CLIPHOARD_DEVICE_LICENSING_PROTOTYPE && !APP_STORE
+        if let deviceLicenceRuntime { store.startDeviceLicensing(deviceLicenceRuntime) }
+#endif
         #if APP_STORE
         StorePurchase.shared.start(store: store)
         #endif
@@ -857,6 +870,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// Only reached once termination is APPROVED, which is what makes "Relaunch" safe to
     /// cancel.
     func applicationWillTerminate(_ notification: Notification) {
+#if CLIPHOARD_DEVICE_LICENSING_PROTOTYPE && !APP_STORE
+        deviceLicenceRuntime?.stop()
+#endif
         AppLifecycle.performRelaunchIfRequested()
     }
 

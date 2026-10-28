@@ -82,6 +82,25 @@ final class ClipStore: ObservableObject {
         }
     }
 
+#if CLIPHOARD_DEVICE_LICENSING_PROTOTYPE && !APP_STORE
+    private var approvedDeviceReceipt: DeviceLicenceReceipt?
+    private(set) var deviceLicenceRuntime: DeviceLicenceDirectRuntime?
+    /// Explicit app injection. Default construction never creates a runtime or
+    /// reads Keychain, device identity, receipt storage or the network.
+    func startDeviceLicensing(_ runtime: DeviceLicenceDirectRuntime) {
+        guard deviceLicenceRuntime == nil else { return }
+        deviceLicenceRuntime = runtime
+        runtime.start { [weak self] receipt in
+            guard let self else { return }
+            self.approvedDeviceReceipt = receipt
+            self.refreshDirectEntitlement()
+        }
+    }
+    func refreshDirectEntitlement() {
+        entitlement = DeviceLicenceDirectEntitlements.resolve(legacy: Licence.current, receipt: approvedDeviceReceipt)
+    }
+#endif
+
     // MARK: The history limit on the import path
 
     /// What an import does about the history limit, decided ONCE by a pure function and read

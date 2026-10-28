@@ -1,14 +1,19 @@
 #if CLIPHOARD_DEVICE_LICENSING_PROTOTYPE && !APP_STORE
 import Foundation
 
-/// Adds a locator, not authority. The verified bootstrap never supplies an origin.
+/// Adds a locator and setup-possession credential, never payment, Pro or device
+/// approval. The verified bootstrap never supplies an origin.
 /// This wrapper does not retry, allocate service state or change request bodies.
-struct DeviceLicenceBootstrapRoutingTransport: DeviceLicenceApprovalTransport {
+struct DeviceLicenceBootstrapRoutingTransport: DeviceLicenceApprovalTransport, CustomStringConvertible, CustomDebugStringConvertible {
     static let routingHeader = "X-Cliphoard-Entitlement"
+    static let setupHeader = "X-Cliphoard-Setup"
     private let entitlementID: String
+    private let setupEnvelope: String
     private let beginURL: URL
     private let approveURL: URL
     private let transport: any DeviceLicenceApprovalTransport
+    var description: String { "DeviceLicenceBootstrapRoutingTransport" }
+    var debugDescription: String { description }
 
     init(bootstrap: VerifiedDeviceLicenceBootstrap, origin: URL,
          transport: any DeviceLicenceApprovalTransport) throws {
@@ -17,7 +22,8 @@ struct DeviceLicenceBootstrapRoutingTransport: DeviceLicenceApprovalTransport {
               let approve = URL(string: "/device-licensing/v1/approve", relativeTo: origin)?.absoluteURL else {
             throw DeviceLicenceApprovalClientFailure.invalidConfiguration
         }
-        self.entitlementID = bootstrap.entitlementID; beginURL = begin; approveURL = approve
+        self.entitlementID = bootstrap.entitlementID; setupEnvelope = bootstrap.setupAdmissionEnvelope()
+        beginURL = begin; approveURL = approve
         self.transport = transport
     }
 
@@ -32,13 +38,14 @@ struct DeviceLicenceBootstrapRoutingTransport: DeviceLicenceApprovalTransport {
         }
         // No duplicate/case-variant routing value, host override or credential
         // header can reach an injected transport by bypassing its native checks.
-        let forbidden = Set([Self.routingHeader.lowercased(), "host", "authorization", "proxy-authorization", "cookie"])
+        let forbidden = Set([Self.routingHeader.lowercased(), Self.setupHeader.lowercased(), "host", "authorization", "proxy-authorization", "cookie"])
         guard !(request.allHTTPHeaderFields ?? [:]).keys.contains(where: { forbidden.contains($0.lowercased()) }) else {
             throw DeviceLicenceApprovalClientFailure.invalidRequest
         }
         var routed = request
         routed.httpBody = Data(Array(body))
         routed.setValue(entitlementID, forHTTPHeaderField: Self.routingHeader)
+        routed.setValue(setupEnvelope, forHTTPHeaderField: Self.setupHeader)
         let response: DeviceLicenceApprovalHTTPResponse
         do { response = try await transport.send(routed, maximumResponseBytes: maximumResponseBytes) }
         catch {
