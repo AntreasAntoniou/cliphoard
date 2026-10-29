@@ -328,7 +328,9 @@ enum ClipChips {
 // MARK: - Card
 
 /// A single clipboard entry rendered as a Paste-style card.
+@MainActor
 struct ClipCardView: View {
+    @ObservedObject var sensitiveReveal = SensitiveClipReveal.shared
     let item: ClipItem
     let index: Int
     let selected: Bool
@@ -377,7 +379,18 @@ struct ClipCardView: View {
         return image
     }
 
-    var body: some View {
+    @ViewBuilder var body: some View {
+        if sensitiveReveal.isConcealed(item) {
+            SensitiveClipPlaceholder(item: item)
+                .frame(width: Theme.cardWidth, height: Theme.cardHeight)
+                .background(Theme.cardBackground())
+                .clipShape(RoundedRectangle(cornerRadius: Theme.cornerRadius))
+        } else {
+            revealedBody
+        }
+    }
+
+    private var revealedBody: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
             Divider().opacity(0.4)

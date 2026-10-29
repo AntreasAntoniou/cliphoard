@@ -3,7 +3,9 @@ import AppKit
 
 /// Expanded per-clip supercard. It observes `ClipStore` so sealed tag edits and
 /// pin/delete changes immediately redraw the same source item.
+@MainActor
 struct ClipDetailView: View {
+    @ObservedObject var sensitiveReveal = SensitiveClipReveal.shared
     let item: ClipItem
     @ObservedObject var store: ClipStore
     let focusTags: Bool
@@ -45,7 +47,20 @@ struct ClipDetailView: View {
         }
     }
 
-    var body: some View {
+    @ViewBuilder var body: some View {
+        if sensitiveReveal.isConcealed(item) {
+            VStack {
+                HStack { Spacer(); Button("Close inspector", action: onClose) }.padding()
+                SensitiveClipPlaceholder(item: item)
+            }
+            .frame(minWidth: 560, idealWidth: 680, minHeight: 520, idealHeight: 650)
+            .background(Theme.barBackground())
+        } else {
+            revealedBody
+        }
+    }
+
+    private var revealedBody: some View {
         ScrollViewReader { proxy in
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
@@ -147,7 +162,7 @@ struct ClipDetailView: View {
     }
 
     @ViewBuilder private var similarImages: some View {
-        let similar = store.similarImages(to: item, limit: 8)
+        let similar = store.similarImages(to: item, limit: 8).filter { !sensitiveReveal.isConcealed($0) }
         if !similar.isEmpty {
             GroupBox("Similar images") {
                 ScrollView(.horizontal, showsIndicators: false) {
@@ -304,8 +319,8 @@ struct ClipDetailView: View {
 
     private var suggestions: [String] {
         let q = newTag.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard !q.isEmpty else { return Array(store.distinctUserTags.prefix(6)) }
-        return store.distinctUserTags.filter { $0.contains(q) && !item.userTags.contains($0) }.prefix(6).map { $0 }
+        guard !q.isEmpty else { return Array(SensitiveClipPolicy.visibleUserTags(in: store.items).prefix(6)) }
+        return SensitiveClipPolicy.visibleUserTags(in: store.items).filter { $0.contains(q) && !item.userTags.contains($0) }.prefix(6).map { $0 }
     }
 
     /// Opt-in light-learning (spec §5.1): tags whose member-centroid is near this
@@ -320,9 +335,11 @@ struct ClipDetailView: View {
         let dismissed = Set(store.dismissedUserTags(for: item).map {
             SemanticRanker.dismissalKey(tag: $0, clipID: item.id)
         })
+        let allowed = Set(SensitiveClipPolicy.visibleUserTags(in: store.items))
         return SemanticRanker.suggestedUserTags(
             for: item, userTagIndex: store.userTagIndex,
             dismissed: dismissed, embedderSignature: EmbedderProvider.active.signature)
+            .filter { allowed.contains($0) }
     }
 
     @ViewBuilder private var suggestedRow: some View {

@@ -55,7 +55,9 @@ private struct DisplayedClip: Identifiable {
 
 /// The bar content: search + category filters on top, a horizontal strip of
 /// clip cards, and a keyboard-hint footer.
+@MainActor
 struct ContentView: View {
+    @ObservedObject var sensitiveReveal = SensitiveClipReveal.shared
     @ObservedObject var model: PanelViewModel
     @ObservedObject var store: ClipStore
     /// Paste outcome surfaced by `AppDelegate.commit()`: a persistent banner when
@@ -782,7 +784,22 @@ struct ContentView: View {
     }
 
     /// A single dense row used by both list and spotlight layouts.
-    private func clipRow(_ idx: Int, _ item: ClipItem) -> some View {
+    @ViewBuilder private func clipRow(_ idx: Int, _ item: ClipItem) -> some View {
+        if sensitiveReveal.isConcealed(item) {
+            HStack {
+                Image(systemName: "lock.shield.fill")
+                Text("Sensitive content hidden")
+                Spacer()
+                Button("Reveal") { sensitiveReveal.reveal(item) }
+                    .disabled(sensitiveReveal.isAuthenticating)
+            }
+            .padding(12)
+        } else {
+            revealedClipRow(idx, item)
+        }
+    }
+
+    private func revealedClipRow(_ idx: Int, _ item: ClipItem) -> some View {
         let selected = idx == model.selection
         return HStack(spacing: 10) {
             Image(systemName: item.kind.symbolName)
@@ -849,6 +866,18 @@ struct ContentView: View {
         let results = model.results
         if results.indices.contains(model.selection) {
             let item = results[model.selection]
+            if sensitiveReveal.isConcealed(item) {
+                SensitiveClipPlaceholder(item: item)
+            } else {
+                revealedPreviewPane(item)
+            }
+        } else {
+            Text("Select a clip").foregroundStyle(.tertiary)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
+    private func revealedPreviewPane(_ item: ClipItem) -> some View {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 8) {
                     Image(systemName: item.kind.symbolName).foregroundStyle(Theme.accent)
@@ -872,10 +901,6 @@ struct ContentView: View {
             }
             .padding(16)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        } else {
-            Text("Select a clip").foregroundStyle(.tertiary)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
     }
 
     @ViewBuilder private func previewBody(_ item: ClipItem) -> some View {
@@ -1071,7 +1096,7 @@ final class FacetMenuController: NSObject {
             parent.submenu = sub
             menu.addItem(parent)
         }
-        let userTags = model.store.distinctUserTags
+        let userTags = SensitiveClipPolicy.visibleUserTags(in: model.store.items)
         if !userTags.isEmpty {
             let sub = NSMenu()
             for tag in userTags {
@@ -1113,6 +1138,7 @@ final class FacetMenuController: NSObject {
             for (_, flag) in ClipFlags.allKnown where item.flags.contains(flag) {
                 if !flagsPresent.contains(flag) { flagsPresent.append(flag) }
             }
+            guard !SensitiveClipPolicy.requiresAuthentication(item) else { continue }
             if let shape = item.shape, !shape.isEmpty { shapes.insert(shape) }
             if let source = DerivedTags.source(item) { sources.insert(source) }
             if let value = DerivedTags.lifecycle(item, now: now) { lifecycles.insert(value) }

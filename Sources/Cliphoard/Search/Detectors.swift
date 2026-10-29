@@ -41,9 +41,9 @@ struct ClipFlags: OptionSet, Codable, Hashable, Sendable {
 
     /// A single token cleared the Tier-2 *generic entropy* gate. Deliberately a
     /// **separate bit** from `secret` because design §3.1 requires that until the
-    /// heuristic clears an FP audit on the real corpus "it may flag but must not
-    /// drive a destructive action". Render it as a soft hint; never auto-delete,
-    /// auto-mask-forever, or veto persistence on this bit alone.
+    /// heuristic remains low-confidence. Owner policy (29 October 2026) now
+    /// conceals these clips until OS authentication, without deleting them or
+    /// vetoing persistence. The warning is not proof of a credential.
     static let secretEntropy = ClipFlags(rawValue: 1 << 1)
 
     /// A validated financial identifier: card (Luhn **and** IIN), IBAN (mod-97),
@@ -267,6 +267,11 @@ enum Detectors {
         VendorSignature(prefix: Array("xoxs-".utf8), minTail: 10, tail: .alnumDash),
         // Stripe live secret key.
         VendorSignature(prefix: Array("sk_live_".utf8), minTail: 16, tail: .alnumUnderscore),
+        // Stripe restricted API keys and webhook signing secrets, including test mode.
+        VendorSignature(prefix: Array("rk_live_".utf8), minTail: 16, tail: .alnumUnderscore),
+        VendorSignature(prefix: Array("rk_test_".utf8), minTail: 16, tail: .alnumUnderscore),
+        VendorSignature(prefix: Array("sk_test_".utf8), minTail: 16, tail: .alnumUnderscore),
+        VendorSignature(prefix: Array("whsec_".utf8), minTail: 16, tail: .alnumUnderscore),
         // Google API key: AIza + 35 of [0-9A-Za-z_-].
         VendorSignature(prefix: Array("AIza".utf8), minTail: 35, tail: .alnumDashUnderscore),
         // OpenAI-style key: sk- + >=20. Listed last so the longer `sk_live_`

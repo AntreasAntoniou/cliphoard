@@ -297,6 +297,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             // keep the panel up while the inspector is open (dismissing the sheet
             // returns key focus here, and normal hide-on-resign resumes).
             if self.model.inspectedItem != nil { return }
+            if SensitiveClipReveal.shared.isAuthenticating { return }
             // An NSOpenPanel takes key; keep the requested picker visible underneath it.
             if self.model.isPresentingSystemPanel { return }
             #if APP_STORE
@@ -384,6 +385,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func presentSettings() {
+        SensitiveClipReveal.shared.lock()
         let screen = panel.isVisible ? panel.screen : NSScreen.screens.first {
             NSMouseInRect(NSEvent.mouseLocation, $0.frame, false)
         }
@@ -458,6 +460,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// `PasterSafetyTests` matches the literal call form `hide(paste:` — a rename would make
     /// two live safety tests pass vacuously. Every existing call site is unchanged.
     private func hide(paste: Bool, restoreFocus: Bool = true) {
+        SensitiveClipReveal.shared.lock()
         guard isVisible, !isClosing else { return }
         isClosing = true
         model.closeInspector()
@@ -476,6 +479,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// - Parameter plain: when `true` (Option held at commit), write the clip
     ///   as plain text only — strip the RTF representation before pasting.
     private func commit(_ item: ClipItem, plain: Bool = false) {
+        guard permitSensitiveAction(item) else { return }
         // Branch on the WRITE before branching on Accessibility. They are different
         // failures and must not behave alike: a failed write means nothing happened, while
         // an untrusted-Accessibility "failure" still leaves the clip on the clipboard.
@@ -552,6 +556,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// Copy a clip onto the system clipboard without pasting, then dismiss so the
     /// chosen clip is ready to paste manually elsewhere.
     private func copyToClipboard(_ item: ClipItem) {
+        guard permitSensitiveAction(item) else { return }
         let outcome = Paster.writeToPasteboard(item, store: store)
         guard outcome.succeeded else {
             // See `commit`: nothing was written, so stay open and say so.
@@ -567,7 +572,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     // MARK: Files
 
+    private func permitSensitiveAction(_ item: ClipItem) -> Bool {
+        guard SensitiveClipReveal.shared.isConcealed(item) else { return true }
+        model.inspect(item)
+        return false
+    }
+
     private func perform(_ verb: FileVerb, on item: ClipItem) {
+        guard permitSensitiveAction(item) else { return }
         switch verb {
         case .open:     openInWorkspace(item, reveal: false)
         case .reveal:   openInWorkspace(item, reveal: true)
@@ -870,6 +882,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// Only reached once termination is APPROVED, which is what makes "Relaunch" safe to
     /// cancel.
     func applicationWillTerminate(_ notification: Notification) {
+        SensitiveClipReveal.shared.lock()
 #if CLIPHOARD_DEVICE_LICENSING_PROTOTYPE && !APP_STORE
         deviceLicenceRuntime?.stop()
 #endif

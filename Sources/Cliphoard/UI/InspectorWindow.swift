@@ -62,7 +62,11 @@ final class InspectorWindowController: NSObject, NSWindowDelegate {
     }
 
     /// Idempotent: ordering out an already-hidden panel is a no-op.
-    func dismiss() { panel.orderOut(nil) }
+    func dismiss() {
+        SensitiveClipReveal.shared.lock()
+        hosting.rootView = AnyView(EmptyView())
+        panel.orderOut(nil)
+    }
 
     func windowShouldClose(_ sender: NSWindow) -> Bool {
         onClose?()
