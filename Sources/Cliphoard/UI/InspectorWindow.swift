@@ -32,7 +32,8 @@ final class InspectorWindowController: NSObject, NSWindowDelegate {
             backing: .buffered,
             defer: false)
         panel.isFloatingPanel = true
-        panel.level = .mainMenu + 2
+        // Stay above the history bar, but below the system Dock.
+        panel.level = .floating + 1
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false

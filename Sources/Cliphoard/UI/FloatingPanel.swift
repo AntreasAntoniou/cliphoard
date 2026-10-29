@@ -72,7 +72,8 @@ final class FloatingPanel: NSPanel {
             defer: false
         )
         isFloatingPanel = true
-        level = .mainMenu + 1
+        // Float above normal app windows while allowing the system Dock above us.
+        level = .floating
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
         isOpaque = false
         backgroundColor = .clear
