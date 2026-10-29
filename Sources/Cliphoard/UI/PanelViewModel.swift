@@ -67,6 +67,7 @@ final class PanelViewModel: ObservableObject {
     /// this, `ContentView` observed two objects and the live data path (`store`)
     /// could update without driving a `body` re-evaluation through `model`.
     private var storeObserver: AnyCancellable?
+    private var mediaObserver: AnyCancellable?
 
     /// Invoked when the user commits a clip (Enter / double click). The `plain`
     /// flag requests "paste as plain text" (Option held at commit time).
@@ -110,6 +111,10 @@ final class PanelViewModel: ObservableObject {
 
     init(store: ClipStore) {
         self.store = store
+        mediaObserver = store.mediaSearch.objectWillChange.sink { [weak self] _ in
+            self?.cachedResultsKey = nil
+            self?.objectWillChange.send()
+        }
         // Republish store changes so the two-object observation collapses into
         // one deterministic update path — fixes the live-while-open refresh case.
         storeObserver = store.objectWillChange.sink { [weak self] _ in
@@ -186,6 +191,17 @@ final class PanelViewModel: ObservableObject {
         let time = parsed.filter ?? timeFilter
         let q = parsed.rest.trimmingCharacters(in: .whitespacesAndNewlines)
 
+        if DeepSearch.mode == .media {
+            guard store.entitlement.isPro else { return [] }
+            let scoped = store.filtered(kind: activeKind, query: "", pinnedOnly: pinnedOnly,
+                                        facets: activeFacets, userTags: activeUserTags, time: time)
+            let byID = Dictionary(uniqueKeysWithValues: scoped.map { ($0.id, $0) })
+            return store.mediaSearch.matches.compactMap { match in
+                guard store.mediaSearch.visibleClip(match.clipID) != nil else { return nil }
+                return byID[match.clipID]
+            }
+        }
+
         // Pictures only, ranked by what they LOOK like. Deliberately not folded into the
         // other modes: this one CHANGES THE CORPUS as well as the ranking, hiding every
         // text, link, colour and file clip. That is the whole point — with 19 images among
@@ -232,7 +248,7 @@ final class PanelViewModel: ObservableObject {
                                     facets: activeFacets, userTags: activeUserTags, time: time)
         let embedder = EmbedderProvider.active
         switch DeepSearch.mode {
-        case .exact, .image:
+        case .exact, .image, .media:
             // `.image` returned above; listed here so the switch stays EXHAUSTIVE without a
             // `default:`. A default would silently absorb any future mode into the text
             // path, which is how a new mode ships doing something plausible and wrong.

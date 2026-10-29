@@ -2,6 +2,8 @@
 # Assemble Cliphoard for Mac App Store review. Does not create certificates, profiles,
 # App Store Connect records, uploads, or purchases.
 set -euo pipefail
+PYTHON="${CLIPHOARD_PYTHON:-/opt/homebrew/bin/python3.13}"
+"$PYTHON" -c 'import sys; assert sys.version_info >= (3, 13), "Python 3.13+ required"'
 
 cd "$(dirname "$0")/.."
 ROOT="$(pwd)"
@@ -49,6 +51,9 @@ rm -rf "$OUT"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/Cliphoard"
 cp "$ROOT/Resources/Info.plist" "$APP/Contents/Info.plist"
+bash "$ROOT/Scripts/embed-media-runtime.sh" "$APP" "$BIN_DIR"
+: "${MAS_MEDIA_MODEL:?Set MAS_MEDIA_MODEL to the pinned EmbeddingGemma2 .litertlm data file}"
+bash "$ROOT/Scripts/embed-media-model.sh" "$APP" "$MAS_MEDIA_MODEL"
 /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $BUNDLE_ID" "$APP/Contents/Info.plist"
 if /usr/libexec/PlistBuddy -c 'Print :LSApplicationCategoryType' "$APP/Contents/Info.plist" >/dev/null 2>&1; then
     /usr/libexec/PlistBuddy -c 'Set :LSApplicationCategoryType public.app-category.productivity' "$APP/Contents/Info.plist"
@@ -89,7 +94,7 @@ for name in $MAS_BUNDLE_MODELS; do
             [ ! -f "$src/$file" ] || cp "$src/$file" "$dst/"
         done
         case "$name" in *ogma*)
-            python3 -c "import json; p='$dst/tokenizer_config.json'; d=json.load(open(p)); d['tokenizer_class']='T5Tokenizer'; json.dump(d,open(p,'w'))"
+            "$PYTHON" -c "import json; p='$dst/tokenizer_config.json'; d=json.load(open(p)); d['tokenizer_class']='T5Tokenizer'; json.dump(d,open(p,'w'))"
         esac
     fi
 done
@@ -118,6 +123,7 @@ if [ "$MODE" = adhoc ]; then
     /usr/libexec/PlistBuddy -c 'Delete :com.apple.application-identifier' "$EXPANDED"
     /usr/libexec/PlistBuddy -c 'Delete :com.apple.developer.team-identifier' "$EXPANDED"
     /usr/libexec/PlistBuddy -c 'Delete :keychain-access-groups' "$EXPANDED"
+    codesign --force --sign - "$APP/Contents/Frameworks/libCLiteRTLM_mac.dylib"
     codesign --force --sign - --entitlements "$EXPANDED" "$APP"
     codesign --verify --deep --strict --verbose=2 "$APP"
     rm -f "$PKG"
@@ -136,13 +142,14 @@ test -n "$APP_PREFIX" || { echo "ERROR: profile has no App ID prefix" >&2; exit 
 sed -e "s/\$(AppIdentifierPrefix)/$APP_PREFIX./g" \
     -e "s/\$(TeamIdentifierPrefix)/$TEAM_ID/g" "$ENTITLEMENTS" > "$EXPANDED"
 plutil -lint "$EXPANDED" >/dev/null
-python3 "$ROOT/Scripts/verify-mas-profile.py" profile \
+"$PYTHON" "$ROOT/Scripts/verify-mas-profile.py" profile \
     --profile-plist "$PROFILE_PLIST" --intended-entitlements "$EXPANDED" \
     --bundle-id "$BUNDLE_ID" --team-id "$TEAM_ID"
 cp "$MAS_PROFILE" "$APP/Contents/embedded.provisionprofile"
 
+codesign --force --timestamp --sign "$MAS_APP_IDENTITY" "$APP/Contents/Frameworks/libCLiteRTLM_mac.dylib"
 codesign --force --timestamp --sign "$MAS_APP_IDENTITY" --entitlements "$EXPANDED" "$APP"
-python3 "$ROOT/Scripts/verify-mas-profile.py" signed \
+"$PYTHON" "$ROOT/Scripts/verify-mas-profile.py" signed \
     --profile-plist "$PROFILE_PLIST" --intended-entitlements "$EXPANDED" \
     --bundle-id "$BUNDLE_ID" --team-id "$TEAM_ID" --app "$APP"
 

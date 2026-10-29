@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Builds Cliphoard.app — a self-contained macOS application bundle.
 set -euo pipefail
+PYTHON="${CLIPHOARD_PYTHON:-/opt/homebrew/bin/python3.13}"
+"$PYTHON" -c 'import sys; assert sys.version_info >= (3, 13), "Python 3.13+ required"'
 
 cd "$(dirname "$0")/.."
 ROOT="$(pwd)"
@@ -11,13 +13,18 @@ echo "▸ Building ($CONFIG, universal arm64 + x86_64)…"
 # Build a UNIVERSAL binary so the app runs natively on both Apple Silicon and Intel
 # (an arm64-only build will not launch on Intel at all — Rosetta only runs x86 on ARM).
 swift build -c "$CONFIG" --arch arm64 --arch x86_64
-BIN="$(swift build -c "$CONFIG" --arch arm64 --arch x86_64 --show-bin-path 2>/dev/null)/Cliphoard"
+BIN_DIR="$(swift build -c "$CONFIG" --arch arm64 --arch x86_64 --show-bin-path 2>/dev/null)"
+BIN="$BIN_DIR/Cliphoard"
 
 echo "▸ Assembling bundle…"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/Cliphoard"
 cp "$ROOT/Resources/Info.plist" "$APP/Contents/Info.plist"
+bash "$ROOT/Scripts/embed-media-runtime.sh" "$APP" "$BIN_DIR"
+if [ -n "${CLIPHOARD_MEDIA_MODEL:-}" ]; then
+    bash "$ROOT/Scripts/embed-media-model.sh" "$APP" "$CLIPHOARD_MEDIA_MODEL"
+fi
 
 # Icon (best effort). Built from the committed master PNG (the hoard-bag mascot,
 # Resources/AppIcon.png); falls back to the vector make-icon.swift (⌘V) if absent.
@@ -89,7 +96,7 @@ if ls "$ROOT"/tools/models/*.mlpackage >/dev/null 2>&1; then
                     # Remap the custom tokenizer_class to T5Tokenizer — matches ogma's
                     # Unigram tokenizer.json. MUST NOT touch the HF tiers (MiniLM's
                     # BertTokenizer / Gemma's, which swift-transformers reads as-is).
-                    python3 -c "import json; p='$dst/tokenizer_config.json'; d=json.load(open(p)); d['tokenizer_class']='T5Tokenizer'; json.dump(d, open(p,'w'))" 2>/dev/null || true
+                    "$PYTHON" -c "import json; p='$dst/tokenizer_config.json'; d=json.load(open(p)); d['tokenizer_class']='T5Tokenizer'; json.dump(d, open(p,'w'))" 2>/dev/null || true
                     ;;
             esac
         fi
@@ -119,10 +126,12 @@ cp "$ROOT/THIRD-PARTY-NOTICES.md" "$APP/Contents/Resources/"
 SIGN_ID="Ditto Local Signing"
 if security find-identity -p codesigning 2>/dev/null | grep -qF "$SIGN_ID"; then
     echo "▸ Signing (stable: $SIGN_ID)…"
-    codesign --force --sign "$SIGN_ID" "$APP" 2>/dev/null || echo "  (codesign skipped)"
+    codesign --force --sign "$SIGN_ID" "$APP/Contents/Frameworks/libCLiteRTLM_mac.dylib"
+    codesign --force --sign "$SIGN_ID" "$APP"
 else
     echo "▸ Signing (ad-hoc — run Scripts/setup-signing.sh for a stable identity)…"
-    codesign --force --sign - "$APP" 2>/dev/null || echo "  (codesign skipped)"
+    codesign --force --sign - "$APP/Contents/Frameworks/libCLiteRTLM_mac.dylib"
+    codesign --force --sign - "$APP"
 fi
 
 echo "✓ Built $APP"

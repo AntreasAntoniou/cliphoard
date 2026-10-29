@@ -36,6 +36,8 @@
 # failed and was swallowed (build-app.sh pipes coremlcompiler stderr to /dev/null), which
 # no fallback story covers.
 set -euo pipefail
+PYTHON="${CLIPHOARD_PYTHON:-/opt/homebrew/bin/python3.13}"
+"$PYTHON" -c 'import sys; assert sys.version_info >= (3, 13), "Python 3.13+ required"'
 
 APP="${1:?usage: verify-bundle.sh <app> <repo-root> [stage-dir]}"
 ROOT="${2:?}"
@@ -222,7 +224,7 @@ for m in ${BUNDLE_MODELS:-}; do
     for f in tokenizer.json tokenizer_config.json config.json; do
         if [ ! -s "$tok/$f" ]; then
             bad "${m} is a text tower but Resources/${m}-tokenizer/${f} is missing or empty — AutoTokenizer.from(modelFolder:) throws and image search is silently dark"; ok=0
-        elif ! python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "$tok/$f" 2>/dev/null; then
+        elif ! "$PYTHON" -c 'import json,sys; json.load(open(sys.argv[1]))' "$tok/$f" 2>/dev/null; then
             bad "Resources/${m}-tokenizer/${f} is not valid JSON — AutoTokenizer throws exactly as if it were absent"; ok=0
         fi
     done

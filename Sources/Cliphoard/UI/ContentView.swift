@@ -156,10 +156,14 @@ struct ContentView: View {
             // spotlight) from reporting its entire scrollable content and inflating
             // the bar to match. Settings uses its own resizable window.
             Group {
+                if settings.searchMode == .media {
+                    MediaSearchResultsView(controller: store.mediaSearch, model: model)
+                } else {
                 switch settings.layoutMode {
                 case .strip:     cards
                 case .spotlight: spotlightLayout
                 case .list:      listLayout
+                }
                 }
             }
             .frame(height: Theme.stripHeight)

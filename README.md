@@ -108,7 +108,13 @@ Other targets: `make app` (build `build/Cliphoard.app`) · `make install` (copy 
 
 Free is a complete clipboard manager, with no time limit: clipboard history, every text
 search mode, pinning, themes, importers and encrypted history export/import are included.
-Pro adds on-device image search, OCR and visually similar images. The entire application
+Pro adds on-device image search, OCR and visually similar images. The 1.0.3 release
+candidate also adds **Media** search for chosen pictures, video and audio, with results
+at matching timestamps. It searches a video's frames and audio track locally.
+Choose Lightweight, Balanced (default) or Detailed sampling in Settings → Video,
+audio & pictures. Optional Whisper downloads add sampled or continuous speech search;
+Small, Large v3 Turbo and Large v3 are available. Sampling can miss short events.
+This candidate is not yet a public release. The entire application
 codebase, **including Pro**, is open source under the MIT licence.
 
 The direct edition accepts signed offline licence keys. New Pro purchases will be enabled

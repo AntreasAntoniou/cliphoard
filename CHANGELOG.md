@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.0.3 — release candidate, not yet publicly released
+
+- Pro media search finds moments in chosen pictures, video and audio using a local
+  EmbeddingGemma 2 model. Video indexes both picture frames and its audio track;
+  results open at the matching timestamp.
+- Choose Lightweight, Balanced (default) or Detailed sampling. The interface
+  explains sampling coverage and limits; brief events between samples can be missed.
+- Optional local Whisper transcription adds spoken-word search, with sampled or
+  continuous speech coverage and Small, Large v3 Turbo or Large v3 model choices.
+  Speech models download only when requested. Original media stays on the Mac.
+- Media search requires Pro. Derived indexes and file-access bookmarks are encrypted;
+  deleting a clip also removes its media index. Protected clips are excluded.
+- Includes the improved setup choices, protected-clip authentication and macOS Dock
+  interaction fixes from the preceding candidates. Public release remains pending
+  signed-candidate and distribution qualification.
+
 ## 1.0.2 — 2026-10-23
 
 ### Safer encrypted backups

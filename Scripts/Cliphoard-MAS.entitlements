@@ -6,6 +6,12 @@
     <true/>
     <key>com.apple.security.files.user-selected.read-write</key>
     <true/>
+    <!-- Retain access only to media the user explicitly chooses. -->
+    <key>com.apple.security.files.bookmarks.app-scope</key>
+    <true/>
+    <!-- Explicit public model downloads; inference and media remain on-device. -->
+    <key>com.apple.security.network.client</key>
+    <true/>
     <key>com.apple.application-identifier</key>
     <string>$(AppIdentifierPrefix)ai.a2-labs.cliphoard</string>
     <key>com.apple.developer.team-identifier</key>

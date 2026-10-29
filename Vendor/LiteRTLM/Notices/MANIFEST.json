@@ -1,0 +1,61 @@
+{
+  "scope": "Supplemental exact upstream licence texts for reviewed declared/runtime-observed dependencies; not a complete binary SBOM or transitive notice closure. Official v0.18.1 archive has no aggregate notice file. Inclusion does not assert every optional upstream dependency is linked.",
+  "files": [
+    {
+      "name": "nlohmann-json-MIT.txt",
+      "url": "https://raw.githubusercontent.com/nlohmann/json/v3.12.0/LICENSE.MIT",
+      "sha256": "46a65cffd1ea955132d95a8dd921640714a8d6b537d2e4e482d31145ae95b603",
+      "bytes": 1076,
+      "status": "retrieved"
+    },
+    {
+      "name": "stb-LICENSE.txt",
+      "url": "https://raw.githubusercontent.com/nothings/stb/f58f558c120e9b32c217290b80bad1a0729fbb2c/LICENSE",
+      "sha256": "bebfe904b14301657e4e5d655c811d51fd31b97c455b9cc2d8600d6bac6cff63",
+      "bytes": 2510,
+      "status": "retrieved"
+    },
+    {
+      "name": "miniaudio-LICENSE.txt",
+      "url": "https://raw.githubusercontent.com/mackron/miniaudio/0.11.22/LICENSE",
+      "sha256": "457f1b500e0adf6bc059edddfa78a2f62012e7c3bb43476c20e0bd23b25ba0eb",
+      "bytes": 2597,
+      "status": "retrieved"
+    },
+    {
+      "name": "LiteRT-LICENSE.txt",
+      "url": "https://raw.githubusercontent.com/google-ai-edge/LiteRT/ca21dc99de51c76bdcc572afeea1dd937d3c9e5c/LICENSE",
+      "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+      "bytes": 11357,
+      "status": "retrieved"
+    },
+    {
+      "name": "abseil-LICENSE.txt",
+      "url": "https://raw.githubusercontent.com/abseil/abseil-cpp/20260526.0/LICENSE",
+      "sha256": "c79a7fea0e3cac04cd43f20e7b648e5a0ff8fa5344e644b0ee09ca1162b62747",
+      "bytes": 11361,
+      "status": "retrieved"
+    },
+    {
+      "name": "sentencepiece-LICENSE.txt",
+      "url": "https://raw.githubusercontent.com/google/sentencepiece/v0.2.2/LICENSE",
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+      "bytes": 11358,
+      "status": "retrieved"
+    },
+    {
+      "name": "dawn-LICENSE.txt",
+      "url": "https://raw.githubusercontent.com/google/dawn/v20260720.160313/LICENSE",
+      "sha256": "0493f897193af1796d5054659f45ec7d4c5af648fa67a99f01d30e55cc805abc",
+      "bytes": 11829,
+      "status": "retrieved"
+    },
+    {
+      "name": "XNNPACK-LICENSE.txt",
+      "url": "https://raw.githubusercontent.com/google/XNNPACK/d89ef6669a14db203b3b7935b1b3862cb63fb6df/LICENSE",
+      "sha256": "63f519e15726f4c4f830bd958f694c84fecb4e0a4cacc527d2696bb71ef95ada",
+      "bytes": 1560,
+      "status": "retrieved"
+    }
+  ]
+}

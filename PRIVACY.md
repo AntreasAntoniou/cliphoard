@@ -5,7 +5,8 @@ not upload your clips, search queries, or search indexes. There is no Cliphoard 
 advertising, usage telemetry, or cloud sync.**
 
 The Mac App Store edition uses Apple's StoreKit to purchase and restore Pro. The
-direct-download edition can fetch search models from public model hosts. These
+direct-download edition can fetch search models from public model hosts. Both editions
+can download optional speech models after you choose preparation. These
 connections do not carry clipboard content; the network and purchase details are below.
 
 ## What Cliphoard stores, and where
@@ -20,14 +21,36 @@ stored **locally** on your Mac, under:
   *.png               image clips and their thumbnails, encrypted at rest
 ```
 
-Semantic-search embeddings are computed **on-device** (Apple CoreML) and stored in
-the same local database. No clipboard content, embedding, or usage data is ever
+Semantic-search embeddings are computed **on-device** (CoreML or LiteRT) and stored in
+the local database or encrypted media index. No clipboard content, embedding, or usage data is ever
 transmitted anywhere.
 
 The Mac App Store edition keeps this data inside its macOS sandbox, under
 `~/Library/Containers/ai.a2-labs.cliphoard/Data/Library/Application Support/Ditto/`.
 It cannot silently read the direct edition's history. Use **Move to another Mac**
 to export and import an encrypted archive if moving between editions.
+
+## Optional video, audio and picture search
+
+Pro media search indexes only the files you choose. Original files stay in place;
+Cliphoard retains an encrypted access bookmark, content identity, timed search vectors
+and optional transcript passages under `Ditto/MediaSearch-v1/`. Deleting a corresponding
+clip or choosing **Forget media indexes** removes its derived index. Original media is
+never deleted by that action. If a file changes or its access is lost, choose it again
+to refresh the index.
+
+Balanced sampling is the default. Sparse video frames and audio excerpts can miss
+events; each result shows the effective sampling used for that file. Optional speech
+transcription runs locally with Whisper. You choose sampled speech or continuous audio
+up to 60 minutes. Transcripts that trigger the sensitive-text detector are withheld
+from the searchable index; detection and transcription are imperfect. Concealed clips
+are not admitted to this media index, even if you temporarily reveal them.
+
+Preparing a model downloads public model data and reveals ordinary connection data
+such as your IP address to the hosting service. It does not upload your media, search
+queries, extracted frames, audio, transcripts or vectors. The Store candidate bundles
+EmbeddingGemma 2; optional speech weights are separate explicit downloads. Model files
+are cached under `Application Support/Cliphoard/` (inside the app container for Store).
 
 ## Reading text inside images
 
@@ -152,7 +175,7 @@ in Hugging Face's model download statistics. These HTTPS requests reveal ordinar
 connection information, such as your IP address, to the hosting provider. They contain
 no clipboard data, account identifier, or persistent Cliphoard tracking identifier.
 
-**Mac App Store edition:** the search models ship with the app. Apple handles Pro
+**Mac App Store edition:** embedding models ship with the app; optional speech models download only after explicit preparation. Apple handles Pro
 purchases, restoration and transaction verification through StoreKit under Apple's
 privacy terms. Cliphoard reads Apple's verified entitlement on your Mac to decide
 whether Pro is unlocked. It does not receive your payment-card details or upload your

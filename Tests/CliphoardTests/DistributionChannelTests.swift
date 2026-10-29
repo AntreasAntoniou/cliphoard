@@ -27,8 +27,10 @@ final class DistributionChannelTests: XCTestCase {
         XCTAssertEqual(plist["com.apple.security.files.user-selected.read-write"] as? Bool, true)
         XCTAssertNil(plist["com.apple.security.temporary-exception.apple-events"])
         XCTAssertNil(plist["com.apple.security.automation.apple-events"])
-        XCTAssertNil(plist["com.apple.security.network.client"],
-                     "all runtime model resources are bundled in the Store build")
+        XCTAssertEqual(plist["com.apple.security.network.client"] as? Bool, true,
+                       "optional speech weights are downloaded only after explicit preparation")
+        XCTAssertEqual(plist["com.apple.security.files.bookmarks.app-scope"] as? Bool, true)
+        XCTAssertNil(plist["com.apple.security.network.server"])
     }
 
     func testStoreNoticeCoversEveryBundledModel() throws {

@@ -665,6 +665,12 @@ struct SettingsView: View {
                         .font(.system(size: 11)).foregroundStyle(.secondary)
                 }
 
+                section("Video, audio & pictures — Pro") {
+                    MediaSearchSettingsView(controller: store.mediaSearch, store: store,
+                        showPro: { model?.presentProSettings() })
+                }
+                .id("cliphoard-media")
+
                 section("Tags") {
                     HStack(alignment: .top) {
                         Text("Baskets")

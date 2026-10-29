@@ -3,9 +3,10 @@
 Cliphoard is MIT-licensed (see LICENSE). It builds on the third-party components
 below, each under its own licence.
 
-**The Mac App Store build bundles every model tier exposed by its interface:**
-Open Ogma Micro and Small, all-MiniLM-L6-v2, and both OpenVision-Tiny towers.
-It performs no post-install model download. Each entry states this explicitly;
+**The Mac App Store build bundles the text, image and multimodal embedding models:**
+Open Ogma Micro and Small, all-MiniLM-L6-v2, both OpenVision-Tiny towers and EmbeddingGemma 2.
+Optional Whisper speech models are downloaded only when the user chooses preparation.
+Media and inference remain on-device. Each entry states its distribution method;
 the complete Apache-2.0 text ships beside this file as
 `LICENSE-Apache-2.0.txt`.
 
@@ -143,3 +144,33 @@ Removing the tier — rather than merely unbundling it — is what resolves both
 
 The `OgmaTokenizer` (Unigram/SentencePiece) is an original implementation in this
 repository (MIT), validated bit-for-bit against the reference Python tokenizer.
+
+
+## Multimodal media search and optional speech
+
+- **Embedded Hugging Face Hub and tokenizer sources in ArgmaxCore** — Apache-2.0, Copyright 2022 Hugging Face SAS, with original 2019/2024 notices retained in source. These are based on swift-transformers 1.1.6, revision `573e5c9036c2f136b3a8a071da8e8907322403d0`, and include Argmax's upstream-marked modifications. The original headers and modification annotations are preserved. The complete Apache-2.0 license is included at `ThirdPartyNotices/LiteRTLM-LICENSE.txt`; the outer Argmax MIT license does not replace these embedded-source terms.
+- **EmbeddingGemma 2 (740M), LiteRT community conversion** — Apache-2.0 model-card license. Exact model revision `94408f31843f8bd0adb11c262292627287f5fda4`, file `embeddinggemma-2-740m.litertlm`, SHA256 `e7a8a2204b91e0f96e92960e84a09a89212e1633dcb7575a9bf3378b4df77f4c`. The Store candidate includes these data weights; Direct can prepare them through an explicit download. This is a distinct model from the retired embeddinggemma-300m tier above. Source: https://huggingface.co/litert-community/embeddinggemma-2-740m-litert-lm/tree/94408f31843f8bd0adb11c262292627287f5fda4
+- **LiteRT-LM 0.18.1** — Google, Apache-2.0. The application links the pinned official universal macOS runtime and includes thirteen upstream Swift wrappers. Its complete top-level license is included at `ThirdPartyNotices/LiteRTLM-LICENSE.txt`. Source: https://github.com/google-ai-edge/LiteRT-LM/tree/v0.18.1
+- **WhisperKit / ArgmaxCore 1.1.1** — MIT. Linked for optional local speech transcription. Speech model weights and tokenizer data are prepared only on request from pinned public repositories; recordings are never uploaded for transcription. The required upstream software notice follows.
+
+MIT License
+
+Copyright (c) 2024 argmax, inc.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

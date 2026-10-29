@@ -1,0 +1,382 @@
+{
+  "upstream": "https://github.com/argmaxinc/argmax-oss-swift",
+  "version": "1.1.1",
+  "revision": "1bbc57cb7fe6410248a685b1c5a3c6d56adc2ed4",
+  "scope": "Exact production ArgmaxCore and WhisperKit source only; no CLI, server, model assets or other targets",
+  "files": [
+    {
+      "path": "LICENSE",
+      "sha256": "b8673adf319f1d6905c5c38cf69513f8857930fb3445566fa9839c6948bb85c4",
+      "bytes": 1069,
+      "mode": "0644"
+    },
+    {
+      "path": "Package@swift-6.2.swift",
+      "sha256": "3398d07fde9e7f8b5dc3119662b043d23c1018c3494b98901e42e0791e799761",
+      "bytes": 6429,
+      "mode": "0644"
+    },
+    {
+      "path": "Sources/ArgmaxCore/ArgmaxCoreError.swift",
+      "sha256": "bf32748eb7a0e1757fb08f9abfad06d3663928713384dde91e43444b5028e1e4",
+      "bytes": 387,
+      "mode": "0644"
+    },
+    {
+      "path": "Sources/ArgmaxCore/AutoTokenizerWrapper.swift",
+      "sha256": "e80a9cea3fa2b9bae03e321e467f7395682e2031dc8abddccb38cb1e70e37552",
+      "bytes": 1821,
+      "mode": "0644"
+    },
+    {
+      "path": "Sources/ArgmaxCore/ConcurrencyUtilities.swift",
+      "sha256": "cef4fd056354eed142c49b4378323176a4b4caa59697fb3144e292ec101cc83e",
+      "bytes": 5205,
+      "mode": "0644"
+    },
+    {
+      "path": "Sources/ArgmaxCore/External/Hub/BinaryDistinct.swift",
+      "sha256": "2e016f66f3c0654878f6704acd24e19d5f23a23e5ddf57f54d649ab4eb69a0ff",
+      "bytes": 9728,
+      "mode": "0644"
+    },
+    {
+      "path": "Sources/ArgmaxCore/External/Hub/Config.swift",
+      "sha256": "c28671374e71c44b532f6681c64aa61c275201759f6c92c252bf686ae517f92f",
+      "bytes": 23948,
+      "mode": "0644"
+    },
+    {
+      "path": "Sources/ArgmaxCore/External/Hub/Downloader.swift",
+      "sha256": "1ef43334a2f0ed4359b2fdb902b5f9f8e20fb08d6b01b45ab6cefd05d7ff6bd6",
+      "bytes": 19194,
+      "mode": "0644"
+    },
+    {
+      "path": "Sources/ArgmaxCore/External/Hub/Extensions/JSONSerialization+BOM.swift",
+      "sha256": "7a55d01da35679cd4e3410d021ea2ec5c0aad98750b8c7e862bb3983398b1a0e",
+      "bytes": 2818,
+      "mode": "0644"
+    },
+    {
+      "path": "Sources/ArgmaxCore/External/Hub/Hub.swift",
+      "sha256": "05b206e1f222038b1e2aca64483d548dc3c222d6218878d39f2678f1eeda0b50",
+      "bytes": 14697,
+      "mode": "0644"
+    },
+    {
+      "path": "Sources/ArgmaxCore/External/Hub/HubApi.swift",
+      "sha256": "f75554e9c4254b668f5086249f218776e581a507c766806c45e20c8d43a3b5a3",
+      "bytes": 43347,
+      "mode": "0644"
+    },
+    {
+      "path": "Sources/ArgmaxCore/External/Tokenizers/BPETokenizer.swift",
+      "sha256": "b5818cd0ad8aca3dff9051ddfd5709bb4ffedb44d73af6ccbe6125b1986f2d68",
+      "bytes": 8841,
+      "mode": "0644"
+    },
+    {
+      "path": "Sources/ArgmaxCore/External/Tokenizers/BertTokenizer.swift",
+      "sha256": "18bb2b4ba391cf6395dee14021bcdfead4ace10e47861e4a7ee41aebfc8f07ac",
+      "bytes": 12350,
+      "mode": "0644"
+    },
+    {
+      "path": "Sources/ArgmaxCore/External/Tokenizers/ByteEncoder.swift",
+      "sha256": "d142d36f1843be7a5819e73869f0ba3a2b3411bbc002507841bd8edd2ef3c6eb",
+      "bytes": 5142,
+      "mode": "0644"
+    },
+    {
+      "path": "Sources/ArgmaxCore/External/Tokenizers/Decoder.swift",
+      "sha256": "7d6ebd47a7e2acb5606e649e04fbdb9d43e5cad1f7b75b97b411eed6953752d7",
+      "bytes": 9417,
+      "mode": "0644"
+    },
+    {
+      "path": "Sources/ArgmaxCore/External/Tokenizers/Normalizer.swift",
+      "sha256": "6f563227b8d0c93803b8a4a847231c5fe69d55619482b950559537dc18cd0ef2",
+      "bytes": 11384,
+      "mode": "0644"
+    },
+    {
+      "path": "Sources/ArgmaxCore/External/Tokenizers/PostProcessor.swift",
+      "sha256": "5be71fa9e1ff21956ef86abc70a6f4d77b1d587957a6aaf6b7d9bbe7be1eed76",
+      "bytes": 8795,
+      "mode": "0644"
+    },
+    {
+      "path": "Sources/ArgmaxCore/External/Tokenizers/PreTokenizer.swift",
+      "sha256": "5d703ed065b1223c217bde02209306ef5e4be6a418f36d528540c7643c22b3b6",
+      "bytes": 11121,
+      "mode": "0644"
+    },
+    {
+      "path": "Sources/ArgmaxCore/External/Tokenizers/String+PreTokenization.swift",
+      "sha256": "fd822afcc6ad4dd366a0768b7eefa46cd650c4e52900d48c9a21986cbf01bb99",
+      "bytes": 6356,
+      "mode": "0644"
+    },
+    {
+      "path": "Sources/ArgmaxCore/External/Tokenizers/TokenLattice.swift",
+      "sha256": "a36f41e220cbf6503911482c04a6a186baeb2ed7f4bfa977faaed09bcfdf1873",
+      "bytes": 5837,
+      "mode": "0644"
+    },
+    {
+      "path": "Sources/ArgmaxCore/External/Tokenizers/Tokenizer.swift",
+      "sha256": "86739e03beaa5d1282e0a5963824e95a0b9eeaedbdcf668f3197dbefd03e7ec3",
+      "bytes": 32288,
+      "mode": "0644"
+    },
+    {
+      "path": "Sources/ArgmaxCore/External/Tokenizers/Trie.swift",
+      "sha256": "de02655c088b3c69c4e63b662a925d89543ada824445cfed552d23357c545dd2",
+      "bytes": 2951,
+      "mode": "0644"
+    },
+    {
+      "path": "Sources/ArgmaxCore/External/Tokenizers/UnigramTokenizer.swift",
+      "sha256": "80637550f51b0bd76e927474fbc13421d5631a5ea5f8d84ec8241b3a32885c45",
+      "bytes": 6400,
+      "mode": "0644"
+    },
+    {
+      "path": "Sources/ArgmaxCore/External/Tokenizers/Utils.swift",
+      "sha256": "e73e5d6356b5e3d8791182f5b97a5c300f7c77795505a456a23aa048813bad34",
+      "bytes": 1991,
+      "mode": "0644"
+    },
+    {
+      "path": "Sources/ArgmaxCore/FloatType.swift",
+      "sha256": "0c036e144321f5b7c595ab8fbfbc1cee1ea6cfa77c2a1828456167e9fde0eb3d",
+      "bytes": 1159,
+      "mode": "0644"
+    },
+    {
+      "path": "Sources/ArgmaxCore/FoundationExtensions.swift",
+      "sha256": "05ff34cb6dc7eecb44d2fb2e82a00c8b53b54132702ab954738f47bc25e70cd9",
+      "bytes": 8089,
+      "mode": "0644"
+    },
+    {
+      "path": "Sources/ArgmaxCore/HubWrapper.swift",
+      "sha256": "1814360038643f812ef07b3f551725f5183fe2c5603716f250baa6de690bdd5a",
+      "bytes": 5292,
+      "mode": "0644"
+    },
+    {
+      "path": "Sources/ArgmaxCore/Logging.swift",
+      "sha256": "daec63324281a858de777382701b6c46ccbf37f5de6721ebc62a85444109fab2",
+      "bytes": 7850,
+      "mode": "0644"
+    },
+    {
+      "path": "Sources/ArgmaxCore/MLModelExtensions.swift",
+      "sha256": "327503fc05366fb35f136c834b960b73fb52b309b0131a06ff05fa1d4f3502e3",
+      "bytes": 2130,
+      "mode": "0644"
+    },
+    {
+      "path": "Sources/ArgmaxCore/MLModelLoading.swift",
+      "sha256": "9c730e51c95125258fac4f0477627dcf02e750fe9cee2fbdbf3d020d1ea7b45e",
+      "bytes": 1262,
+      "mode": "0644"
+    },
+    {
+      "path": "Sources/ArgmaxCore/MLMultiArrayExtensions.swift",
+      "sha256": "662f0d7d59180a59596fca53ae4e95835e428ec6d182416c0aa7e8533edc3cda",
+      "bytes": 6284,
+      "mode": "0644"
+    },
+    {
+      "path": "Sources/ArgmaxCore/MLTensorExtensions.swift",
+      "sha256": "32d8fd2d626de6003ce7aff63811f1d8bb8d882052292111bbb1e99300ddd4a4",
+      "bytes": 1616,
+      "mode": "0644"
+    },
+    {
+      "path": "Sources/ArgmaxCore/ModelDownloader.swift",
+      "sha256": "8f22c30028b606940468a8ba07d3af27ae57471ae6f8d11a04f50f0aec55f7ab",
+      "bytes": 17085,
+      "mode": "0644"
+    },
+    {
+      "path": "Sources/ArgmaxCore/ModelManager.swift",
+      "sha256": "b62f32c9118b37d1543f0d6aab41a9e1b5f22e4c0269618c4a571fadf23e45e6",
+      "bytes": 8989,
+      "mode": "0644"
+    },
+    {
+      "path": "Sources/ArgmaxCore/ModelState.swift",
+      "sha256": "99055c400119366c9771aa09cc5fe00b1123a14847102b8a7206bf89fadb67e7",
+      "bytes": 1648,
+      "mode": "0644"
+    },
+    {
+      "path": "Sources/ArgmaxCore/ModelUtilities.swift",
+      "sha256": "137c08f737871f3d7574e27f074cef3d067d2cacd654a71e2cb39b56ec3a9f31",
+      "bytes": 4977,
+      "mode": "0644"
+    },
+    {
+      "path": "Sources/ArgmaxCore/TokenizerWrapper.swift",
+      "sha256": "3668179456b2c07cffa3eed0052bd076183dce89cb5bca0755242bdd2803c34a",
+      "bytes": 1806,
+      "mode": "0644"
+    },
+    {
+      "path": "Sources/WhisperKit/Core/Audio/AudioChunker.swift",
+      "sha256": "32cc94c2dd0377c6d470e84823585959c1b4ca43f32f7538e12257950ee6cadf",
+      "bytes": 5314,
+      "mode": "0644"
+    },
+    {
+      "path": "Sources/WhisperKit/Core/Audio/AudioProcessor+IncrementalLoading.swift",
+      "sha256": "2b6dc71869f0c329fe66bbc80f5903cae7280f29c8cef724e66c109da5103dda",
+      "bytes": 10654,
+      "mode": "0644"
+    },
+    {
+      "path": "Sources/WhisperKit/Core/Audio/AudioProcessor.swift",
+      "sha256": "8b652bade79b2102d3f3c35898f9d2c8bbb8de68fa5329262accf217f6331eb5",
+      "bytes": 50597,
+      "mode": "0644"
+    },
+    {
+      "path": "Sources/WhisperKit/Core/Audio/AudioStreamTranscriber.swift",
+      "sha256": "e84e4f14bd849aede396d94d598b35ddbf3c8ea659aa8c5a9982adde305c757c",
+      "bytes": 10028,
+      "mode": "0644"
+    },
+    {
+      "path": "Sources/WhisperKit/Core/Audio/EnergyVAD.swift",
+      "sha256": "3782536fe1f35a63f6b80437fff45d8eb3d4cb8ecad8beb1d3f7d7b4d5dc09c3",
+      "bytes": 2192,
+      "mode": "0644"
+    },
+    {
+      "path": "Sources/WhisperKit/Core/Audio/VoiceActivityDetector.swift",
+      "sha256": "b896fdd258e1906ce7ffbe35c39331b5ddcded66420b31e89876c3f42ba3eabd",
+      "bytes": 7632,
+      "mode": "0644"
+    },
+    {
+      "path": "Sources/WhisperKit/Core/AudioEncoder.swift",
+      "sha256": "3d32e9b90f9223b01fcdccceda6f55f2b6972d6629331738cdc5dcdb0ebe5a91",
+      "bytes": 2887,
+      "mode": "0644"
+    },
+    {
+      "path": "Sources/WhisperKit/Core/Configurations.swift",
+      "sha256": "0ecbd0c76630a30c0d848106f8fc56eb5c5803fe0c74130380a26478df36c475",
+      "bytes": 12686,
+      "mode": "0644"
+    },
+    {
+      "path": "Sources/WhisperKit/Core/FeatureExtractor.swift",
+      "sha256": "6d9ac7bbe600ddf7d9f42d555e78c82744e82a4160d6a55223e21e23fe979c9b",
+      "bytes": 2539,
+      "mode": "0644"
+    },
+    {
+      "path": "Sources/WhisperKit/Core/Models.swift",
+      "sha256": "b54433512070700c0e2ae48357d4cfc00a005f6e2a769f11b518cf4e0d374214",
+      "bytes": 65891,
+      "mode": "0644"
+    },
+    {
+      "path": "Sources/WhisperKit/Core/Text/LogitsFilter.swift",
+      "sha256": "1af34fb35d70bf160e5b9332ace3e80cf21063508a1fd36f301faf118706cc59",
+      "bytes": 11520,
+      "mode": "0644"
+    },
+    {
+      "path": "Sources/WhisperKit/Core/Text/SegmentSeeker.swift",
+      "sha256": "918d3ce1a7084ee798ecb51af862fb8c40a61ff354fa978ea69fc33a3fac7744",
+      "bytes": 29234,
+      "mode": "0644"
+    },
+    {
+      "path": "Sources/WhisperKit/Core/Text/TokenSampler.swift",
+      "sha256": "041d2cd4bca606178247b595928155f3c8f8cb07e16c85589bd82dbcccd5a27f",
+      "bytes": 10011,
+      "mode": "0644"
+    },
+    {
+      "path": "Sources/WhisperKit/Core/TextDecoder.swift",
+      "sha256": "8a6b064978b698e0ce3082d8dbde1cf3866d69de7ca68979e12939f7ab77620a",
+      "bytes": 40421,
+      "mode": "0644"
+    },
+    {
+      "path": "Sources/WhisperKit/Core/TranscribeTask.swift",
+      "sha256": "87e031820c3e51dc57730b9271121e17f4585eece5933e0d1a73fc21104464d7",
+      "bytes": 19162,
+      "mode": "0644"
+    },
+    {
+      "path": "Sources/WhisperKit/Core/WhisperKit.swift",
+      "sha256": "1a102c1aa538a12bff7e9ffee7c9939262e1e88073e522232f9c208f234acec4",
+      "bytes": 57218,
+      "mode": "0644"
+    },
+    {
+      "path": "Sources/WhisperKit/Utilities/Concurrency.swift",
+      "sha256": "bbcd7708cd6d75a1c5756d89e6d8ea922b2481424bfac9899b8b4f9bdb13f175",
+      "bytes": 329,
+      "mode": "0644"
+    },
+    {
+      "path": "Sources/WhisperKit/Utilities/Extensions+Internal.swift",
+      "sha256": "0c06ed481469d5b5f975118a3b06b538f4caca2430d28fa876aaa0c15988f8c0",
+      "bytes": 4980,
+      "mode": "0644"
+    },
+    {
+      "path": "Sources/WhisperKit/Utilities/Extensions+Public.swift",
+      "sha256": "81eac62ac8eba592411cf7ac8d4ad38e09c6a397bd3a3fbae1baebeb35c2cbbd",
+      "bytes": 1405,
+      "mode": "0644"
+    },
+    {
+      "path": "Sources/WhisperKit/Utilities/Logging.swift",
+      "sha256": "8bedbef7360946ce715198735926a55d6445dfc81a9a0a7e9adbfb00bd79b167",
+      "bytes": 1583,
+      "mode": "0644"
+    },
+    {
+      "path": "Sources/WhisperKit/Utilities/ModelUtilities.swift",
+      "sha256": "44f5faf4a46a9da00cb23251c2cd1eb9853fd448e5d2ff1a79c129d4799567b3",
+      "bytes": 8155,
+      "mode": "0644"
+    },
+    {
+      "path": "Sources/WhisperKit/Utilities/ResultWriter.swift",
+      "sha256": "9ed482a0d2cd666b6cd05de86aee10480119b62548fb7f779244c92c165e81fa",
+      "bytes": 5477,
+      "mode": "0644"
+    },
+    {
+      "path": "Sources/WhisperKit/Utilities/TextUtilities.swift",
+      "sha256": "01d03c8b2e649a4901687064bfcfd100f98859fa22a584de4df84dc97b180725",
+      "bytes": 2287,
+      "mode": "0644"
+    },
+    {
+      "path": "Sources/WhisperKit/Utilities/TranscriptionUtilities.swift",
+      "sha256": "db5656871220103327f14b6b537b34b79ca5bcaa200afd95207dce135a9f65b5",
+      "bytes": 9910,
+      "mode": "0644"
+    },
+    {
+      "path": "Sources/WhisperKit/Utilities/WhisperError.swift",
+      "sha256": "845ab0dd1a0f12b1310115f9084db71333adbca07d68ff0f2e673db1532c36b8",
+      "bytes": 1612,
+      "mode": "0644"
+    }
+  ],
+  "targetSettings": "Selected Swift6.2 manifest language6, both upcoming concurrency features and both library-evolution/interface-alias flags preserved per local target; application language mode unchanged",
+  "productionResources": []
+}

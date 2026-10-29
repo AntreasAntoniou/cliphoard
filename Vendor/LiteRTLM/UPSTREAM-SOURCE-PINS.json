@@ -1,0 +1,80 @@
+[
+  {
+    "path": "swift/Benchmark.swift",
+    "gitBlob": "a08eecad06bb3108cf6315d7d934fcb2861c952d",
+    "sha256": "9096200cb1ad930cb6ac9af72747c430621739838b9f18ec8d3b2ea4fce7fd74",
+    "size": 3579
+  },
+  {
+    "path": "swift/Config.swift",
+    "gitBlob": "b67894f25524e8de3f8794684184e6921b938dd4",
+    "sha256": "6e886554115fc26118e7b4695dbde844bacda8628f3409be4d91c7fb3405a742",
+    "size": 16159
+  },
+  {
+    "path": "swift/Conversation.swift",
+    "gitBlob": "91eae31487ed248f282337fd3cabc6f28f146058",
+    "sha256": "1d142593bd190fb2dd94035bdb34324b14cf69871f01a9dd9bea3d5a02a343b5",
+    "size": 35231
+  },
+  {
+    "path": "swift/EmbeddingEngine.swift",
+    "gitBlob": "f469e40f37c5a62ee43e5bf3dba99e275a9f30de",
+    "sha256": "5da5b06bca212d2b95b8653692ac10900b0b38a17961726f082044f39c500623",
+    "size": 14069
+  },
+  {
+    "path": "swift/EmbeddingEngineConfig.swift",
+    "gitBlob": "9af6c9b6f0365e7682af580693bcdbf54f5d607a",
+    "sha256": "541dd557b1a4ca189668dbcec2b83290e7f2b7fdec1dc93c0079ec65a2a97c38",
+    "size": 4401
+  },
+  {
+    "path": "swift/Engine.swift",
+    "gitBlob": "2af6cf9bfcd19ac093124dd965b458324d85ae8b",
+    "sha256": "adaf174f54d34a11d9373ff76a75b5d922eaab9d07e3070a9a1459ef87a621e4",
+    "size": 14365
+  },
+  {
+    "path": "swift/ExperimentalFlags.swift",
+    "gitBlob": "c192e460be05b19173c9c3217905e76df466bd65",
+    "sha256": "163568a9d1333466eccb99affa21b2f104ed4ae6603b20407923d6bb91aa4109",
+    "size": 7774
+  },
+  {
+    "path": "swift/LiteRTLMError.swift",
+    "gitBlob": "5c8b86ebbc7a2ab27399465d3a83d6e0dd675f85",
+    "sha256": "3b7db3a12b914274d44afac9926563579fdff2c0c8a587723b3561e13bba6a3f",
+    "size": 18044
+  },
+  {
+    "path": "swift/Message.swift",
+    "gitBlob": "c611793da249d793221ae8a3d95ceb1f77ab33e0",
+    "sha256": "8564f90fbaa62b295473a26569cce1afef7e16a66365b53429d5a98578a36b19",
+    "size": 8709
+  },
+  {
+    "path": "swift/ModelInfo.swift",
+    "gitBlob": "3b6c18a3dc6a4f25e9e9ee72f9d8442346db1420",
+    "sha256": "ce8e67d6ac6666aba8e43a45e8d6544f4eac23e25f16e4a2da83db1682eba3a8",
+    "size": 14477
+  },
+  {
+    "path": "swift/ResponseFormat.swift",
+    "gitBlob": "e3c85c2b72aeb4540133f1d8709a2cc7b3c8b9d6",
+    "sha256": "071705a8d9e9916a83b2197514d58bdbd3a30e643903a9e826a500fb67772067",
+    "size": 2645
+  },
+  {
+    "path": "swift/Tool.swift",
+    "gitBlob": "aa8463592595fc02877f09e5d58b7772c9e35f7c",
+    "sha256": "d9698c6c7f8425cfa1f479cec5070fe94d9ca732b3e20b171e3dd90ca1545422",
+    "size": 10166
+  },
+  {
+    "path": "swift/ToolManager.swift",
+    "gitBlob": "63a64aeb31196befa5283ee4f181d0e049cbe2ac",
+    "sha256": "2199ee34981755f2cc36a2947efb0d65bcf873df0cdd8683e1c82cdff92e9e86",
+    "size": 5618
+  }
+]

@@ -112,7 +112,7 @@ enum VectorDetail: String, CaseIterable, Identifiable {
 ///   and rank first, then the rest are ordered by a blend of neural cosine and
 ///   shared-tag topic agreement.
 enum SearchMode: String, CaseIterable, Identifiable {
-    case exact, tag, neural, smart, image
+    case exact, tag, neural, smart, image, media
     var id: String { rawValue }
     var title: String {
         switch self {
@@ -121,6 +121,7 @@ enum SearchMode: String, CaseIterable, Identifiable {
         case .neural: return "Neural"
         case .smart:  return "Smart"
         case .image:  return "Image"
+        case .media:  return "Media"
         }
     }
     var blurb: String {
@@ -133,6 +134,7 @@ enum SearchMode: String, CaseIterable, Identifiable {
         // colour and file clip, which is a surprise worth stating in the menu rather than
         // leaving the user to infer it from an empty-looking result set.
         case .image:  return "Pictures only, by what they look like"
+        case .media:  return "Pictures, video moments, sounds and speech — on this Mac"
         }
     }
     var symbol: String {
@@ -142,6 +144,7 @@ enum SearchMode: String, CaseIterable, Identifiable {
         case .neural: return "brain"
         case .smart:  return "sparkles"
         case .image:  return "photo"
+        case .media:  return "play.rectangle"
         }
     }
     /// True for modes that need the embedding model / vectors (everything but exact).
@@ -163,7 +166,7 @@ enum SearchMode: String, CaseIterable, Identifiable {
     /// `usesImageModel` already isolated exactly the mode that needs the 33 MB OpenVision
     /// towers, so the paid split costs one filter and invents no crippled code path.
     static func available(_ entitlement: Entitlement) -> [SearchMode] {
-        allCases.filter { !$0.usesImageModel || entitlement.isPro }
+        allCases.filter { (!$0.usesImageModel && $0 != .media) || entitlement.isPro }
     }
 }
 

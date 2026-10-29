@@ -191,6 +191,7 @@ final class ClipStore: ObservableObject {
 
     private let dir: URL
     private let db: Database?
+    lazy var mediaSearch = MediaSearchController(store: self)
 
     /// The in-flight background indexing pass, if any. A new pass cancels the
     /// previous one so overlapping model/basket changes don't run two passes
@@ -2055,6 +2056,7 @@ final class ClipStore: ObservableObject {
     }
 
     private func removePayload(_ item: ClipItem) {
+        mediaSearch.discard(item.id)
         if let f = item.payloadFile {
             try? FileManager.default.removeItem(at: dir.appendingPathComponent(f))
             // Remove the sidecar thumbnail too.
