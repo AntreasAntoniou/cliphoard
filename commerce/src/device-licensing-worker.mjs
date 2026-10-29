@@ -200,3 +200,6 @@ export default { async fetch(request, env) {
     return stripeWorker.fetch(request, env);
   } catch (error) { return failure(error); }
 } };
+
+// Explicit service-binding RPC export; default HTTP routing is unchanged.
+export { DeviceLicenceOperator } from './device-licensing-operator.mjs';
