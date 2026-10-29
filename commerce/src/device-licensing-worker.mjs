@@ -108,6 +108,33 @@ export class DeviceLicenceEntitlement extends Hosts.Entitlement {
   #ctx; #env;
   constructor(ctx, env) { super(ctx, env); this.#ctx = ctx; this.#env = env; }
   alarm(...args) { nativeAlarm(args); return super.alarm(); }
+  // Trusted binding inspection only: SELECT existing state, never initialize it.
+  readAdmission(...args) {
+    requireValue(args.length === 0); const c = deviceConfiguration(this.#env), sql = this.#ctx.storage.sql;
+    const tables = Array.from(sql.exec("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('device_licence_host_reservation','device_qualification_admission')"));
+    const present = name => tables.some(row => row.name === name), uninitialized = () => Object.freeze({ state: 'uninitialized' });
+    if (!present('device_licence_host_reservation')) { requireValue(!present('device_qualification_admission')); return uninitialized(); }
+    const rows = Array.from(sql.exec('SELECT singleton,reservation_json,ready_ack FROM device_licence_host_reservation'));
+    requireValue(rows.length === 1 && rows[0].singleton === 1);
+    const raw = exact(JSON.parse(rows[0].reservation_json), ['entitlementID', 'provisioningID', 'scope']);
+    const reservation = Object.freeze({ ...raw, scope: exact(raw.scope, scopeFields) });
+    requireValue(JSON.stringify(reservation) === rows[0].reservation_json);
+    decode(reservation.entitlementID, 16); decode(reservation.provisioningID, 16); qualifiedScope(c, reservation.scope);
+    requireValue(typeof reservation.scope.sessionId === 'string' && /^cs_[A-Za-z0-9_]{1,180}$/.test(reservation.scope.sessionId)
+      && this.#ctx.id.toString() === this.#env.DEVICE_LICENCE_ENTITLEMENTS.idFromName(`${c.realm}:entitlement:${reservation.entitlementID}`).toString());
+    if (rows[0].ready_ack === null) { requireValue(!present('device_qualification_admission')); return uninitialized(); }
+    const ack = exact(JSON.parse(rows[0].ready_ack), ['entitlementID', 'provisioningID', 'bindingDigest']);
+    requireValue(JSON.stringify(ack) === rows[0].ready_ack && ack.entitlementID === reservation.entitlementID && ack.provisioningID === reservation.provisioningID);
+    decode(ack.bindingDigest, 32);
+    if (!present('device_qualification_admission')) return uninitialized();
+    const admissionRows = Array.from(sql.exec('SELECT singleton,binding,revision,decision FROM device_qualification_admission'));
+    const binding = JSON.stringify({ realm: c.realm, profile: c.selection.profileID, entitlementID: reservation.entitlementID, scope: reservation.scope });
+    requireValue(admissionRows.length === 1 && admissionRows[0].singleton === 1 && admissionRows[0].binding === binding
+      && Number.isSafeInteger(admissionRows[0].revision) && admissionRows[0].revision > 0 && ['hold', 'allow'].includes(admissionRows[0].decision));
+    const row = admissionRows[0];
+    return Object.freeze({ entitlementID: reservation.entitlementID, revision: row.revision,
+      storedDecision: row.decision, effectiveDecision: qualificationActive(c) ? row.decision : 'hold' });
+  }
   async setAdmission(...args) {
     requireValue(args.length === 1); const c = deviceConfiguration(this.#env);
     const rows = Array.from(this.#ctx.storage.sql.exec('SELECT reservation_json,ready_ack FROM device_licence_host_reservation WHERE singleton=1'));
