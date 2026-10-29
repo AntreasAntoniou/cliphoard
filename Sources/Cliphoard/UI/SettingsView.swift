@@ -442,16 +442,21 @@ struct SettingsView: View {
                              ? "Pro is active on this Mac"
                              : "Free build — a full clipboard manager, with no time limit")
                         Spacer()
-                        if !settings.entitlement.isPro {
+                    }
+                    if !settings.entitlement.isPro {
+                        HStack {
+                            Spacer()
 #if APP_STORE
                             StoreProPurchaseButton()
 #else
                             Button("Get Pro — \(Licence.priceLabel)") {
                                 NSWorkspace.shared.open(Licence.buyURL)
                             }
-                            .controlSize(.small)
 #endif
+                            Spacer()
                         }
+                        .buttonStyle(.borderedProminent)
+                        .padding(.vertical, 10)
                     }
 #if APP_STORE
                     Text("Pro unlocks image search and text recognition with a one-time App Store purchase. Free history, text search, imports and encrypted export remain available.")
@@ -517,6 +522,19 @@ struct SettingsView: View {
                         .fixedSize(horizontal: false, vertical: true)
 #endif
 #endif
+                }
+                .background {
+                    if model?.requestedSettingsSection == "cliphoard-pro" && !settings.entitlement.isPro {
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill(Color.accentColor.opacity(0.08))
+                    }
+                }
+                .overlay {
+                    if model?.requestedSettingsSection == "cliphoard-pro" && !settings.entitlement.isPro {
+                        RoundedRectangle(cornerRadius: 12)
+                            .strokeBorder(Color.accentColor, lineWidth: 2)
+                            .allowsHitTesting(false)
+                    }
                 }
                 .id("cliphoard-pro")
 
@@ -865,11 +883,11 @@ struct SettingsView: View {
         .onAppear {
             excludedApps.reload()
             if let target = model?.requestedSettingsSection {
-                DispatchQueue.main.async { scroll.scrollTo(target, anchor: .top) }
+                DispatchQueue.main.async { scroll.scrollTo(target, anchor: .center) }
             }
         }
         .onChange(of: model?.settingsFocusRequest) { _ in
-            if let target = model?.requestedSettingsSection { scroll.scrollTo(target, anchor: .top) }
+            if let target = model?.requestedSettingsSection { scroll.scrollTo(target, anchor: .center) }
         }
 #if APP_STORE
         // The singleton owns the price request; closing this view must not cancel
