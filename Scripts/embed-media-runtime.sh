@@ -24,6 +24,7 @@ if app.suffix != '.app' or not app.is_dir() or not binaries.is_dir(): fail('exis
 if any(x.name in ('Applications', 'System') for x in app.parents): fail('installed/system app destination refused')
 if any(x.suffix == '.app' for x in app.parents): fail('nested app destination refused')
 if (app/'Contents/_CodeSignature').exists(): fail('already signed app refused')
+if any(p.name != 'Contents' for p in app.iterdir()): fail('app root must contain only Contents')
 info = plistlib.loads((app/'Contents/Info.plist').read_bytes())
 name = info.get('CFBundleExecutable')
 if not isinstance(name,str) or Path(name).name != name: fail('invalid executable name')
@@ -35,7 +36,8 @@ if '@rpath/libCLiteRTLM_mac.dylib' not in run(['/usr/bin/otool','-L',str(exe)]):
 frameworks = plain(app/'Contents/Frameworks'); resources = plain(app/'Contents/Resources')
 dest = frameworks/lib.name
 if dest.exists(): fail('runtime destination exists; reconcile original assembly instead of overwriting')
-# SwiftPM's two build engines use resourceURL vs bundleURL. Preserve both documented lookup locations.
+# The generated macOS app accessor prefers Bundle.main.resourceURL (Contents/Resources).
+# Its bundle-root candidate is only a CLI fallback and is invalid in a signed .app root.
 hubs = [p for p in binaries.glob('*.bundle') if p.name in ('swift-transformers_Hub.bundle','swift_transformers_Hub.bundle')]
 if len(hubs) != 1: fail('exactly one production Transformers Hub resource bundle required')
 for bundle in hubs:
@@ -46,7 +48,7 @@ def inventory(folder):
     return {str(p.relative_to(folder)): (stat.S_IMODE(p.stat().st_mode), digest(p) if p.is_file() else 'directory')
             for p in folder.rglob('*')}
 for bundle in hubs:
-    for target in (resources/bundle.name, app/bundle.name):
+    for target in (resources/bundle.name,):
         plain(target)
         if target.exists() and inventory(target) != inventory(bundle): fail('existing resource bundle differs')
 # Locate notices from an explicit repository path in this script's sibling Vendor folder.
@@ -75,7 +77,7 @@ frameworks.mkdir(parents=True, exist_ok=True); resources.mkdir(parents=True, exi
 shutil.copy2(lib,dest)
 if digest(dest) != expected: fail('runtime copy mismatch')
 for bundle in hubs:
-    for target in (resources/bundle.name,app/bundle.name):
+    for target in (resources/bundle.name,):
         if not target.exists(): shutil.copytree(bundle,target,copy_function=shutil.copy2)
         if inventory(target) != inventory(bundle): fail('resource copy mismatch')
 notice.parent.mkdir(parents=True,exist_ok=True)
@@ -88,5 +90,5 @@ for source, target in supplemental:
     if digest(target) != digest(source): fail('supplemental notice copy mismatch')
 if added: run(['/usr/bin/install_name_tool','-add_rpath',rpath,str(exe)])
 if not all(rpath in run(['/usr/bin/otool','-arch',arch,'-l',str(exe)]) for arch in architectures): fail('runtime search path readback failed')
-print(json.dumps({'state':'embedded_unsigned','runtimeSHA256':expected,'runtime':str(dest),'rpath':rpath,'addedRpath':added,'resources':[x.name for x in hubs],'resourceLookupLocations':['Contents/Resources','bundle root'],'supplementalRuntimeNotices':len(supplemental),'completeBinarySBOMClaim':False,'whisperKitProductionResourceBundleRequired':False,'next':'sign nested dylib, then enclosing app; strict verify before distribution'}))
+print(json.dumps({'state':'embedded_unsigned','runtimeSHA256':expected,'runtime':str(dest),'rpath':rpath,'addedRpath':added,'resources':[x.name for x in hubs],'resourceLookupLocations':['Contents/Resources'],'supplementalRuntimeNotices':len(supplemental),'completeBinarySBOMClaim':False,'whisperKitProductionResourceBundleRequired':False,'next':'sign nested dylib, then enclosing app; strict verify before distribution'}))
 PY
