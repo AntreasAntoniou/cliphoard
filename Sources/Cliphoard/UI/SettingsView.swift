@@ -395,8 +395,7 @@ struct SettingsView: View {
     /// same reason: the opened file's preview must survive a re-render while it is read.
     @StateObject private var archiveModel = ArchiveModel()
     @StateObject private var excludedApps = ExcludedAppsSettings()
-    /// Embedder lifecycle for the status line; Store models are bundled, while the
-    /// direct edition can also show download/install progress.
+    /// Shared download and local preparation status for both distribution editions.
     @ObservedObject private var embedderState = EmbedderState.shared
 #if APP_STORE
     @ObservedObject private var purchase = StorePurchase.shared
@@ -635,8 +634,7 @@ struct SettingsView: View {
                         Text("Embedding model")
                         Spacer()
                         Picker("", selection: $settings.deepSearchLevel) {
-                            // Every tier is permissively licensed. Store builds bundle all
-                            // tiers; the direct edition can download MiniLM on demand.
+                            // All editions prepare optional Hugging Face downloads locally.
                             ForEach(DeepSearchLevel.allCases) { Text($0.title).tag($0) }
                         }
                         .labelsHidden().frame(width: 200)
@@ -653,14 +651,10 @@ struct SettingsView: View {
                         // tier (MiniLM) has a fixed output head.
                         .disabled(settings.searchMode == .exact || !settings.deepSearchLevel.isOgma)
                     }
-#if APP_STORE
-                    Text("Vector detail (ogma tiers): Full uses the 1024-d bge-large-distilled head — strongest search; Compact stores 2.7× smaller vectors. High runs bundled MiniLM. All model tiers run on this Mac. Switching re-indexes in the background.")
+                    Text("Models download from Hugging Face when you choose, then run offline on this Mac. Full stores 1024-dimensional ogma vectors; Compact uses less storage. Changing a model re-indexes history after preparation.")
                         .font(.system(size: 11)).foregroundStyle(.secondary)
-#else
-                    Text("Vector detail (ogma tiers): Full uses the 1024-d bge-large-distilled head — strongest search; Compact stores 2.7× smaller vectors. High runs MiniLM (fast, excellent) and downloads on first use. Switching re-indexes in the background.")
-                        .font(.system(size: 11)).foregroundStyle(.secondary)
-#endif
                     embedderStatus
+                    if store.entitlement.isPro { imageModelStatus }
                     Text("Smart = clips containing exactly what you typed first, then the closest in meaning · Exact = only clips containing the typed text, ignoring case · Tag = clips in the auto category (of 100) closest to your query. You can also switch modes from the pill next to the search field. Models run on-device (CoreML).")
                         .font(.system(size: 11)).foregroundStyle(.secondary)
                 }
@@ -897,54 +891,74 @@ struct SettingsView: View {
 
     // MARK: Building blocks
 
-    /// Live model availability. Store builds load included assets; only the direct
-    /// edition offers automatic downloads for a tier that is not already installed.
+    /// Download and local preparation have distinct, cancellable states in both editions.
     @ViewBuilder
     private var embedderStatus: some View {
-        HStack(spacing: 6) {
+        VStack(alignment: .leading, spacing: 7) {
             switch embedderState.state {
-            case .ready(let signature):
-                Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
-                Text("Semantic model active: \(signature)").foregroundStyle(Color.green)
-#if APP_STORE
-            case .downloading(let name, _), .installing(let name):
-                ProgressView().controlSize(.small)
-                Text("Preparing bundled model \(name)…").foregroundStyle(.secondary)
-#else
-            case .downloading(let name, let progress):
-                ProgressView().controlSize(.small)
-                Text("Downloading \(name)… \(Int(progress * 100))%")
-                    .foregroundStyle(.secondary)
-            case .installing(let name):
-                ProgressView().controlSize(.small)
-                Text("Installing \(name)… (one-time)").foregroundStyle(.secondary)
-#endif
-            case .loading(let name):
-                ProgressView().controlSize(.small)
-                Text("Loading \(name)…").foregroundStyle(.secondary)
-            case .failed(let name, let message):
-                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
-#if APP_STORE
-                Text("\(name) could not load: \(message)").foregroundStyle(.secondary)
-#else
-                Text("\(name) install failed: \(message)").foregroundStyle(.secondary)
-#endif
-                Button("Retry") {
-                    EmbedderProvider.configureAndReindex(level: settings.deepSearchLevel, store: store)
+            case .ready:
+                Label("Ready on this Mac · works offline", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+            case .notInstalled(let name):
+                HStack {
+                    Label("Download a model to enable semantic search", systemImage: "arrow.down.circle")
+                    Spacer()
+                    Button("Download & prepare · \(textModelSize)") { prepareTextModel() }
                 }
-                .controlSize(.small)
+                Text("\(name) · Hugging Face · exact search stays available while preparing.").foregroundStyle(.secondary)
+            case .downloading(_, let progress):
+                HStack {
+                    Text("Downloading from Hugging Face…")
+                    Spacer()
+                    Text(min(1, max(0, progress)), format: .percent.precision(.fractionLength(0))).monospacedDigit()
+                    Button("Cancel") { EmbedderProvider.cancelPreparation() }
+                }
+                ProgressView(value: min(1, max(0, progress)))
+            case .installing:
+                HStack { ProgressView().controlSize(.small); Text("Checking and preparing on this Mac…"); Spacer(); Button("Cancel") { EmbedderProvider.cancelPreparation() } }
+            case .loading:
+                HStack { ProgressView().controlSize(.small); Text("Opening local model…"); Spacer(); Button("Cancel") { EmbedderProvider.cancelPreparation() } }
+            case .failed(_, let message):
+                Label("Model couldn’t be prepared", systemImage: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                Text(message).foregroundStyle(.secondary)
+                Button("Try again") { prepareTextModel() }
             case .fallback:
-                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
-#if APP_STORE
-                Text("Basic matching only — choose an included model tier above")
-                    .foregroundStyle(.secondary)
-#else
-                Text("Basic matching only — pick a model tier above to auto-install one")
-                    .foregroundStyle(.secondary)
-#endif
+                Text("Basic matching is ready. Choose a model for semantic search.").foregroundStyle(.secondary)
             }
-        }
-        .font(.system(size: 11))
+        }.font(.system(size: 11)).controlSize(.small)
+    }
+    @ViewBuilder private var imageModelStatus: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Text("Image search · OpenVision · 32 MB").font(.headline)
+            Text("An optional Hugging Face download for finding clipboard pictures by description.").foregroundStyle(.secondary)
+            switch store.imageModelState {
+            case .ready:
+                Label("Ready on this Mac · works offline", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+            case .downloading(_, let progress):
+                HStack { Text("Downloading…"); Spacer(); Text(min(1, max(0, progress)), format: .percent.precision(.fractionLength(0))).monospacedDigit() }
+                ProgressView(value: min(1, max(0, progress)))
+            case .installing, .loading:
+                HStack { ProgressView().controlSize(.small); Text("Preparing on this Mac…") }
+            case .failed(_, let message):
+                Text(message).foregroundStyle(.orange)
+            case .notInstalled, .fallback: EmptyView()
+            }
+            if store.imageModelPreparing {
+                Button("Cancel") { store.cancelImageModelPreparation() }
+            } else if case .ready = store.imageModelState {
+                EmptyView()
+            } else {
+                Button("Download & prepare image search") { store.prepareImageSearchModel() }
+                    .disabled(!ClipStore.imageUnderstandingAllowed(store.entitlement) || store.safeMode)
+            }
+        }.font(.system(size: 11)).controlSize(.small)
+            .padding(10).background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
+    }
+    private var textModelSize: String {
+        guard let name = settings.deepSearchLevel.modelName, let bytes = ModelAssets.catalog[name]?.bytes else { return "—" }
+        return ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
+    }
+    private func prepareTextModel() {
+        EmbedderProvider.configureAndReindex(level: settings.deepSearchLevel, store: store, allowDownloads: true)
     }
 
     /// A single accent-tinted tag capsule, shared by the flat and dimensional

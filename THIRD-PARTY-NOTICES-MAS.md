@@ -3,22 +3,21 @@
 Cliphoard is MIT-licensed (see LICENSE). It builds on the third-party components
 below, each under its own licence.
 
-**The Mac App Store build bundles the text, image and multimodal embedding models:**
-Open Ogma Micro and Small, all-MiniLM-L6-v2, both OpenVision-Tiny towers and EmbeddingGemma 2.
-Optional Whisper speech models are downloaded only when the user chooses preparation.
-Media and inference remain on-device. Each entry states its distribution method;
-the complete Apache-2.0 text ships beside this file as
-`LICENSE-Apache-2.0.txt`.
+**No model weights are bundled in new Cliphoard releases.** Optional models are
+acquired from Hugging Face after an explicit download action, checked against
+pinned hashes, prepared locally and used offline. Runtime libraries and tokenizer
+configuration resources are code/support assets, not bundled model weights.
+Licences and attribution remain in the application for all supported models.
+The earlier build8 package is immutable and predates this policy.
 
 > **Correction, 2026-09-01.** `LICENSE` previously stated that Cliphoard bundled
 > CC-BY-NC-4.0 ogma models and that the MIT grant "including to sell" did not
 > extend to them. Both halves were wrong: those models are MIT
-> (`axiotic/open-ogma-micro`, `axiotic/open-ogma-small`). They were not bundled
-> in the direct-download release addressed by that correction; this Store
-> channel now bundles them under their MIT terms.
+> (`axiotic/open-ogma-micro`, `axiotic/open-ogma-small`). The correction described
+> the September Direct release; later Store packages bundled them under MIT.
 > **That restriction is withdrawn.** It was published in this repository's
-> `LICENSE`; no application release ever carried it — the only published GitHub
-> release is `models-v1`, which hosts model archives, not the app.
+> `LICENSE`; at the time of the correction no application release had carried it.
+> The then-published `models-v1` release hosted model archives, not the app.
 >
 > `LICENSE` is now plain, unmodified MIT with nothing appended, so that automated
 > licence detection resolves it correctly. Everything about third-party components
@@ -33,28 +32,30 @@ the complete Apache-2.0 text ships beside this file as
 - **Provenance:** distilled from `BAAI/bge-small-en-v1.5` (the 384-d head) and
   `BAAI/bge-large-en-v1.5` (the 1024-d head, which the app uses by default) —
   both MIT-licensed — so the entire supply chain is permissive.
-- **How it reaches you:** **BUNDLED.** The Store build packages both compiled
-  Core ML models and their tokenizers inside the `.app`.
+- **How it reaches you:** NOT bundled. Downloaded from immutable revisions of the repos above when chosen and verified against a pinned SHA-256. Serving them from HuggingFace is
+  deliberate: it is what makes real adoption of a model we released visible.
 
 ### all-MiniLM-L6-v2 (sentence-transformers) — High tier
 - **Repo:** https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2
 - **License:** Apache-2.0.
-- **How it reaches you:** **BUNDLED.** The Store build packages the compiled
-  Core ML model and tokenizer inside the `.app`.
+- **How it reaches you:** NOT bundled. Our CoreML conversion is fetched on demand
+  by `ModelAssets.ensure`, which permits only verified Hugging Face locations,
+  checks a pinned SHA-256 and prepares CoreML locally. Publication of the exact
+  compatible conversion on Hugging Face is a release gate; unavailable sources
+  fail closed rather than falling back to GitHub.
 
 ### OpenVision-Tiny (UCSC-VLAA) — image understanding
 - **Weights:** https://huggingface.co/UCSC-VLAA/openvision-vit-tiny-patch8-224
   — the repo our converter actually reads (`tools/convert_openvision.py:55`).
 - **Project:** https://github.com/UCSC-VLAA/OpenVision
 - **License:** Apache-2.0 — full text in `LICENSE-Apache-2.0.txt`, shipped
-  inside the `.app`.
-- **How it reaches you:** **BUNDLED.** Both towers (`openvision-tiny-p8-image`
-  and `openvision-tiny-p8-text`, 34.6 MB together) ship inside the distributed
-  `.app`. It is the joint text-and-pixel space
-  that lets you find a picture by describing it, including images carrying no
-  recognisable text.
-- **Attribution:** this notice and the accompanying Apache-2.0 text cover the
-  Store build's redistribution of these two towers.
+  inside the `.app` and at the root of the DMG.
+- **How it reaches you:** NOT bundled. The paired image/text towers and tokenizer
+  are an optional, checksum-pinned Hugging Face download, compiled on this Mac.
+  Publication of the exact compatible conversion is a release gate.
+- **Attribution:** earlier releases bundled this model; the original omission and
+  correction dated 2026-09-01 remain historical. Downloading it separately does
+  not remove its Apache-2.0 attribution requirements.
 
 ## Linked libraries (compiled into the Cliphoard binary)
 
@@ -65,8 +66,7 @@ redistribution of them. Their notices are reproduced verbatim below.
 <!-- distribution-manifest — parsed by Tests/CliphoardTests/DistributionLicenceTests.swift.
      Every `linked:` line is checked against Package.resolved AND against the upstream
      LICENSE file in .build/checkouts. Adding a dependency turns the suite red until a
-     human classifies it. Do NOT list models here: what is bundled is derived from
-     BUNDLE_MODELS in the build scripts and stated once, in the prose above.
+     human classifies it. Do NOT list models here: model weights are acquired separately; the build scripts enforce a model-free bundle.
 linked: https://github.com/huggingface/swift-transformers | licence: Apache-2.0 | copyright: Copyright 2022 Hugging Face SAS. | licence-file: LICENSE-Apache-2.0.txt
 linked: https://github.com/johnmai-dev/Jinja | licence: MIT | copyright: Copyright (c) 2024 John Mai | licence-file: (reproduced inline below)
 linked: https://github.com/apple/swift-collections.git | licence: Apache-2.0 with Runtime Library Exception | copyright: Copyright (c) 2021 - 2024 Apple Inc. and the Swift project authors | licence-file: LICENSE-Apache-2.0.txt
@@ -149,7 +149,7 @@ repository (MIT), validated bit-for-bit against the reference Python tokenizer.
 ## Multimodal media search and optional speech
 
 - **Embedded Hugging Face Hub and tokenizer sources in ArgmaxCore** — Apache-2.0, Copyright 2022 Hugging Face SAS, with original 2019/2024 notices retained in source. These are based on swift-transformers 1.1.6, revision `573e5c9036c2f136b3a8a071da8e8907322403d0`, and include Argmax's upstream-marked modifications. The original headers and modification annotations are preserved. The complete Apache-2.0 license is included at `ThirdPartyNotices/LiteRTLM-LICENSE.txt`; the outer Argmax MIT license does not replace these embedded-source terms.
-- **EmbeddingGemma 2 (740M), LiteRT community conversion** — Apache-2.0 model-card license. Exact model revision `94408f31843f8bd0adb11c262292627287f5fda4`, file `embeddinggemma-2-740m.litertlm`, SHA256 `e7a8a2204b91e0f96e92960e84a09a89212e1633dcb7575a9bf3378b4df77f4c`. The Store candidate includes these data weights; Direct can prepare them through an explicit download. This is a distinct model from the retired embeddinggemma-300m tier above. Source: https://huggingface.co/litert-community/embeddinggemma-2-740m-litert-lm/tree/94408f31843f8bd0adb11c262292627287f5fda4
+- **EmbeddingGemma 2 (740M), LiteRT community conversion** — Apache-2.0 model-card license. Exact model revision `94408f31843f8bd0adb11c262292627287f5fda4`, file `embeddinggemma-2-740m.litertlm`, SHA256 `e7a8a2204b91e0f96e92960e84a09a89212e1633dcb7575a9bf3378b4df77f4c`. NOT bundled in either distribution channel. These data weights are downloaded from the pinned Hugging Face revision only when the user chooses preparation. This is a distinct model from the retired embeddinggemma-300m tier above. Source: https://huggingface.co/litert-community/embeddinggemma-2-740m-litert-lm/tree/94408f31843f8bd0adb11c262292627287f5fda4
 - **LiteRT-LM 0.18.1** — Google, Apache-2.0. The application links the pinned official universal macOS runtime and includes thirteen upstream Swift wrappers. Its complete top-level license is included at `ThirdPartyNotices/LiteRTLM-LICENSE.txt`. Source: https://github.com/google-ai-edge/LiteRT-LM/tree/v0.18.1
 - **WhisperKit / ArgmaxCore 1.1.1** — MIT. Linked for optional local speech transcription. Speech model weights and tokenizer data are prepared only on request from pinned public repositories; recordings are never uploaded for transcription. The required upstream software notice follows.
 

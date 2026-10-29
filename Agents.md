@@ -82,7 +82,7 @@
 | --- | --- |
 | `Package.swift` | SwiftPM manifest. `swift-tools-version:5.9`, `platforms [.macOS(.v13)]`. Executable target `Cliphoard` (`Sources/Cliphoard`) links `AppKit`, `SwiftUI`, `Carbon`, `UniformTypeIdentifiers` + library `sqlite3`. Test target `CliphoardTests`. No external package dependencies. |
 | `Makefile` | `build` (`swift build`), `app` (`Scripts/build-app.sh release`), `run` (`app` + `open`), `install` (copy to `/Applications`), `clean`. |
-| `Scripts/build-app.sh` | Builds `build/Cliphoard.app`: `swift build -c`, assembles bundle + Info.plist, renders the icon, compiles any `tools/models/*.mlpackage` → `.mlmodelc` and bundles them + the `<name>-tokenizer/` folder (remapping `tokenizer_class`→`T5Tokenizer`), then code-signs — preferring the stable `Ditto Local Signing` identity, else ad-hoc `-`. |
+| `Scripts/build-app.sh` | Builds `build/Cliphoard.app`: `swift build -c`, assembles bundle + Info.plist, renders the icon, rejects bundled model weights, retains required runtime libraries, then code-signs — preferring the stable `Ditto Local Signing` identity, else ad-hoc `-`. |
 | `Scripts/setup-signing.sh` | One-time, **user-run** creation of a stable self-signed `Ditto Local Signing` code-signing identity in the login keychain (OpenSSL → legacy PKCS#12 → `security import`), so the Accessibility grant survives rebuilds. Idempotent; modifies the login keychain (may prompt for password). |
 | `Scripts/make-icon.swift` | Renders the app icon (indigo→purple gradient rounded rect + white `doc.on.clipboard.fill` SF Symbol) at the 10 `.iconset` sizes for `iconutil`. |
 | `Resources/Info.plist` | Bundle metadata: `CFBundleIdentifier ai.axiotic.ditto`, version `1.0.0`, **`LSUIElement true`** (accessory/no Dock icon), `LSMinimumSystemVersion 13.0`, `NSAppleEventsUsageDescription`, `CFBundleIconFile Cliphoard`, copyright. |
@@ -149,14 +149,14 @@ Selecting (Enter / click-again / ⌘1–9) → `model.onPaste(item,plain)` → `
 
 ```bash
 make build         # swift build (debug binary)
-make app           # Scripts/build-app.sh release → build/Cliphoard.app (bundles models if present)
+make app           # Scripts/build-app.sh release → build/Cliphoard.app (never bundles model weights)
 make run           # build app + open it
 make install       # copy build/Cliphoard.app to /Applications
 make clean         # swift package clean + rm -rf build .build
 
 swift build [-c release]           # direct SwiftPM build
 swift test                         # run CliphoardTests (XCTest)
-Scripts/build-app.sh [debug|release]   # assemble bundle + icon + models + codesign
+Scripts/build-app.sh [debug|release]   # assemble bundle + icon + runtime libraries + codesign
 Scripts/setup-signing.sh           # one-time: stable self-signed identity (login keychain)
 ```
 
@@ -168,7 +168,7 @@ Model pipeline (see `tools/README.md`):
 cd tools
 python3 _dl.py axiotic/open-ogma-small && python3 convert_ogma_libre.py models/open-ogma-small
 python3 _dl.py axiotic/open-ogma-micro && python3 convert_ogma_libre.py models/open-ogma-micro
-cd .. && make app   # build-app.sh compiles + bundles the .mlpackage(s) automatically
+cd .. && make app   # model-free application; conversion outputs are never release inputs
 ```
 
 Requires macOS 13+ and the Swift toolchain (Xcode 15+). Auto-paste (⌘V) needs
@@ -213,8 +213,8 @@ Poll 0.4 s / tolerance 0.1 / `.common`. Panel `barHeight 380`, level `.mainMenu+
 1. **Download** (`_dl.py <repo>`) → `tools/models/<name>/` (HF snapshot; brotli disabled).
 2. **Convert** (`convert_ogma.py models/<name>`) → loads ogma via `trust_remote_code`, wraps `forward(input_ids, attention_mask, task_token_ids)` with `F.normalize`, traces, `coremltools.convert` → `tools/models/<name>.mlpackage` with flexible sequence length and a printed PyTorch-vs-CoreML parity cosine (1.00000).
 3. **Verify tokenizer/embeddings** (`reference.py` → `reference.json`) — golden token ids / vector heads / norms the Swift side is matched against bit-for-bit. `_compat.py` provides the `StrEnum` shim for Python 3.10.
-4. **Bundle** (`Scripts/build-app.sh`) — compiles every `tools/models/*.mlpackage` to `.mlmodelc` into `Cliphoard.app/Contents/Resources`, and copies each model's `tokenizer.json`/`config.json`/`tokenizer_config.json` into a `<name>-tokenizer/` folder (remapping `tokenizer_class`→`T5Tokenizer`).
-5. **Load at runtime** — `EmbedderProvider.configure(level:)` resolves `<name>.mlmodelc` + `<name>-tokenizer` from the bundle; on success uses `OgmaEmbedder` (CoreML), else falls back to `HashingEmbedder`. The Swift `OgmaTokenizer` reproduces ogma's Unigram pipeline (metaspace `▁`, `+n_special_tokens` offset) so token ids match the Python reference exactly.
+4. **Publish reviewed assets** — exact compatible model data and tokenizers must be hosted on Hugging Face with immutable revisions and SHA-256 pins. Publication has its own explicit scope; never invent URLs.
+5. **Load at runtime** — explicit download buttons acquire models; verified archives are prepared locally and cached for offline use. `EmbedderProvider` keeps basic matching available until preparation succeeds. Store and Direct share this path. App startup never silently acquires model weights.
 
 Model tiers: low `axiotic/open-ogma-micro` (2.5M, 384/1024-dim) · normal `axiotic/open-ogma-small` (8.9M, 384/1024-dim, 1024 default) · high `sentence-transformers/all-MiniLM-L6-v2` (22.7M, 384-dim, Apache-2.0, downloads on demand). A `max` tier on `google/embeddinggemma-300m` was retired on licensing grounds — see THIRD-PARTY-NOTICES.md. Each `OgmaEmbedder` has a `signature` (`"<name>-<dim>"`); vectors/tags are only comparable within one signature, which is why the per-model cache and the `hashing-256` fallback are kept separate.
 

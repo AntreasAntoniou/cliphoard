@@ -6,7 +6,7 @@ Cliphoard has two distribution builds from the same open-source codebase:
   permission for automatic paste, and offline Pro licence keys. This document covers
   that release pipeline.
 - **Mac App Store:** an `APP_STORE` build with App Sandbox, user-initiated file access,
-  bundled models and StoreKit Pro purchases. It copies selected clips to the clipboard;
+  on-demand Hugging Face models and StoreKit Pro purchases. It copies selected clips to the clipboard;
   the user presses ⌘V. See [MAC_APP_STORE.md](MAC_APP_STORE.md) for its separate signing
   and upload pipeline. A valid local build does not establish a published Store listing.
 
@@ -133,17 +133,19 @@ then commit + push inside the tap. Users then:
 brew install --cask antreasantoniou/tap/cliphoard
 ```
 
-## Prerequisite: bundled models
+## Model delivery gate
 
-The bundled OpenVision-Tiny towers (`tools/models/openvision-tiny-p8-*.mlpackage` plus the
-`openvision-tiny-p8-text/` tokenizer folder) are gitignored. `tools/restore-models.sh`
-downloads them as one SHA-256-pinned zip (`openvision-tiny-p8.zip` on the `models-v1`
-release) into the exact layout `Scripts/build-app.sh` expects; `Scripts/release.sh` and
-`release.yml` run it before building, and `STRICT_BUNDLE=1` makes a missing tower fatal.
-To re-publish after a re-conversion: `tools/convert_openvision.py`, `tools/pack-openvision.sh`,
-upload the zip to `models-v1`, update `OPENVISION_ZIP_SHA256` in `tools/restore-models.sh`.
+All new Store and Direct bundles must contain **no model weights**. Build and
+verification scripts reject model packages, archives and weight payloads; runtime
+libraries and documented tokenizer configuration assets remain included.
+Do not restore or convert models during release assembly. Existing signed build8
+artifacts remain immutable and do not satisfy the new delivery policy.
 
-
+Before release, verify each selectable model has an actual immutable Hugging Face
+URL and checksum, first-download progress/cancellation/retry, local preparation,
+and cached offline relaunch. The MiniLM/OpenVision CoreML mirror must be published
+and pinned before a model-free release can offer those downloads. Do not replace
+missing URLs with guessed revisions or a runtime GitHub fallback.
 
 ## Versioning
 

@@ -906,6 +906,43 @@ final class ClipStore: ObservableObject {
     private var clipEmbedderMemo: CLIPEmbedder?
     private var clipEmbedderLoadedForPro: Bool?
 
+    @Published private(set) var imageModelState: EmbedderState.State = .notInstalled("OpenVision")
+    @Published private(set) var imageModelPreparing = false
+    private var imageModelTask: Task<Void, Never>?
+    private var imageModelTicket = UUID()
+
+    func cancelImageModelPreparation() {
+        imageModelTicket = UUID(); imageModelTask?.cancel()
+        imageModelState = .notInstalled("OpenVision")
+    }
+    func prepareImageSearchModel(allowDownload: Bool = true) {
+        guard Self.imageUnderstandingAllowed(entitlement), !safeMode, storageComplete, !imageModelPreparing else { return }
+        imageModelPreparing = true
+        let ticket = UUID(); imageModelTicket = ticket
+        imageModelState = .downloading("OpenVision", progress: 0)
+        imageModelTask = Task { [self] in
+            defer { imageModelPreparing = false; imageModelTask = nil }
+            do {
+                try await ModelAssets.ensureImageModels(allowDownload: allowDownload) { [weak self] progress in
+                    Task { @MainActor [weak self] in
+                        guard let self, self.imageModelTicket == ticket, self.imageModelPreparing,
+                              Self.imageUnderstandingAllowed(self.entitlement), !self.safeMode else { return }
+                        self.imageModelState = progress < 1 ? .downloading("OpenVision", progress: progress) : .installing("OpenVision")
+                    }
+                }
+                try Task.checkCancellation()
+                guard imageModelTicket == ticket, Self.imageUnderstandingAllowed(entitlement), !safeMode, storageComplete else { return }
+                clipEmbedderMemo = nil; clipEmbedderLoadedForPro = nil
+                guard clipEmbedder != nil else { throw CocoaError(.fileReadCorruptFile) }
+                imageModelState = .ready(signature: CLIPEmbedder.signature)
+                scheduleImageUnderstanding()
+            } catch {
+                guard imageModelTicket == ticket, !Task.isCancelled else { return }
+                imageModelState = .failed("OpenVision", message: "Couldn’t prepare image search. Check your connection and available storage, then try again.")
+            }
+        }
+    }
+
     var clipEmbedder: CLIPEmbedder? {
         let pro = entitlement.isPro
         if clipEmbedderLoadedForPro == pro { return clipEmbedderMemo }
@@ -919,6 +956,9 @@ final class ClipStore: ObservableObject {
             return nil
         }
         clipEmbedderMemo = CLIPEmbedder.load()
+        if clipEmbedderMemo == nil, ModelAssets.canPrepareImageModelsLocally() {
+            prepareImageSearchModel(allowDownload: false)
+        }
         DebugLog.write("clip: embedder \(clipEmbedderMemo == nil ? "unavailable" : "ready")")
         return clipEmbedderMemo
     }

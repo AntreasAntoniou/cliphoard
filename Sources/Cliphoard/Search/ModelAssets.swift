@@ -1,295 +1,256 @@
 import Foundation
 import CoreML
+import Combine
 import CryptoKit
+import Darwin
 
-/// Locates — and when necessary AUTO-INSTALLS — the on-device embedding models.
-///
-/// Resolution order for a model `name`:
-///  1. The app bundle (`<name>.mlmodelc` + `<name>-tokenizer/`) — present when
-///     the build bundled that tier.
-///  2. The local model store (`~/Library/Application Support/Ditto/models/`) —
-///     populated by a previous auto-download.
-///  3. Auto-download: fetch `<name>.zip` (the `.mlpackage` + tokenizer folder)
-///     from the GitHub model release, unpack, compile on-device with
-///     `MLModel.compileModel`, and cache. The user never installs anything by
-///     hand — selecting a tier is the install action.
-///
-/// Progress/state is published through `EmbedderState` so Settings can show
-/// "Downloading… 42%" instead of a misleading "not installed".
+/// Explicit acquisition from immutable Hugging Face revisions. Cached archives are
+/// independently verified before local compilation; the application bundle is never searched.
 enum ModelAssets {
-    #if !APP_STORE
-    /// Release that hosts the downloadable model zips.
-    static let releaseBase = URL(string:
-        "https://github.com/AntreasAntoniou/cliphoard/releases/download/models-v1/")!
-
-    /// Where each tier's artifact is hosted.
-    ///
-    /// The two ogma models are OURS, published at `axiotic/open-ogma-*`, and they are served from
-    /// HuggingFace so that their download statistics reflect actual Cliphoard usage. Serving
-    /// them from a GitHub release instead would make real adoption of an open model we
-    /// released invisible on the platform people look at to judge whether a model is used.
-    ///
-    /// MiniLM stays on the GitHub release: the CoreML conversion is ours, but
-    /// `sentence-transformers/all-MiniLM-L6-v2` is not our repository to publish into, and
-    /// attributing our conversion's downloads to their model would misreport THEIR numbers
-    /// to fix ours.
-    enum AssetSource {
-        case huggingFace(repo: String)
-        case githubRelease
-    }
-
-    /// The MIT repos, and this mapping is load-bearing rather than cosmetic.
-    ///
-    /// These tiers used to be fetched from `axiotic/ogma-micro` / `axiotic/ogma-small`, which
-    /// DECLARE **CC-BY-NC-4.0**. Every document said MIT.
-    ///
-    /// Be precise about what was wrong, because the first version of this comment was not:
-    /// the ARTIFACT in those repos was already the permissive model — its `config.json` says
-    /// `"model_type": "ogma-libre"` and its weights are byte-identical to a fresh conversion
-    /// of the MIT checkpoint. So the app was never shipping NonCommercial *weights*. It was
-    /// fetching permissive weights from a repo whose declared licence said NonCommercial,
-    /// which is a redistribution and provenance problem, not a model problem. Smaller than it
-    /// first looked, and still not something an MIT app should do: what a downloader is
-    /// entitled to rely on is the licence the source repo declares.
-    ///
-    /// The fix was to publish the same build to the repos that declare MIT and point here.
-    /// Nothing about search quality changed, and nothing could have — same weights.
-    ///
-    /// If you ever repoint these, check the target repo's declared licence FIRST.
-    static let sources: [String: AssetSource] = [
-        "open-ogma-micro": .huggingFace(repo: "axiotic/open-ogma-micro"),
-        "open-ogma-small": .huggingFace(repo: "axiotic/open-ogma-small"),
-    ]
-
-    static func source(for name: String) -> AssetSource { sources[name] ?? .githubRelease }
-
-    static func assetURL(for name: String) -> URL {
-        switch source(for: name) {
-        case .huggingFace(let repo):
-            return URL(string: "https://huggingface.co/\(repo)/resolve/main/coreml/\(name).zip")!
-        case .githubRelease:
-            return releaseBase.appendingPathComponent("\(name).zip")
+    struct Artifact: Sendable {
+        let repository: String?
+        let revision: String?
+        let path: String
+        let bytes: Int64
+        let sha256: String
+        let models: [String]
+        let tokenizer: String
+        var url: URL? {
+            guard let repository, let revision else { return nil }
+            return URL(string: "https://huggingface.co/\(repository)/resolve/\(revision)/\(path)")
         }
     }
-
-    /// Ask HuggingFace for the model's `config.json` immediately before fetching the weights.
-    ///
-    /// THIS IS NOT DEAD CODE AND MUST NOT BE TIDIED AWAY. HuggingFace does not count
-    /// downloads by counting file requests — it counts requests to a specific "query file",
-    /// which for a repository with no declared library is `config.json`. A request for our
-    /// `coreml/<name>.zip` registers as ZERO downloads, so without this call an install that
-    /// genuinely pulls the model would leave no trace on the model's page, and the published
-    /// number would understate real usage indefinitely.
-    ///
-    /// One request per actual install, made only on the path that is already downloading the
-    /// model anyway. It carries no user data — it is a plain GET for a public file — and it
-    /// is deliberately best-effort: a failure here must never block an install, because the
-    /// statistic is our concern and the model is the user's.
-    private static func recordDownload(repo: String) async {
-        var request = URLRequest(url: URL(string:
-            "https://huggingface.co/\(repo)/resolve/main/config.json")!)
-        request.httpMethod = "GET"
-        request.timeoutInterval = 10
-        _ = try? await URLSession.shared.data(for: request)
-    }
-
-    /// Pinned SHA-256 of each hosted `<name>.zip` on the `models-v1` release.
-    /// GitHub-over-TLS authenticates the transport; this rejects a corrupted or
-    /// tampered zip before it is unpacked and compiled on-device (defense-in-depth).
-    /// Values are GitHub's server-computed asset digests. A tier not listed here
-    /// skips the check (logged) rather than failing — add its digest when you add
-    /// a new model to the release.
-    static let expectedSHA256: [String: String] = [
-        // No embeddinggemma-300m entry: that tier was retired on licensing grounds,
-        // and its asset must also be removed from the models-v1 release — hosting it
-        // is the redistribution, so dropping it from the app alone would not help.
-        "all-MiniLM-L6-v2":    "ff202030f35c740193335a2136db6b15df8ef592da92e7dd07e51457dcf81def",
-        // The MIT-repo CoreML builds, recomputed from the published files after upload.
-        // Same weights as the artifacts they replace — only the toolchain metadata and one
-        // config field differ — so these digests change while behaviour does not.
-        // These MUST move together with `sources` above: a digest that still describes the
-        // old NonCommercial artifact fails closed, so every install would refuse the model.
-        "open-ogma-micro":     "9163037e51596ab6b17c4bc51d7e2b4b4533ca6f205b7988504774e78925ac39",
-        "open-ogma-small":     "179517c6925914ec37a734c4f0aa2971b9b93ecee9e8d6e98aa4f66a17709135",
-    ]
-
-    /// Streaming SHA-256 of a file (1 MiB chunks) so a ~300 MB model zip is never
-    /// loaded into memory whole. Lowercase hex, matching GitHub's digest format.
-    static func sha256Hex(ofFileAt url: URL) -> String? {
-        guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
-        defer { try? handle.close() }
-        var hasher = SHA256()
-        while case let chunk = handle.readData(ofLength: 1 << 20), !chunk.isEmpty {
-            hasher.update(data: chunk)
+    enum Failure: LocalizedError {
+        case unknownModel, unpublishedArtifact, missing, corrupt, busy, unpackFailed
+        var errorDescription: String? {
+            switch self {
+            case .unknownModel: return "This model is not in the verified catalog."
+            case .unpublishedArtifact: return "This model's Hugging Face download is not yet available. Existing verified archive caches can still be prepared offline."
+            case .missing: return "Download and prepare this model before using it offline."
+            case .corrupt: return "Model cache verification failed. Existing files were preserved."
+            case .busy: return "This model is already being prepared."
+            case .unpackFailed: return "The verified model archive could not be unpacked."
+            }
         }
-        return hasher.finalize().map { String(format: "%02x", $0) }.joined()
     }
-    #endif
-
-    struct Located {
-        let compiledModel: URL      // .mlmodelc, ready for MLModel(contentsOf:)
-        let tokenizerFolder: URL
+    enum AssetSource { case huggingFace(repo: String), unavailable }
+    static let catalog: [String: Artifact] = [
+        "open-ogma-micro": Artifact(repository: "axiotic/open-ogma-micro", revision: "acb318a6f4411a42085838e674ebc2aed1219310", path: "coreml/open-ogma-micro.zip", bytes: 5_090_189, sha256: "9163037e51596ab6b17c4bc51d7e2b4b4533ca6f205b7988504774e78925ac39", models: ["open-ogma-micro"], tokenizer: "open-ogma-micro"),
+        "open-ogma-small": Artifact(repository: "axiotic/open-ogma-small", revision: "3f4cd68f43719ca494772fcc80005c115d8d91ff", path: "coreml/open-ogma-small.zip", bytes: 16_981_733, sha256: "179517c6925914ec37a734c4f0aa2971b9b93ecee9e8d6e98aa4f66a17709135", models: ["open-ogma-small"], tokenizer: "open-ogma-small"),
+        // These exact conversions are pinned, but cannot be downloaded until their
+        // Hugging Face publication and immutable revisions have been verified.
+        "all-MiniLM-L6-v2": Artifact(repository: nil, revision: nil, path: "all-MiniLM-L6-v2.zip", bytes: 41_925_567, sha256: "ff202030f35c740193335a2136db6b15df8ef592da92e7dd07e51457dcf81def", models: ["all-MiniLM-L6-v2"], tokenizer: "all-MiniLM-L6-v2"),
+        "openvision-tiny-p8": Artifact(repository: nil, revision: nil, path: "openvision-tiny-p8.zip", bytes: 31_726_193, sha256: "c137d2f76e9ed583488cf5e5955f11d173192c05ccae4daa922e8ab6fdfb772a", models: ["openvision-tiny-p8-image", "openvision-tiny-p8-text"], tokenizer: "openvision-tiny-p8-text")
+    ]
+    static var expectedSHA256: [String: String] { catalog.mapValues(\.sha256) }
+    static func source(for name: String) -> AssetSource {
+        guard let repo = catalog[name]?.repository else { return .unavailable }
+        return .huggingFace(repo: repo)
     }
-
-    #if !APP_STORE
+    static func assetURL(for name: String) -> URL? { catalog[name]?.url }
     static var storeDir: URL {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Ditto/models", isDirectory: true)
     }
-    #endif
-
-    /// Bundle → local store. `nil` means "needs download".
+    static func archiveURL(_ name: String, root: URL = storeDir) -> URL { root.appendingPathComponent("\(name).zip") }
+    /// Presence is not readiness: ensure always hashes the complete pinned archive.
+    static func canPrepareLocally(_ name: String, root: URL = storeDir) -> Bool {
+        guard let artifact = catalog[name] else { return false }
+        let url = archiveURL(name, root: root)
+        guard (try? MediaSpeechAssetManifest.safePath(url)) != nil,
+              let attrs = try? FileManager.default.attributesOfItem(atPath: url.path) else { return false }
+        return attrs[.type] as? FileAttributeType == .typeRegular && (attrs[.size] as? NSNumber)?.int64Value == artifact.bytes
+    }
+    static func canPrepareImageModelsLocally() -> Bool { canPrepareLocally("openvision-tiny-p8") }
+    struct Located { let compiledModel: URL; let tokenizerFolder: URL }
+    private struct CacheReceipt: Codable { let archiveSHA256: String; let platform: String; let models: [String: [String: String]] }
+    private struct Prepared { let located: Located; let hashes: [String: String] }
+    private static let lock = NSLock()
+    private static var prepared: [String: Prepared] = [:]
+    private static func snapshot(_ name: String) -> Prepared? { lock.lock(); defer { lock.unlock() }; return prepared[name] }
+    private static func publish(_ values: [String: Prepared]) { lock.lock(); defer { lock.unlock() }; prepared.merge(values) { _, new in new } }
+    /// Only this process's verified preparation can supply executable model files.
+    /// Compare against the in-memory inventory, never a mutable cache receipt.
     static func locate(_ name: String) -> Located? {
-        if let m = Bundle.main.url(forResource: name, withExtension: "mlmodelc"),
-           let t = Bundle.main.url(forResource: "\(name)-tokenizer", withExtension: nil) {
-            return Located(compiledModel: m, tokenizerFolder: t)
-        }
-        #if !APP_STORE
-        let m = storeDir.appendingPathComponent("\(name).mlmodelc")
-        let t = storeDir.appendingPathComponent("\(name)-tokenizer")
-        if FileManager.default.fileExists(atPath: m.path),
-           FileManager.default.fileExists(atPath: t.appendingPathComponent("tokenizer.json").path) {
-            return Located(compiledModel: m, tokenizerFolder: t)
-        }
-        #endif
-        return nil
+        guard let item = snapshot(name), (try? inventory(item.located)) == item.hashes else { return nil }
+        return item.located
     }
-
-    /// Locate, downloading + compiling first if the model isn't present.
-    /// Reports progress through `EmbedderState.shared`.
-    static func ensure(_ name: String) async throws -> Located {
-        if let found = locate(name) { return found }
-        #if APP_STORE
-        // Every selectable Store tier is part of the reviewed app. Never turn a packaging
-        // defect into an unreviewed post-install feature download (or its analytics ping).
-        // The caller renders this localized failure and keeps the hashing fallback available.
-        throw CocoaError(.fileNoSuchFile, userInfo: [
-            NSLocalizedDescriptionKey:
-                "Required model \(name) is missing from this App Store installation. "
-                + "Reinstall Cliphoard from the App Store."
-        ])
-        #else
-        let fm = FileManager.default
-        try fm.createDirectory(at: storeDir, withIntermediateDirectories: true)
-
-        // 1. Download the zip (mlpackage + tokenizer folder).
-        if case .huggingFace(let repo) = source(for: name) { await recordDownload(repo: repo) }
-        let url = assetURL(for: name)
-        await EmbedderState.shared.set(.downloading(name, progress: 0))
-        let (tmp, response) = try await download(url: url) { progress in
-            Task { @MainActor in EmbedderState.shared.state = .downloading(name, progress: progress) }
-        }
-        guard (response as? HTTPURLResponse)?.statusCode == 200 else {
-            throw CocoaError(.fileNoSuchFile, userInfo: [
-                NSLocalizedDescriptionKey: "model download failed (\(url.lastPathComponent))"])
-        }
-
-        // 1b. Verify the download against the pinned SHA-256 before unpacking or
-        // compiling it. Rejects a corrupted or tampered zip at rest; unknown tiers
-        // (not yet pinned) are logged and allowed through.
-        if let want = expectedSHA256[name] {
-            guard let got = sha256Hex(ofFileAt: tmp), got == want else {
-                try? fm.removeItem(at: tmp)
-                throw CocoaError(.fileReadCorruptFile, userInfo: [
-                    NSLocalizedDescriptionKey: "model checksum mismatch (\(name)) — refusing to install"])
-            }
-        } else {
-            // FAIL CLOSED. This used to log and install anyway, which meant an unpinned tier
-            // silently accepted whatever bytes the network returned — the integrity guarantee
-            // the pin exists to provide, quietly voided by the branch that handles its own
-            // absence. Every name that can reach here is pinned today
-            // (`DeepSearchLevel.allCases`, checked by `OgmaLicenceSourceTests.testEveryReachableTierIsPinned` in AssetSourceTests.swift), so this is
-            // behaviour-preserving; it stays that way because adding a tier without a pin now
-            // fails loudly instead of downgrading everyone who installs it.
-            try? fm.removeItem(at: tmp)
-            throw CocoaError(.fileReadCorruptFile, userInfo: [
-                NSLocalizedDescriptionKey: "no pinned checksum for \(name) — refusing to install"])
-        }
-
-        // 2. Unpack next to the store (ditto preserves the package structure).
-        await EmbedderState.shared.set(.installing(name))
-        let unpack = storeDir.appendingPathComponent("unpack-\(name)", isDirectory: true)
-        try? fm.removeItem(at: unpack)
-        try fm.createDirectory(at: unpack, withIntermediateDirectories: true)
-        defer { try? fm.removeItem(at: unpack) }
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
-        p.arguments = ["-x", "-k", tmp.path, unpack.path]
-        try p.run(); p.waitUntilExit()
-        try? fm.removeItem(at: tmp)
-        guard p.terminationStatus == 0 else {
-            throw CocoaError(.fileReadCorruptFile, userInfo: [
-                NSLocalizedDescriptionKey: "model unpack failed (\(name))"])
-        }
-
-        // 3. Compile the mlpackage on-device (OS-version-proof), install both
-        //    artifacts into the store atomically-ish, clean the intermediates.
-        let pkg = unpack.appendingPathComponent("\(name).mlpackage")
-        let tokSrc = unpack.appendingPathComponent(name)
-        guard fm.fileExists(atPath: pkg.path),
-              fm.fileExists(atPath: tokSrc.appendingPathComponent("tokenizer.json").path) else {
-            throw CocoaError(.fileReadCorruptFile, userInfo: [
-                NSLocalizedDescriptionKey: "model zip missing expected contents (\(name))"])
-        }
-        let compiled = try await MLModel.compileModel(at: pkg)
-        let mDst = storeDir.appendingPathComponent("\(name).mlmodelc")
-        let tDst = storeDir.appendingPathComponent("\(name)-tokenizer")
-        try? fm.removeItem(at: mDst); try? fm.removeItem(at: tDst)
-        try fm.moveItem(at: compiled, to: mDst)
-        try fm.copyItem(at: tokSrc, to: tDst)
-        return Located(compiledModel: mDst, tokenizerFolder: tDst)
-        #endif
-    }
-
-    #if !APP_STORE
-    /// Download with byte-level progress (URLSession.download has no callback
-    /// without a delegate; stream to disk in chunks instead).
-    private static func download(url: URL,
-                                 progress: @escaping (Double) -> Void) async throws -> (URL, URLResponse) {
-        let (bytes, response) = try await URLSession.shared.bytes(from: url)
-        let total = response.expectedContentLength
-        let tmp = FileManager.default.temporaryDirectory
-            .appendingPathComponent("cliphoard-\(UUID().uuidString).zip")
-        FileManager.default.createFile(atPath: tmp.path, contents: nil)
-        let handle = try FileHandle(forWritingTo: tmp)
+    static func sha256Hex(ofFileAt url: URL) -> String? {
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
         defer { try? handle.close() }
-        var buffer = Data(); buffer.reserveCapacity(1 << 20)
-        var written: Int64 = 0
-        var lastReport = 0.0
-        for try await byte in bytes {
-            buffer.append(byte)
-            if buffer.count >= (1 << 20) {
-                try handle.write(contentsOf: buffer)
-                written += Int64(buffer.count); buffer.removeAll(keepingCapacity: true)
-                if total > 0 {
-                    let f = Double(written) / Double(total)
-                    if f - lastReport >= 0.01 { lastReport = f; progress(f) }
-                }
+        var hash = SHA256()
+        do {
+            while let chunk = try handle.read(upToCount: 1 << 20), !chunk.isEmpty {
+                if Task.isCancelled { return nil }; hash.update(data: chunk)
+            }
+        } catch { return nil }
+        return hash.finalize().map { String(format: "%02x", $0) }.joined()
+    }
+    static func verifyArchive(_ url: URL, artifact: Artifact) throws {
+        try MediaSpeechAssetManifest.safePath(url); try Task.checkCancellation()
+        let attrs = try FileManager.default.attributesOfItem(atPath: url.path)
+        guard attrs[.type] as? FileAttributeType == .typeRegular,
+              (attrs[.size] as? NSNumber)?.int64Value == artifact.bytes,
+              sha256Hex(ofFileAt: url) == artifact.sha256 else { throw Failure.corrupt }
+    }
+    private static func inventory(_ located: Located) throws -> [String: String] {
+        var result: [String: String] = [:]
+        for root in [located.compiledModel, located.tokenizerFolder] {
+            try MediaSpeechAssetManifest.safePath(root)
+            guard let walker = FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil) else { throw Failure.corrupt }
+            for case let url as URL in walker {
+                try Task.checkCancellation(); try MediaSpeechAssetManifest.safePath(url)
+                let attrs = try FileManager.default.attributesOfItem(atPath: url.path)
+                if attrs[.type] as? FileAttributeType == .typeDirectory { continue }
+                guard attrs[.type] as? FileAttributeType == .typeRegular, let hash = sha256Hex(ofFileAt: url) else { throw Failure.corrupt }
+                result[root.lastPathComponent + "/" + String(url.path.dropFirst(root.path.count + 1))] = hash
             }
         }
-        if !buffer.isEmpty { try handle.write(contentsOf: buffer) }
-        return (tmp, response)
+        guard !result.isEmpty else { throw Failure.corrupt }; return result
     }
-    #endif
+    static func ensure(_ name: String, allowDownload: Bool = true, root: URL = storeDir) async throws -> Located {
+        try Task.checkCancellation()
+        let ticket = try await EmbedderState.shared.beginTransfer(name)
+        defer { Task { @MainActor in EmbedderState.shared.endTransfer(ticket) } }
+        try await prepare(name, allowDownload: allowDownload, root: root, progress: { value in
+            Task { @MainActor in EmbedderState.shared.transferProgress(ticket, name: name, progress: value) }
+        })
+        try Task.checkCancellation()
+        guard let found = locate(name) else { throw Failure.corrupt }; return found
+    }
+    /// Both towers become visible together after all compilation and integrity checks.
+    static func ensureImageModels(allowDownload: Bool = true,
+        progress: @escaping @Sendable (Double) -> Void = { _ in }) async throws {
+        try await prepare("openvision-tiny-p8", allowDownload: allowDownload, root: storeDir, progress: progress)
+    }
+    private static let coordinator = PreparationCoordinator()
+    private actor PreparationCoordinator {
+        private var active = Set<String>()
+        func begin(_ name: String) throws { guard active.insert(name).inserted else { throw Failure.busy } }
+        func end(_ name: String) { active.remove(name) }
+    }
+    private static func prepare(_ name: String, allowDownload: Bool, root: URL, progress: @escaping @Sendable (Double) -> Void) async throws {
+        guard let artifact = catalog[name] else { throw Failure.unknownModel }
+        try Task.checkCancellation()
+        let key = root.path + "/" + name
+        try await coordinator.begin(key)
+        do { try await prepareExclusive(name, artifact: artifact, allowDownload: allowDownload, root: root, progress: progress) }
+        catch { await coordinator.end(key); throw error }
+        await coordinator.end(key)
+    }
+    private static func prepareExclusive(_ name: String, artifact: Artifact, allowDownload: Bool, root: URL,
+        progress: @escaping @Sendable (Double) -> Void) async throws {
+        let fm = FileManager.default
+        let deadline = ProcessInfo.processInfo.systemUptime + 600
+        try MediaSpeechAssetManifest.safePath(root)
+        try fm.createDirectory(at: root, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        let archive = archiveURL(name, root: root)
+        if fm.fileExists(atPath: archive.path) { try verifyArchive(archive, artifact: artifact) }
+        else {
+            guard allowDownload else { throw Failure.missing }
+            guard let source = artifact.url else { throw Failure.unpublishedArtifact }
+            let staging = root.appendingPathComponent(".download-\(UUID().uuidString)")
+            defer { try? fm.removeItem(at: staging) }
+            progress(0)
+            let transfer = SpeechAssetTransfer(destination: staging, expectedBytes: artifact.bytes, deadline: deadline,
+                progress: { progress(Double($0) / Double(artifact.bytes)) })
+            try await transfer.start(source)
+            try verifyArchive(staging, artifact: artifact)
+            try fm.moveItem(at: staging, to: archive)
+        }
+        try MediaSpeechAssetManifest.check(deadline)
+        progress(1)
+        let platform = ProcessInfo.processInfo.operatingSystemVersionString + "-" + architecture
+        let platformHash = SHA256.hash(data: Data(platform.utf8)).map { String(format: "%02x", $0) }.joined()
+        let cache = root.appendingPathComponent("prepared-v1-\(artifact.sha256)-\(platformHash.prefix(16))", isDirectory: true)
+        if fm.fileExists(atPath: cache.path) {
+            publish(try readCache(cache, artifact: artifact, platform: platform)); return
+        }
+        let session = root.appendingPathComponent(".prepared-\(UUID().uuidString)", isDirectory: true)
+        try fm.createDirectory(at: session, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
+        var retained = false
+        defer { if !retained { try? fm.removeItem(at: session) } }
+        let unpack = session.appendingPathComponent("source", isDirectory: true)
+        try fm.createDirectory(at: unpack, withIntermediateDirectories: false)
+        let process = Process(); process.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
+        process.arguments = ["-x", "-k", archive.path, unpack.path]
+        process.standardOutput = FileHandle.nullDevice; process.standardError = FileHandle.nullDevice
+        try process.run()
+        do {
+            while process.isRunning { try MediaSpeechAssetManifest.check(deadline); try await Task.sleep(nanoseconds: 20_000_000) }
+        } catch {
+            if process.isRunning { process.terminate(); try? await Task.sleep(nanoseconds: 100_000_000); if process.isRunning { kill(process.processIdentifier, SIGKILL) } }
+            throw error
+        }
+        guard process.terminationStatus == 0 else { throw Failure.unpackFailed }
+        let tokenizer = unpack.appendingPathComponent(artifact.tokenizer)
+        guard fm.fileExists(atPath: tokenizer.appendingPathComponent("tokenizer.json").path) else { throw Failure.corrupt }
+        let savedTokenizer = session.appendingPathComponent(artifact.tokenizer + "-tokenizer")
+        try fm.copyItem(at: tokenizer, to: savedTokenizer)
+        var values: [String: Prepared] = [:]
+        for model in artifact.models {
+            try MediaSpeechAssetManifest.check(deadline)
+            let compiled = try await MLModel.compileModel(at: unpack.appendingPathComponent("\(model).mlpackage"))
+            defer { try? fm.removeItem(at: compiled) }
+            try MediaSpeechAssetManifest.check(deadline)
+            let destination = session.appendingPathComponent("\(model).mlmodelc")
+            try fm.moveItem(at: compiled, to: destination)
+            let located = Located(compiledModel: destination, tokenizerFolder: savedTokenizer)
+            values[model] = Prepared(located: located, hashes: try inventory(located))
+        }
+        try Task.checkCancellation()
+        try fm.removeItem(at: unpack)
+        let receipt = CacheReceipt(archiveSHA256: artifact.sha256, platform: platform, models: values.mapValues(\.hashes))
+        try JSONEncoder().encode(receipt).write(to: session.appendingPathComponent("receipt.json"), options: .withoutOverwriting)
+        try fm.moveItem(at: session, to: cache)
+        retained = true
+        publish(try readCache(cache, artifact: artifact, platform: platform))
+    }
+    private static var architecture: String {
+        #if arch(arm64)
+        return "arm64"
+        #else
+        return "x86_64"
+        #endif
+    }
+    /// This local compilation receipt detects cache damage; it is not a signature
+    /// against a hostile same-user process able to rewrite the receipt and files.
+    private static func readCache(_ root: URL, artifact: Artifact, platform: String) throws -> [String: Prepared] {
+        try MediaSpeechAssetManifest.safePath(root)
+        let receiptURL = root.appendingPathComponent("receipt.json")
+        try MediaSpeechAssetManifest.safePath(receiptURL)
+        let attrs = try FileManager.default.attributesOfItem(atPath: receiptURL.path)
+        guard attrs[.type] as? FileAttributeType == .typeRegular,
+              let size = attrs[.size] as? NSNumber, size.intValue <= 2_000_000 else { throw Failure.corrupt }
+        let receipt = try JSONDecoder().decode(CacheReceipt.self, from: Data(contentsOf: receiptURL))
+        guard receipt.archiveSHA256 == artifact.sha256, receipt.platform == platform,
+              Set(receipt.models.keys) == Set(artifact.models),
+              Set(try FileManager.default.contentsOfDirectory(atPath: root.path)) == Set(artifact.models.map { $0 + ".mlmodelc" } + [artifact.tokenizer + "-tokenizer", "receipt.json"]) else { throw Failure.corrupt }
+        var result: [String: Prepared] = [:]
+        for name in artifact.models {
+            let located = Located(compiledModel: root.appendingPathComponent(name + ".mlmodelc"),
+                tokenizerFolder: root.appendingPathComponent(artifact.tokenizer + "-tokenizer"))
+            guard let hashes = receipt.models[name], try inventory(located) == hashes else { throw Failure.corrupt }
+            result[name] = Prepared(located: located, hashes: hashes)
+        }
+        return result
+    }
+
 }
 
-/// Observable embedder lifecycle, driven by `EmbedderProvider` and rendered by
-/// Settings — so "loading" and "downloading 42%" are never conflated with
-/// "not installed".
 @MainActor
 final class EmbedderState: ObservableObject {
     static let shared = EmbedderState()
-
     enum State: Equatable {
-        case ready(signature: String)
-        case fallback                       // hashing — no model for this tier
-        case loading(String)                // model found, loading into CoreML
-        case downloading(String, progress: Double)
-        case installing(String)             // unpack + on-device compile
-        case failed(String, message: String)
+        case ready(signature: String), fallback, loading(String), notInstalled(String)
+        case downloading(String, progress: Double), installing(String), failed(String, message: String)
     }
-
     @Published var state: State = .fallback
-
-    func set(_ s: State) { state = s }
+    private var transfer: UUID?
+    func set(_ value: State) { transfer = nil; state = value }
+    func beginTransfer(_ name: String) throws -> UUID { try Task.checkCancellation(); let id = UUID(); transfer = id; return id }
+    func endTransfer(_ id: UUID) { if transfer == id { transfer = nil } }
+    func transferProgress(_ id: UUID, name: String, progress: Double) {
+        guard transfer == id else { return }; state = progress >= 1 ? .installing(name) : .downloading(name, progress: progress)
+    }
 }

@@ -126,30 +126,12 @@ final class CLIPEmbedder {
     }
 
     private static func locate(_ name: String) -> URL? {
-        if let bundled = Bundle.main.url(forResource: name, withExtension: "mlmodelc") {
-            return bundled
-        }
-        #if !APP_STORE
-        let stored = ModelAssets.storeDir.appendingPathComponent("\(name).mlmodelc")
-        return FileManager.default.fileExists(atPath: stored.path) ? stored : nil
-        #else
-        return nil
-        #endif
+        ModelAssets.locate(name)?.compiledModel
     }
 
     private static func locateFolder(_ name: String) -> URL? {
-        if let bundled = Bundle.main.url(forResource: name, withExtension: nil),
-           FileManager.default.fileExists(
-                atPath: bundled.appendingPathComponent("tokenizer.json").path) {
-            return bundled
-        }
-        #if !APP_STORE
-        let stored = ModelAssets.storeDir.appendingPathComponent(name)
-        return FileManager.default.fileExists(
-            atPath: stored.appendingPathComponent("tokenizer.json").path) ? stored : nil
-        #else
-        return nil
-        #endif
+        guard name == "openvision-tiny-p8-text-tokenizer" else { return nil }
+        return ModelAssets.locate("openvision-tiny-p8-text")?.tokenizerFolder
     }
 
     // MARK: - Text → 192-d

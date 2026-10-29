@@ -8,6 +8,7 @@ cd "$(dirname "$0")/.."
 ROOT="$(pwd)"
 CONFIG="${1:-release}"
 APP="$ROOT/build/Cliphoard.app"
+"$PYTHON" "$ROOT/Scripts/audit-no-models.py" --check-environment
 
 echo "▸ Building ($CONFIG, universal arm64 + x86_64)…"
 # Build a UNIVERSAL binary so the app runs natively on both Apple Silicon and Intel
@@ -22,10 +23,6 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/Cliphoard"
 cp "$ROOT/Resources/Info.plist" "$APP/Contents/Info.plist"
 bash "$ROOT/Scripts/embed-media-runtime.sh" "$APP" "$BIN_DIR"
-if [ -n "${CLIPHOARD_MEDIA_MODEL:-}" ]; then
-    bash "$ROOT/Scripts/embed-media-model.sh" "$APP" "$CLIPHOARD_MEDIA_MODEL"
-fi
-
 # Icon (best effort). Built from the committed master PNG (the hoard-bag mascot,
 # Resources/AppIcon.png); falls back to the vector make-icon.swift (⌘V) if absent.
 if command -v iconutil >/dev/null 2>&1 && command -v sips >/dev/null 2>&1; then
@@ -48,72 +45,21 @@ if command -v iconutil >/dev/null 2>&1 && command -v sips >/dev/null 2>&1; then
     fi
 fi
 
-# Deep-search models (best effort). Compile any converted CoreML packages in
-# tools/models to .mlmodelc and bundle them + their tokenizer so on-device
-# embedding works. Absent → the app falls back to the built-in HashingEmbedder.
-# BUNDLE_MODELS: space-separated tier models to bundle. The DEFAULT is the lean
-# MIT set below, deliberately NOT "everything present in tools/models".
-#
-# It used to default to everything, which made the allowlist a per-caller opt-in:
-# Scripts/deploy-local.sh and Scripts/release.sh remembered to set it, `make app`
-# did not, so one target still shipped a 409 MB bundle carrying a model the app no
-# longer even has a tier for. A safety rule that only holds when every caller
-# remembers it is not a safety rule. Defaulting closed means a new caller inherits
-# the safe behaviour and must opt IN to bundling anything heavier.
-#
-# Anything not bundled AUTO-DOWNLOADS on demand when its tier is selected
-# (ModelAssets.ensure). Every tier shipping today has a pinned SHA-256 and is
-# refused on mismatch — but note the mechanism is fail-OPEN: a tier absent from
-# ModelAssets.expectedSHA256 SKIPS verification with only a log line. So adding a
-# tier without also adding its digest silently buys an unverified download.
-# Default: the OpenVision towers only. ogma moved to HuggingFace (see
-# ModelAssets.sources) so its download stats reflect real usage; MiniLM has always
-# been download-on-demand. Defaulting CLOSED still holds — this is the lean set.
-BUNDLE_MODELS="${BUNDLE_MODELS:-openvision-tiny-p8-image openvision-tiny-p8-text}"
-if ls "$ROOT"/tools/models/*.mlpackage >/dev/null 2>&1; then
-    echo "▸ Bundling embedding models…"
-    for pkg in "$ROOT"/tools/models/*.mlpackage; do
-        name="$(basename "$pkg" .mlpackage)"
-        case " $BUNDLE_MODELS " in
-            *" $name "*) ;;
-            *) echo "  · $name not bundled (downloads on demand if its tier is chosen)"; continue ;;
-        esac
-        xcrun coremlcompiler compile "$pkg" "$APP/Contents/Resources" 2>/dev/null \
-            && echo "  • $name.mlmodelc"
-        # bundle the tokenizer as a folder <name>-tokenizer/ with the two files
-        # AutoTokenizer.from(modelFolder:) needs.
-        src="$ROOT/tools/models/$name"
-        if [ -f "$src/tokenizer.json" ]; then
-            dst="$APP/Contents/Resources/$name-tokenizer"
-            mkdir -p "$dst"
-            cp "$src/tokenizer.json" "$dst/"
-            [ -f "$src/tokenizer_config.json" ] && cp "$src/tokenizer_config.json" "$dst/"
-            # swift-transformers' AutoTokenizer.from(modelFolder:) also reads config.json
-            [ -f "$src/config.json" ] && cp "$src/config.json" "$dst/"
-            [ -f "$src/special_tokens_map.json" ] && cp "$src/special_tokens_map.json" "$dst/"
-            case "$name" in
-                *ogma*)
-                    # Remap the custom tokenizer_class to T5Tokenizer — matches ogma's
-                    # Unigram tokenizer.json. MUST NOT touch the HF tiers (MiniLM's
-                    # BertTokenizer / Gemma's, which swift-transformers reads as-is).
-                    "$PYTHON" -c "import json; p='$dst/tokenizer_config.json'; d=json.load(open(p)); d['tokenizer_class']='T5Tokenizer'; json.dump(d, open(p,'w'))" 2>/dev/null || true
-                    ;;
-            esac
-        fi
-    done
-fi
+# All model weights are downloaded and prepared locally after explicit user selection.
+# Build output never depends on tools/models or a developer model cache.
 
 # Licence + attribution. Ship them with the bundle so attribution travels with
 # every redistribution. THIRD-PARTY-NOTICES.md is the SINGLE source of truth for
 # what is bundled and what is linked — do not restate any of it here or in
 # LICENSE. Two copies of that fact is what produced the CC-BY-NC defect.
 # Apache-2.0 s4(a) requires recipients receive a copy of the licence: the
-# OpenVision towers bundled above and swift-transformers linked into the binary
-# are both Apache-2.0, so naming the licence is not on its own sufficient.
+# runtime libraries linked into the binary are Apache-2.0, so naming the licence is not on its own sufficient.
 echo "▸ Bundling license + attribution…"
 cp "$ROOT/LICENSE" "$APP/Contents/Resources/"
 cp "$ROOT/LICENSE-Apache-2.0.txt" "$APP/Contents/Resources/"
 cp "$ROOT/THIRD-PARTY-NOTICES.md" "$APP/Contents/Resources/"
+
+"$PYTHON" "$ROOT/Scripts/audit-no-models.py" "$APP"
 
 # Code-sign the bundle. Prefer the stable, self-signed "Ditto Local Signing"
 # identity (created by Scripts/setup-signing.sh) so the macOS Accessibility grant
@@ -139,4 +85,4 @@ echo "✓ Built $APP"
 # Prove the assembled bundle matches what the licence documents claim. This runs on
 # EVERY build path (make app, deploy-local.sh, release.sh) because the .app is what
 # reaches a user; unit tests alone do not inspect its final Resources directory.
-BUNDLE_MODELS="$BUNDLE_MODELS" bash "$ROOT/Scripts/verify-bundle.sh" "$APP" "$ROOT"
+bash "$ROOT/Scripts/verify-bundle.sh" "$APP" "$ROOT"

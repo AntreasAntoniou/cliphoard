@@ -45,6 +45,7 @@ enum Onboarding {
 struct OnboardingView: View {
     @ObservedObject var store: ClipStore
     let onDone: () -> Void
+    @State private var downloadSelectedModel = false
     @State private var draft: GuidedSetupDraft
 
     init(store: ClipStore, onDone: @escaping () -> Void) {
@@ -98,7 +99,7 @@ struct OnboardingView: View {
                     .font(.caption).foregroundStyle(.secondary)
                 Spacer()
                 if draft.step == .finish {
-                    Button("Apply choices and finish") { finish() }
+                    Button(downloadSelectedModel && draft.level != .off ? "Finish & prepare model" : "Apply choices and finish") { finish() }
                         .buttonStyle(.borderedProminent)
                         .disabled(!canFinish)
                         .keyboardShortcut(.defaultAction)
@@ -120,10 +121,15 @@ struct OnboardingView: View {
     private var unpinnedCount: Int { store.items.filter { !$0.pinned }.count }
     private func modelAvailable(_ level: DeepSearchLevel) -> Bool {
         guard let name = level.modelName else { return true }
-        return ModelAssets.locate(name) != nil
+        return ModelAssets.canPrepareLocally(name)
+    }
+    private func modelChoiceTitle(_ level: DeepSearchLevel) -> String {
+        guard let name = level.modelName, let bytes = ModelAssets.catalog[name]?.bytes else { return level.title }
+        let size = ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
+        return level.title + (modelAvailable(level) ? " · downloaded" : " · \(size) download")
     }
     private var canFinish: Bool {
-        draft.canFinish(unpinnedCount: unpinnedCount, selectedModelAvailable: modelAvailable(draft.level))
+        draft.canFinish(unpinnedCount: unpinnedCount, selectedModelAvailable: modelAvailable(draft.level), allowDeferredModel: true)
             && !(store.safeMode && draft.changes?.historyLimit != nil)
     }
     private var retentionLabel: String { draft.historyLimit == 0 ? "Unlimited" : String(draft.historyLimit) }
@@ -155,13 +161,18 @@ struct OnboardingView: View {
                 .foregroundStyle(.secondary)
             Picker("Search model", selection: $draft.level) {
                 ForEach(DeepSearchLevel.allCases) { level in
-                    Text(level.title + (modelAvailable(level) ? "" : " — not installed"))
-                        .tag(level).disabled(!modelAvailable(level) && level != draft.level)
+                    Text(modelChoiceTitle(level))
+                        .tag(level)
                 }
             }
             .pickerStyle(.radioGroup)
-            Text("Setup never downloads a model. Unavailable tiers can be managed in Settings; this walkthrough preserves your current choice until you explicitly apply another installed tier.")
+            Text("No models are bundled. Choose an optional Hugging Face download, or keep using basic search and download later in Settings. Models are prepared and run locally; your clipboard stays on this Mac.")
                 .font(.caption).foregroundStyle(.secondary)
+            if draft.level != .off {
+                Toggle("Download and prepare this model after finishing", isOn: $downloadSelectedModel)
+                Text("Download progress, cancellation and retry are available in Settings → Search.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
         case .history:
             Text("Keep the newest unpinned clips up to this limit. Pinned clips are kept separately. Unlimited keeps history until you delete it.")
                 .foregroundStyle(.secondary)
@@ -190,7 +201,7 @@ struct OnboardingView: View {
                     .foregroundStyle(.orange)
             }
             if !modelAvailable(draft.level) && draft.changes?.level != nil {
-                Text("This model is not installed. Go back and choose an installed model; no download will start here.")
+                Text(downloadSelectedModel ? "The selected model will download from Hugging Face and prepare locally after you finish." : "This model will be downloaded later from Settings. Basic search remains available.")
                     .foregroundStyle(.orange)
             }
             Text("You can revisit this walkthrough from Welcome to Cliphoard in the menu-bar menu.")
@@ -208,7 +219,9 @@ struct OnboardingView: View {
         }
         if let level = changes.level {
             DeepSearch.level = level
-            EmbedderProvider.configureAndReindex(level: level, store: store, allowDownloads: false)
+            EmbedderProvider.configureAndReindex(level: level, store: store, allowDownloads: downloadSelectedModel)
+        } else if downloadSelectedModel, draft.level != .off {
+            EmbedderProvider.configureAndReindex(level: draft.level, store: store, allowDownloads: true)
         }
         if let limit = changes.historyLimit { store.historyLimit = limit }
         onDone()

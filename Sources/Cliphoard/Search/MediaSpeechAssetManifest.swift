@@ -29,6 +29,16 @@ enum MediaSpeechAssetManifest {
     static func directory(for model: MediaSpeechModel, in root: URL) -> URL {
         root.appendingPathComponent("\(modelRevision)-\(model == .small ? smallRevision : largeRevision)", isDirectory: true)
     }
+    static func localCandidateExists(model: MediaSpeechModel, root: URL) -> Bool {
+        let folder = directory(for: model, in: root)
+        return entries(for: model).allSatisfy { entry in
+            let url = folder.appendingPathComponent(entry.relativePath)
+            guard (try? safePath(url)) != nil,
+                  let attrs = try? FileManager.default.attributesOfItem(atPath: url.path) else { return false }
+            return attrs[.type] as? FileAttributeType == .typeRegular && (attrs[.size] as? NSNumber)?.int64Value == entry.bytes
+        }
+    }
+
     static func check(_ deadline: Double) throws {
         try Task.checkCancellation()
         guard ProcessInfo.processInfo.systemUptime < deadline else { throw Failure.deadline }
@@ -43,6 +53,7 @@ enum MediaSpeechAssetManifest {
         while true {
             if let attrs = try? FileManager.default.attributesOfItem(atPath: current.path),
                attrs[.type] as? FileAttributeType == .typeSymbolicLink { throw Failure.unsafePath }
+            if current.path == "/" { break }
             let parent = current.deletingLastPathComponent()
             if parent == current { break }; current = parent
         }

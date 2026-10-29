@@ -6,11 +6,20 @@ struct MediaSearchSettingsView: View {
     @ObservedObject var store: ClipStore
     var showPro: () -> Void
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 12) {
             Text("Find a scene, a sound or a spoken passage. Videos are searched through both their picture and audio tracks. Files and transcripts stay on this Mac.")
             if !store.entitlement.isPro {
                 Button("Get Pro for media search", action: showPro)
             } else {
+                modelCard(title: "Pictures, video & sounds", subtitle: "EmbeddingGemma 2 · 485 MB", ready: controller.prepared) {
+                    if !controller.prepared {
+                        Button(controller.mediaDownloaded ? "Prepare downloaded model" : "Download & prepare · 485 MB") {
+                            controller.prepare(download: true)
+                        }.disabled(controller.busy || !controller.allowed)
+                    }
+                }
+                Text("Models download from Hugging Face only when you choose. They are checked and prepared on this Mac, then work offline. Your clips are never uploaded.")
+                    .font(.caption).foregroundStyle(.secondary)
                 Picker("Sampling", selection: $controller.preset) {
                     Text("Lightweight").tag(MediaSamplingPreset.lightweight)
                     Text("Balanced (recommended)").tag(MediaSamplingPreset.balanced)
@@ -26,19 +35,34 @@ struct MediaSearchSettingsView: View {
                         Text("Whisper Small · 489 MB").tag(MediaSpeechModel.small)
                         Text("Whisper Large v3 · 3.09 GB").tag(MediaSpeechModel.largeV3)
                     }.disabled(controller.busy)
-                    Button("Download / prepare speech model") { controller.prepareSpeech() }
-                        .disabled(controller.busy || !controller.allowed)
+                    modelCard(title: "Spoken words", subtitle: "\(controller.speechModel.label) · \(ByteCountFormatter.string(fromByteCount: controller.speechModel.downloadBytes, countStyle: .file))", ready: controller.preparedSpeechModel == controller.speechModel) {
+                        if controller.preparedSpeechModel != controller.speechModel {
+                            Button(controller.speechDownloaded ? "Prepare downloaded speech model" : "Download & prepare speech model") { controller.prepareSpeech() }
+                                .disabled(controller.busy || !controller.allowed)
+                        }
+                    }
                     Text("Speech models are separate, optional downloads. Every spoken passage covers continuous audio up to 60 minutes; sampled speech can miss sentences. Re-index files after changing these choices.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
-                HStack {
-                    Button("Download media model · 485 MB") { controller.prepare(download: true) }
-                    Button("Use installed model") { controller.prepare(download: false) }
-                }.disabled(controller.busy || !controller.allowed)
+                if let title = controller.preparationTitle {
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack {
+                            Text(title).font(.caption)
+                            Spacer()
+                            if let progress = controller.preparationProgress, progress < 1 {
+                                Text(progress, format: .percent.precision(.fractionLength(0))).font(.caption.monospacedDigit())
+                            }
+                            Button("Cancel") { controller.cancel() }.controlSize(.small)
+                        }
+                        if let progress = controller.preparationProgress, progress < 1 {
+                            ProgressView(value: progress)
+                        } else { ProgressView().controlSize(.small) }
+                    }.padding(10).background(Color.accentColor.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
+                }
                 HStack {
                     Button("Choose pictures, video or audio…") { controller.chooseFiles() }
                         .disabled(!controller.prepared || controller.busy || !controller.allowed)
-                    if controller.busy { Button("Stop indexing / preparation") { controller.cancel() } }
+                    if controller.busy && controller.preparationTitle == nil { Button("Stop indexing") { controller.cancel() } }
                     Button("Forget media indexes") { controller.forget() }
                         .disabled(controller.busy || controller.indexedCount == 0 || !controller.allowed)
                 }
@@ -47,6 +71,22 @@ struct MediaSearchSettingsView: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
         }
+    }
+    private func modelCard<Actions: View>(title: String, subtitle: String, ready: Bool, @ViewBuilder actions: () -> Actions) -> some View {
+        HStack(alignment: .center, spacing: 12) {
+            Image(systemName: ready ? "checkmark.circle.fill" : "arrow.down.circle")
+                .foregroundStyle(ready ? Color.green : Color.accentColor).font(.title2)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title).font(.headline)
+                Text(subtitle).font(.caption).foregroundStyle(.secondary)
+                Text(ready ? "Ready on this Mac · works offline" : "Optional download from Hugging Face")
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
+            Spacer()
+            actions().controlSize(.small)
+        }
+        .padding(12)
+        .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
     }
     private var samplingExplanation: String {
         switch controller.preset {

@@ -47,6 +47,9 @@ final class MediaSearchController: ObservableObject {
 
     @Published private(set) var status = "Prepare the local model to search pictures, video and audio."
     @Published private(set) var busy = false
+    @Published private(set) var preparationTitle: String?
+    @Published private(set) var preparationProgress: Double?
+    @Published private(set) var preparedSpeechModel: MediaSpeechModel?
     @Published private(set) var prepared = false
     @Published private(set) var matches: [Match] = []
     @Published private(set) var indexedCount = 0
@@ -89,6 +92,8 @@ final class MediaSearchController: ObservableObject {
         }
     }
 
+    var mediaDownloaded: Bool { GemmaMediaAssets.localCandidateExists() }
+    var speechDownloaded: Bool { MediaSpeechTranscriber.localCandidateExists(model: speechModel) }
     var allowed: Bool { store.map { $0.entitlement.isPro && !$0.safeMode && $0.storageComplete } ?? false }
     func visibleClip(_ id: UUID) -> ClipItem? {
         guard allowed, let item = store?.items.first(where: { $0.id == id }),
@@ -113,7 +118,7 @@ final class MediaSearchController: ObservableObject {
     private func invalidateSearch() { lastQuery = nil; matches = [] }
     private func reconcile() {
         guard allowed else {
-            cancel(); entries = [:]; indexedCount = 0; loaded = false; prepared = false
+            cancel(); entries = [:]; indexedCount = 0; loaded = false; prepared = false; preparedSpeechModel = nil
             Task { await embedder.close() }
             return
         }
@@ -209,33 +214,57 @@ final class MediaSearchController: ObservableObject {
         }
         return bytes
     }
+    private func transferProgress(_ done: Int64, _ total: Int64, ticket: UUID, title: String) {
+        guard ticket == epoch, allowed, busy, total > 0 else { return }
+        preparationProgress = min(1, max(0, Double(done) / Double(total)))
+        preparationTitle = done >= total ? "Checking files and preparing on this Mac…" : title
+    }
     func prepare(download: Bool) {
         guard allowed, !busy else { return }
-        busy = true; status = download ? "Downloading the local media model (485 MB)…" : "Preparing local media search…"
+        busy = true; preparationProgress = nil
+        preparationTitle = download ? "Connecting to Hugging Face…" : "Checking downloaded media model…"
+        status = "Preparing media search on this Mac…"
         let ticket = epoch
         operation = Task {
-            defer { busy = false; operation = nil }
+            defer { busy = false; operation = nil; preparationTitle = nil; preparationProgress = nil }
             do {
                 try admit(ticket)
-                let url = try await (download ? assets.download() : assets.verifiedModel())
+                let url: URL
+                if download {
+                    url = try await assets.download { [weak self] done, total in
+                        Task { @MainActor [weak self] in self?.transferProgress(done, total, ticket: ticket, title: "Downloading media model…") }
+                    }
+                } else { url = try await assets.verifiedModel() }
                 try admit(ticket)
+                preparationTitle = "Preparing media search on this Mac…"; preparationProgress = nil
                 try await embedder.prepare(modelURL: url, cacheURL: directory.appendingPathComponent("Runtime", isDirectory: true))
                 try admit(ticket)
-                try loadEntries(); prepared = true; status = "Ready. Choose files to index on this Mac."
-            } catch { status = "Media model unavailable. Download it or try preparing again." }
+                try loadEntries(); prepared = true; status = "Ready offline. Choose files to index on this Mac."
+            } catch {
+                guard ticket == epoch, !Task.isCancelled else { status = "Preparation stopped. You can try again when ready."; return }
+                status = download ? "Couldn’t prepare the media model. Check your connection and free space, then retry." : "Download the media model to get started."
+            }
         }
     }
     func prepareSpeech() {
         guard allowed, !busy else { return }; busy = true
         let ticket = epoch, selected = speechModel
-        status = "Preparing the selected speech model locally…"
+        preparedSpeechModel = nil; preparationProgress = nil
+        preparationTitle = "Preparing \(selected.label)…"
+        status = "Checking downloaded speech files…"
         operation = Task {
-            defer { busy = false; operation = nil }
+            defer { busy = false; operation = nil; preparationTitle = nil; preparationProgress = nil }
             do {
                 try admit(ticket)
-                try await transcriber.prepare(model: selected, allowDownload: true)
-                try admit(ticket); status = "Speech model ready. Re-index files to include spoken words."
-            } catch { status = "Speech model could not be prepared. Existing indexes are unchanged." }
+                try await transcriber.prepare(model: selected, allowDownload: true) { [weak self] done, total in
+                    Task { @MainActor [weak self] in self?.transferProgress(done, total, ticket: ticket, title: "Downloading \(selected.label)…") }
+                }
+                try admit(ticket); preparedSpeechModel = selected
+                status = "Speech model ready offline. Re-index files to include spoken words."
+            } catch {
+                guard ticket == epoch, !Task.isCancelled else { status = "Speech preparation stopped. Completed downloads are kept."; return }
+                status = "Couldn’t prepare the speech model. Check your connection and free space, then retry."
+            }
         }
     }
     func chooseFiles() {

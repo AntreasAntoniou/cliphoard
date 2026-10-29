@@ -27,9 +27,11 @@ cloud.** Everything you copy stays on your Mac.
 - **🔎 Smart search, on-device.** The default **Smart** mode shows your exact matches
   first, then the semantically closest clips — find "that database query" by meaning
   *and* still get the literal token you typed. Switch modes (Smart / Exact / Tag)
-  right from the pill next to the search field. Three model tiers (ogma micro/small, MiniLM), each installed on first use — the ogma
-  models from [HuggingFace](https://huggingface.co/axiotic/open-ogma-small) so their download
-  numbers reflect real usage of a model we released, MiniLM from our GitHub release. Every model is permissively licensed (MIT or Apache-2.0). No account; your clips never touch a network.
+  right from the pill next to the search field. Three optional model tiers
+  (ogma micro/small and MiniLM) download from Hugging Face when you choose.
+  Settings shows size, download progress and local preparation; after preparation
+  models work offline. No model weights are bundled. Exact search works immediately,
+  without a download. Your clips are never uploaded.
 - **🔒 Private, and provably so.** Nothing ever leaves your Mac. Clip content — text, rich
   text, file paths, colours, recognised image text, your tags **and the name of the app you
   copied from** — is **encrypted at rest** (AES-GCM) in the database, and image clips and
@@ -184,7 +186,7 @@ The tag taxonomy and confidence threshold are configurable in **Settings → Tag
 (curated baskets or your own). Open a clip's detail card to inspect automatic labels
 or add and remove personal tags.
 Token ids and embeddings match the PyTorch reference exactly (the tokenizer is
-reimplemented in Swift). To produce/bundle the models, see [`tools/`](tools/README.md).
+reimplemented in Swift). For model conversion and provenance, see [`tools/`](tools/README.md).
 
 ## How it works
 
@@ -206,5 +208,5 @@ Later: clip stack · customizable hotkey · smart actions on links & colors.
 
 ## License
 
-MIT © Antreas Antoniou. Bundled on-device models have their own licenses — see
+MIT © Antreas Antoniou. Optional on-device models have their own licenses — see
 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).

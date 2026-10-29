@@ -50,6 +50,13 @@ actor MediaSpeechTranscriber {
          backend: any MediaSpeechBackend = LocalWhisperSpeechBackend()) {
         self.modelsRoot = modelsRoot; self.backend = backend
     }
+    /// Presence/size hint only. Preparation independently hashes all model and tokenizer files.
+    static func localCandidateExists(model: MediaSpeechModel,
+        root: URL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Cliphoard/MediaSpeechModels", isDirectory: true)) -> Bool {
+        MediaSpeechAssetManifest.localCandidateExists(model: model, root: root)
+    }
+
     func readyModel() -> MediaSpeechModel? { prepared }
 
     /// Only an explicit allowDownload:true may contact the public model repositories.

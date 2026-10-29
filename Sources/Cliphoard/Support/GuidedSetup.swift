@@ -48,9 +48,9 @@ struct GuidedSetupDraft {
         guard historyLimit != originalHistoryLimit, historyLimit > 0 else { return 0 }
         return max(0, unpinnedCount - historyLimit)
     }
-    func canFinish(unpinnedCount: Int, selectedModelAvailable: Bool) -> Bool {
+    func canFinish(unpinnedCount: Int, selectedModelAvailable: Bool, allowDeferredModel: Bool = false) -> Bool {
         guard step == .finish, historyLimit >= 0 else { return false }
-        guard level == originalLevel || selectedModelAvailable else { return false }
+        guard level == originalLevel || selectedModelAvailable || allowDeferredModel else { return false }
         let removal = removalCount(unpinnedCount: unpinnedCount)
         return removal == 0 || confirmedRemovalCount == removal
     }

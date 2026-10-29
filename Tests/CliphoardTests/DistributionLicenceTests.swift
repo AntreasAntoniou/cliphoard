@@ -46,35 +46,6 @@ final class DistributionLicenceTests: XCTestCase {
             .filter { !$0.trimmingCharacters(in: .whitespaces).hasPrefix("#") }
     }
 
-    /// Every `BUNDLE_MODELS="…"` assignment in a script, as sets of model names.
-    ///
-    /// Returns all of them and the caller asserts the count, because a parser that silently
-    /// finds nothing turns every assertion built on it into a no-op that reports success.
-    private func bundleAssignments(_ path: String) throws -> [Set<String>] {
-        try code(path).compactMap { line -> Set<String>? in
-            guard let r = line.range(of: "BUNDLE_MODELS=\"") else { return nil }
-            let rest = line[r.upperBound...]
-            guard let close = rest.firstIndex(of: "\"") else { return nil }
-            var body = String(rest[..<close])
-            // build-app.sh writes the default as ${BUNDLE_MODELS:-a b}; take the default.
-            if body.hasPrefix("${"), let d = body.range(of: ":-") {
-                body = String(body[d.upperBound...]).replacingOccurrences(of: "}", with: "")
-            }
-            // `BUNDLE_MODELS="$BUNDLE_MODELS"` is a pass-through, not a declaration.
-            if body.hasPrefix("$") { return nil }
-            let names = body.split(separator: " ").map(String.init)
-            return names.isEmpty ? nil : Set(names)
-        }
-    }
-
-    private func bundledModels() throws -> Set<String> {
-        let a = try bundleAssignments("Scripts/deploy-local.sh")
-        XCTAssertEqual(a.count, 1, "expected exactly one BUNDLE_MODELS assignment in "
-                       + "deploy-local.sh, found \(a.count) — the parse is unreliable, so "
-                       + "every test built on it is unreliable too")
-        return a.first ?? []
-    }
-
     /// The `**How it reaches you:**` line of a model's section, and only that line.
     ///
     /// Reading the whole section would be wrong in a way that is easy to miss: the OpenVision
@@ -130,7 +101,7 @@ final class DistributionLicenceTests: XCTestCase {
                        + "Third-party facts belong in THIRD-PARTY-NOTICES.md, which is their "
                        + "one home; a modified body also makes GitHub read the repo as "
                        + "NOASSERTION. Compare: diff LICENSE .build/checkouts/Jinja/LICENSE")
-        for name in try bundledModels().union(DeepSearchLevel.allCases.compactMap(\.modelName)) {
+        for name in DeepSearchLevel.allCases.compactMap(\.modelName) {
             XCTAssertFalse(licence.contains(name),
                            "LICENSE mentions '\(name)'. A second copy of a fact that lives in "
                            + "THIRD-PARTY-NOTICES.md is exactly how the two drifted apart: the "
@@ -141,58 +112,31 @@ final class DistributionLicenceTests: XCTestCase {
 
     // MARK: - what ships vs what is claimed
 
-    /// Both build paths must bundle the same set, or the DMG and a local build disagree about
-    /// what the shipped notices are describing.
-    func testTheThreeBuildEntrypointsBundleTheSameModels() throws {
-        // build-app.sh's DEFAULT matters as much as the two callers: `make app` inherits it,
-        // and a glob-everything default is what once produced a 409 MB .app.
-        var seen: [(String, Set<String>)] = []
-        for script in ["Scripts/build-app.sh", "Scripts/deploy-local.sh", "Scripts/release.sh"] {
-            let assignments = try bundleAssignments(script)
-            XCTAssertFalse(assignments.isEmpty,
-                           "\(script) declares no BUNDLE_MODELS — either it stopped deciding "
-                           + "what to bundle, or this parse is broken and silently passing")
-            for a in assignments { seen.append((script, a)) }
+    /// Future builds cannot restore, compile or embed weights from a developer cache.
+    func testBuildEntrypointsRequireModelWeightFreeBundles() throws {
+        for script in ["Scripts/build-app.sh", "Scripts/build-mas.sh"] {
+            let executable = try code(script).joined(separator: "\n")
+            XCTAssertTrue(executable.contains("audit-no-models.py"))
+            XCTAssertTrue(executable.contains("--check-environment"))
+            XCTAssertFalse(executable.contains("coremlcompiler"))
+            XCTAssertFalse(executable.contains("embed-media-model.sh"))
+            XCTAssertFalse(executable.contains("tools/models"))
         }
-        guard let first = seen.first else { return XCTFail("nothing parsed") }
-        for (script, set) in seen {
-            XCTAssertEqual(set, first.1,
-                           "\(script) bundles \(set.sorted()) but \(first.0) bundles "
-                           + "\(first.1.sorted()). At most one of them can match what "
-                           + "THIRD-PARTY-NOTICES.md says ships.")
+        for script in ["Scripts/release.sh", "Scripts/deploy-local.sh"] {
+            let executable = try code(script).joined(separator: "\n")
+            XCTAssertFalse(executable.contains("restore-models.sh"))
+            XCTAssertFalse(executable.contains("BUNDLE_MODELS="))
+            XCTAssertTrue(executable.contains("build-app.sh"))
         }
-    }
-
-    /// Every model actually bundled must be attributed as bundled. This is the obligation
-    /// OpenVision failed: it was the only bundled model and the notices omitted it entirely
-    /// while crediting two absent models as present.
-    func testEveryBundledModelIsAttributed() throws {
-        let notices = try read("THIRD-PARTY-NOTICES.md")
-        let models = try bundledModels()
-        XCTAssertFalse(models.isEmpty, "the bundle list parsed empty — the parse is wrong")
-        for model in models {
-            // Match the upstream family: two towers are correctly credited by one entry.
-            let family = model.split(separator: "-").prefix(2).joined(separator: "-")
-            guard let line = reachesYouLine(for: family, in: notices) else {
-                XCTFail("'\(model)' is bundled into the .app but THIRD-PARTY-NOTICES.md has no "
-                        + "section for '\(family)' with a 'How it reaches you' line. Shipping "
-                        + "a third-party model with no attribution is the breach this file "
-                        + "exists to prevent.")
-                continue
-            }
-            XCTAssertTrue(line.contains("**BUNDLED.**"),
-                          "'\(model)' ships inside the .app, but its notices entry says: "
-                          + "\(line.trimmingCharacters(in: .whitespaces))")
-        }
+        XCTAssertTrue(try code("Scripts/verify-bundle.sh").joined(separator: "\n")
+            .contains("audit-no-models.py"))
     }
 
     /// A downloaded model must not be described as bundled.
     func testDownloadedModelsAreNotClaimedAsBundled() throws {
         let notices = try read("THIRD-PARTY-NOTICES.md")
-        let bundled = Set(try bundledModels().map { $0.lowercased() })
         // Derived from the tiers that actually reach the loader, not a hand-kept list.
         let downloads = DeepSearchLevel.allCases.compactMap(\.modelName)
-            .filter { !bundled.contains($0.lowercased()) }
         XCTAssertFalse(downloads.isEmpty, "no downloading tier — the derivation is broken")
         for absent in downloads {
             guard let line = reachesYouLine(for: absent, in: notices) else {
@@ -363,46 +307,11 @@ final class DistributionLicenceTests: XCTestCase {
                              + "so this test would pass while attributing nothing")
     }
 
-    /// The models the app BUNDLES are gitignored, so a clean clone can only build the shipped
-    /// bundle if `tools/restore-models.sh` has an arm for each one, pins what it downloads,
-    /// and the release entrypoints ask it for them. A CI-cut DMG shipped ZERO models because
-    /// none of that was true and nothing said so. Derived from the scripts, never restated.
-    func testEveryBundledModelIsRestorableFromAPinnedSource() throws {
-        let bundled = try bundledModels()
-        let restore = try code("tools/restore-models.sh")
-        // `pattern)` case arms, split on `|`. The bare `*)` legacy arm matches everything and
-        // would make this vacuous, so it is excluded.
-        let patterns: [String] = restore.flatMap { line -> [String] in
-            let t = line.trimmingCharacters(in: .whitespaces)
-            guard let close = t.firstIndex(of: ")") else { return [] }
-            let head = String(t[..<close])
-            guard !head.isEmpty,
-                  head.allSatisfy({ $0.isLetter || $0.isNumber || "-_.*|".contains($0) })
-            else { return [] }
-            return head.split(separator: "|").map(String.init).filter { $0 != "*" }
-        }
-        XCTAssertFalse(patterns.isEmpty, "no case arms parsed from restore-models.sh — the parse is broken")
-        for model in bundled {
-            XCTAssertTrue(patterns.contains { fnmatch($0, model, 0) == 0 },
-                          "tools/restore-models.sh has no case arm matching '\(model)' — a clean "
-                          + "clone cannot restore a model the app bundles, so a CI-cut DMG ships without it")
-        }
-        XCTAssertTrue(restore.contains {
-            $0.range(of: #"^OPENVISION_ZIP_SHA256="[0-9a-f]{64}"$"#, options: .regularExpression) != nil
-        }, "restore-models.sh downloads the bundled OpenVision zip but pins no 64-hex "
-           + "OPENVISION_ZIP_SHA256 — an unpinned download is not a reproducible bundle")
+    func testReleaseDoesNotRestoreModelWeights() throws {
         for script in ["Scripts/release.sh", ".github/workflows/release.yml"] {
-            let restored: [Set<String>] = try code(script).compactMap { line in
-                guard let r = line.range(of: #"(?<![A-Z_])MODELS="([^"]*)""#,
-                                         options: .regularExpression) else { return nil }
-                let body = line[r].dropFirst("MODELS=\"".count).dropLast()
-                return Set(body.split(separator: " ").map(String.init))
-            }
-            XCTAssertEqual(restored.count, 1,
-                           "\(script): expected exactly one MODELS=\"…\" restore list, found \(restored.count)")
-            XCTAssertTrue(bundled.isSubset(of: restored.first ?? []),
-                          "\(script) restores \(restored.first ?? []) but the app bundles "
-                          + "\(bundled) — the release entrypoint must restore every bundled model before building")
+            let executable = try code(script).joined(separator: "\n")
+            XCTAssertFalse(executable.contains("restore-models.sh"))
+            XCTAssertFalse(executable.contains("tools/models"))
         }
     }
 

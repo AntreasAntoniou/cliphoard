@@ -34,6 +34,14 @@ final class GuidedSetupTests: XCTestCase {
         XCTAssertFalse(draft.canFinish(unpinnedCount: 0, selectedModelAvailable: false))
         XCTAssertTrue(draft.canFinish(unpinnedCount: 0, selectedModelAvailable: true))
     }
+    func testDeferredDownloadDoesNotWaiveRetentionConsent() {
+        var draft = GuidedSetupDraft(overlays: [], level: .normal, historyLimit: 500)
+        draft.level = .high; draft.historyLimit = 100; draft.step = .finish
+        XCTAssertFalse(draft.canFinish(unpinnedCount: 200, selectedModelAvailable: false, allowDeferredModel: true))
+        draft.confirmedRemovalCount = 100
+        XCTAssertTrue(draft.canFinish(unpinnedCount: 200, selectedModelAvailable: false, allowDeferredModel: true))
+        XCTAssertFalse(draft.canFinish(unpinnedCount: 200, selectedModelAvailable: false))
+    }
     func testFreeImagePresentsProWithoutSelectingOrPurchasing() {
         let free = Entitlement.free(reason: nil)
         XCTAssertTrue(GuidedSetupDraft.presentsPro(for: .image, entitlement: free))

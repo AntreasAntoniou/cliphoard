@@ -7,6 +7,7 @@ PYTHON="${CLIPHOARD_PYTHON:-/opt/homebrew/bin/python3.13}"
 
 cd "$(dirname "$0")/.."
 ROOT="$(pwd)"
+"$PYTHON" "$ROOT/Scripts/audit-no-models.py" --check-environment
 CONFIG="${MAS_CONFIG:-release}"
 MODE="${MAS_SIGN_MODE:-adhoc}"       # adhoc | app-store
 OUT="${MAS_OUTPUT_DIR:-$ROOT/build/mas}"
@@ -41,19 +42,12 @@ if nm -u "$BIN" | grep -Eq 'AXIsProcessTrusted|CGEvent(CreateKeyboardEvent|Post)
     echo "ERROR: APP_STORE binary still links an Accessibility or synthetic-input path" >&2
     exit 5
 fi
-if strings "$BIN" | grep -E 'axiotic/open-ogma|releases/download/models-v1' >/dev/null; then
-    echo "ERROR: APP_STORE binary still contains a direct model-download endpoint" >&2
-    exit 5
-fi
-
 echo "▸ Assembling Store bundle…"
 rm -rf "$OUT"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/Cliphoard"
 cp "$ROOT/Resources/Info.plist" "$APP/Contents/Info.plist"
 bash "$ROOT/Scripts/embed-media-runtime.sh" "$APP" "$BIN_DIR"
-: "${MAS_MEDIA_MODEL:?Set MAS_MEDIA_MODEL to the pinned EmbeddingGemma2 .litertlm data file}"
-bash "$ROOT/Scripts/embed-media-model.sh" "$APP" "$MAS_MEDIA_MODEL"
 /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $BUNDLE_ID" "$APP/Contents/Info.plist"
 if /usr/libexec/PlistBuddy -c 'Print :LSApplicationCategoryType' "$APP/Contents/Info.plist" >/dev/null 2>&1; then
     /usr/libexec/PlistBuddy -c 'Set :LSApplicationCategoryType public.app-category.productivity' "$APP/Contents/Info.plist"
@@ -76,36 +70,14 @@ if command -v iconutil >/dev/null 2>&1 && command -v sips >/dev/null 2>&1; then
     rm -rf "$ICONSET"
 fi
 
-# Store review sees every feature that ships. Bundle every reachable model tier so the app
-# does not fetch functionality after review. EmbeddingGemma is retired and forbidden here.
-MAS_BUNDLE_MODELS="${MAS_BUNDLE_MODELS:-open-ogma-micro open-ogma-small all-MiniLM-L6-v2 openvision-tiny-p8-image openvision-tiny-p8-text}"
-case " $MAS_BUNDLE_MODELS " in *" embeddinggemma-300m "*)
-    echo "ERROR: retired restricted EmbeddingGemma must not enter the Store bundle" >&2; exit 6;;
-esac
-for name in $MAS_BUNDLE_MODELS; do
-    pkg="$ROOT/tools/models/$name.mlpackage"
-    test -d "$pkg" || { echo "ERROR: required Store model missing: $pkg" >&2; exit 7; }
-    xcrun coremlcompiler compile "$pkg" "$APP/Contents/Resources" >/dev/null
-    src="$ROOT/tools/models/$name"
-    if [ -f "$src/tokenizer.json" ]; then
-        dst="$APP/Contents/Resources/$name-tokenizer"
-        mkdir -p "$dst"
-        for file in tokenizer.json tokenizer_config.json config.json special_tokens_map.json; do
-            [ ! -f "$src/$file" ] || cp "$src/$file" "$dst/"
-        done
-        case "$name" in *ogma*)
-            "$PYTHON" -c "import json; p='$dst/tokenizer_config.json'; d=json.load(open(p)); d['tokenizer_class']='T5Tokenizer'; json.dump(d,open(p,'w'))"
-        esac
-    fi
-done
-
+# Model weights are downloaded and prepared locally after explicit user selection.
 cp "$ROOT/LICENSE" "$APP/Contents/Resources/"
 cp "$ROOT/LICENSE-Apache-2.0.txt" "$APP/Contents/Resources/"
 cp "$ROOT/THIRD-PARTY-NOTICES-MAS.md" "$APP/Contents/Resources/THIRD-PARTY-NOTICES.md"
 cp "$PRIVACY_MANIFEST" "$APP/Contents/Resources/"
 
-STRICT_BUNDLE=1 BUNDLE_MODELS="$MAS_BUNDLE_MODELS" \
-    NOTICE_SOURCE="$ROOT/THIRD-PARTY-NOTICES-MAS.md" \
+"$PYTHON" "$ROOT/Scripts/audit-no-models.py" "$APP"
+NOTICE_SOURCE="$ROOT/THIRD-PARTY-NOTICES-MAS.md" \
     CHECKOUTS_DIR="$SCRATCH/checkouts" \
     bash "$ROOT/Scripts/verify-bundle.sh" "$APP" "$ROOT"
 

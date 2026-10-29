@@ -26,7 +26,10 @@
 #      unsigned run prints it and leaves the cask alone.
 #
 set -euo pipefail
+PYTHON="${CLIPHOARD_PYTHON:-/opt/homebrew/bin/python3.13}"
+"$PYTHON" -c 'import sys; assert sys.version_info >= (3, 13), "Python 3.13+ required"'
 cd "$(dirname "$0")/.."
+"$PYTHON" Scripts/audit-no-models.py --check-environment
 
 say() { printf '\n\033[1;36m▸ %s\033[0m\n' "$*"; }
 warn() { printf '\033[1;33m⚠ %s\033[0m\n' "$*"; }
@@ -81,7 +84,7 @@ if [[ -n "$DEVID" ]]; then
     cp "$PROVISION_PROFILE" "$SIGNING_WORK/profile.provisionprofile"
     EXPANDED_ENTITLEMENTS="$SIGNING_WORK/entitlements.plist"
     BUNDLE_ID="$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' Resources/Info.plist)"
-    python3 Scripts/distribution-profile.py prepare \
+    "$PYTHON" Scripts/distribution-profile.py prepare \
         --profile "$SIGNING_WORK/profile.provisionprofile" \
         --template "$ENTITLEMENTS" --team-id "$TEAM_ID" --bundle-id "$BUNDLE_ID" \
         --output "$EXPANDED_ENTITLEMENTS"
@@ -91,30 +94,9 @@ fi
 # wrong-brand artifacts so no Ditto-named file can sit alongside the Cliphoard DMG.
 rm -rf build/Ditto.app build/Ditto-*.dmg
 
-# 1. Restore the models the DMG actually BUNDLES: the two OpenVision-Tiny towers (34.6 MB),
-# downloaded by tools/restore-models.sh as one SHA-256-pinned zip from the models-v1 release.
-# ogma and MiniLM are NOT bundled (they download on demand at runtime) and are not restored
-# here. A release without the towers would ship with image search permanently dark while
-# THIRD-PARTY-NOTICES.md says they are BUNDLED — hard-fail instead. The retired EmbeddingGemma
-# tier and its asset are gone; do not reintroduce either without reading THIRD-PARTY-NOTICES.md.
-say "Restoring bundled models…"
-MODELS="openvision-tiny-p8-image openvision-tiny-p8-text" bash tools/restore-models.sh
-for m in openvision-tiny-p8-image openvision-tiny-p8-text; do
-    [ -d "tools/models/$m.mlpackage" ] || { echo "::error::missing model $m — release aborted" >&2; exit 1; }
-done
-for f in tokenizer.json config.json; do
-    [ -f "tools/models/openvision-tiny-p8-text/$f" ] || { echo "::error::missing OpenVision tokenizer file $f — release aborted" >&2; exit 1; }
-done
+# 1. Build without weights; local model caches are not release inputs.
 say "Building Cliphoard.app…"
-# The SHIPPED set. Previously this bundled ogma AND MiniLM — the latter directly
-# contradicting README/site copy saying "MiniLM downloads on first selection", so the
-# release did not match its own documentation. Now: OpenVision only.
-#   ogma    -> HuggingFace on demand (stats reflect real adoption of our model)
-#   MiniLM  -> GitHub release on demand (as always documented)
-#   OpenVision -> bundled: image search is the differentiator and should work on
-#                 first launch with no network.
-STRICT_BUNDLE=1 BUNDLE_MODELS="openvision-tiny-p8-image openvision-tiny-p8-text" \
-    bash Scripts/build-app.sh release
+bash Scripts/build-app.sh release
 VERSION="$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$APP/Contents/Info.plist")"
 say "Version $VERSION"
 
@@ -126,11 +108,13 @@ if [[ -n "$DEVID" ]]; then
     # claims from the profile, and the profile must be sealed into the signature.
     cp "$SIGNING_WORK/profile.provisionprofile" "$APP/Contents/embedded.provisionprofile"
 
-    # Cliphoard is a single Mach-O (static SwiftPM binary); .mlmodelc are data, not code.
+    # Sign the bundled runtime before sealing the enclosing app.
+    codesign --force --options runtime --timestamp --sign "$DEVID" \
+             "$APP/Contents/Frameworks/libCLiteRTLM_mac.dylib"
     codesign --force --options runtime --timestamp \
              --entitlements "$EXPANDED_ENTITLEMENTS" \
              --sign "$DEVID" "$APP"
-    python3 Scripts/distribution-profile.py verify \
+    "$PYTHON" Scripts/distribution-profile.py verify \
         --app "$APP" --template "$ENTITLEMENTS" --team-id "$TEAM_ID"
     codesign --verify --strict --verbose=2 "$APP"
     say "Gatekeeper assessment:"
@@ -150,7 +134,7 @@ if [[ -n "$NOTARY_PROFILE" && -n "$DEVID" ]]; then
     xcrun stapler staple "$APP"
     xcrun stapler validate "$APP"
     codesign --verify --strict --verbose=2 "$APP"
-    python3 Scripts/distribution-profile.py verify \
+    "$PYTHON" Scripts/distribution-profile.py verify \
         --app "$APP" --template "$ENTITLEMENTS" --team-id "$TEAM_ID"
     spctl --assess --type execute --verbose=4 "$APP"
     rm -f "build/Cliphoard.zip"
@@ -166,16 +150,15 @@ rm -rf "$STAGE" "$DMG"
 mkdir -p "$STAGE"
 cp -R "$APP" "$STAGE/Cliphoard.app"
 # Ship the license + attribution next to the app so a user who mounts the DMG
-# sees them (Apache-2.0 requires the licence text travel with the bundled OpenVision towers).
+# sees them; runtime library licences travel with the software.
 cp "LICENSE" "$STAGE/"
 cp "LICENSE-Apache-2.0.txt" "$STAGE/"
 cp "THIRD-PARTY-NOTICES.md" "$STAGE/"
 # The DMG root is a distribution channel of its own: Apache-2.0 s4(a) is about
 # what the RECIPIENT receives, not what the repo contains.
-STRICT_BUNDLE=1 BUNDLE_MODELS="openvision-tiny-p8-image openvision-tiny-p8-text" \
-    bash Scripts/verify-bundle.sh "$STAGE/Cliphoard.app" "$(pwd)" "$STAGE"
+bash Scripts/verify-bundle.sh "$STAGE/Cliphoard.app" "$(pwd)" "$STAGE"
 if [[ -n "$DEVID" ]]; then
-    python3 Scripts/distribution-profile.py verify \
+    "$PYTHON" Scripts/distribution-profile.py verify \
         --app "$STAGE/Cliphoard.app" --template "$ENTITLEMENTS" --team-id "$TEAM_ID"
 fi
 

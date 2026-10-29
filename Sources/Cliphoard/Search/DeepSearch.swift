@@ -6,7 +6,7 @@ import Tokenizers
 // MARK: - Levels & modes
 
 /// Embedding model tier (selects which on-device model produces vectors).
-/// Until a CoreML model is bundled for a tier, the engine falls back to the
+/// Until a CoreML model is downloaded and prepared for a tier, the engine falls back to the
 /// dependency-free `HashingEmbedder` so everything still works.
 /// Search tiers. Every model here is permissively licensed — MIT or Apache-2.0 —
 /// so the shipped artifact carries no use restrictions beyond Cliphoard's own MIT.
@@ -29,7 +29,7 @@ enum DeepSearchLevel: String, CaseIterable, Identifiable {
         }
     }
 
-    /// Bundled CoreML model name (`<name>.mlmodelc`) for this tier.
+    /// Downloaded CoreML model name (`<name>.mlmodelc`) for this tier.
     /// - low → axiotic/open-ogma-micro (MIT, 2.5M)
     /// - normal → axiotic/open-ogma-small (MIT, 8.9M)
     /// - high → sentence-transformers/all-MiniLM-L6-v2 (Apache-2.0, 22.7M)
@@ -330,7 +330,7 @@ final class OgmaEmbedder: TextEmbedder {
 }
 
 /// Owns the currently-active embedder. Loads CoreML models asynchronously and
-/// swaps them in when ready; until then (and when a tier has no bundled model)
+/// swaps them in when ready; until then (and when a tier has no prepared model)
 /// the `HashingEmbedder` is used so search always works.
 @MainActor
 enum EmbedderProvider {
@@ -339,17 +339,24 @@ enum EmbedderProvider {
     /// Monotonic token: bumping it invalidates any in-flight async model load,
     /// so a rapid tier flip can't have a stale load overwrite the newer one.
     private static var loadToken = 0
+    private static var loadTask: Task<Void, Never>?
 
-    /// Load the embedder for `level`. Resolution is bundle → local store →
-    /// AUTO-DOWNLOAD (ModelAssets.ensure): selecting a tier IS the install —
-    /// the user never fetches models by hand. A bundled/stored ogma model loads
+    static func cancelPreparation() {
+        loadToken &+= 1; loadTask?.cancel(); loadTask = nil
+        if let name = DeepSearch.level.modelName { EmbedderState.shared.set(.notInstalled(name)) }
+    }
+
+    /// Load the embedder for `level`. Resolution is local store → explicit
+    /// download (ModelAssets.ensure). The download button grants network access;
+    /// startup and changing preferences use local assets only. A stored ogma model loads
     /// synchronously (small files); everything else loads async — `active`
     /// serves hashing meanwhile and swaps when ready, then `onSwap` fires so the
     /// store can re-index into the new space. Lifecycle (loading / downloading
     /// N% / installing / failed) is published via EmbedderState for Settings.
     @discardableResult
-    static func configure(level: DeepSearchLevel, allowDownloads: Bool = true, onSwap: (() -> Void)? = nil) -> Bool {
+    static func configure(level: DeepSearchLevel, allowDownloads: Bool = false, onSwap: (() -> Void)? = nil) -> Bool {
         let before = active.signature
+        loadTask?.cancel(); loadTask = nil
         loadToken &+= 1
         let token = loadToken
         guard let name = level.modelName else {          // .off
@@ -373,26 +380,19 @@ enum EmbedderProvider {
         }
         // Async path: HF tiers, and any tier whose model needs downloading.
         active = HashingEmbedder()
+        guard allowDownloads || ModelAssets.canPrepareLocally(name) else {
+            EmbedderState.shared.set(.notInstalled(name))
+            return active.signature != before
+        }
         EmbedderState.shared.set(.loading(name))
-        Task { @MainActor in
+        loadTask = Task { @MainActor in
             do {
-                let found: ModelAssets.Located
-                if allowDownloads {
-                    found = try await ModelAssets.ensure(name)   // existing Settings behavior
-                } else {
-                    // Re-resolve inside the async task. A model removed after
-                    // onboarding's preview must fail, never acquire download authority.
-                    guard let local = ModelAssets.locate(name) else {
-                        throw CocoaError(.fileNoSuchFile, userInfo: [
-                            NSLocalizedDescriptionKey: "Selected model is no longer installed. Choose an installed model in Settings."])
-                    }
-                    found = local
-                }
-                guard token == loadToken else { return }         // superseded
+                let found = try await ModelAssets.ensure(name, allowDownload: allowDownloads)
+                guard token == loadToken, !Task.isCancelled else { return }         // superseded
                 EmbedderState.shared.set(.loading(name))
                 let model = try await MLModel.load(contentsOf: found.compiledModel,
                                                    configuration: MLModelConfiguration())
-                guard token == loadToken else { return }
+                guard token == loadToken, !Task.isCancelled else { return }
                 if level.isOgma {
                     guard let tokenizer = OgmaTokenizer(folder: found.tokenizerFolder) else {
                         throw CocoaError(.fileReadCorruptFile, userInfo: [
@@ -405,7 +405,7 @@ enum EmbedderProvider {
                                           relevanceFloor: detail.relevanceFloor)
                 } else {
                     let tokenizer = try await AutoTokenizer.from(modelFolder: found.tokenizerFolder)
-                    guard token == loadToken else { return }
+                    guard token == loadToken, !Task.isCancelled else { return }
                     active = HFEmbedder(modelName: name, model: model, tokenizer: tokenizer,
                                         dimension: level.dimension,
                                         queryPrefix: level.queryPrefix,
@@ -416,7 +416,7 @@ enum EmbedderProvider {
                 onSwap?()
             } catch {
                 NSLog("Cliphoard: \(name) unavailable (\(error)) — staying on fallback")
-                guard token == loadToken else { return }
+                guard token == loadToken, !Task.isCancelled else { return }
                 EmbedderState.shared.set(.failed(name, message: error.localizedDescription))
             }
         }
@@ -427,7 +427,7 @@ enum EmbedderProvider {
     /// active model's space. Skipped entirely for the `off` tier, whose substring
     /// search doesn't use vectors — so we don't churn embeddings needlessly.
     /// For the async HF tiers, the re-index re-runs once the real model swaps in.
-    static func configureAndReindex(level: DeepSearchLevel, store: ClipStore, allowDownloads: Bool = true) {
+    static func configureAndReindex(level: DeepSearchLevel, store: ClipStore, allowDownloads: Bool = false) {
         configure(level: level, allowDownloads: allowDownloads) { [weak store] in store?.refreshForActiveModel() }
         if level != .off { store.refreshForActiveModel() }
     }

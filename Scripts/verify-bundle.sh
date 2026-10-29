@@ -1,40 +1,6 @@
 #!/usr/bin/env bash
-# Prove an assembled .app matches what the licence documents claim about it.
-#
-# This complements the unit suite by inspecting the actual packaged artifact. It checks
-# what landed in Resources before a local build or CI can distribute it. The defect this
-# was written for WAS live and silent: `restore-models.sh` had no `openvision-*` case and
-# the `models-v1` release had no openvision asset, so a CI-cut DMG shipped ZERO models while
-# THIRD-PARTY-NOTICES.md at its root said OpenVision is BUNDLED. Fixed: restore-models.sh
-# downloads the pinned openvision-tiny-p8.zip; STRICT_BUNDLE=1 below keeps it fixed.
-#
-# Checks: 1 licence files present + identical to the repo · 2 LICENSE is canonical MIT with a
-#         single-year holder line (1073 bytes) · 3 LICENSE-Apache-2.0.txt is the complete
-#         canonical text · 4 linked MIT notices reproduced visibly · 5 every declared model is
-#         bundled + attributed · 6 nothing undeclared or hollow in Resources · 7 every bundled
-#         text tower carries its tokenizer folder (tokenizer.json + tokenizer_config.json +
-#         config.json, each valid JSON).
-#
-# Usage: verify-bundle.sh <app> <repo-root> [extra-dir-that-must-carry-licences]
-# Env:   BUNDLE_MODELS  the models this build intended to bundle
-#        STRICT_BUNDLE  1 => a missing bundled model is fatal (release.sh sets this)
-#        NOTICE_SOURCE  channel-specific source copied into the bundle under the canonical
-#                       THIRD-PARTY-NOTICES.md name (defaults to the direct-build notice)
-#        CHECKOUTS_DIR  SwiftPM checkouts used to prove linked MIT notices (defaults to .build)
-#
-# Runs under macOS /bin/bash 3.2 (`env bash` resolves to it). In a message, brace a variable
-# that is followed by a non-ASCII character: bash 3.2 lexes the name and the following
-# multibyte character as ONE identifier and dies "unbound variable" under set -u, so the
-# diagnostic never printed and the script failed closed only by accident. Audit:
-#   perl -ne 'print "$ARGV: $_" if /\$[A-Za-z_]\w*[\x80-\xFF]/' Scripts/*.sh tools/*.sh
-#
-# STRICT is opt-in for a reason. `build-app.sh` documents that an absent model is a
-# legitimate developer state — the app falls back to the built-in HashingEmbedder — so a
-# flat "must be present" check would break `make app` on a fresh clone. What is ALWAYS
-# fatal is narrower and catches the real hole: a model whose .mlpackage exists in
-# tools/models but whose .mlmodelc did not reach the app. That means the compile step
-# failed and was swallowed (build-app.sh pipes coremlcompiler stderr to /dev/null), which
-# no fallback story covers.
+# Verify download-only bundle policy and unchanged licence distribution obligations.
+# Usage: verify-bundle.sh APP REPO [DMG_STAGE]; NOTICE_SOURCE/CHECKOUTS_DIR select channel.
 set -euo pipefail
 PYTHON="${CLIPHOARD_PYTHON:-/opt/homebrew/bin/python3.13}"
 "$PYTHON" -c 'import sys; assert sys.version_info >= (3, 13), "Python 3.13+ required"'
@@ -50,6 +16,7 @@ note() { printf '  %s %s\n' "$1" "$2"; }
 bad()  { note "✗" "$1"; fail=1; }
 
 echo "verify-bundle: $APP"
+"$PYTHON" "$ROOT/Scripts/audit-no-models.py" "$APP"
 [ -d "$RES" ] || { bad "no Contents/Resources — not an app bundle"; exit 1; }
 
 # 1. Licence texts must physically reach the recipient, in every directory that is
@@ -137,99 +104,6 @@ while IFS= read -r line; do
     linked_mit=$((linked_mit+1))
 done < <(grep '^linked:' "$RES/THIRD-PARTY-NOTICES.md" | grep 'licence: MIT' || true)
 [ "$linked_mit" -gt 0 ] || bad "no linked MIT package was checked — the manifest parse is broken, so this would pass while attributing nothing"
-
-# 5. Every model the build intended to bundle, checked two ways. Under STRICT an empty
-#    list is itself a failure: a strict check that checks nothing passes anything.
-if [ "${STRICT_BUNDLE:-0}" = "1" ] && [ -z "${BUNDLE_MODELS:-}" ]; then
-    bad "STRICT_BUNDLE=1 but BUNDLE_MODELS is empty — a release must declare what it bundles"
-fi
-for m in ${BUNDLE_MODELS:-}; do
-    if [ -d "$RES/$m.mlmodelc" ]; then
-        note "✓" "$m bundled"
-        # Attribute by upstream family (first two dash-separated components) against a
-        # visible `### ` heading only: `all` matched 13 places and `embeddinggemma` matched
-        # the paragraph saying it was REMOVED.
-        family="$(printf '%s' "$m" | cut -d- -f1-2)"
-        section="$(section_for "$(printf '%s' "$family" | tr 'A-Z' 'a-z')")"
-        if [ -z "$section" ]; then
-            bad "$m ships with no visible '### …${family}…' entry in THIRD-PARTY-NOTICES.md"
-        else
-            grep -q '^- \*\*How it reaches you:\*\* \*\*BUNDLED\.\*\*' <<< "$section" \
-                || bad "$m is inside the .app but its notices entry does not say **BUNDLED.**"
-        fi
-    elif [ -d "$ROOT/tools/models/$m.mlpackage" ]; then
-        # Source present, output absent: the compile failed and was swallowed.
-        bad "$m has a .mlpackage but no .mlmodelc in the app — coremlcompiler failed silently"
-    elif [ "${STRICT_BUNDLE:-0}" = "1" ]; then
-        bad "$m is missing (STRICT_BUNDLE=1). A release must not ship an empty bundle while
-     THIRD-PARTY-NOTICES.md says this model is BUNDLED. Run tools/restore-models.sh, or
-     if it has no case for this model, that is the bug."
-    else
-        note "·" "$m absent (dev build; app falls back to HashingEmbedder)"
-    fi
-done
-
-# 6. The converse of 5: nothing UNDECLARED, nothing HOLLOW. Step 5 iterates BUNDLE_MODELS, so
-#    a .mlmodelc inside the .app but not on the list would ship unattributed, and `-d` alone
-#    accepts the empty directory a failed coremlcompiler leaves behind (build-app.sh pipes its
-#    stderr to /dev/null). A real compile always emits coremldata.bin plus weights/weight.bin
-#    (or an inline model.mil for a weightless model).
-for d in "$RES"/*.mlmodelc; do
-    [ -e "$d" ] || continue
-    n="$(basename "$d" .mlmodelc)"
-    case " ${BUNDLE_MODELS:-} " in
-        *" $n "*) ;;
-        *) bad "${n}.mlmodelc is inside the .app but not in BUNDLE_MODELS — an undeclared model ships with no attribution" ;;
-    esac
-    if [ -s "$d/coremldata.bin" ] && { [ -s "$d/weights/weight.bin" ] || [ -s "$d/model.mil" ]; }; then
-        note "✓" "${n}.mlmodelc is a real compiled model"
-    else
-        bad "${n}.mlmodelc is hollow (no coremldata.bin, or neither weights/weight.bin nor model.mil) — coremlcompiler failed and left an empty directory"
-    fi
-done
-for d in "$RES"/*-tokenizer; do
-    [ -e "$d" ] || continue
-    n="$(basename "$d")"; n="${n%-tokenizer}"
-    case " ${BUNDLE_MODELS:-} " in
-        *" $n "*) ;;
-        *) bad "$(basename "$d")/ is inside the .app but no bundled model is named ${n}" ;;
-    esac
-done
-
-# 7. Every bundled TEXT tower needs its tokenizer folder. Which towers are text towers is
-#    decided the way build-app.sh decides it (Scripts/build-app.sh:79-86): the source folder
-#    tools/models/<name>/tokenizer.json exists. The same fact is read off the artifact too —
-#    coremlcompiler's metadata.json declares the `input_ids` input the converter names
-#    (tools/convert_openvision.py:171) — so a run without tools/models is not vacuous.
-#    swift-transformers' AutoTokenizer.from(modelFolder:) (Hub.swift loadConfig) throws unless
-#    tokenizer.json AND config.json exist and parse: the 30-byte config.json is exactly the
-#    file whose absence once made image search silently dark. tokenizer_config.json is needed
-#    too: without it Hub.swift's tokenizerConfig getter falls back to a bundled config for the
-#    model_type, and only gpt2/t5 fallbacks ship — for "bert" that is `missingConfig`, thrown.
-#    A verifier proved the first version of this check passed with that file deleted.
-#    Validated with python3's json module, NOT plutil: plutil converts to a plist and rejects
-#    any JSON containing null, which the real tokenizer_config.json does.
-for m in ${BUNDLE_MODELS:-}; do
-    [ -d "$RES/$m.mlmodelc" ] || continue
-    needs=0
-    if [ -d "$ROOT/tools/models/$m.mlpackage" ]; then
-        [ -f "$ROOT/tools/models/$m/tokenizer.json" ] && needs=1
-    elif [ "${STRICT_BUNDLE:-0}" = "1" ]; then
-        bad "${m}: tools/models/${m}.mlpackage is absent, so whether it needs a tokenizer cannot be derived from the build rule — under STRICT that is a failure, not a skip"
-    fi
-    grep -q '"input_ids"' "$RES/$m.mlmodelc/metadata.json" 2>/dev/null && needs=1
-    [ "$needs" = 1 ] || continue
-    tok="$RES/$m-tokenizer"
-    ok=1
-    for f in tokenizer.json tokenizer_config.json config.json; do
-        if [ ! -s "$tok/$f" ]; then
-            bad "${m} is a text tower but Resources/${m}-tokenizer/${f} is missing or empty — AutoTokenizer.from(modelFolder:) throws and image search is silently dark"; ok=0
-        elif ! "$PYTHON" -c 'import json,sys; json.load(open(sys.argv[1]))' "$tok/$f" 2>/dev/null; then
-            bad "Resources/${m}-tokenizer/${f} is not valid JSON — AutoTokenizer throws exactly as if it were absent"; ok=0
-        fi
-    done
-    [ "$ok" = 1 ] && note "✓" "${m}-tokenizer carries tokenizer.json + tokenizer_config.json + config.json, all valid JSON"
-done
 
 if [ "$fail" -ne 0 ]; then
     echo "verify-bundle: FAILED — the bundle does not match its licence documents." >&2

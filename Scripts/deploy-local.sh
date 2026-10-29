@@ -14,6 +14,8 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 ROOT="$(pwd)"
+PYTHON="${CLIPHOARD_PYTHON:-/opt/homebrew/bin/python3.13}"
+"$PYTHON" "$ROOT/Scripts/audit-no-models.py" --check-environment
 SKIP_TESTS="${1:-}"
 
 # 1. Gate on the suite unless explicitly skipped — never deploy a red build.
@@ -33,19 +35,8 @@ if [ "$SKIP_TESTS" != "--skip-tests" ]; then
     rm -f "$TEST_LOG"
 fi
 
-# 2. Build the universal, signed bundle.
-#
-# Bundle only the two OpenVision towers (Apache-2.0) — the same set release.sh
-# ships. ogma (MIT) and MiniLM (Apache-2.0) are fetched on demand by
-# ModelAssets.ensure, which verifies it against a pinned SHA-256 and refuses to
-# install on mismatch. Without this the glob in build-app.sh bundles every model
-# present in tools/models, which is what made the .app 409 MB.
-# OpenVision's two towers ride along: 34.6 MB total, and the joint text-pixel index
-# is the only way an image carrying no recognised text is reachable by typing at all.
-# ogma is NOT bundled: it is served from HuggingFace so its download stats reflect real
-# usage of a model we released. Bundling it would make that adoption invisible.
-BUNDLE_MODELS="openvision-tiny-p8-image openvision-tiny-p8-text" \
-    bash "$ROOT/Scripts/build-app.sh" release
+# 2. Build the universal, model-weight-free signed bundle.
+bash "$ROOT/Scripts/build-app.sh" release
 
 # 3. Quit the running instance (graceful first, then firm) so the binary is replaceable.
 if pgrep -x Cliphoard >/dev/null; then

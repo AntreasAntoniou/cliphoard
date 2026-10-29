@@ -3,7 +3,8 @@ set -euo pipefail
 # Copy-only assembly of the pinned runtime into a NEW, unsigned app. Does not sign or launch.
 CLIPHOARD_EMBED_SCRIPT_ROOT="$(cd -- "$(dirname -- "$0")/.." && pwd -P)"
 export CLIPHOARD_EMBED_SCRIPT_ROOT
-exec /opt/homebrew/bin/python3.13 -E - "$@" <<'PY'
+CLIPHOARD_EMBED_PYTHON="${CLIPHOARD_PYTHON:-/opt/homebrew/bin/python3.13}"
+exec "$CLIPHOARD_EMBED_PYTHON" -E - "$@" <<'PY'
 from pathlib import Path
 import hashlib, json, os, plistlib, shutil, stat, subprocess, sys
 if sys.version_info < (3, 13): raise SystemExit('Python 3.13+ required')

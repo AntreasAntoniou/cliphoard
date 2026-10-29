@@ -11,6 +11,15 @@ final class MediaSpeechAssetManifestTests: XCTestCase {
         try FileManager.default.createDirectory(at:url,withIntermediateDirectories:false)
         addTeardownBlock { try? FileManager.default.removeItem(at:url) };return url
     }
+    func testDirectoryURLAncestorWalkStopsAtRoot() throws {
+        let root = try temporary()
+        let directoryURL = URL(fileURLWithPath: root.path, isDirectory: true)
+        try MediaSpeechAssetManifest.safePath(directoryURL)
+        try MediaSpeechAssetManifest.safePath(URL(fileURLWithPath: "/", isDirectory: true))
+        XCTAssertThrowsError(try MediaSpeechAssetManifest.safePath(directoryURL.appendingPathComponent("../outside")))
+        XCTAssertFalse(MediaSpeechAssetManifest.localCandidateExists(model: .small, root: directoryURL))
+    }
+
     func testIndependentDigestRefusesSameSizeTamperingAndMissingFiles() throws {
         let root=try temporary(), file=root.appendingPathComponent("file")
         let original=Data("original".utf8)

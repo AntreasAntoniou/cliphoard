@@ -33,7 +33,7 @@ final class DistributionChannelTests: XCTestCase {
         XCTAssertNil(plist["com.apple.security.network.server"])
     }
 
-    func testStoreNoticeCoversEveryBundledModel() throws {
+    func testStoreNoticeDescribesModelsAsDownloads() throws {
         let root = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let notice = try String(
@@ -51,40 +51,32 @@ final class DistributionChannelTests: XCTestCase {
                 "missing Store notice for \(family)"
             ).components(separatedBy: "\n### ").first ?? ""
             XCTAssertTrue(
-                section.contains("**How it reaches you:** **BUNDLED.**"),
-                "Store notice must describe bundled \(family) models"
+                section.contains("NOT bundled"),
+                "Store notice must describe downloaded \(family) models"
             )
         }
     }
 
-    func testStoreBuildBundlesEveryReachableModel() throws {
+    func testStoreBuildRejectsBundledWeightsAndRetainsPrivacyManifest() throws {
         let root = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-        let script = try String(
-            contentsOf: root.appendingPathComponent("Scripts/build-mas.sh"),
-            encoding: .utf8
-        )
-        let expected = DeepSearchLevel.allCases.compactMap(\.modelName) + [
-            "openvision-tiny-p8-image",
-            "openvision-tiny-p8-text",
-        ]
-        let modelList = expected.joined(separator: " ")
-        let declaration = "MAS_BUNDLE_MODELS=\"${MAS_BUNDLE_MODELS:-\(modelList)}\""
-        XCTAssertTrue(
-            script.contains(declaration),
-            "the Store package must include every selectable text tier and both image towers"
-        )
-        XCTAssertFalse(script.contains("MAS_BUNDLE_MODELS=\"${MAS_BUNDLE_MODELS:-embeddinggemma"))
+        let script = try String(contentsOf: root.appendingPathComponent("Scripts/build-mas.sh"), encoding: .utf8)
+        XCTAssertTrue(script.contains("audit-no-models.py"))
+        XCTAssertTrue(script.contains("--check-environment"))
+        XCTAssertFalse(script.contains("coremlcompiler"))
+        XCTAssertFalse(script.contains("embed-media-model.sh"))
         XCTAssertTrue(script.contains("cp \"$PRIVACY_MANIFEST\""))
     }
 
     #if APP_STORE
-    func testMissingStoreModelFailsWithoutDownloading() async {
+    func testUnknownStoreModelFailsBeforeDownloading() async {
         do {
             _ = try await ModelAssets.ensure("definitely-not-in-the-reviewed-bundle")
             XCTFail("a missing Store model must fail closed")
         } catch {
-            XCTAssertTrue(error.localizedDescription.contains("missing from this App Store installation"))
+            guard case ModelAssets.Failure.unknownModel = error else {
+                return XCTFail("unknown model must fail before network access: \(error)")
+            }
         }
     }
     #endif
