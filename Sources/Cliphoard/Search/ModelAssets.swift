@@ -37,10 +37,9 @@ enum ModelAssets {
     static let catalog: [String: Artifact] = [
         "open-ogma-micro": Artifact(repository: "axiotic/open-ogma-micro", revision: "acb318a6f4411a42085838e674ebc2aed1219310", path: "coreml/open-ogma-micro.zip", bytes: 5_090_189, sha256: "9163037e51596ab6b17c4bc51d7e2b4b4533ca6f205b7988504774e78925ac39", models: ["open-ogma-micro"], tokenizer: "open-ogma-micro"),
         "open-ogma-small": Artifact(repository: "axiotic/open-ogma-small", revision: "3f4cd68f43719ca494772fcc80005c115d8d91ff", path: "coreml/open-ogma-small.zip", bytes: 16_981_733, sha256: "179517c6925914ec37a734c4f0aa2971b9b93ecee9e8d6e98aa4f66a17709135", models: ["open-ogma-small"], tokenizer: "open-ogma-small"),
-        // These exact conversions are pinned, but cannot be downloaded until their
-        // Hugging Face publication and immutable revisions have been verified.
-        "all-MiniLM-L6-v2": Artifact(repository: nil, revision: nil, path: "all-MiniLM-L6-v2.zip", bytes: 41_925_567, sha256: "ff202030f35c740193335a2136db6b15df8ef592da92e7dd07e51457dcf81def", models: ["all-MiniLM-L6-v2"], tokenizer: "all-MiniLM-L6-v2"),
-        "openvision-tiny-p8": Artifact(repository: nil, revision: nil, path: "openvision-tiny-p8.zip", bytes: 31_726_193, sha256: "c137d2f76e9ed583488cf5e5955f11d173192c05ccae4daa922e8ab6fdfb772a", models: ["openvision-tiny-p8-image", "openvision-tiny-p8-text"], tokenizer: "openvision-tiny-p8-text")
+        // Exact compatible conversions published and independently read back from Hugging Face.
+        "all-MiniLM-L6-v2": Artifact(repository: "axiotic/cliphoard-coreml-models", revision: "735cf3ec9bcaff2a46dd0f41997d0ab10bf068b4", path: "coreml/all-MiniLM-L6-v2.zip", bytes: 41_925_567, sha256: "ff202030f35c740193335a2136db6b15df8ef592da92e7dd07e51457dcf81def", models: ["all-MiniLM-L6-v2"], tokenizer: "all-MiniLM-L6-v2"),
+        "openvision-tiny-p8": Artifact(repository: "axiotic/cliphoard-coreml-models", revision: "735cf3ec9bcaff2a46dd0f41997d0ab10bf068b4", path: "coreml/openvision-tiny-p8.zip", bytes: 31_726_193, sha256: "c137d2f76e9ed583488cf5e5955f11d173192c05ccae4daa922e8ab6fdfb772a", models: ["openvision-tiny-p8-image", "openvision-tiny-p8-text"], tokenizer: "openvision-tiny-p8-text")
     ]
     static var expectedSHA256: [String: String] { catalog.mapValues(\.sha256) }
     static func source(for name: String) -> AssetSource {

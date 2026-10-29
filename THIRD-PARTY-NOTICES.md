@@ -40,9 +40,9 @@ The earlier build8 package is immutable and predates this policy.
 - **License:** Apache-2.0.
 - **How it reaches you:** NOT bundled. Our CoreML conversion is fetched on demand
   by `ModelAssets.ensure`, which permits only verified Hugging Face locations,
-  checks a pinned SHA-256 and prepares CoreML locally. Publication of the exact
-  compatible conversion on Hugging Face is a release gate; unavailable sources
-  fail closed rather than falling back to GitHub.
+  checks a pinned SHA-256 and prepares CoreML locally. The exact compatible conversion is hosted at
+  https://huggingface.co/axiotic/cliphoard-coreml-models/tree/735cf3ec9bcaff2a46dd0f41997d0ab10bf068b4
+  with its original licence and attribution; no GitHub runtime fallback is used.
 
 ### OpenVision-Tiny (UCSC-VLAA) — image understanding
 - **Weights:** https://huggingface.co/UCSC-VLAA/openvision-vit-tiny-patch8-224
@@ -52,7 +52,9 @@ The earlier build8 package is immutable and predates this policy.
   inside the `.app` and at the root of the DMG.
 - **How it reaches you:** NOT bundled. The paired image/text towers and tokenizer
   are an optional, checksum-pinned Hugging Face download, compiled on this Mac.
-  Publication of the exact compatible conversion is a release gate.
+  The exact compatible paired conversion is hosted at
+  https://huggingface.co/axiotic/cliphoard-coreml-models/tree/735cf3ec9bcaff2a46dd0f41997d0ab10bf068b4
+  with its original licence and attribution.
 - **Attribution:** earlier releases bundled this model; the original omission and
   correction dated 2026-09-01 remain historical. Downloading it separately does
   not remove its Apache-2.0 attribution requirements.

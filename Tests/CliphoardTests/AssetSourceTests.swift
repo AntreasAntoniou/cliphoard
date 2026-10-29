@@ -13,9 +13,11 @@ final class AssetSourceTests: XCTestCase {
             XCTAssertFalse(item.url!.absoluteString.contains("/main/"))
         }
     }
-    func testUnpublishedAndUnknownModelsDoNotInventDownloadURLs() {
-        XCTAssertNil(ModelAssets.assetURL(for: "all-MiniLM-L6-v2"))
-        XCTAssertNil(ModelAssets.assetURL(for: "openvision-tiny-p8"))
+    func testConvertedModelsUseVerifiedPublicRevisionAndUnknownStaysUnavailable() {
+        for name in ["all-MiniLM-L6-v2", "openvision-tiny-p8"] {
+            XCTAssertEqual(ModelAssets.assetURL(for: name)?.absoluteString,
+                "https://huggingface.co/axiotic/cliphoard-coreml-models/resolve/735cf3ec9bcaff2a46dd0f41997d0ab10bf068b4/coreml/\(name).zip")
+        }
         XCTAssertNil(ModelAssets.assetURL(for: "unknown"))
         XCTAssertFalse(ModelAssets.canPrepareLocally("unknown"))
     }
