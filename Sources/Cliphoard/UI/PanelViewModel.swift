@@ -28,6 +28,15 @@ final class PanelViewModel: ObservableObject {
         didSet { if showSettings != oldValue { onSettingsChange?(showSettings) } }
     }
     var onSettingsChange: ((Bool) -> Void)?
+    @Published var requestedSettingsSection: String?
+    @Published var settingsFocusRequest = UUID()
+
+    func presentProSettings() {
+        requestedSettingsSection = "cliphoard-pro"
+        settingsFocusRequest = UUID()
+        showSettings = true
+    }
+
     /// Clip currently expanded into the detail supercard.
     ///
     /// Observed with `didSet`, NOT `$inspectedItem.sink`: `@Published` emits in `willSet`,

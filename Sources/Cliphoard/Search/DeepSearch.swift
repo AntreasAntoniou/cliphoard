@@ -345,7 +345,7 @@ enum EmbedderProvider {
     /// store can re-index into the new space. Lifecycle (loading / downloading
     /// N% / installing / failed) is published via EmbedderState for Settings.
     @discardableResult
-    static func configure(level: DeepSearchLevel, onSwap: (() -> Void)? = nil) -> Bool {
+    static func configure(level: DeepSearchLevel, allowDownloads: Bool = true, onSwap: (() -> Void)? = nil) -> Bool {
         let before = active.signature
         loadToken &+= 1
         let token = loadToken
@@ -373,7 +373,18 @@ enum EmbedderProvider {
         EmbedderState.shared.set(.loading(name))
         Task { @MainActor in
             do {
-                let found = try await ModelAssets.ensure(name)   // may download+compile
+                let found: ModelAssets.Located
+                if allowDownloads {
+                    found = try await ModelAssets.ensure(name)   // existing Settings behavior
+                } else {
+                    // Re-resolve inside the async task. A model removed after
+                    // onboarding's preview must fail, never acquire download authority.
+                    guard let local = ModelAssets.locate(name) else {
+                        throw CocoaError(.fileNoSuchFile, userInfo: [
+                            NSLocalizedDescriptionKey: "Selected model is no longer installed. Choose an installed model in Settings."])
+                    }
+                    found = local
+                }
                 guard token == loadToken else { return }         // superseded
                 EmbedderState.shared.set(.loading(name))
                 let model = try await MLModel.load(contentsOf: found.compiledModel,
@@ -413,8 +424,8 @@ enum EmbedderProvider {
     /// active model's space. Skipped entirely for the `off` tier, whose substring
     /// search doesn't use vectors — so we don't churn embeddings needlessly.
     /// For the async HF tiers, the re-index re-runs once the real model swaps in.
-    static func configureAndReindex(level: DeepSearchLevel, store: ClipStore) {
-        configure(level: level) { [weak store] in store?.refreshForActiveModel() }
+    static func configureAndReindex(level: DeepSearchLevel, store: ClipStore, allowDownloads: Bool = true) {
+        configure(level: level, allowDownloads: allowDownloads) { [weak store] in store?.refreshForActiveModel() }
         if level != .off { store.refreshForActiveModel() }
     }
 }

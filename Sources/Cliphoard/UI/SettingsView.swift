@@ -407,11 +407,10 @@ struct SettingsView: View {
 #endif
 
     /// The Keep rows, smallest first. `0` is the unlimited sentinel `trim()` already honours.
-    private let limits: [(Int, String)] = [
-        (100, "100"), (200, "200"), (500, "500"), (1000, "1000"), (5000, "5000"), (0, "Unlimited")
-    ]
+    private let limits = GuidedSetupDraft.historyChoices
 
     var body: some View {
+        ScrollViewReader { scroll in
         SettingsForm {
                 section("General") {
                     Toggle("Launch at login", isOn: $settings.launchAtLogin)
@@ -520,6 +519,7 @@ struct SettingsView: View {
 #endif
 #endif
                 }
+                .id("cliphoard-pro")
 
                 section("Appearance") {
                     HStack {
@@ -862,7 +862,15 @@ struct SettingsView: View {
                     Toggle("Debug logging", isOn: $settings.debugLogging)
                 }
         }
-        .onAppear { excludedApps.reload() }
+        .onAppear {
+            excludedApps.reload()
+            if let target = model?.requestedSettingsSection {
+                DispatchQueue.main.async { scroll.scrollTo(target, anchor: .top) }
+            }
+        }
+        .onChange(of: model?.settingsFocusRequest) { _ in
+            if let target = model?.requestedSettingsSection { scroll.scrollTo(target, anchor: .top) }
+        }
 #if APP_STORE
         // The singleton owns the price request; closing this view must not cancel
         // a coalesced request that a storefront update is also waiting on.
@@ -874,6 +882,7 @@ struct SettingsView: View {
             settings.refreshAXTrust()
         }
 #endif
+        }
     }
 
     /// Quit and relaunch so a just-granted Accessibility permission is picked up.

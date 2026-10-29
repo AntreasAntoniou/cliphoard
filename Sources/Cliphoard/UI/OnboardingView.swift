@@ -8,20 +8,22 @@ import ApplicationServices
 /// First-run welcome window: explains the hotkey and the channel's paste flow,
 /// then gets out of the way. Shown once (gated on UserDefaults), and
 /// re-openable from the menu-bar menu.
+@MainActor
 enum Onboarding {
     private static let key = "didOnboardV1"
     private static var window: NSWindow?
 
-    static func showIfNeeded() {
+    static func showIfNeeded(store: ClipStore) {
         guard !UserDefaults.standard.bool(forKey: key) else { return }
-        present()
+        present(store: store)
     }
 
-    static func present() {
+    static func present(store: ClipStore) {
+        SensitiveClipReveal.shared.lock()
         if let w = window {
             NSApp.activate(ignoringOtherApps: true); w.makeKeyAndOrderFront(nil); return
         }
-        let view = OnboardingView(onDone: {
+        let view = OnboardingView(store: store, onDone: {
             UserDefaults.standard.set(true, forKey: key)
             window?.close(); window = nil
         })
@@ -30,7 +32,7 @@ enum Onboarding {
         w.titlebarAppearsTransparent = true
         w.titleVisibility = .hidden
         w.isMovableByWindowBackground = true
-        w.setContentSize(NSSize(width: 460, height: 560))
+        w.setContentSize(NSSize(width: 600, height: 680))
         w.center()
         w.isReleasedWhenClosed = false
         window = w
@@ -39,8 +41,18 @@ enum Onboarding {
     }
 }
 
+@MainActor
 struct OnboardingView: View {
+    @ObservedObject var store: ClipStore
     let onDone: () -> Void
+    @State private var draft: GuidedSetupDraft
+
+    init(store: ClipStore, onDone: @escaping () -> Void) {
+        self.store = store
+        self.onDone = onDone
+        _draft = State(initialValue: GuidedSetupDraft(overlays: TagBaskets.overlayIDs,
+            level: DeepSearch.level, historyLimit: store.historyLimit))
+    }
     #if !APP_STORE
     @State private var trusted = AXIsProcessTrusted()
     private let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
@@ -63,44 +75,143 @@ struct OnboardingView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            VStack(spacing: 10) {
-                brandIcon
-                Text("Welcome to Cliphoard").font(.system(size: 24, weight: .bold))
-                Text("Your clipboard history, one keystroke away.")
-                    .font(.system(size: 13)).foregroundStyle(.secondary)
+            VStack(spacing: 8) {
+                Text("Step \(draft.step.rawValue + 1) of \(GuidedSetupDraft.Step.allCases.count)")
+                    .font(.caption).foregroundStyle(.secondary)
+                Text(draft.step.title).font(.system(size: 24, weight: .bold))
             }
-            .padding(.top, 38).padding(.bottom, 26)
-
-            VStack(alignment: .leading, spacing: 18) {
-                hotkeyRow
-                feature("lock.shield", "Private by design",
-                        "Everything stays on your Mac. No cloud, no telemetry, no account.")
-                feature("sparkles", "Semantic search",
-                        "On-device AI finds clips by meaning, not just exact text.")
+            .padding(.top, 28).padding(.bottom, 18)
+            Divider()
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    stepContent
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(28)
             }
-            .padding(.horizontal, 32)
-
-            Divider().padding(.vertical, 22).padding(.horizontal, 24)
-
-            pasteSection.padding(.horizontal, 32)
-
-            Spacer(minLength: 16)
-
-            Button(action: onDone) {
-                Text("Start using Cliphoard")
-                    .font(.system(size: 14, weight: .semibold))
-                    .frame(maxWidth: .infinity).padding(.vertical, 9)
+            Divider()
+            HStack {
+                Button("Back") { draft.back() }
+                    .disabled(draft.step == .welcome)
+                Spacer()
+                Text("Nothing changes until you finish.")
+                    .font(.caption).foregroundStyle(.secondary)
+                Spacer()
+                if draft.step == .finish {
+                    Button("Apply choices and finish") { finish() }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(!canFinish)
+                        .keyboardShortcut(.defaultAction)
+                } else {
+                    Button("Next") { draft.next() }
+                        .buttonStyle(.borderedProminent)
+                        .keyboardShortcut(.defaultAction)
+                }
             }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
-            .keyboardShortcut(.defaultAction)
-            .padding(.horizontal, 32).padding(.bottom, 28)
+            .padding(24)
         }
-        .frame(width: 460, height: 560)
+        .frame(width: 600, height: 680)
         .background(VisualEffectBackground(material: .windowBackground, blending: .behindWindow))
         #if !APP_STORE
         .onReceive(timer) { _ in trusted = AXIsProcessTrusted() }
         #endif
+    }
+
+    private var unpinnedCount: Int { store.items.filter { !$0.pinned }.count }
+    private func modelAvailable(_ level: DeepSearchLevel) -> Bool {
+        guard let name = level.modelName else { return true }
+        return ModelAssets.locate(name) != nil
+    }
+    private var canFinish: Bool {
+        draft.canFinish(unpinnedCount: unpinnedCount, selectedModelAvailable: modelAvailable(draft.level))
+            && !(store.safeMode && draft.changes?.historyLimit != nil)
+    }
+    private var retentionLabel: String { draft.historyLimit == 0 ? "Unlimited" : String(draft.historyLimit) }
+    private var overlayNames: String {
+        let names = draft.overlays.compactMap { id in TagBaskets.all.first { $0.id == id }?.name }
+        return names.isEmpty ? "General only" : "General + " + names.joined(separator: ", ")
+    }
+
+    @ViewBuilder private var stepContent: some View {
+        switch draft.step {
+        case .welcome:
+            HStack { Spacer(); brandIcon; Spacer() }
+            hotkeyRow
+            feature("lock.shield", "Private by design", "Clipboard processing stays on your Mac. Sensitive previews require macOS authentication to reveal.")
+            pasteSection
+        case .tags:
+            Text("General tags are included. Add specialist baskets for the clips you work with; you can combine them and change them later in Settings.")
+                .foregroundStyle(.secondary)
+            ForEach(TagBaskets.all.filter { $0.id != "general" }) { basket in
+                Toggle(basket.name, isOn: Binding(get: { draft.overlays.contains(basket.id) }, set: { enabled in
+                    if enabled { if !draft.overlays.contains(basket.id) { draft.overlays.append(basket.id) } }
+                    else { draft.overlays.removeAll { $0 == basket.id } }
+                }))
+            }
+            Text("Your existing custom tags are preserved. Edit custom tag text in Settings.")
+                .font(.caption).foregroundStyle(.secondary)
+        case .model:
+            Text("Choose the on-device model used for semantic search. Off uses no neural model. Low has the smallest model footprint, Normal is the middle-size model, and High is the largest model. Changing the model re-indexes your history in the background after you finish.")
+                .foregroundStyle(.secondary)
+            Picker("Search model", selection: $draft.level) {
+                ForEach(DeepSearchLevel.allCases) { level in
+                    Text(level.title + (modelAvailable(level) ? "" : " — not installed"))
+                        .tag(level).disabled(!modelAvailable(level) && level != draft.level)
+                }
+            }
+            .pickerStyle(.radioGroup)
+            Text("Setup never downloads a model. Unavailable tiers can be managed in Settings; this walkthrough preserves your current choice until you explicitly apply another installed tier.")
+                .font(.caption).foregroundStyle(.secondary)
+        case .history:
+            Text("Keep the newest unpinned clips up to this limit. Pinned clips are kept separately. Unlimited keeps history until you delete it.")
+                .foregroundStyle(.secondary)
+            Picker("Keep unpinned clips", selection: $draft.historyLimit) {
+                ForEach(GuidedSetupDraft.historyChoices, id: \.0) { value, label in Text(label).tag(value) }
+                if !GuidedSetupDraft.historyChoices.contains(where: { $0.0 == draft.historyLimit }) {
+                    Text("Current: \(draft.historyLimit)").tag(draft.historyLimit)
+                }
+            }
+            Text("\(unpinnedCount) unpinned clips are currently stored. Lowering the limit can permanently delete older clips and their images. Review and confirm that on the final step.")
+                .font(.caption).foregroundStyle(.secondary)
+        case .finish:
+            feature("tag", "Tags", overlayNames)
+            feature("cpu", "Search model", draft.level.title)
+            feature("clock", "History", "Keep \(retentionLabel.lowercased()) unpinned clips; pinned clips are preserved.")
+            let remove = draft.removalCount(unpinnedCount: unpinnedCount)
+            if remove > 0 {
+                Text("Finishing will permanently remove \(remove) older unpinned clips and their image files. Export an encrypted history backup in Settings first if you want to retain them.")
+                    .foregroundStyle(.orange)
+                Toggle("I agree to remove these \(remove) older unpinned clips", isOn: Binding(
+                    get: { draft.confirmedRemovalCount == remove },
+                    set: { draft.confirmedRemovalCount = $0 ? remove : nil }))
+            }
+            if store.safeMode && draft.changes?.historyLimit != nil {
+                Text("History is in recovery mode. Keep the existing retention setting until recovery is resolved.")
+                    .foregroundStyle(.orange)
+            }
+            if !modelAvailable(draft.level) && draft.changes?.level != nil {
+                Text("This model is not installed. Go back and choose an installed model; no download will start here.")
+                    .foregroundStyle(.orange)
+            }
+            Text("You can revisit this walkthrough from Welcome to Cliphoard in the menu-bar menu.")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+    }
+
+    private func finish() {
+        // All checks and writes run synchronously on MainActor. A new capture
+        // cannot slip between the exact removal-count consent and trim().
+        guard canFinish, let changes = draft.changes else { return }
+        if let overlays = changes.overlays {
+            TagBaskets.overlayIDs = overlays
+            store.rebuildTagIndex()
+        }
+        if let level = changes.level {
+            DeepSearch.level = level
+            EmbedderProvider.configureAndReindex(level: level, store: store, allowDownloads: false)
+        }
+        if let limit = changes.historyLimit { store.historyLimit = limit }
+        onDone()
     }
 
     private func feature(_ symbol: String, _ title: String, _ body: String) -> some View {

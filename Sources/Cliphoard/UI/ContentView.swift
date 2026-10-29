@@ -384,7 +384,11 @@ struct ContentView: View {
     private var searchModePicker: some View {
         HStack(spacing: 5) {
             Text("Search:").font(.system(size: 11)).foregroundStyle(.secondary)
-            Picker("Search mode", selection: $settings.searchMode) {
+            Picker("Search mode", selection: Binding(get: { settings.searchMode }, set: { mode in
+                if GuidedSetupDraft.presentsPro(for: mode, entitlement: store.entitlement) {
+                    model.presentProSettings()
+                } else { settings.searchMode = mode }
+            })) {
                 // `.image` is OFFERED ONLY IF IT CAN RUN. The joint towers are a separate,
                 // independently-absent model from the text tiers, so a build without them
                 // would otherwise show a mode that silently returns nothing — the exact
@@ -395,8 +399,8 @@ struct ContentView: View {
                 // UPSELL 1: on a FREE build the Pro mode is listed and NAMED as Pro rather
                 // than hidden. That is the same instinct as `blurb` above — say what the
                 // limit is instead of letting the user infer it — and it is not the
-                // "looks live, does nothing" defect, because selecting it cannot take
-                // effect: `AppSettings.searchMode`'s gate bounces it back and explains.
+                // "looks live, does nothing" defect: selecting it opens the actual Pro
+                // section in Settings without changing the selected search mode.
                 ForEach(SearchMode.allCases.filter {
                     let allowed = SearchMode.available(store.entitlement).contains($0)
                     return (allowed && (!$0.usesImageModel || store.clipEmbedder != nil))
@@ -486,6 +490,10 @@ struct ContentView: View {
     /// Reads the bytes rather than keeping the URL, so the search survives the file being
     /// moved or deleted while the panel is open.
     private func chooseReferenceImage() {
+        guard !GuidedSetupDraft.presentsPro(for: .image, entitlement: store.entitlement) else {
+            model.presentProSettings()
+            return
+        }
         let panel = NSOpenPanel()
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false

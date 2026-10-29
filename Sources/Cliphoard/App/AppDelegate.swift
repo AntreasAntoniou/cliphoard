@@ -82,7 +82,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // nags on every start (and after every reinstall, since the code identity
         // changes). We prompt lazily the first time an auto-paste actually needs it.
         // First run only: a welcome window that explains the hotkey + the grant.
-        Onboarding.showIfNeeded()
+        Onboarding.showIfNeeded(store: store)
     }
 
     func applicationDidBecomeActive(_ notification: Notification) {
@@ -889,7 +889,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         AppLifecycle.performRelaunchIfRequested()
     }
 
-    @objc private func showWelcome() { Onboarding.present() }
+    @objc private func showWelcome() { Onboarding.present(store: store) }
 
     // MARK: Accessibility
 
