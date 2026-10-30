@@ -142,6 +142,7 @@ final class PanelViewModel: ObservableObject {
     /// whole feature reads as broken. Hence a real counter rather than another proxy.
     private struct ResultsKey: Equatable {
         let query: String
+        let requestContext: String
         let activeKind: ClipKind?
         let pinnedOnly: Bool
         let timeFilter: TimeFilter
@@ -163,6 +164,7 @@ final class PanelViewModel: ObservableObject {
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
         let key = ResultsKey(
             query: q,
+            requestContext: searchRequestKey,
             activeKind: activeKind,
             pinnedOnly: pinnedOnly,
             timeFilter: timeFilter,
@@ -191,53 +193,33 @@ final class PanelViewModel: ObservableObject {
         let time = parsed.filter ?? timeFilter
         let q = parsed.rest.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        if DeepSearch.mode == .media {
-            guard store.entitlement.isPro else { return [] }
-            let scoped = store.filtered(kind: activeKind, query: "", pinnedOnly: pinnedOnly,
-                                        facets: activeFacets, userTags: activeUserTags, time: time)
-            let byID = Dictionary(uniqueKeysWithValues: scoped.map { ($0.id, $0) })
-            return store.mediaSearch.matches.compactMap { match in
-                guard store.mediaSearch.visibleClip(match.clipID) != nil else { return nil }
-                return byID[match.clipID]
+        let modality = SearchPreferences.modality()
+        let capabilities = SearchPreferences.capabilities()
+        let scoped = store.filtered(kind: activeKind, query: "", pinnedOnly: pinnedOnly,
+                                    facets: activeFacets, userTags: activeUserTags, time: time)
+        let byID = Dictionary(uniqueKeysWithValues: scoped.map { ($0.id, $0) })
+        var lanes: [SearchModality: [UUID]] = [:]
+        if (modality == .text || modality == .all), (modality == .text || capabilities.contains(.text, pro: store.entitlement.isPro)) {
+            lanes[.text] = textResults(query: q, time: time).map(\.id)
+        }
+        if (modality == .images || modality == .all), (store.entitlement.isPro && (modality == .images || capabilities.images)), capabilities.imageModel == .clip {
+            let images = scoped.filter { $0.kind == .image && !SensitiveClipPolicy.requiresAuthentication($0) && !$0.isIndexVetoed }
+            let ids = Set(images.map(\.id))
+            if let reference = referenceImage, modality == .images {
+                lanes[.images] = store.imagesSimilar(toReferenceImage: reference.data, limit: 200).map { $0.0.id }.filter { ids.contains($0) }
+            } else if q.isEmpty { lanes[.images] = images.map(\.id) }
+            else if store.clipEmbedder != nil { lanes[.images] = store.imagesMatching(q, limit: 200).map { $0.0.id }.filter { ids.contains($0) } }
+        }
+        if store.mediaSearch.resultContext == searchRequestKey, store.mediaSearch.allowed, store.mediaSearch.prepared {
+            for lane in [SearchModality.images, .audio, .video] where (modality == lane || modality == .all) && (store.entitlement.isPro && (modality == lane || capabilities.contains(lane, pro: true))) {
+                if lane == .images && capabilities.imageModel != .gemma2 { continue }
+                lanes[lane] = store.mediaSearch.matches.filter { $0.modality == lane && store.mediaSearch.visibleClip($0.clipID) != nil }.map(\.clipID)
             }
         }
+        return SearchPreferences.fuse(lanes).compactMap { byID[$0] }
+    }
 
-        // Pictures only, ranked by what they LOOK like. Deliberately not folded into the
-        // other modes: this one CHANGES THE CORPUS as well as the ranking, hiding every
-        // text, link, colour and file clip. That is the whole point — with 19 images among
-        // 169 clips, a picture that matches weakly still loses to text that matches
-        // strongly, so the only reliable way to search pictures is to search only pictures.
-        //
-        // An empty query lists every image rather than nothing, so the mode doubles as a
-        // browse-my-pictures view and never looks broken before you have typed anything.
-        if DeepSearch.mode == .image {
-            let scoped = store.filtered(kind: .image, query: "", pinnedOnly: pinnedOnly,
-                                        facets: activeFacets, userTags: activeUserTags,
-                                        time: time)
-            // A REFERENCE IMAGE outranks a typed query: the user went and picked a file,
-            // which is a much more deliberate act than leaving text in the search box.
-            // Both at once would need a fusion weight nobody has measured.
-            if let reference = referenceImage {
-                let allowed = Set(scoped.map(\.id))
-                let ranked = store.imagesSimilar(toReferenceImage: reference.data, limit: 200)
-                    .filter { allowed.contains($0.0.id) }
-                    .map(\.0)
-                // Falling back to the unranked scope rather than showing nothing: an empty
-                // result here would read as "no matches" when the real cause is that the
-                // model could not read the file at all.
-                return ranked.isEmpty ? scoped : ranked
-            }
-            guard !q.isEmpty else { return scoped }
-            let allowed = Set(scoped.map(\.id))
-            let ranked = store.imagesMatching(q, limit: 200)
-                .filter { allowed.contains($0.0.id) }
-                .map(\.0)
-            // Below-floor images are DROPPED, not appended. In every other mode a weak
-            // result costs nothing because strong ones sit above it; here there is nothing
-            // above it, so padding the list would present noise as the answer.
-            return ranked
-        }
-
+    private func textResults(query q: String, time: TimeFilter) -> [ClipItem] {
         // Exact (or empty query) → substring filter, scoped by kind/pin/time/facets.
         if DeepSearch.mode == .exact || q.isEmpty {
             return store.filtered(kind: activeKind, query: q, pinnedOnly: pinnedOnly,
@@ -249,10 +231,8 @@ final class PanelViewModel: ObservableObject {
         let embedder = EmbedderProvider.active
         switch DeepSearch.mode {
         case .exact, .image, .media:
-            // `.image` returned above; listed here so the switch stays EXHAUSTIVE without a
-            // `default:`. A default would silently absorb any future mode into the text
-            // path, which is how a new mode ships doing something plausible and wrong.
-            return scoped
+            // Defensive fallback for pre-migration preferences.
+            return SemanticRanker.smart(query: q, items: scoped, embedder: embedder)
         case .tag:
             // Explicit user labels win over inferred automatic categories.
             let userTagged = store.items(withUserTag: q)
@@ -267,14 +247,10 @@ final class PanelViewModel: ObservableObject {
             return scoped.filter { ids.contains($0.id) }
         case .neural:
             // Pure model-based semantic ranking (cosine only, no substring/tags).
-            return withPixelMatches(for: q, into:
-                SemanticRanker.neural(query: q, items: scoped, embedder: embedder),
-                scoped: scoped)
+            return SemanticRanker.neural(query: q, items: scoped, embedder: embedder)
         case .smart:
             // Clever hybrid: exact hits first, then blended neural + shared-tag topic.
-            return withPixelMatches(for: q, into:
-                SemanticRanker.smart(query: q, items: scoped, embedder: embedder),
-                scoped: scoped)
+            return SemanticRanker.smart(query: q, items: scoped, embedder: embedder)
         }
     }
 
@@ -307,6 +283,33 @@ final class PanelViewModel: ObservableObject {
         return ranked + extra
     }
 
+    var searchRequestKey: String {
+        let c = SearchPreferences.capabilities()
+        return [query, SearchPreferences.modality().rawValue, c.imageModel.rawValue,
+                "\(c.text)/\(c.images)/\(c.audio)/\(c.video)", "\(store.entitlement.isPro)",
+                String(describing: activeKind), "\(pinnedOnly)", "\(timeFilter)", activeFacets.sorted().map(String.init).joined(separator: ","), activeUserTags.sorted().joined(separator: ",")].joined(separator: "|")
+    }
+    func scheduleMediaSearch() {
+        let mode = SearchPreferences.modality(), c = SearchPreferences.capabilities()
+        let scopes = c.gemmaScopes(mode: mode, pro: store.entitlement.isPro)
+        guard !scopes.isEmpty else { store.mediaSearch.clearSearch(); return }
+        store.mediaSearch.search(WhenToken.parse(query).rest, modalities: scopes, context: searchRequestKey)
+    }
+    func mediaMatch(for item: ClipItem) -> MediaSearchController.Match? {
+        guard item.kind == .file, store.mediaSearch.resultContext == searchRequestKey,
+              store.mediaSearch.visibleClip(item.id) != nil else { return nil }
+        return store.mediaSearch.matches.first { $0.clipID == item.id }
+    }
+    func resultSource(_ item: ClipItem) -> String? {
+        guard store.mediaSearch.resultContext == searchRequestKey,
+              store.mediaSearch.visibleClip(item.id) != nil else { return nil }
+        return store.mediaSearch.matches.first { $0.clipID == item.id }.map { (item.kind == .file ? "Chosen file · " : "") + $0.source }
+    }
+    var onOpenMediaMatch: ((MediaSearchController.Match) -> Void)?
+    func activate(_ item: ClipItem, plain: Bool) {
+        if let match = mediaMatch(for: item), let open = onOpenMediaMatch { open(match) }
+        else { onPaste?(item, plain) }
+    }
     func resetSelection() { selection = 0 }
 
     // MARK: Keyboard intents
@@ -354,15 +357,15 @@ final class PanelViewModel: ObservableObject {
         switch Self.clickAction(kind: item.kind, clickCount: count,
                                 alreadySelected: selection == index) {
         case .select: selection = index
-        case .paste:  onPaste?(item, false)
-        case .open:   onFileVerb?(item, .open)
+        case .paste:  activate(item, plain: false)
+        case .open:   if let match = mediaMatch(for: item), let open = onOpenMediaMatch { open(match) } else { onFileVerb?(item, .open) }
         }
     }
 
     func commitSelection(plain: Bool = false) {
         let r = results
         guard r.indices.contains(selection) else { return }
-        onPaste?(r[selection], plain)
+        activate(r[selection], plain: plain)
     }
 
     /// Run a file verb against the selection. Returns false when the selection is not a
@@ -420,6 +423,6 @@ final class PanelViewModel: ObservableObject {
     func quickSelect(_ n: Int, plain: Bool = false) {
         let r = results
         guard r.indices.contains(n - 1) else { return }
-        onPaste?(r[n - 1], plain)
+        activate(r[n - 1], plain: plain)
     }
 }

@@ -42,6 +42,7 @@ final class MediaSearchController: ObservableObject {
         var score: Float
         var source: String
         var passage: String?
+        var modality: SearchModality = .video
     }
     enum Failure: Error { case unavailable, changed, tooManyFiles, invalidFile, speechTooLong, unsafeCache }
 
@@ -77,6 +78,8 @@ final class MediaSearchController: ObservableObject {
     private var epoch = UUID()
     private var queryEpoch = UUID()
     private var lastQuery: String?
+    private(set) var resultContext: String?
+    static let clipboardImageSignature = GemmaMediaAssets.signature + "-clipboard-image-v1"
     private var loaded = false
     private var activeIndexID: UUID?
 
@@ -419,51 +422,108 @@ final class MediaSearchController: ObservableObject {
         guard url.path == entry.path, let values = try? url.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey, .isRegularFileKey]) else { return false }
         return values.isRegularFile == true && values.fileSize == entry.size && values.contentModificationDate == entry.modified
     }
-    func search(_ query: String) {
+    func clearSearch() {
+        searchTask?.cancel(); searchTask = nil; queryEpoch = UUID()
+        lastQuery = nil; resultContext = nil; matches = []
+    }
+    func search(_ query: String, modalities: Set<SearchModality> = [.images, .audio, .video], context: String = "legacy") {
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard allowed, prepared, !busy else { matches = []; return }
-        guard q != lastQuery else { return }; lastQuery = q
+        guard allowed, prepared, !busy else { clearSearch(); return }
+        let key = context + "#" + modalities.map(\.rawValue).sorted().joined(separator: ",") + "#" + q
+        guard key != lastQuery else { return }; lastQuery = key; resultContext = context
         searchTask?.cancel(); queryEpoch = UUID(); let token = queryEpoch, ticket = epoch
         matches = []
         searchTask = Task {
             do {
                 try await Task.sleep(nanoseconds: 250_000_000); try admit(ticket)
                 let eligible = entries.values.filter(current)
-                if q.isEmpty {
-                    guard token == queryEpoch else { return }
-                    matches = eligible.map { Match(clipID: $0.clipID, start: 0, end: 0, score: 0, source: $0.stillImage ? "Picture" : "Media", passage: nil) }
-                    return
-                }
                 guard q.utf8.count <= 1024 else { status = "Use a search description shorter than 1,024 bytes."; return }
-                let vector = try await embedder.embedQuery(q); try admit(ticket)
+                let vector = q.isEmpty ? [] : try await embedder.embedQuery(q); try admit(ticket)
                 guard token == queryEpoch else { return }
                 var found: [Match] = []
                 for entry in eligible where current(entry) {
-                    var best: Match?
-                    for moment in entry.record.vectors {
-                        let score = Self.cosine(vector, moment.vector)
-                        if best == nil || score > best!.score { best = Match(clipID: entry.clipID, start: moment.start, end: moment.end, score: score, source: moment.modality == .video ? (entry.stillImage ? "Picture" : "Video frame") : "Audio", passage: nil) }
+                    let hasVideo = entry.record.vectors.contains { $0.modality == .video }
+                    for modality in modalities where modality == .images || modality == .audio || modality == .video {
+                        if entry.stillImage && modality != .images { continue }
+                        if !entry.stillImage && modality == .images { continue }
+                        let moments = entry.record.vectors.filter {
+                            MediaScopePolicy.includes(moment: $0.modality, stillImage: entry.stillImage, scope: modality)
+                        }
+                        let speechAllowed = MediaScopePolicy.includesSpeech(stillImage: entry.stillImage, hasVideo: hasVideo, scope: modality)
+                        var best: Match?
+                        for moment in moments {
+                            let score = q.isEmpty ? 0 : Self.cosine(vector, moment.vector)
+                            if best == nil || score > best!.score { best = Match(clipID: entry.clipID, start: moment.start, end: moment.end, score: score, source: entry.stillImage ? "Indexed picture · Gemma" : (modality == .video ? "Video frame" : "Audio track"), passage: nil, modality: modality) }
+                        }
+                        if speechAllowed {
+                            for passage in entry.passages {
+                                guard !SensitiveClipPolicy.requiresAuthentication(flags: Detectors.scan(text: passage.text, kind: .text, sourceApp: nil).flags) else { continue }
+                                let score = q.isEmpty ? 0 : Self.cosine(vector, passage.vector)
+                                if best == nil || score > best!.score { best = Match(clipID: entry.clipID, start: passage.start, end: passage.end, score: score, source: "Speech · " + (hasVideo ? "video" : "audio"), passage: passage.text, modality: modality) }
+                            }
+                        }
+                        if let best { found.append(best) }
                     }
-                    for passage in entry.passages {
-                        guard !SensitiveClipPolicy.requiresAuthentication(flags: Detectors.scan(text: passage.text, kind: .text, sourceApp: nil).flags) else { continue }
-                        let score = Self.cosine(vector, passage.vector)
-                        if best == nil || score > best!.score { best = Match(clipID: entry.clipID, start: passage.start, end: passage.end, score: score, source: "Speech", passage: passage.text) }
-                    }
-                    if let best { found.append(best) }
                 }
-                matches = found.sorted { $0.score > $1.score }
+                if modalities.contains(.images), let store {
+                    for item in store.items where item.kind == .image && visibleClip(item.id) != nil {
+                        guard let value = item.embeddings[Self.clipboardImageSignature]?.vector, value.count == 768 else { continue }
+                        found.append(Match(clipID: item.id, start: 0, end: 0, score: q.isEmpty ? 0 : Self.cosine(vector, value), source: "Clipboard picture · Gemma", passage: nil, modality: .images))
+                    }
+                }
+                matches = found.sorted { $0.score == $1.score ? $0.clipID.uuidString < $1.clipID.uuidString : $0.score > $1.score }
             } catch { if token == queryEpoch { status = "Search is unavailable. Prepare the model and try again." } }
         }
     }
+    /// Explicit bounded batch. Switching models never reads/indexes the clipboard.
+    func indexClipboardPictures() {
+        guard allowed, prepared, !busy, let store else { return }
+        let chosen = store.items.filter { $0.kind == .image && visibleClip($0.id) != nil && $0.embeddings[Self.clipboardImageSignature] == nil }.prefix(10)
+        guard !chosen.isEmpty else { status = "All eligible clipboard pictures are indexed."; return }
+        busy = true; cancel(); let ticket = epoch
+        operation = Task { [self] in
+            defer { busy = false; operation = nil }
+            var done = 0
+            for item in chosen {
+                do {
+                    let fingerprint = SensitiveClipPolicy.fingerprint(item)
+                    try admit(ticket, id: item.id, fingerprint: fingerprint)
+                    guard let filename = item.payloadFile, filename == URL(fileURLWithPath: filename).lastPathComponent else { continue }
+                    let url = store.storeDirectory.appendingPathComponent(filename)
+                    let bytes = try await Task.detached(priority: .utility) {
+                        guard url.standardizedFileURL == url.resolvingSymlinksInPath().standardizedFileURL else { throw Failure.invalidFile }
+                        let values = try url.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey])
+                        guard values.isRegularFile == true else { throw Failure.invalidFile }
+                        let size = values.fileSize ?? 0
+                        guard size > 0, size <= GemmaMediaEmbedder.maximumImageBytes + 1024 else { throw Failure.invalidFile }
+                        guard let value = Crypto.open(try Data(contentsOf: url)), value.count <= GemmaMediaEmbedder.maximumImageBytes else { throw Failure.invalidFile }
+                        return value
+                    }.value
+                    try admit(ticket, id: item.id, fingerprint: fingerprint)
+                    let vector = try await embedder.embedImage(bytes)
+                    try admit(ticket, id: item.id, fingerprint: fingerprint)
+                    guard store.applyGemmaImageVector(vector, to: item) else { throw Failure.unavailable }
+                    done += 1; status = "Indexed \(done) of \(chosen.count) clipboard pictures."
+                } catch {
+                    if Task.isCancelled || ticket != epoch { break }
+                    status = "Some pictures could not be indexed. Originals are unchanged."
+                }
+            }
+            invalidateSearch()
+        }
+    }
+
     static func cosine(_ lhs: [Float], _ rhs: [Float]) -> Float {
         guard lhs.count == rhs.count, !lhs.isEmpty else { return -.infinity }
         return zip(lhs, rhs).reduce(0) { $0 + $1.0 * $1.1 }
     }
+    var clipboardPictureCount: Int { store?.items.filter { $0.embeddings[Self.clipboardImageSignature] != nil }.count ?? 0 }
     func forget() {
         guard allowed, !busy else { return }
         cancel()
         for id in entries.keys { try? FileManager.default.removeItem(at: cacheURL(id)) }
-        entries = [:]; indexedCount = 0; status = "Media indexes removed. Original files and clips are kept."
+        store?.forgetGemmaImageVectors()
+        entries = [:]; indexedCount = 0; status = clipboardPictureCount == 0 ? "Media indexes removed. Original files and clips are kept." : "Some clipboard indexes could not be removed. Originals are kept; try Forget media indexes again."
     }
     /// Called by the store's existing deletion/retention path, even before model preparation.
     func discard(_ id: UUID) {

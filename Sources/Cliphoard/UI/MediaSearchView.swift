@@ -63,9 +63,12 @@ struct MediaSearchSettingsView: View {
                     Button("Choose pictures, video or audio…") { controller.chooseFiles() }
                         .disabled(!controller.prepared || controller.busy || !controller.allowed)
                     if controller.busy && controller.preparationTitle == nil { Button("Stop indexing") { controller.cancel() } }
+                    Button("Index next 10 clipboard pictures") { controller.indexClipboardPictures() }
+                        .disabled(!controller.prepared || controller.busy || !controller.allowed)
                     Button("Forget media indexes") { controller.forget() }
-                        .disabled(controller.busy || controller.indexedCount == 0 || !controller.allowed)
+                        .disabled(controller.busy || (controller.indexedCount == 0 && controller.clipboardPictureCount == 0) || !controller.allowed)
                 }
+                Text("Gemma picture search uses chosen pictures and the clipboard pictures you explicitly index here. CLIP keeps its separate clipboard index. Selecting a model never downloads or indexes files.").font(.caption).foregroundStyle(.secondary)
                 Text(controller.status).font(.caption)
                 Text("\(controller.indexedCount) indexed files. Original files remain where they are. Up to 10 files per batch, 100 indexed files, 2 GB per video/audio file, 6 hours and 4K; pictures up to 8 MB. Long media is sampled across its full duration, with at most 120 windows per track. Sampling can miss brief events. Results rank the closest moments; they are not guaranteed matches.")
                     .font(.caption).foregroundStyle(.secondary)
@@ -134,7 +137,7 @@ struct MediaSearchResultsView: View {
                                         if let passage = match.passage { Text(passage).font(.caption).lineLimit(2) }
                                     }
                                     Spacer()
-                                    Button("Open moment") { open(match) }
+                                    Button("Open moment") { model.onOpenMediaMatch?(match) }
                                 }
                             }
                         }
@@ -147,10 +150,6 @@ struct MediaSearchResultsView: View {
             if let message { Text(message).font(.caption).foregroundStyle(.secondary) }
         }
         .padding(.horizontal, 18)
-        .task { if controller.allowed && !controller.prepared && !controller.busy { controller.prepare(download: false) } }
-        .task(id: model.query) { controller.search(WhenToken.parse(model.query).rest) }
-        .onChange(of: controller.busy) { busy in if !busy { controller.search(WhenToken.parse(model.query).rest) } }
-        .onChange(of: controller.prepared) { _ in controller.search(WhenToken.parse(model.query).rest) }
         .sheet(item: $playback) { item in MediaPlaybackView(playback: item) }
         .onDisappear { close() }
         .onChange(of: controller.accessRevision) { _ in close() }
@@ -158,6 +157,44 @@ struct MediaSearchResultsView: View {
         .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.sessionDidResignActiveNotification)) { _ in close() }
         .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.willSleepNotification)) { _ in close() }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in close() }
+    }
+    private func open(_ match: MediaSearchController.Match) {
+        close(); let ticket = openTicket
+        openTask = Task {
+            do {
+                let (url, scoped, image) = try await controller.playback(match)
+                guard !Task.isCancelled, ticket == openTicket else { if scoped { url.stopAccessingSecurityScopedResource() }; return }
+                playback?.close()
+                playback = MediaPlayback(url: url, scoped: scoped, image: image, start: match.start)
+            } catch { message = "This file changed or is unavailable. Choose it again to refresh its index." }
+        }
+    }
+    private func close() { openTicket = UUID(); openTask?.cancel(); openTask = nil; playback?.close(); playback = nil }
+    static func timestamp(_ seconds: Double) -> String {
+        guard seconds.isFinite, seconds >= 0, seconds < 1_000_000 else { return "—" }
+        let value = Int(seconds)
+        return String(format: "%d:%02d:%02d", value / 3600, (value / 60) % 60, value % 60)
+    }
+}
+
+struct MediaPlaybackHost: View {
+    @ObservedObject var controller: MediaSearchController
+    @ObservedObject var model: PanelViewModel
+    @ObservedObject private var sensitiveReveal = SensitiveClipReveal.shared
+    @State private var playback: MediaPlayback?
+    @State private var message: String?
+    @State private var openTask: Task<Void, Never>?
+    @State private var openTicket = UUID()
+    var body: some View {
+        Color.clear.frame(width: 0, height: 0)
+            .onAppear { model.onOpenMediaMatch = open }
+            .onDisappear { model.onOpenMediaMatch = nil; close() }
+            .sheet(item: $playback) { MediaPlaybackView(playback: $0) }
+            .onChange(of: controller.accessRevision) { _ in close() }
+            .onChange(of: sensitiveReveal.revision) { _ in close() }
+            .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.sessionDidResignActiveNotification)) { _ in close() }
+            .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.willSleepNotification)) { _ in close() }
+            .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in close() }
     }
     private func open(_ match: MediaSearchController.Match) {
         close(); let ticket = openTicket

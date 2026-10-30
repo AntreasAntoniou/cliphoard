@@ -156,7 +156,7 @@ struct ContentView: View {
             // spotlight) from reporting its entire scrollable content and inflating
             // the bar to match. Settings uses its own resizable window.
             Group {
-                if settings.searchMode == .media {
+                if settings.searchModality == .audio || settings.searchModality == .video {
                     MediaSearchResultsView(controller: store.mediaSearch, model: model)
                 } else {
                 switch settings.layoutMode {
@@ -196,6 +196,12 @@ struct ContentView: View {
             DispatchQueue.main.async { searchFocused = !showing }
         }
         .onAppear { DispatchQueue.main.async { searchFocused = !model.showSettings } }
+        .background(MediaPlaybackHost(controller: store.mediaSearch, model: model))
+        .task(id: model.searchRequestKey) { model.scheduleMediaSearch() }
+        .onChange(of: store.mediaSearch.busy) { busy in if !busy { model.scheduleMediaSearch() } }
+        .onChange(of: store.mediaSearch.prepared) { _ in model.scheduleMediaSearch() }
+        .onChange(of: settings.imageSearchModel) { _ in model.referenceImage = nil; model.resetSelection() }
+        .onChange(of: settings.searchModality) { _ in model.referenceImage = nil; model.resetSelection() }
         .onChange(of: settings.searchMode) { _ in model.resetSelection() }
         // Keep keyboard selection on a card the user can actually see. Arrow keys
         // walk `model.results`, which still contains the clips this view is
@@ -388,41 +394,31 @@ struct ContentView: View {
     private var searchModePicker: some View {
         HStack(spacing: 5) {
             Text("Search:").font(.system(size: 11)).foregroundStyle(.secondary)
-            Picker("Search mode", selection: Binding(get: { settings.searchMode }, set: { mode in
-                if GuidedSetupDraft.presentsPro(for: mode, entitlement: store.entitlement) {
-                    model.presentProSettings()
-                } else { settings.searchMode = mode }
+            Picker("Search in", selection: Binding(get: { settings.searchModality }, set: { mode in
+                if mode != .text && mode != .all && !store.entitlement.isPro { model.presentProSettings() }
+                else { settings.searchModality = mode }
             })) {
-                // `.image` is OFFERED ONLY IF IT CAN RUN. The joint towers are a separate,
-                // independently-absent model from the text tiers, so a build without them
-                // would otherwise show a mode that silently returns nothing — the exact
-                // "control that looks live and does nothing" defect FrozenControlsTests
-                // exists to catch. The currently-selected mode is always listed, so a
-                // persisted `.image` selection cannot leave the picker showing a blank.
-                //
-                // UPSELL 1: on a FREE build the Pro mode is listed and NAMED as Pro rather
-                // than hidden. That is the same instinct as `blurb` above — say what the
-                // limit is instead of letting the user infer it — and it is not the
-                // "looks live, does nothing" defect: selecting it opens the actual Pro
-                // section in Settings without changing the selected search mode.
-                ForEach(SearchMode.allCases.filter {
-                    let allowed = SearchMode.available(store.entitlement).contains($0)
-                    return (allowed && (!$0.usesImageModel || store.clipEmbedder != nil))
-                        || settings.searchMode == $0
-                        || !allowed
-                }) { mode in
-                    Label(SearchMode.available(store.entitlement).contains(mode)
-                          ? mode.title : "\(mode.title) — Pro",
-                          systemImage: mode.symbol).tag(mode)
+                ForEach(SearchModality.allCases) { mode in
+                    Text(mode.title + ((!store.entitlement.isPro && mode != .text && mode != .all) ? " · Pro" : "")).tag(mode)
                 }
+            }.labelsHidden().pickerStyle(.menu).fixedSize().tint(Theme.accent)
+            if settings.searchModality == .images || settings.searchModality == .all {
+                Picker("Picture model", selection: $settings.imageSearchModel) {
+                    ForEach(ImageSearchModel.allCases) { Text($0.title).tag($0) }
+                }.labelsHidden().pickerStyle(.menu).fixedSize()
             }
-            .labelsHidden()
-            .pickerStyle(.menu)
-            .fixedSize()
-            .tint(Theme.accent)
+            Button {
+                model.requestedSettingsSection = settings.imageSearchModel == .gemma2 || settings.searchModality == .audio || settings.searchModality == .video ? "cliphoard-media" : "cliphoard-search"
+                model.settingsFocusRequest = UUID(); model.showSettings = true
+            } label: { Image(systemName: "slider.horizontal.3") }
+            .help("Choose enabled categories, prepare optional models, or index pictures and media")
+            if settings.imageSearchModel == .gemma2 && (settings.searchModality == .images || settings.searchModality == .all) && !store.mediaSearch.prepared {
+                Text("Gemma not prepared").font(.caption2).foregroundStyle(.secondary)
+            }
+
         }
-        .help("Search mode — Smart, Exact, Tag, Neural, or Image (pictures only)")
-        .accessibilityLabel("Search mode: \(settings.searchMode.title)")
+        .help("Choose a category independently of its model. All enabled combines the categories enabled in Settings. Models are optional downloads.")
+        .accessibilityLabel("Search in: \(settings.searchModality.title)")
     }
 
     /// Choose a picture from disk and search BY it.
@@ -437,7 +433,7 @@ struct ContentView: View {
         // EVERY mode, not just Image. Searching by a picture is a thing you decide to do,
         // not a thing you first have to reconfigure the search for — and hiding it behind a
         // mode nobody has selected yet meant nobody found it.
-        if store.clipEmbedder != nil {
+        if settings.imageSearchModel == .clip && settings.searchModality == .images && store.clipEmbedder != nil {
             if let reference = model.referenceImage {
                 HStack(spacing: 4) {
                     Image(systemName: "photo.fill")
@@ -524,7 +520,8 @@ struct ContentView: View {
         // "control that looks live and does nothing" defect FrozenControlsTests exists for.
         // Changing the mode is the honest option: it does what was asked AND shows that it
         // did, because the mode picker updates in front of them.
-        settings.searchMode = .image
+        settings.searchModality = .images
+        settings.imageSearchModel = .clip
         model.resetSelection()
     }
 
@@ -692,7 +689,7 @@ struct ContentView: View {
                                 index: row.index,
                                 selected: row.index == model.selection,
                                 storeDir: store.storeDirectory,
-                                onActivate: { model.onPaste?(row.item, false) },
+                                onActivate: { model.activate(row.item, plain: false) },
                                 onInspect: { model.inspect(row.item) },
                                 onInspectTags: { model.inspect(row.item, focusTags: true) },
                                 onPin: { store.togglePin(row.item) },
@@ -707,6 +704,11 @@ struct ContentView: View {
                             // Identity is the clip's id (from ForEach) — NOT the index.
                             // An index-based .id reused stale views across filters
                             // (e.g. URLs showing under Images). Scroll by id below.
+                            .overlay(alignment: .bottomLeading) {
+                                if let source = model.resultSource(row.item) {
+                                    Text(source).font(.caption2).padding(4).background(.regularMaterial).allowsHitTesting(false)
+                                }
+                            }
                             .onTapGesture { model.click(row.index) }
                         }
                     }
@@ -831,7 +833,7 @@ struct ContentView: View {
             if item.pinned {
                 Image(systemName: "pin.fill").font(.system(size: 9)).foregroundStyle(Theme.pin)
             }
-            Text(item.sourceApp ?? item.kind.title)
+            Text(model.resultSource(item) ?? item.sourceApp ?? item.kind.title)
                 .font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
                 .frame(width: 78, alignment: .trailing)
             Text(item.createdAt, style: .relative)
@@ -893,7 +895,7 @@ struct ContentView: View {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 8) {
                     Image(systemName: item.kind.symbolName).foregroundStyle(Theme.accent)
-                    Text(item.sourceApp ?? item.kind.title)
+                    Text(model.resultSource(item) ?? item.sourceApp ?? item.kind.title)
                         .font(.system(size: 12, weight: .semibold)).foregroundStyle(.secondary)
                     Spacer()
                     Text(item.characterCountLabel).font(.system(size: 11)).foregroundStyle(.secondary)

@@ -594,6 +594,15 @@ final class Database {
         return ok
     }
 
+    @discardableResult
+    func deleteEmbedding(clipID: UUID, signature: String) -> Bool {
+        var ok = false
+        prepare("DELETE FROM embeddings WHERE clip_id=? AND model=?;") { stmt in
+            bindText(stmt, 1, clipID.uuidString); bindText(stmt, 2, signature); ok = step(stmt)
+        }
+        return ok
+    }
+
     /// Narrow write for an analysed clip: the sealed recognised text and the flags,
     /// together. Deliberately NOT `insert` — that is INSERT OR REPLACE, which deletes and
     /// reinserts the row and re-upserts every child — and NOT `updateMeta`, which does not

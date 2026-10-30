@@ -187,6 +187,17 @@ final class AppSettings: ObservableObject {
     }
     @Published var themePreset: ThemePreset { didSet { Theme.preset = themePreset } }
     @Published var layoutMode: LayoutMode { didSet { Theme.layout = layoutMode } }
+    @Published var searchModality: SearchModality { didSet {
+        if searchModality != .text && searchModality != .all && !entitlement.isPro {
+            searchModality = oldValue; proPitch = ProPitch(.imageSearch, "Picture, audio and video search are Cliphoard Pro. " + Licence.pitch); return
+        }
+        UserDefaults.standard.set(searchModality.rawValue, forKey: "searchModality"); store.mediaSearch.clearSearch()
+    } }
+    @Published var imageSearchModel: ImageSearchModel { didSet { UserDefaults.standard.set(imageSearchModel.rawValue, forKey: "imageSearchModel"); store.mediaSearch.clearSearch() } }
+    @Published var searchTextEnabled: Bool { didSet { UserDefaults.standard.set(searchTextEnabled, forKey: "searchTextEnabled"); store.mediaSearch.clearSearch() } }
+    @Published var searchImagesEnabled: Bool { didSet { UserDefaults.standard.set(searchImagesEnabled, forKey: "searchImagesEnabled"); store.mediaSearch.clearSearch() } }
+    @Published var searchAudioEnabled: Bool { didSet { UserDefaults.standard.set(searchAudioEnabled, forKey: "searchAudioEnabled"); store.mediaSearch.clearSearch() } }
+    @Published var searchVideoEnabled: Bool { didSet { UserDefaults.standard.set(searchVideoEnabled, forKey: "searchVideoEnabled"); store.mediaSearch.clearSearch() } }
     @Published var searchMode: SearchMode {
         didSet {
             // GATE 1. The Pro row is SHOWN (naming the limit honestly is this app's habit —
@@ -284,7 +295,22 @@ final class AppSettings: ObservableObject {
         webSafeScreenshots = WebPaste.isEnabled
         themePreset = Theme.preset
         layoutMode = Theme.layout
-        searchMode = DeepSearch.mode
+        let capabilities = SearchPreferences.capabilities()
+        searchModality = SearchPreferences.modality()
+        imageSearchModel = capabilities.imageModel
+        searchTextEnabled = capabilities.text; searchImagesEnabled = capabilities.images
+        searchAudioEnabled = capabilities.audio; searchVideoEnabled = capabilities.video
+        // Persist the legacy migration once, before the text matching style changes.
+        let defaults = UserDefaults.standard
+        defaults.set(SearchPreferences.modality().rawValue, forKey: "searchModality")
+        defaults.set(capabilities.imageModel.rawValue, forKey: "imageSearchModel")
+        defaults.set(capabilities.text, forKey: "searchTextEnabled")
+        defaults.set(capabilities.images, forKey: "searchImagesEnabled")
+        defaults.set(capabilities.audio, forKey: "searchAudioEnabled")
+        defaults.set(capabilities.video, forKey: "searchVideoEnabled")
+        let legacyStyle = DeepSearch.mode
+        searchMode = legacyStyle == .image || legacyStyle == .media ? .smart : legacyStyle
+        DeepSearch.mode = legacyStyle == .image || legacyStyle == .media ? .smart : legacyStyle
         deepSearchLevel = DeepSearch.level
         vectorDetail = DeepSearch.detail
         activeBasket = TagBaskets.overlayID ?? "general"
@@ -638,13 +664,27 @@ struct SettingsView: View {
                             // UPSELL 1. The Pro mode is LISTED, named as Pro, and selecting it
                             // is bounced by `AppSettings.searchMode`'s gate — so it can never
                             // become a mode that is selected and silently returns nothing.
-                            ForEach(SearchMode.allCases) { mode in
+                            ForEach(SearchMode.allCases.filter { $0 != .image && $0 != .media }) { mode in
                                 Text(SearchMode.available(settings.entitlement).contains(mode)
                                      ? mode.title : "\(mode.title) — Pro").tag(mode)
                             }
                         }
                         .labelsHidden().frame(width: 150)
                     }
+                    Picker("Search in", selection: $settings.searchModality) {
+                        ForEach(SearchModality.allCases) { Text($0.title).tag($0) }
+                    }
+                    Picker("Picture model", selection: $settings.imageSearchModel) {
+                        ForEach(ImageSearchModel.allCases) { Text($0.title).tag($0) }
+                    }
+                    Text("Models and search categories are separate. All enabled combines ranked results without comparing different models’ scores. Picture, audio and video search require Pro.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Toggle("Text in All enabled", isOn: $settings.searchTextEnabled)
+                    Toggle("Pictures in All enabled", isOn: $settings.searchImagesEnabled)
+                    Toggle("Audio in All enabled", isOn: $settings.searchAudioEnabled)
+                    Toggle("Video in All enabled", isOn: $settings.searchVideoEnabled)
+                    Text("CLIP searches clipboard pictures. Gemma searches explicitly indexed clipboard pictures and chosen files. Audio includes video soundtracks; Video includes frames and indexed speech. Enabling a category never downloads or indexes anything.")
+                        .font(.caption).foregroundStyle(.secondary)
                     if let pitch = settings.pitch(.imageSearch) {
                         ProPitchCard(message: pitch)
                     }
@@ -680,6 +720,8 @@ struct SettingsView: View {
                     Text("Smart = clips containing exactly what you typed first, then the closest in meaning · Exact = only clips containing the typed text, ignoring case · Tag = clips in the auto category (of 100) closest to your query. You can also switch modes from the pill next to the search field. Models run on-device (CoreML).")
                         .font(.system(size: 11)).foregroundStyle(.secondary)
                 }
+
+                .id("cliphoard-search")
 
                 section("Video, audio & pictures — Pro") {
                     MediaSearchSettingsView(controller: store.mediaSearch, store: store,

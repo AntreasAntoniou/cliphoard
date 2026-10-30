@@ -164,6 +164,8 @@ struct OnboardingView: View {
         case .model:
             Text("Choose the on-device model used for semantic search. Off uses no neural model. Low is the smallest option, Normal is a compact all-rounder, High uses MiniLM, and EmbeddingGemma 2 uses the larger multimodal model for text search and tagging too. Changing the model re-indexes your history in the background after you finish.")
                 .foregroundStyle(.secondary)
+            Text("Text searches clip text, including screenshot text and file names. Search categories are separate from models: choose Text, Images, Audio, Video, or All enabled in the search bar. All can combine Ogma text with CLIP pictures; Gemma is optional. Choose CLIP or Gemma for pictures in Settings. Audio and video use explicitly indexed files; picture indexing and all downloads are always your choice.")
+                .font(.caption).foregroundStyle(.secondary)
             Picker("Search model", selection: $draft.level) {
                 ForEach(DeepSearchLevel.allCases) { level in
                     Text(modelChoiceTitle(level))

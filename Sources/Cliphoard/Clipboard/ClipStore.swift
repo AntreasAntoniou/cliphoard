@@ -1038,6 +1038,29 @@ final class ClipStore: ObservableObject {
     /// Store a pixel vector, in memory and on disk. Empty vectors are DROPPED rather than
     /// persisted: `CLIPEmbedder` returns `[]` on any failure, and writing that would cache
     /// a permanent "already done, scores zero against everything" state that never retries.
+    func forgetGemmaImageVectors() {
+        guard !safeMode, storageComplete else { return }
+        let signature = MediaSearchController.clipboardImageSignature
+        for item in items where item.embeddings[signature] != nil {
+            guard db?.deleteEmbedding(clipID: item.id, signature: signature) != false else { continue }
+            item.embeddings[signature] = nil
+        }
+        imageUnderstandingRevision += 1; objectWillChange.send()
+    }
+    func applyGemmaImageVector(_ vector: [Float], to item: ClipItem) -> Bool {
+        guard entitlement.isPro, !safeMode, storageComplete, item.kind == .image,
+              !item.isIndexVetoed, !SensitiveClipPolicy.requiresAuthentication(item),
+              items.contains(where: { $0 === item }), vector.count == 768,
+              vector.allSatisfy(\.isFinite), vector.contains(where: { $0 != 0 }) else { return false }
+        let signature = MediaSearchController.clipboardImageSignature
+        let embedding = ModelEmbedding(vector: vector)
+        guard db?.upsertEmbedding(clipID: item.id, model: signature, embedding: embedding) != false else { return false }
+        item.embeddings[signature] = embedding
+        imageUnderstandingRevision &+= 1
+        objectWillChange.send()
+        return true
+    }
+
     func applyCLIPVector(_ vector: [Float], to item: ClipItem) {
         guard !vector.isEmpty else { return }
         guard !safeMode else { return }   // frozen store: never persist
