@@ -77,8 +77,14 @@ final class ClipStore: ObservableObject {
             // so the next read re-decides. Without this, buying Pro leaves image search dead
             // until the next launch — and the whole point of an offline key is that it works
             // the moment it is pasted.
+            invalidatePhotoTags()
             clipEmbedderLoadedForPro = nil
             clipEmbedderMemo = nil
+            clipTextBridge?.cancel(); clipTextBridge = nil
+            clipLocalLoadTask?.cancel(); clipLocalLoadTask = nil; clipLocalLoadTicket = UUID()
+            referenceImageTask?.cancel(); referenceImageTask = nil
+            referenceImageTicket = UUID()
+            referenceImageInput = nil; referenceImageVector = []
         }
     }
 
@@ -197,6 +203,11 @@ final class ClipStore: ObservableObject {
     /// previous one so overlapping model/basket changes don't run two passes
     /// that fight over the published `indexing` state.
     private var indexingTask: Task<Void, Never>?
+    private var tagRebuildTask: Task<Void, Never>?
+    private var tagRebuildGeneration = 0
+    private var readyTagSpace: String?
+    private var indexingGeneration = 0
+    private var indexingSignature: String?
 
     /// Whether a store must freeze, as a pure function of the four facts that decide it.
     ///
@@ -766,6 +777,10 @@ final class ClipStore: ObservableObject {
         // 5. Persist the sealed text and the flags together.
         db?.updateOCR(item)
 
+        if EmbedderProvider.active is GemmaTextEmbedder {
+            item.embeddings[EmbedderProvider.active.signature] = nil
+            reindexStale()
+        }
         // 6. ONLY NOW may the model see it — and unconditionally, NOT gated on staleness:
         //    the clip was already embedded at capture on its caption, so it is not stale,
         //    and that worthless vector would never otherwise be replaced.
@@ -905,6 +920,39 @@ final class ClipStore: ObservableObject {
     /// "loaded and absent" stays distinct from "not yet loaded".
     private var clipEmbedderMemo: CLIPEmbedder?
     private var clipEmbedderLoadedForPro: Bool?
+    private var clipTextBridge: GemmaTextEmbedder?
+    private var clipLocalLoadTicket = UUID()
+    private var clipLocalLoadTask: Task<Void, Never>?
+    private var referenceImageTicket = UUID()
+    private var referenceImageTask: Task<Void, Never>?
+    private var referenceImageInput: Data?
+    private var referenceImageVector: [Float] = []
+
+    private var photoTagGeneration = 0
+    private var photoTagCache: [UUID: [String]] = [:]
+    private var photoTagTasks: [UUID: Task<Void, Never>] = [:]
+    private func invalidatePhotoTags() {
+        photoTagGeneration &+= 1
+        photoTagCache.removeAll()
+        photoTagTasks.values.forEach { $0.cancel() }; photoTagTasks.removeAll()
+    }
+
+    private func installCLIP(_ model: CLIPEmbedder) {
+        clipEmbedderMemo = model
+        clipTextBridge?.cancel()
+        clipTextBridge = GemmaTextEmbedder(dimension: CLIPEmbedder.dimension,
+            signature: CLIPEmbedder.signature, relevanceFloor: CLIPEmbedder.relevanceFloor,
+            truncate: false, compute: { [weak self] text, _ in
+                let allowed = await MainActor.run {
+                    guard let self else { return false }
+                    return Self.imageUnderstandingAllowed(self.entitlement) && !self.safeMode
+                }
+                guard allowed else { return [] }
+                return model.embed(text: text)
+            }, changed: { [weak self] in
+                Task { @MainActor in self?.objectWillChange.send() }
+            })
+    }
 
     @Published private(set) var imageModelState: EmbedderState.State = .notInstalled("OpenVision")
     @Published private(set) var imageModelPreparing = false
@@ -932,8 +980,12 @@ final class ClipStore: ObservableObject {
                 }
                 try Task.checkCancellation()
                 guard imageModelTicket == ticket, Self.imageUnderstandingAllowed(entitlement), !safeMode, storageComplete else { return }
-                clipEmbedderMemo = nil; clipEmbedderLoadedForPro = nil
-                guard clipEmbedder != nil else { throw CocoaError(.fileReadCorruptFile) }
+                let model = await Task.detached(priority: .utility) { CLIPEmbedder.load() }.value
+                guard imageModelTicket == ticket, !Task.isCancelled,
+                      Self.imageUnderstandingAllowed(entitlement), !safeMode else { return }
+                guard let model else { throw CocoaError(.fileReadCorruptFile) }
+                clipEmbedderLoadedForPro = entitlement.isPro
+                installCLIP(model)
                 imageModelState = .ready(signature: CLIPEmbedder.signature)
                 scheduleImageUnderstanding()
             } catch {
@@ -945,6 +997,7 @@ final class ClipStore: ObservableObject {
 
     var clipEmbedder: CLIPEmbedder? {
         let pro = entitlement.isPro
+        guard Self.imageUnderstandingAllowed(entitlement), !safeMode else { return nil }
         if clipEmbedderLoadedForPro == pro { return clipEmbedderMemo }
         clipEmbedderLoadedForPro = pro
         // GATE 2, half three: a FREE build never loads a tower. Not "loads it and refuses to
@@ -955,12 +1008,22 @@ final class ClipStore: ObservableObject {
             DebugLog.write("clip: embedder withheld — \(pro ? "turned off in Settings" : "free build")")
             return nil
         }
-        clipEmbedderMemo = CLIPEmbedder.load()
-        if clipEmbedderMemo == nil, ModelAssets.canPrepareImageModelsLocally() {
-            prepareImageSearchModel(allowDownload: false)
+        if clipLocalLoadTask == nil {
+            let ticket = UUID(); clipLocalLoadTicket = ticket
+            clipLocalLoadTask = Task { @MainActor [weak self] in
+                let model = await Task.detached(priority: .utility) { CLIPEmbedder.load() }.value
+                guard let self, clipLocalLoadTicket == ticket else { return }
+                defer { clipLocalLoadTask = nil }
+                guard !Task.isCancelled, Self.imageUnderstandingAllowed(entitlement), !safeMode else { return }
+                if let model {
+                    installCLIP(model)
+                    objectWillChange.send(); scheduleImageUnderstanding()
+                } else if ModelAssets.canPrepareImageModelsLocally() {
+                    prepareImageSearchModel(allowDownload: false)
+                }
+            }
         }
-        DebugLog.write("clip: embedder \(clipEmbedderMemo == nil ? "unavailable" : "ready")")
-        return clipEmbedderMemo
+        return nil
     }
 
     /// An image clip that has been through Vision but carries no vector in the CURRENT
@@ -978,6 +1041,7 @@ final class ClipStore: ObservableObject {
     func applyCLIPVector(_ vector: [Float], to item: ClipItem) {
         guard !vector.isEmpty else { return }
         guard !safeMode else { return }   // frozen store: never persist
+        invalidatePhotoTags()
         item.embeddings[CLIPEmbedder.signature] = ModelEmbedding(vector: vector)
         db?.upsertEmbedding(clipID: item.id, model: CLIPEmbedder.signature,
                             embedding: ModelEmbedding(vector: vector))
@@ -1001,8 +1065,8 @@ final class ClipStore: ObservableObject {
     /// centre of *this* collection, so centring by it asks "what makes this picture unlike
     /// my other pictures", which is the right question for a clipboard.
     func imagesMatching(_ query: String, limit: Int = 24) -> [(ClipItem, Float)] {
-        guard let clip = clipEmbedder else { return [] }
-        let raw = clip.embed(text: query)
+        guard clipEmbedder != nil, let bridge = clipTextBridge else { return [] }
+        let raw = bridge.embed(query, query: true)
         guard !raw.isEmpty else { return [] }
         let q = CLIPEmbedder.centred(raw, by: CLIPTextMean.vector)
         guard !q.isEmpty else { return [] }
@@ -1049,7 +1113,23 @@ final class ClipStore: ObservableObject {
     /// mean would be a category error that still returns a confident, meaningless ordering.
     func imagesSimilar(toReferenceImage data: Data, limit: Int = 24) -> [(ClipItem, Float)] {
         guard let clip = clipEmbedder else { return [] }
-        let raw = clip.embed(imageData: data)
+        if referenceImageInput != data {
+            referenceImageTask?.cancel()
+            referenceImageInput = data; referenceImageVector = []
+            let ticket = UUID(); referenceImageTicket = ticket
+            referenceImageTask = Task { @MainActor [weak self] in
+                let vector = await Task.detached(priority: .utility) { clip.embed(imageData: data) }.value
+                guard let self, referenceImageTicket == ticket, referenceImageInput == data else { return }
+                guard !Task.isCancelled, Self.imageUnderstandingAllowed(entitlement), !safeMode,
+                      !vector.isEmpty else {
+                    referenceImageInput = nil; referenceImageVector = []; referenceImageTask = nil
+                    return
+                }
+                referenceImageVector = vector; referenceImageTask = nil
+                objectWillChange.send()
+            }
+        }
+        let raw = referenceImageVector
         guard !raw.isEmpty else { return [] }
 
         let candidates = items.filter {
@@ -1101,7 +1181,7 @@ final class ClipStore: ObservableObject {
     /// picture it does not recognise is worse than saying nothing.
     func photoTags(for item: ClipItem, limit: Int = 4) -> [String] {
         guard item.kind == .image, !item.isIndexVetoed,
-              let clip = clipEmbedder,
+              clipEmbedder != nil, let bridge = clipTextBridge,
               let raw = item.embeddings[CLIPEmbedder.signature]?.vector,
               !raw.isEmpty else { return [] }
 
@@ -1111,31 +1191,42 @@ final class ClipStore: ObservableObject {
         let vocabulary = TagBaskets.photo.tags
         guard !vocabulary.isEmpty else { return [] }
 
+        if let cached = photoTagCache[item.id] { return Array(cached.prefix(limit)) }
+        guard photoTagTasks[item.id] == nil, photoTagTasks.count < 8 else { return [] }
+        let textVectors = vocabulary.map { bridge.embed("a photo of \($0)") }
+        guard textVectors.allSatisfy({ !$0.isEmpty }) else { return [] }
         let others = items.compactMap {
             $0.kind == .image && !$0.isIndexVetoed
                 ? $0.embeddings[CLIPEmbedder.signature]?.vector : nil
         }.filter { $0.count == raw.count }
         guard others.count >= 2 else { return [] }
-
-        var mean = [Float](repeating: 0, count: raw.count)
-        for v in others { for i in 0..<v.count { mean[i] += v[i] } }
-        for i in 0..<mean.count { mean[i] /= Float(others.count) }
-
-        let centred = CLIPEmbedder.centred(raw, by: mean)
-        guard !centred.isEmpty else { return [] }
-
-        return vocabulary
-            .compactMap { tag -> (String, Float)? in
-                let text = clip.embed(text: "a photo of \(tag)")
-                guard !text.isEmpty else { return nil }
-                let q = CLIPEmbedder.centred(text, by: CLIPTextMean.vector)
-                guard !q.isEmpty else { return nil }
-                let score = CLIPEmbedder.similarity(q, centred)
-                return score >= CLIPEmbedder.relevanceFloor ? (tag, score) : nil
-            }
-            .sorted { $0.1 > $1.1 }
-            .prefix(limit)
-            .map(\.0)
+        let generation = photoTagGeneration
+        let id = item.id
+        photoTagTasks[id] = Task { @MainActor [weak self, weak item] in
+            let result = await Task.detached(priority: .utility) { () -> [String] in
+                var mean = [Float](repeating: 0, count: raw.count)
+                for v in others { for i in 0..<v.count { mean[i] += v[i] } }
+                for i in 0..<mean.count { mean[i] /= Float(others.count) }
+                let centred = CLIPEmbedder.centred(raw, by: mean)
+                guard !centred.isEmpty else { return [] }
+                return zip(vocabulary, textVectors).compactMap { tag, text -> (String, Float)? in
+                    let q = CLIPEmbedder.centred(text, by: CLIPTextMean.vector)
+                    guard !q.isEmpty else { return nil }
+                    let score = CLIPEmbedder.similarity(q, centred)
+                    return score >= CLIPEmbedder.relevanceFloor ? (tag, score) : nil
+                }.sorted { $0.1 > $1.1 }.map(\.0)
+            }.value
+            guard let self, generation == photoTagGeneration else { return }
+            photoTagTasks[id] = nil
+            guard let item, !Task.isCancelled, !item.isIndexVetoed,
+                  items.contains(where: { $0 === item }), !safeMode,
+                  Self.imageUnderstandingAllowed(entitlement),
+                  item.embeddings[CLIPEmbedder.signature]?.vector == raw else { return }
+            if photoTagCache.count >= 64 { photoTagCache.removeAll() }
+            photoTagCache[id] = result
+            objectWillChange.send()
+        }
+        return []
     }
 
     /// How many image clips carry a pixel vector in the current signature. Drives the
@@ -1168,6 +1259,9 @@ final class ClipStore: ObservableObject {
         }
         imageTask?.cancel()
         imageTask = nil
+        referenceImageTask?.cancel(); referenceImageTask = nil
+        referenceImageTicket = UUID(); referenceImageInput = nil; referenceImageVector = []
+        invalidatePhotoTags()
         // ORDER IS THE POINT: every delete must happen BEFORE
         // `forgetAllImageUnderstanding()`, whose last act is `vacuum()`.
         //
@@ -1621,6 +1715,7 @@ final class ClipStore: ObservableObject {
         // Recognition runs off the capture path — this only schedules. The dedup branch
         // above returns before reaching here, so a re-copied screenshot never re-analyses.
         if item.kind == .image { scheduleImageUnderstanding() }
+        if EmbedderProvider.active is GemmaTextEmbedder { reindexStale() }
         Feedback.playCapture()
     }
 
@@ -1754,16 +1849,50 @@ final class ClipStore: ObservableObject {
         return items.filter { keep.contains($0.id) }
     }
 
-    /// Idempotent and unconditional: a pure function of (items, active embedder,
-    /// active basket) whose only output is this in-memory index. Interrupting it is
-    /// harmless because it writes nothing that could later be read as authoritative —
-    /// which is why it needs no marker, no one-shot guard and no bounds check.
+    /// Rebuild derived buckets in short UI-actor slices. A newer request cancels
+    /// the old pass; publication rechecks model, basket, threshold and item order.
+    /// Nothing is persisted, and cold model vectors never become authoritative.
     func rebuildTagIndex() {
-        var index: [Int: [ClipItem]] = [:]
-        for item in items {
-            for tag in tags(of: item) { index[tag, default: []].append(item) }
+        tagRebuildGeneration &+= 1
+        let generation = tagRebuildGeneration
+        tagRebuildTask?.cancel()
+        let snapshot = items
+        let signature = EmbedderProvider.active.signature
+        let basket = TagBaskets.active.fingerprint
+        let threshold = TagSpace.assignmentThreshold
+        let ids = snapshot.map(\.id)
+        let vectors = TagSpace.vectors(using: EmbedderProvider.active)
+        tagIndex = [:] // Never expose buckets from the previous basket while rebuilding.
+        guard vectors.allSatisfy({ !$0.isEmpty }) else {
+            readyTagSpace = nil; tagIndex = [:]; tagRebuildTask = nil
+            return
         }
-        tagIndex = index
+        readyTagSpace = signature + "#" + basket
+        tagRebuildTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            var index: [Int: [ClipItem]] = [:]
+            var slice = ContinuousClock.now
+            for item in snapshot {
+                guard !Task.isCancelled, generation == tagRebuildGeneration,
+                      signature == EmbedderProvider.active.signature,
+                      basket == TagBaskets.active.fingerprint else { return }
+                for tag in tags(of: item) { index[tag, default: []].append(item) }
+                if slice.duration(to: .now) >= .milliseconds(2) {
+                    await Task.yield()
+                    slice = .now
+                }
+            }
+            guard !Task.isCancelled, generation == tagRebuildGeneration,
+                  signature == EmbedderProvider.active.signature,
+                  basket == TagBaskets.active.fingerprint else { return }
+            guard ids == items.map(\.id), threshold == TagSpace.assignmentThreshold else {
+                rebuildTagIndex(); return
+            }
+            let current = Set(items.filter { !$0.isIndexVetoed }.map(\.id))
+            tagIndex = index.mapValues { $0.filter { current.contains($0.id) } }
+            tagRebuildTask = nil
+            objectWillChange.send()
+        }
     }
 
     private func rebuildUserTagIndex() {
@@ -1838,6 +1967,7 @@ final class ClipStore: ObservableObject {
     /// would re-sort the whole bucket on the next add — so a stale relative order
     /// must not survive a new-item add.
     private func addToTagIndex(_ item: ClipItem) {
+        invalidatePhotoTags()
         // Map every item to its index in `items` so buckets can be kept in the
         // same order a full rebuild (which iterates `items`) would produce.
         var order: [UUID: Int] = [:]
@@ -1872,6 +2002,7 @@ final class ClipStore: ObservableObject {
     /// Remove `item` from every tag bucket it appears in, dropping now-empty
     /// buckets so the map matches a full rebuild (which never holds empty keys).
     private func removeFromTagIndex(_ item: ClipItem) {
+        invalidatePhotoTags()
         for (tag, bucket) in tagIndex {
             guard bucket.contains(where: { $0.id == item.id }) else { continue }
             let pruned = bucket.filter { $0.id != item.id }
@@ -1883,6 +2014,7 @@ final class ClipStore: ObservableObject {
     /// `trim()`), dropping now-empty buckets. Keeps incremental updates in sync
     /// without a full rebuild.
     private func pruneTagIndexToItems() {
+        invalidatePhotoTags()
         let live = Set(items.map { $0.id })
         for (tag, bucket) in tagIndex {
             guard bucket.contains(where: { !live.contains($0.id) }) else { continue }
@@ -1893,6 +2025,17 @@ final class ClipStore: ObservableObject {
 
     /// Point the store at the now-active model: rebuild the tag index for its
     /// cached tags and fill in any clips it hasn't embedded yet.
+    func embeddingBecameReady() {
+        objectWillChange.send()
+        let embedder = EmbedderProvider.active
+        let tagSpace = embedder.signature + "#" + TagBaskets.active.fingerprint
+        // Query readiness only redraws search. A whole-history tag pass is needed
+        // once per complete vocabulary, not once for every query or tag vector.
+        if readyTagSpace != tagSpace,
+           TagSpace.vectors(using: embedder).allSatisfy({ !$0.isEmpty }) { rebuildTagIndex() }
+        if indexingSignature != embedder.signature { reindexStale() }
+    }
+
     func refreshForActiveModel() {
         rebuildTagIndex()
         reindexStale()
@@ -1928,7 +2071,12 @@ final class ClipStore: ObservableObject {
                            + "from ciphertext, and the vetoed purges delete rows")
             return
         }
-        let sig = EmbedderProvider.active.signature
+        let embedder = EmbedderProvider.active
+        let sig = embedder.signature
+        indexingSignature = sig
+        indexingGeneration &+= 1
+        let generation = indexingGeneration
+        indexingTask?.cancel(); indexingTask = nil; indexing = nil
         // A vetoed clip is permanently "stale" (it has no vector and never will),
         // so it must be filtered out HERE rather than skipped inside the loop —
         // otherwise a background pass would both re-offer it to the model and
@@ -1956,11 +2104,27 @@ final class ClipStore: ObservableObject {
         let started = Date()
         indexing = IndexingProgress(done: 0, total: total, etaSeconds: nil)
         indexingTask?.cancel()
-        indexingTask = Task { @MainActor in
+        indexingTask = Task { @MainActor [self] in
             var done = 0
             for item in stale {
                 if Task.isCancelled { break }
-                ClipIndexer.index(item)
+                let text = SemanticRanker.searchText(item)
+                if let gemma = embedder as? GemmaTextEmbedder {
+                    let vector = await gemma.vector(text, admit: { [weak self, weak item] in
+                        guard let self, let item else { return false }
+                        return !self.safeMode && self.indexingGeneration == generation
+                            && EmbedderProvider.active.signature == sig
+                            && self.items.contains(where: { $0 === item })
+                            && !item.isIndexVetoed && SemanticRanker.searchText(item) == text
+                    })
+                    guard !Task.isCancelled, generation == indexingGeneration,
+                          EmbedderProvider.active.signature == sig else { break }
+                    guard !safeMode, items.contains(where: { $0 === item }), !item.isIndexVetoed,
+                          SemanticRanker.searchText(item) == text else { continue }
+                    if ClipIndexer.isUsable(vector, dimension: embedder.dimension) {
+                        item.embeddings[sig] = ModelEmbedding(vector: vector)
+                    }
+                } else { ClipIndexer.index(item) }
                 if let emb = item.embeddings[sig] {
                     db?.upsertEmbedding(clipID: item.id, model: sig, embedding: emb)
                 }
@@ -1969,10 +2133,10 @@ final class ClipStore: ObservableObject {
                     let elapsed = Date().timeIntervalSince(started)
                     let eta = done > 0 ? elapsed / Double(done) * Double(total - done) : nil
                     indexing = IndexingProgress(done: done, total: total, etaSeconds: eta)
-                    rebuildTagIndex()
                     await Task.yield()
                 }
             }
+            guard generation == indexingGeneration else { return }
             rebuildTagIndex()
             indexing = nil
             indexingTask = nil

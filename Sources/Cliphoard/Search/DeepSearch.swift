@@ -9,7 +9,7 @@ import Tokenizers
 /// Until a CoreML model is downloaded and prepared for a tier, the engine falls back to the
 /// dependency-free `HashingEmbedder` so everything still works.
 /// Search tiers. Every model here is permissively licensed — MIT or Apache-2.0 —
-/// so the shipped artifact carries no use restrictions beyond Cliphoard's own MIT.
+/// with separate model notices; optional weights are never bundled.
 ///
 /// A `max` tier backed by google/embeddinggemma-300m was removed deliberately.
 /// Not for quality: it was simply the only component under a licence (the Gemma
@@ -17,7 +17,7 @@ import Tokenizers
 /// would not expect, and hosting its weights for download made this project their
 /// redistributor. `DeepSearch.level` migrates anyone who had selected it to `high`.
 enum DeepSearchLevel: String, CaseIterable, Identifiable {
-    case off, low, normal, high
+    case off, low, normal, high, gemma2
     var id: String { rawValue }
 
     var title: String {
@@ -26,19 +26,22 @@ enum DeepSearchLevel: String, CaseIterable, Identifiable {
         case .low:    return "Low (open-ogma-micro)"
         case .normal: return "Normal (open-ogma-small)"
         case .high:   return "High (MiniLM)"
+        case .gemma2: return "EmbeddingGemma 2"
         }
     }
 
-    /// Downloaded CoreML model name (`<name>.mlmodelc`) for this tier.
+    /// Asset identifier; Gemma 2 uses LiteRT-LM, other neural tiers use CoreML.
     /// - low → axiotic/open-ogma-micro (MIT, 2.5M)
     /// - normal → axiotic/open-ogma-small (MIT, 8.9M)
     /// - high → sentence-transformers/all-MiniLM-L6-v2 (Apache-2.0, 22.7M)
+    /// - gemma2 → pinned EmbeddingGemma 2 LiteRT-LM asset (740M)
     var modelName: String? {
         switch self {
         case .off:    return nil
         case .low:    return "open-ogma-micro"
         case .normal: return "open-ogma-small"
         case .high:   return "all-MiniLM-L6-v2"
+        case .gemma2: return "embeddinggemma-2-740m"
         }
     }
 
@@ -50,6 +53,7 @@ enum DeepSearchLevel: String, CaseIterable, Identifiable {
         case .off:    return 256
         case .low, .normal: return DeepSearch.detail.dimension
         case .high:   return 384
+        case .gemma2: return 768
         }
     }
 
@@ -340,6 +344,7 @@ enum EmbedderProvider {
     /// so a rapid tier flip can't have a stale load overwrite the newer one.
     private static var loadToken = 0
     private static var loadTask: Task<Void, Never>?
+    private static var notificationTask: Task<Void, Never>?
 
     static func cancelPreparation() {
         loadToken &+= 1; loadTask?.cancel(); loadTask = nil
@@ -348,14 +353,15 @@ enum EmbedderProvider {
 
     /// Load the embedder for `level`. Resolution is local store → explicit
     /// download (ModelAssets.ensure). The download button grants network access;
-    /// startup and changing preferences use local assets only. A stored ogma model loads
-    /// synchronously (small files); everything else loads async — `active`
+    /// startup and changing preferences use local assets only. All neural models load asynchronously — `active`
     /// serves hashing meanwhile and swaps when ready, then `onSwap` fires so the
     /// store can re-index into the new space. Lifecycle (loading / downloading
     /// N% / installing / failed) is published via EmbedderState for Settings.
     @discardableResult
     static func configure(level: DeepSearchLevel, allowDownloads: Bool = false, onSwap: (() -> Void)? = nil) -> Bool {
         let before = active.signature
+        notificationTask?.cancel(); notificationTask = nil
+        (active as? GemmaTextEmbedder)?.cancel()
         loadTask?.cancel(); loadTask = nil
         loadToken &+= 1
         let token = loadToken
@@ -364,18 +370,49 @@ enum EmbedderProvider {
             EmbedderState.shared.set(.fallback)
             return active.signature != before
         }
-        // Fast path: an ogma model already on disk loads synchronously.
-        // OgmaTokenizer implements ONLY ogma's tokenizer (metaspace + offset);
-        // the HF tiers go through swift-transformers below.
-        if level.isOgma, name.contains("ogma"), let found = ModelAssets.locate(name),
-           let model = try? MLModel(contentsOf: found.compiledModel),
-           let tokenizer = OgmaTokenizer(folder: found.tokenizerFolder) {
-            let detail = DeepSearch.detail
-            active = OgmaEmbedder(modelName: name, model: model, tokenizer: tokenizer,
-                                  dimension: detail.dimension,
-                                  outputName: detail.outputName,
-                                  relevanceFloor: detail.relevanceFloor)
-            EmbedderState.shared.set(.ready(signature: active.signature))
+        if level == .gemma2 {
+            active = HashingEmbedder()
+            guard allowDownloads || GemmaMediaAssets.localCandidateExists() else {
+                EmbedderState.shared.set(.notInstalled(name)); return active.signature != before
+            }
+            EmbedderState.shared.set(.loading(name))
+            loadTask = Task { @MainActor in
+                let assets = GemmaMediaAssets()
+                let engine = GemmaMediaEmbedder()
+                do {
+                    let url: URL
+                    if allowDownloads {
+                        url = try await assets.download { done, total in
+                            Task { @MainActor in
+                                guard token == loadToken else { return }
+                                EmbedderState.shared.set(.downloading(name, progress: Double(done) / Double(max(1, total))))
+                            }
+                        }
+                    } else { url = try await assets.verifiedModel() }
+                    guard token == loadToken, !Task.isCancelled else { return }
+                    EmbedderState.shared.set(.loading(name))
+                    try await engine.prepare(modelURL: url, cacheURL: GemmaMediaAssets.defaultDirectory.appendingPathComponent("text-runtime"))
+                    guard token == loadToken, !Task.isCancelled else { await engine.close(); return }
+                    active = GemmaTextEmbedder(compute: { text, query in
+                        if query { return try await engine.embedQuery(text) }
+                        return try await engine.embedDocument(text)
+                    }, changed: {
+                        Task { @MainActor in
+                            guard token == loadToken, notificationTask == nil else { return }
+                            notificationTask = Task { @MainActor in
+                                try? await Task.sleep(nanoseconds: 100_000_000)
+                                guard token == loadToken, !Task.isCancelled else { return }
+                                notificationTask = nil; onSwap?()
+                            }
+                        }
+                    }, close: { await engine.close() })
+                    EmbedderState.shared.set(.ready(signature: active.signature)); onSwap?()
+                } catch {
+                    await engine.close()
+                    guard token == loadToken, !Task.isCancelled else { return }
+                    EmbedderState.shared.set(.failed(name, message: "Could not prepare EmbeddingGemma 2. Try again."))
+                }
+            }
             return active.signature != before
         }
         // Async path: HF tiers, and any tier whose model needs downloading.
@@ -394,10 +431,11 @@ enum EmbedderProvider {
                                                    configuration: MLModelConfiguration())
                 guard token == loadToken, !Task.isCancelled else { return }
                 if level.isOgma {
-                    guard let tokenizer = OgmaTokenizer(folder: found.tokenizerFolder) else {
+                    guard let tokenizer = await Task.detached(priority: .utility) { OgmaTokenizer(folder: found.tokenizerFolder) }.value else {
                         throw CocoaError(.fileReadCorruptFile, userInfo: [
                             NSLocalizedDescriptionKey: "tokenizer unreadable (\(name))"])
                     }
+                    guard token == loadToken, !Task.isCancelled else { return }
                     let detail = DeepSearch.detail
                     active = OgmaEmbedder(modelName: name, model: model, tokenizer: tokenizer,
                                           dimension: detail.dimension,
@@ -412,6 +450,19 @@ enum EmbedderProvider {
                                         docPrefix: level.docPrefix,
                                         relevanceFloor: level.hfRelevanceFloor)
                 }
+                let backend = active
+                active = GemmaTextEmbedder(dimension: backend.dimension, signature: backend.signature,
+                    relevanceFloor: backend.relevanceFloor, truncate: false,
+                    compute: { text, query in backend.embed(text, query: query) }, changed: {
+                        Task { @MainActor in
+                            guard token == loadToken, notificationTask == nil else { return }
+                            notificationTask = Task { @MainActor in
+                                try? await Task.sleep(nanoseconds: 100_000_000)
+                                guard token == loadToken, !Task.isCancelled else { return }
+                                notificationTask = nil; onSwap?()
+                            }
+                        }
+                    })
                 EmbedderState.shared.set(.ready(signature: active.signature))
                 onSwap?()
             } catch {
@@ -428,7 +479,7 @@ enum EmbedderProvider {
     /// search doesn't use vectors — so we don't churn embeddings needlessly.
     /// For the async HF tiers, the re-index re-runs once the real model swaps in.
     static func configureAndReindex(level: DeepSearchLevel, store: ClipStore, allowDownloads: Bool = false) {
-        configure(level: level, allowDownloads: allowDownloads) { [weak store] in store?.refreshForActiveModel() }
+        configure(level: level, allowDownloads: allowDownloads) { [weak store] in store?.embeddingBecameReady() }
         if level != .off { store.refreshForActiveModel() }
     }
 }
@@ -469,10 +520,14 @@ enum TagSpace {
     private static var cache: (String, [[Float]])?
 
     static func vectors(using embedder: TextEmbedder) -> [[Float]] {
-        let key = embedder.signature + "#" + TagBaskets.active.fingerprint
+        vectors(using: embedder, names: names, fingerprint: TagBaskets.active.fingerprint)
+    }
+
+    static func vectors(using embedder: TextEmbedder, names: [String], fingerprint: String) -> [[Float]] {
+        let key = embedder.signature + "#" + fingerprint
         if let (k, v) = cache, k == key { return v }
         let v = names.map { embedder.embed($0) }
-        cache = (key, v)
+        if v.allSatisfy({ ClipIndexer.isUsable($0, dimension: embedder.dimension) }) { cache = (key, v) }
         return v
     }
 
@@ -604,7 +659,8 @@ enum ClipIndexer {
         // never sent through the model" true of every caller, present and future.
         guard !item.isIndexVetoed else { return }
         let embedder = EmbedderProvider.active
-        let vec = embedder.embed(SemanticRanker.searchText(item))
+        let text = SemanticRanker.searchText(item)
+        let vec = (embedder as? GemmaTextEmbedder)?.cachedDocument(text) ?? embedder.embed(text)
         // Don't cache a failed/degenerate embedding — leave the clip stale so it's
         // retried, rather than poisoning its tags/search permanently.
         guard isUsable(vec, dimension: embedder.dimension) else { return }
@@ -691,6 +747,7 @@ enum SemanticRanker {
     static func rankingVector(for item: ClipItem, embedder: TextEmbedder) -> [Float] {
         if let cached = item.embeddings[embedder.signature]?.vector { return cached }
         guard !item.isIndexVetoed else { return [] }
+        if let gemma = embedder as? GemmaTextEmbedder { return gemma.cachedDocument(searchText(item)) }
         return embedder.embed(searchText(item))
     }
 

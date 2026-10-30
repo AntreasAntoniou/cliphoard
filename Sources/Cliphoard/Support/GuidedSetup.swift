@@ -4,13 +4,14 @@ import Foundation
 /// trims history; the final view commits only fields explicitly changed here.
 struct GuidedSetupDraft {
     enum Step: Int, CaseIterable {
-        case welcome, tags, model, history, finish
+        case welcome, tags, model, history, pro, finish
         var title: String {
             switch self {
             case .welcome: return "Welcome to Cliphoard"
             case .tags: return "Choose your tags"
             case .model: return "Choose a search model"
             case .history: return "Choose how much to keep"
+            case .pro: return "Discover Cliphoard Pro"
             case .finish: return "Review your choices"
             }
         }

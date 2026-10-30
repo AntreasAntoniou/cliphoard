@@ -658,6 +658,10 @@ struct SettingsView: View {
                         .labelsHidden().frame(width: 200)
                         .disabled(settings.searchMode == .exact)
                     }
+                    if settings.deepSearchLevel == .gemma2 {
+                        Text("EmbeddingGemma 2 powers text search, automatic tags and tag suggestions locally. It shares the optional media-model download. Long text uses its first 1,024 UTF-8 bytes; basic matching still searches the full text.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
                     HStack {
                         Text("Vector detail")
                         Spacer()
@@ -972,6 +976,7 @@ struct SettingsView: View {
             .padding(10).background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
     }
     private var textModelSize: String {
+        if settings.deepSearchLevel == .gemma2 { return ByteCountFormatter.string(fromByteCount: GemmaMediaAssets.byteCount, countStyle: .file) }
         guard let name = settings.deepSearchLevel.modelName, let bytes = ModelAssets.catalog[name]?.bytes else { return "—" }
         return ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
     }

@@ -13,12 +13,12 @@ enum Onboarding {
     private static let key = "didOnboardV1"
     private static var window: NSWindow?
 
-    static func showIfNeeded(store: ClipStore) {
+    static func showIfNeeded(store: ClipStore, onUpgrade: @escaping () -> Void) {
         guard !UserDefaults.standard.bool(forKey: key) else { return }
-        present(store: store)
+        present(store: store, onUpgrade: onUpgrade)
     }
 
-    static func present(store: ClipStore) {
+    static func present(store: ClipStore, onUpgrade: @escaping () -> Void) {
         SensitiveClipReveal.shared.lock()
         if let w = window {
             NSApp.activate(ignoringOtherApps: true); w.makeKeyAndOrderFront(nil); return
@@ -26,7 +26,7 @@ enum Onboarding {
         let view = OnboardingView(store: store, onDone: {
             UserDefaults.standard.set(true, forKey: key)
             window?.close(); window = nil
-        })
+        }, onUpgrade: onUpgrade)
         let w = NSWindow(contentViewController: NSHostingController(rootView: view))
         w.styleMask = [.titled, .closable, .fullSizeContentView]
         w.titlebarAppearsTransparent = true
@@ -45,12 +45,15 @@ enum Onboarding {
 struct OnboardingView: View {
     @ObservedObject var store: ClipStore
     let onDone: () -> Void
+    let onUpgrade: () -> Void
+    @State private var explorePro = false
     @State private var downloadSelectedModel = false
     @State private var draft: GuidedSetupDraft
 
-    init(store: ClipStore, onDone: @escaping () -> Void) {
+    init(store: ClipStore, onDone: @escaping () -> Void, onUpgrade: @escaping () -> Void) {
         self.store = store
         self.onDone = onDone
+        self.onUpgrade = onUpgrade
         _draft = State(initialValue: GuidedSetupDraft(overlays: TagBaskets.overlayIDs,
             level: DeepSearch.level, historyLimit: store.historyLimit))
     }
@@ -120,10 +123,12 @@ struct OnboardingView: View {
 
     private var unpinnedCount: Int { store.items.filter { !$0.pinned }.count }
     private func modelAvailable(_ level: DeepSearchLevel) -> Bool {
+        if level == .gemma2 { return GemmaMediaAssets.localCandidateExists() }
         guard let name = level.modelName else { return true }
         return ModelAssets.canPrepareLocally(name)
     }
     private func modelChoiceTitle(_ level: DeepSearchLevel) -> String {
+        if level == .gemma2 { return level.title + (modelAvailable(level) ? " · downloaded" : " · 485 MB download") }
         guard let name = level.modelName, let bytes = ModelAssets.catalog[name]?.bytes else { return level.title }
         let size = ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
         return level.title + (modelAvailable(level) ? " · downloaded" : " · \(size) download")
@@ -157,7 +162,7 @@ struct OnboardingView: View {
             Text("Your existing custom tags are preserved. Edit custom tag text in Settings.")
                 .font(.caption).foregroundStyle(.secondary)
         case .model:
-            Text("Choose the on-device model used for semantic search. Off uses no neural model. Low has the smallest model footprint, Normal is the middle-size model, and High is the largest model. Changing the model re-indexes your history in the background after you finish.")
+            Text("Choose the on-device model used for semantic search. Off uses no neural model. Low is the smallest option, Normal is a compact all-rounder, High uses MiniLM, and EmbeddingGemma 2 uses the larger multimodal model for text search and tagging too. Changing the model re-indexes your history in the background after you finish.")
                 .foregroundStyle(.secondary)
             Picker("Search model", selection: $draft.level) {
                 ForEach(DeepSearchLevel.allCases) { level in
@@ -184,7 +189,39 @@ struct OnboardingView: View {
             }
             Text("\(unpinnedCount) unpinned clips are currently stored. Lowering the limit can permanently delete older clips and their images. Review and confirm that on the final step.")
                 .font(.caption).foregroundStyle(.secondary)
+        case .pro:
+            Text("Find the moment. Rediscover the idea.")
+                .font(.title2.bold())
+            Text("Turn your clipboard into a searchable world of pictures, sounds and video with Cliphoard Pro.")
+                .foregroundStyle(.secondary)
+            feature("photo", "Search beyond words", "Find images by what they show, discover similar pictures and read text inside screenshots.")
+            feature("play.rectangle", "Jump to the good part", "Search audio and video, then open a matching moment. Choose Lightweight, Balanced or Detailed sampling to suit your Mac.")
+            feature("waveform", "Find what was said", "Optional Whisper models add transcription-based search, with sampled speech or fuller transcription to suit your needs.")
+            feature("lock.shield", "Your media stays yours", "Models download from Hugging Face only when you choose, prepare locally and run on your Mac. No models are bundled. Sparse sampling can miss brief moments.")
+            VStack(alignment: .leading, spacing: 8) {
+                Label("Power foundational AI research", systemImage: "sparkles")
+                    .font(.headline)
+                Text("All proceeds go to foundational AI research. Advancing that research is the mission—and the discoveries help make Cliphoard smarter along the way.")
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(16)
+            .background(Theme.accent.opacity(0.10), in: RoundedRectangle(cornerRadius: 12))
+            if store.entitlement.isPro {
+                Label("You already have Pro. Enjoy exploring!", systemImage: "checkmark.seal.fill")
+                    .foregroundStyle(Theme.accent)
+            } else {
+                Picker("Your next step", selection: $explorePro) {
+                    Text("Explore Pro after setup").tag(true)
+                    Text("Continue with Free").tag(false)
+                }
+                .pickerStyle(.radioGroup)
+                Text("Free includes clipboard history, tags and text search. Exploring Pro opens purchase options after setup; it does not buy anything. You can upgrade later in Settings.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
         case .finish:
+            if explorePro && !store.entitlement.isPro {
+                feature("sparkles", "Explore Pro next", "After applying your choices, we’ll open the highlighted Pro purchase options. No purchase happens automatically.")
+            }
             feature("tag", "Tags", overlayNames)
             feature("cpu", "Search model", draft.level.title)
             feature("clock", "History", "Keep \(retentionLabel.lowercased()) unpinned clips; pinned clips are preserved.")
@@ -225,6 +262,7 @@ struct OnboardingView: View {
         }
         if let limit = changes.historyLimit { store.historyLimit = limit }
         onDone()
+        if explorePro && !store.entitlement.isPro { onUpgrade() }
     }
 
     private func feature(_ symbol: String, _ title: String, _ body: String) -> some View {
