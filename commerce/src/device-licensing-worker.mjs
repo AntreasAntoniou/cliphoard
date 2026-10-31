@@ -12,7 +12,7 @@ import { createDeviceLicenceDurableObjectClasses, createDeviceLicenceAuthenticat
 import { createDeviceBootstrapAdmission } from '../licensing-prototype/bootstrap-admission.mjs';
 import { decode } from '../licensing-prototype/protocol.mjs';
 import { exact, captureRPC, requireValue, deviceConfiguration, deviceKeys, deviceReadiness,
-  guardedDeviceMail, qualificationActive, qualifiedScope, randomID } from './device-licensing-config.mjs';
+  guardedDeviceMail, qualificationActive, qualifiedScope, orderAdmitted, purchaserAdmitted, randomID } from './device-licensing-config.mjs';
 const scopeFields = ['accountId', 'mode', 'orderRef', 'sessionId', 'productId', 'priceId', 'currency', 'unitAmount', 'taxBehavior'];
 // The native alarm entry receives platform retry metadata. Domain alarm methods
 // intentionally take no arguments; capture this boundary before invoking them.
@@ -40,20 +40,22 @@ function inspector(env, c) {
     qualifiedScope(c, scope);
     const value = captureRPC(await order(env, c, scope.orderRef).inspectDeviceAuthority(), [...scopeFields, 'state', 'ownerEmail']);
     requireValue(scopeFields.every(k => value[k] === scope[k]) && ['active', 'pending', 'blocked'].includes(value.state)
-      && (value.state === 'active' ? value.ownerEmail === c.qualification.recipient : value.ownerEmail === null));
+      && (value.state === 'active' ? purchaserAdmitted(c, value.ownerEmail) : value.ownerEmail === null));
     return value;
   };
 }
-// Admission is durable, target-owned and initially HOLD. Only a trusted binding
-// operator can CAS a revision; no public route exposes this operation.
-function admission(ctx, c, reservation) {
+// Admission is durable and target-owned. Owned qualification starts HOLD; explicit
+// production policy starts ALLOW only after fresh paid authority. Existing rows
+// are never overwritten by the default. Only a trusted binding operator can CAS.
+function admission(ctx, c, reservation, initialDecision = 'hold') {
   qualifiedScope(c, reservation.scope); decode(reservation.entitlementID, 16);
   const binding = JSON.stringify({ realm: c.realm, profile: c.selection.profileID, entitlementID: reservation.entitlementID, scope: reservation.scope });
   const sql = ctx.storage.sql;
   const read = () => {
     ctx.storage.transactionSync(() => {
       sql.exec('CREATE TABLE IF NOT EXISTS device_qualification_admission(singleton INTEGER PRIMARY KEY CHECK(singleton=1), binding TEXT NOT NULL, revision INTEGER NOT NULL, decision TEXT NOT NULL)');
-      sql.exec("INSERT OR IGNORE INTO device_qualification_admission VALUES(1,?,1,'hold')", binding);
+      requireValue(['hold', 'allow'].includes(initialDecision));
+      sql.exec('INSERT OR IGNORE INTO device_qualification_admission VALUES(1,?,1,?)', binding, initialDecision);
     });
     const rows = Array.from(sql.exec('SELECT binding,revision,decision FROM device_qualification_admission'));
     requireValue(rows.length === 1 && rows[0].binding === binding && Number.isSafeInteger(rows[0].revision)
@@ -93,7 +95,9 @@ const Hosts = createDeviceLicenceDurableObjectClasses({ enabled: true, DurableOb
     const keys = await deviceKeys(env, c);
     // Private claim bearer remains in memory only, before any dispatch fence.
     const link = captureRPC(await order(env, c, reservation.scope.orderRef).setupRecoveryLink(), ['claimURL']);
-    const send = guardedDeviceMail(env, c, link.claimURL), gate = admission(ctx, c, reservation);
+    const authority = await inspector(env, c)(reservation.scope);
+    const send = guardedDeviceMail(env, c, link.claimURL, authority.ownerEmail, reservation.scope.orderRef),
+      gate = admission(ctx, c, reservation, c.admissionPolicy?.mode === 'production' && authority.state === 'active' ? 'allow' : 'hold');
     return { ...common(env, c), selection: c.selection, keys, inspectDeviceAuthority: inspector(env, c),
       admission: { evaluate: gate.evaluate, readCurrent: gate.readCurrent },
       mail: { from: 'support@cliphoard.dev', replyTo: 'support@cliphoard.dev', send, timeoutMilliseconds: c.operational.mailTimeoutMilliseconds },
@@ -179,14 +183,14 @@ export default { async fetch(request, env) {
     if (url.pathname === '/checkout/stripe') {
       await deviceReadiness(env);
       const value = parseJSON(await boundedBody(request.clone(), 1024));
-      requireValue(c.qualification.orderRefs.includes(value?.orderRef));
+      requireValue(orderAdmitted(c, value?.orderRef));
     }
     if (url.pathname === '/pro/recover') {
       requireValue(env.DEVICE_FULFILMENT_ENABLED === 'true' && qualificationActive(c));
       const route = createDeviceSetupRecoveryRoute({ enabled: true, origin: c.commerce.origin,
         bodyTimeoutMilliseconds: c.operational.httpBodyTimeoutMilliseconds,
         admit: async (original, ref) => {
-          if (!c.qualification.orderRefs.includes(ref)) return false;
+          if (!orderAdmitted(c, ref)) return false;
           const ip = original.headers.get('CF-Connecting-IP'); if (!ip) return false;
           return (await env.CHECKOUT_RATE_LIMITER.limit({ key: await sha256(`${c.commerce.accountId}:${ip}:${ref}`) }))?.success === true;
         },

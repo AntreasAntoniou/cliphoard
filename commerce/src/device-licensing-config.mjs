@@ -1,4 +1,5 @@
-// Explicit bounded owned-qualification configuration; never production defaults.
+// Explicit owned qualification (v1) or opted-in paid-purchaser production (v2).
+// Neither mode supplies default operational values or enables provider switches.
 import { config, ORDER_REF, validWebhookSecret } from './stripe-security.mjs';
 import { decode, base64url, digest } from '../licensing-prototype/protocol.mjs';
 import { reconstructHostKeyCapabilities } from '../licensing-prototype/host-key-consumer.mjs';
@@ -38,9 +39,10 @@ function operational(raw, bootstrap = false) {
 }
 export function deviceConfiguration(env) {
   try {
-    const commerce = config(env), raw = exact(canonicalJSON(env.DEVICE_LICENCE_CONFIG_V1, 8192),
-      ['version', 'realm', 'selection', 'sealerKeyID', 'sealerCommitment', 'qualification', 'operational']);
-    requireValue(raw.version === 1 && typeof raw.realm === 'string' && /^[a-z0-9][a-z0-9_-]{0,63}$/.test(raw.realm));
+    const commerce = config(env), parsed = canonicalJSON(env.DEVICE_LICENCE_CONFIG_V1, 8192);
+    requireValue(parsed.version === 1 || parsed.version === 2);
+    const raw = exact(parsed, ['version', 'realm', 'selection', 'sealerKeyID', 'sealerCommitment', parsed.version === 1 ? 'qualification' : 'admission', 'operational']);
+    requireValue((raw.version === 1 || raw.version === 2) && typeof raw.realm === 'string' && /^[a-z0-9][a-z0-9_-]{0,63}$/.test(raw.realm));
     const selection = exact(raw.selection, ['profileID', 'bootstrapKeyID', 'bootstrapPublicKey', 'receiptIssuerKeyID', 'receiptIssuerPublicKey']);
     const trust = Object.freeze({ expectedProfileID: selection.profileID, bootstrapKeyID: selection.bootstrapKeyID,
       bootstrapPublicKey: selection.bootstrapPublicKey, receiptIssuerKeyIDs: Object.freeze([selection.receiptIssuerKeyID]) });
@@ -50,13 +52,19 @@ export function deviceConfiguration(env) {
       && new Set([selection.bootstrapKeyID, selection.receiptIssuerKeyID, raw.sealerKeyID]).size === 3
       && selection.bootstrapPublicKey !== selection.receiptIssuerPublicKey);
     decode(raw.sealerCommitment, 32);
+    let qualification = null, admissionPolicy = null;
+    if (raw.version === 1) {
     const q = exact(raw.qualification, ['recipient', 'orderRefs', 'startsAt', 'endsAt']);
     // One concrete owned purchase allocation. No public allow policy is supplied.
     requireValue(q.recipient === 'iam@antreas.io' && Array.isArray(q.orderRefs) && q.orderRefs.length === 1
       && typeof q.orderRefs[0] === 'string' && ORDER_REF.test(q.orderRefs[0])
       && Number.isSafeInteger(q.startsAt) && Number.isSafeInteger(q.endsAt) && q.startsAt > 0
       && q.endsAt > q.startsAt && q.endsAt - q.startsAt <= 900);
-    const qualification = Object.freeze({ ...q, orderRefs: Object.freeze([...q.orderRefs]) });
+    qualification = Object.freeze({ ...q, orderRefs: Object.freeze([...q.orderRefs]) });
+    } else {
+      admissionPolicy = exact(raw.admission, ['mode', 'policy']);
+      requireValue(commerce.live === true && admissionPolicy.mode === 'production' && admissionPolicy.policy === 'verified-paid-purchaser');
+    }
     const p = exact(raw.operational, ['bootstrap', 'activation', 'limits', 'httpBodyTimeoutMilliseconds', 'mailTimeoutMilliseconds',
       'maxConcurrentRequests', 'alarmRecoveryDelayMilliseconds', 'orderRetrySeconds']);
     const limits = exact(p.limits, ['challengeTTLSeconds', 'deliveryLeaseSeconds']);
@@ -65,15 +73,21 @@ export function deviceConfiguration(env) {
       .every(k => Number.isSafeInteger(p[k]) && p[k] > 0)
       && p.httpBodyTimeoutMilliseconds <= 60000 && p.mailTimeoutMilliseconds <= 60000 && p.alarmRecoveryDelayMilliseconds <= 86400000);
     const policy = Object.freeze({ ...p, limits, bootstrap: operational(p.bootstrap, true), activation: operational(p.activation) });
-    return Object.freeze({ ...raw, selection, trust, qualification, operational: policy, commerce });
+    return Object.freeze({ ...raw, selection, trust, qualification, admissionPolicy, operational: policy, commerce });
   } catch { reject(); }
 }
 export function qualificationActive(c, now = Math.floor(Date.now() / 1000)) {
-  return Number.isSafeInteger(now) && now >= c.qualification.startsAt && now < c.qualification.endsAt;
+  return Number.isSafeInteger(now) && (c.admissionPolicy?.mode === 'production' || (now >= c.qualification.startsAt && now < c.qualification.endsAt));
+}
+export function orderAdmitted(c, ref) {
+  return typeof ref === 'string' && ORDER_REF.test(ref) && (c.admissionPolicy?.mode === 'production' || c.qualification.orderRefs.includes(ref));
+}
+export function purchaserAdmitted(c, email) {
+  return typeof email === 'string' && email.length <= 254 && /^[^\s@<>\r\n]+@[^\s@<>\r\n]+\.[^\s@<>\r\n]+$/.test(email) && (c.admissionPolicy?.mode === 'production' || email === c.qualification.recipient);
 }
 export function qualifiedScope(c, scope) {
   const f = c.commerce;
-  requireValue(c.qualification.orderRefs.includes(scope.orderRef)
+  requireValue(orderAdmitted(c, scope.orderRef)
     && ['accountId', 'mode', 'productId', 'priceId', 'currency', 'unitAmount', 'taxBehavior'].every(k => scope[k] === f[k]));
 }
 const keyCache = new WeakMap();
@@ -114,10 +128,10 @@ export async function deviceReadiness(env) {
     requireValue(binding && ['idFromName', 'get', 'getByName'].every(k => typeof binding[k] === 'function'));
   decode(env.CLAIM_ENCRYPTION_KEY, 32); stripeClient(env); await deviceKeys(env, c); return true;
 }
-export function guardedDeviceMail(env, c, claimURL) {
+export function guardedDeviceMail(env, c, claimURL, authoritativeRecipient = c.qualification?.recipient, authoritativeOrderRef = c.qualification?.orderRefs[0]) {
   requireValue(typeof claimURL === 'string'); const link = new URL(claimURL);
   requireValue(link.origin === c.commerce.origin && link.pathname === '/pro/claim' && !link.hash
-    && [...link.searchParams.keys()].length === 2 && c.qualification.orderRefs.includes(link.searchParams.get('order'))
+    && [...link.searchParams.keys()].length === 2 && orderAdmitted(c, authoritativeOrderRef) && link.searchParams.get('order') === authoritativeOrderRef
     && /^[A-Za-z0-9_-]{43}$/.test(link.searchParams.get('token') ?? ''));
   return input => {
     let bootstrap = false, message;
@@ -127,7 +141,7 @@ export function guardedDeviceMail(env, c, claimURL) {
       message = exact(value.message, ['from', 'to', 'replyTo', 'subject', 'text']); bootstrap = true;
     } else message = exact(input, ['from', 'to', 'replyTo', 'subject', 'text']);
     requireValue(message.from === 'support@cliphoard.dev' && message.replyTo === 'support@cliphoard.dev'
-      && message.to === c.qualification.recipient && typeof message.subject === 'string' && typeof message.text === 'string');
+      && purchaserAdmitted(c, authoritativeRecipient) && message.to === authoritativeRecipient && typeof message.subject === 'string' && typeof message.text === 'string');
     const dispatch = bootstrap ? { ...message, text: `${message.text}\n\nPrivate setup recovery (use the page button to request setup instructions):\n${claimURL}` } : message;
     // This entire wrapper is synchronous until EMAIL.send: preserve the caller's
     // immediately preceding same-SQLite authority/lease fence and kill switches.
