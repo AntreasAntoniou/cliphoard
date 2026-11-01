@@ -249,7 +249,7 @@ final class MediaSearchController: ObservableObject {
             }
         }
     }
-    func prepareSpeech() {
+    func prepareSpeech(allowDownload: Bool = true) {
         guard allowed, !busy else { return }; busy = true
         let ticket = epoch, selected = speechModel
         preparedSpeechModel = nil; preparationProgress = nil
@@ -259,7 +259,7 @@ final class MediaSearchController: ObservableObject {
             defer { busy = false; operation = nil; preparationTitle = nil; preparationProgress = nil }
             do {
                 try admit(ticket)
-                try await transcriber.prepare(model: selected, allowDownload: true) { [weak self] done, total in
+                try await transcriber.prepare(model: selected, allowDownload: allowDownload) { [weak self] done, total in
                     Task { @MainActor [weak self] in self?.transferProgress(done, total, ticket: ticket, title: "Downloading \(selected.label)…") }
                 }
                 try admit(ticket); preparedSpeechModel = selected

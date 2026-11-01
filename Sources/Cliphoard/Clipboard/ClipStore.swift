@@ -956,6 +956,10 @@ final class ClipStore: ObservableObject {
 
     @Published private(set) var imageModelState: EmbedderState.State = .notInstalled("OpenVision")
     @Published private(set) var imageModelPreparing = false
+    /// Readiness without triggering lazy loading from a SwiftUI render.
+    var imageSearchModelReady: Bool {
+        clipEmbedderMemo != nil && Self.imageUnderstandingAllowed(entitlement) && !safeMode
+    }
     private var imageModelTask: Task<Void, Never>?
     private var imageModelTicket = UUID()
 
@@ -1018,8 +1022,6 @@ final class ClipStore: ObservableObject {
                 if let model {
                     installCLIP(model)
                     objectWillChange.send(); scheduleImageUnderstanding()
-                } else if ModelAssets.canPrepareImageModelsLocally() {
-                    prepareImageSearchModel(allowDownload: false)
                 }
             }
         }

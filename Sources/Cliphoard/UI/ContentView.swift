@@ -139,6 +139,7 @@ struct ContentView: View {
             toolbar
             Divider().opacity(0.5)
             BoundedChrome {
+                SearchModelPreparationView(settings: settings, store: store, media: store.mediaSearch)
                 if let message = pasteStatus.blockedMessage {
                     banner(message, action: ("Open Settings",
                                              "Open Privacy → Accessibility to grant auto-paste",
@@ -402,6 +403,11 @@ struct ContentView: View {
                     Text(mode.title + ((!store.entitlement.isPro && mode != .text && mode != .all) ? " · Pro" : "")).tag(mode)
                 }
             }.labelsHidden().pickerStyle(.menu).fixedSize().tint(Theme.accent)
+            if settings.searchModality == .text || settings.searchModality == .all {
+                Picker("Text model", selection: Binding(get: { settings.deepSearchLevel }, set: { settings.selectTextModelForSearch($0) })) {
+                    ForEach(DeepSearchLevel.allCases) { Text($0.title).tag($0) }
+                }.labelsHidden().pickerStyle(.menu).fixedSize()
+            }
             if settings.searchModality == .images || settings.searchModality == .all {
                 Picker("Picture model", selection: $settings.imageSearchModel) {
                     ForEach(ImageSearchModel.allCases) { Text($0.title).tag($0) }

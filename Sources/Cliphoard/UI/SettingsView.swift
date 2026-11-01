@@ -216,11 +216,23 @@ final class AppSettings: ObservableObject {
             if searchMode != .exact && deepSearchLevel == .off { deepSearchLevel = .normal }
         }
     }
+    private var deferModelPreparation = false
+    /// Search selection records intent; the in-bar consent owns acquisition and
+    /// preparation. Settings retains its existing local-only preparation path.
+    func selectTextModelForSearch(_ level: DeepSearchLevel) {
+        guard level != deepSearchLevel else { return }
+        deferModelPreparation = true
+        deepSearchLevel = level
+        deferModelPreparation = false
+        EmbedderProvider.deferPreparation(level: level)
+    }
     @Published var deepSearchLevel: DeepSearchLevel {
         didSet {
             DeepSearch.level = deepSearchLevel
             // Load the new tier's model, then re-embed all entries into its space.
-            EmbedderProvider.configureAndReindex(level: deepSearchLevel, store: store)
+            if !deferModelPreparation {
+                EmbedderProvider.configureAndReindex(level: deepSearchLevel, store: store)
+            }
         }
     }
     @Published var vectorDetail: VectorDetail {

@@ -339,6 +339,15 @@ final class OgmaEmbedder: TextEmbedder {
 @MainActor
 enum EmbedderProvider {
     private(set) static var active: TextEmbedder = HashingEmbedder()
+    private static let deferredPreparationKey = "deferredTextModelPreparation"
+
+    /// A preference is not acquisition consent. Keep a declined/deferred model
+    /// dormant across launch as well as across panel recreation.
+    static func deferPreparation(level: DeepSearchLevel) {
+        configure(level: .off)
+        UserDefaults.standard.set(level.rawValue, forKey: deferredPreparationKey)
+        if let name = level.modelName { EmbedderState.shared.set(.notInstalled(name)) }
+    }
 
     /// Monotonic token: bumping it invalidates any in-flight async model load,
     /// so a rapid tier flip can't have a stale load overwrite the newer one.
@@ -358,7 +367,7 @@ enum EmbedderProvider {
     /// store can re-index into the new space. Lifecycle (loading / downloading
     /// N% / installing / failed) is published via EmbedderState for Settings.
     @discardableResult
-    static func configure(level: DeepSearchLevel, allowDownloads: Bool = false, onSwap: (() -> Void)? = nil) -> Bool {
+    static func configure(level: DeepSearchLevel, allowDownloads: Bool = false, userInitiated: Bool = false, onSwap: (() -> Void)? = nil) -> Bool {
         let before = active.signature
         notificationTask?.cancel(); notificationTask = nil
         (active as? GemmaTextEmbedder)?.cancel()
@@ -368,6 +377,13 @@ enum EmbedderProvider {
         guard let name = level.modelName else {          // .off
             active = HashingEmbedder()
             EmbedderState.shared.set(.fallback)
+            return active.signature != before
+        }
+        if allowDownloads || userInitiated {
+            UserDefaults.standard.removeObject(forKey: deferredPreparationKey)
+        } else if UserDefaults.standard.string(forKey: deferredPreparationKey) == level.rawValue {
+            active = HashingEmbedder()
+            EmbedderState.shared.set(.notInstalled(name))
             return active.signature != before
         }
         if level == .gemma2 {
@@ -478,8 +494,8 @@ enum EmbedderProvider {
     /// active model's space. Skipped entirely for the `off` tier, whose substring
     /// search doesn't use vectors — so we don't churn embeddings needlessly.
     /// For the async HF tiers, the re-index re-runs once the real model swaps in.
-    static func configureAndReindex(level: DeepSearchLevel, store: ClipStore, allowDownloads: Bool = false) {
-        configure(level: level, allowDownloads: allowDownloads) { [weak store] in store?.embeddingBecameReady() }
+    static func configureAndReindex(level: DeepSearchLevel, store: ClipStore, allowDownloads: Bool = false, userInitiated: Bool = false) {
+        configure(level: level, allowDownloads: allowDownloads, userInitiated: userInitiated) { [weak store] in store?.embeddingBecameReady() }
         if level != .off { store.refreshForActiveModel() }
     }
 }
