@@ -202,7 +202,7 @@ struct ContentView: View {
         .onChange(of: store.mediaSearch.busy) { busy in if !busy { model.scheduleMediaSearch() } }
         .onChange(of: store.mediaSearch.prepared) { _ in model.scheduleMediaSearch() }
         .onChange(of: settings.imageSearchModel) { _ in model.referenceImage = nil; model.resetSelection() }
-        .onChange(of: settings.searchModality) { _ in model.referenceImage = nil; model.resetSelection() }
+        .onChange(of: settings.searchModality) { model.applySearchModality($0) }
         .onChange(of: settings.searchMode) { _ in model.resetSelection() }
         // Keep keyboard selection on a card the user can actually see. Arrow keys
         // walk `model.results`, which still contains the clips this view is
@@ -397,12 +397,21 @@ struct ContentView: View {
             Text("Search:").font(.system(size: 11)).foregroundStyle(.secondary)
             Picker("Search in", selection: Binding(get: { settings.searchModality }, set: { mode in
                 if mode != .text && mode != .all && !store.entitlement.isPro { model.presentProSettings() }
-                else { settings.searchModality = mode }
+                else {
+                    settings.searchModality = mode
+                    // Also honor reselecting All when a kind chip was narrowed.
+                    model.applySearchModality(mode)
+                }
             })) {
                 ForEach(SearchModality.allCases) { mode in
                     Text(mode.title + ((!store.entitlement.isPro && mode != .text && mode != .all) ? " · Pro" : "")).tag(mode)
                 }
             }.labelsHidden().pickerStyle(.menu).fixedSize().tint(Theme.accent)
+            if settings.searchModality == .all && !settings.searchTextEnabled {
+                Button("Text is off · Include text") { settings.searchTextEnabled = true }
+                    .font(.system(size: 11))
+                    .help("Include basic text matching in All enabled. This does not download a model.")
+            }
             if settings.searchModality == .text || settings.searchModality == .all {
                 Picker("Text model", selection: Binding(get: { settings.deepSearchLevel }, set: { settings.selectTextModelForSearch($0) })) {
                     ForEach(DeepSearchLevel.allCases) { Text($0.title).tag($0) }

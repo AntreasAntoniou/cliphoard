@@ -45,6 +45,16 @@ struct SearchCapabilities: Equatable {
     }
 }
 enum SearchPreferences {
+    /// Changing the search category is a new scope choice. In particular, All
+    /// must not inherit the Images chip from the preceding image-only search.
+    static func kindFilter(afterSelecting modality: SearchModality, current: ClipKind?) -> ClipKind? {
+        switch modality {
+        case .all: return nil
+        case .images: return current == .image ? current : nil
+        case .audio, .video: return current == .file ? current : nil
+        case .text: return current == .image ? nil : current
+        }
+    }
     static func initialModality(legacy: SearchMode) -> SearchModality {
         switch legacy { case .image: return .images; case .media, .smart, .neural: return .all; default: return .text }
     }
@@ -56,7 +66,7 @@ enum SearchPreferences {
         func enabled(_ name: String, fallback: Bool) -> Bool {
             defaults.object(forKey: name) == nil ? fallback : defaults.bool(forKey: name)
         }
-        return SearchCapabilities(text: enabled("searchTextEnabled", fallback: !legacyMedia),
+        return SearchCapabilities(text: enabled("searchTextEnabled", fallback: true),
             images: enabled("searchImagesEnabled", fallback: true),
             audio: enabled("searchAudioEnabled", fallback: legacyMedia),
             video: enabled("searchVideoEnabled", fallback: legacyMedia),

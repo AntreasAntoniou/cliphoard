@@ -312,6 +312,12 @@ final class PanelViewModel: ObservableObject {
     }
     func resetSelection() { selection = 0 }
 
+    func applySearchModality(_ modality: SearchModality) {
+        activeKind = SearchPreferences.kindFilter(afterSelecting: modality, current: activeKind)
+        referenceImage = nil
+        resetSelection()
+    }
+
     // MARK: Keyboard intents
 
     func moveSelection(_ delta: Int) {

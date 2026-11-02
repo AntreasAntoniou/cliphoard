@@ -57,3 +57,65 @@ extension SearchModalitiesTests {
         XCTAssertTrue(MediaScopePolicy.includesSpeech(stillImage: false, hasVideo: true, scope: .video))
     }
 }
+
+extension SearchModalitiesTests {
+    func testLegacyMediaWithoutTextPreferenceKeepsBasicTextInAll() {
+        let suite = "SearchModalities-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        let previousMode = DeepSearch.mode
+        defer {
+            DeepSearch.mode = previousMode
+            defaults.removePersistentDomain(forName: suite)
+        }
+        DeepSearch.mode = .media
+        let capabilities = SearchPreferences.capabilities(defaults)
+        XCTAssertTrue(capabilities.text, "An old media search style is not consent to disable text in All")
+        XCTAssertEqual(capabilities.readyLanes(mode: .all, pro: true, clipReady: false, gemmaReady: false), [.text])
+        defaults.set(false, forKey: "searchTextEnabled")
+        XCTAssertFalse(SearchPreferences.capabilities(defaults).text, "An explicit disabled preference remains authoritative")
+    }
+}
+
+extension SearchModalitiesTests {
+    @MainActor
+    func testAllAfterImageFilterFusesTextAndImageWithoutPreparedTextModel() {
+        let text = ClipItem(kind: .text, text: "banana smoothie recipe")
+        let image = ClipItem(kind: .image, text: "")
+        let unrelated = ClipItem(kind: .text, text: "quarterly ledger")
+        let kind = SearchPreferences.kindFilter(afterSelecting: .all, current: .image)
+        let scoped = [text, image, unrelated].filter { kind == nil || $0.kind == kind }
+        let choices = SearchCapabilities(text: true, images: true, audio: true, video: true, imageModel: .clip)
+        let ready = choices.readyLanes(mode: .all, pro: true, clipReady: true, gemmaReady: false)
+        var lanes: [SearchModality: [UUID]] = [:]
+        // The actual fallback ranker and fusion are exercised, with no model or DB.
+        if ready.contains(.text) {
+            lanes[.text] = SemanticRanker.smart(query: "banana", items: scoped, embedder: HashingEmbedder()).map(\.id)
+        }
+        if ready.contains(.images) { lanes[.images] = [image.id] }
+        let result = SearchPreferences.fuse(lanes)
+        XCTAssertTrue(result.contains(text.id))
+        XCTAssertTrue(result.contains(image.id))
+        XCTAssertFalse(result.contains(unrelated.id))
+        XCTAssertEqual(result.count, 2)
+    }
+
+    @MainActor
+    func testUnavailableMediaBackendStillReturnsMatchingTextInAll() {
+        let text = ClipItem(kind: .text, text: "banana recipe")
+        let choices = SearchCapabilities(text: true, images: true, audio: true, video: true, imageModel: .gemma2)
+        let ready = choices.readyLanes(mode: .all, pro: true, clipReady: true, gemmaReady: false)
+        XCTAssertEqual(ready, [.text])
+        let textIDs = SemanticRanker.smart(query: "banana", items: [text], embedder: HashingEmbedder()).map(\.id)
+        XCTAssertEqual(SearchPreferences.fuse([.text: textIDs]), [text.id])
+    }
+
+    func testCategorySelectionClearsContradictoryKindWithoutChangingMatchingKind() {
+        XCTAssertNil(SearchPreferences.kindFilter(afterSelecting: .all, current: .image))
+        XCTAssertNil(SearchPreferences.kindFilter(afterSelecting: .images, current: .text))
+        XCTAssertNil(SearchPreferences.kindFilter(afterSelecting: .text, current: .image))
+        XCTAssertNil(SearchPreferences.kindFilter(afterSelecting: .audio, current: .image))
+        XCTAssertEqual(SearchPreferences.kindFilter(afterSelecting: .images, current: .image), .image)
+        XCTAssertEqual(SearchPreferences.kindFilter(afterSelecting: .video, current: .file), .file)
+        XCTAssertEqual(SearchPreferences.kindFilter(afterSelecting: .text, current: .link), .link)
+    }
+}
