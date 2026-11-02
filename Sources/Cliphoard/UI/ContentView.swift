@@ -280,97 +280,66 @@ struct ContentView: View {
         Bundle.main.image(forResource: "Cliphoard") ?? NSApp.applicationIconImage
     }
 
-    @ViewBuilder private var brandMark: some View {
-        if let icon = brandIconImage {
-            Image(nsImage: icon)
-                .resizable().interpolation(.high)
-                .frame(width: 50, height: 50)
-                .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
-                .accessibilityHidden(true)
-        } else {
-            Image(systemName: "command").font(.system(size: 20)).foregroundStyle(Theme.accent)
-        }
-    }
-
     private var toolbar: some View {
-        HStack(spacing: 12) {
-            HStack(spacing: 6) {
-                brandMark
-                Text("Cliphoard")
-                    .font(.system(size: 22, weight: .bold, design: .rounded))
+        SearchBarView(query: $model.query, scope: Binding(get: { settings.searchModality }, set: { mode in
+            if mode != .text && mode != .all && !store.entitlement.isPro { model.presentProSettings() }
+            else {
+                settings.searchModality = mode
+                model.applySearchModality(mode)
             }
-
-            categoryChips
-
-            Spacer()
-
-            Group {
-                HStack(spacing: 8) {
-                    timeMenu
-                    // Always available now: the signal facets (flags, shape,
-                    // source, lifecycle) exist regardless of which tag basket is
-                    // loaded, so gating the whole menu on a dimensional basket
-                    // would hide them.
-                    filtersMenu
-                    searchModePicker
-                    referenceImagePicker
-                    HStack(spacing: 6) {
-                        Image(systemName: "magnifyingglass")
-                            .foregroundStyle(.secondary).font(.system(size: 12))
-                        TextField("Search clips", text: $model.query)
-                            .textFieldStyle(.plain)
-                            .font(.system(size: 13))
-                            .frame(width: 160)
-                            .focused($searchFocused)
-                            .accessibilityLabel("Search clipboard")
-                            .onChange(of: model.query) { _ in model.resetSelection() }
-                    }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    // Visible focus affordance (BL-11): the field is first-responder on
-                    // summon, but the blinking caret alone isn't legible at a glance.
-                    .background(Color.primary.opacity(searchFocused ? 0.12 : 0.07), in: Capsule())
-                    .overlay(
-                        Capsule().strokeBorder(Theme.accent.opacity(searchFocused ? 0.65 : 0), lineWidth: 1.5)
-                    )
+        }), searchFocused: $searchFocused, isPro: store.entitlement.isPro,
+        openOptions: {
+            model.requestedSettingsSection = "cliphoard-search"
+            model.settingsFocusRequest = UUID()
+            model.showSettings = true
+        }, openSettings: { model.showSettings = true }, brandImage: brandIconImage) {
+            HStack(spacing: 8) {
+                clipTypeMenu
+                chip(title: "Pinned", systemImage: "pin.fill", active: model.pinnedOnly) {
+                    model.pinnedOnly.toggle(); model.resetSelection()
+                }
+                timeMenu
+                filtersMenu
+                referenceImagePicker
+                if model.activeKind != nil || model.pinnedOnly || model.timeFilter.isActive ||
+                    !model.activeFacets.isEmpty || !model.activeUserTags.isEmpty || !signals.active.isEmpty {
+                    Button("Clear filters") {
+                        model.activeKind = nil; model.pinnedOnly = false; model.timeFilter = .any
+                        model.activeFacets = []; model.activeUserTags = []; signals.active = []
+                        model.resetSelection()
+                    }.buttonStyle(.plain).foregroundStyle(Theme.accent)
+                }
+                Spacer(minLength: 8)
+                if settings.searchModality == .all {
+                    Text(SearchControlLabels.combinedSummary(SearchCapabilities(
+                        text: settings.searchTextEnabled, images: settings.searchImagesEnabled,
+                        audio: settings.searchAudioEnabled, video: settings.searchVideoEnabled,
+                        imageModel: settings.imageSearchModel), pro: store.entitlement.isPro))
+                        .foregroundStyle(.secondary).lineLimit(1).truncationMode(.tail)
+                        .help("Combined searches these enabled content types. Change them in Search options.")
                 }
             }
-
-            Button {
-                model.showSettings = true
-            } label: {
-                Image(systemName: "gearshape.fill")
-                    .font(.system(size: 15))
-                    .foregroundStyle(Theme.accent)
-            }
-            .buttonStyle(.plain)
-            .help("Settings")
-            .accessibilityLabel("Settings")
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
+        .onChange(of: model.query) { _ in model.resetSelection() }
     }
 
-    private var categoryChips: some View {
-        HStack(spacing: 6) {
-            chip(title: "All", systemImage: "square.grid.2x2", active: model.activeKind == nil && !model.pinnedOnly) {
-                model.activeKind = nil; model.pinnedOnly = false; model.resetSelection()
-            }
-            chip(title: "Pinned", systemImage: "pin.fill", active: model.pinnedOnly) {
-                model.pinnedOnly.toggle(); model.activeKind = nil; model.resetSelection()
-            }
-            let counts = store.counts()
+    /// The fine-grained clipboard kind is a filter, not a competing search scope.
+    private var clipTypeMenu: some View {
+        Menu {
+            Button("Any clip type") { model.activeKind = nil; model.resetSelection() }
             ForEach(ClipKind.allCases, id: \.self) { kind in
-                if (counts[kind] ?? 0) > 0 {
-                    chip(title: kind.title, systemImage: kind.symbolName,
-                         active: model.activeKind == kind && !model.pinnedOnly) {
-                        model.activeKind = (model.activeKind == kind ? nil : kind)
-                        model.pinnedOnly = false
-                        model.resetSelection()
-                    }
+                Button {
+                    model.activeKind = kind; model.resetSelection()
+                } label: {
+                    Label(kind.title, systemImage: model.activeKind == kind ? "checkmark" : kind.symbolName)
                 }
             }
+        } label: {
+            filterChipLabel(icon: "line.3.horizontal.decrease", text: model.activeKind?.title ?? "Clip type",
+                            active: model.activeKind != nil)
         }
+        .menuStyle(.borderlessButton).fixedSize()
+        .help("Narrow the selected search to a clipboard type")
     }
 
     private func chip(title: String, systemImage: String, active: Bool, action: @escaping () -> Void) -> some View {
@@ -386,54 +355,6 @@ struct ContentView: View {
             .foregroundStyle(active ? Color.white : Color.primary)
         }
         .buttonStyle(.plain)
-    }
-
-    /// The visible search-mode switcher next to the search field (Smart / Exact /
-    /// Tag). Uses the NATIVE macOS pop-up button (the system control everyone
-    /// recognizes as a dropdown) so it unmistakably reads as clickable — a custom
-    /// Menu label has its background/chevron stripped by .borderlessButton style.
-    private var searchModePicker: some View {
-        HStack(spacing: 5) {
-            Text("Search:").font(.system(size: 11)).foregroundStyle(.secondary)
-            Picker("Search in", selection: Binding(get: { settings.searchModality }, set: { mode in
-                if mode != .text && mode != .all && !store.entitlement.isPro { model.presentProSettings() }
-                else {
-                    settings.searchModality = mode
-                    // Also honor reselecting All when a kind chip was narrowed.
-                    model.applySearchModality(mode)
-                }
-            })) {
-                ForEach(SearchModality.allCases) { mode in
-                    Text(mode.title + ((!store.entitlement.isPro && mode != .text && mode != .all) ? " · Pro" : "")).tag(mode)
-                }
-            }.labelsHidden().pickerStyle(.menu).fixedSize().tint(Theme.accent)
-            if settings.searchModality == .all && !settings.searchTextEnabled {
-                Button("Text is off · Include text") { settings.searchTextEnabled = true }
-                    .font(.system(size: 11))
-                    .help("Include basic text matching in All enabled. This does not download a model.")
-            }
-            if settings.searchModality == .text || settings.searchModality == .all {
-                Picker("Text model", selection: Binding(get: { settings.deepSearchLevel }, set: { settings.selectTextModelForSearch($0) })) {
-                    ForEach(DeepSearchLevel.allCases) { Text($0.title).tag($0) }
-                }.labelsHidden().pickerStyle(.menu).fixedSize()
-            }
-            if settings.searchModality == .images || settings.searchModality == .all {
-                Picker("Picture model", selection: $settings.imageSearchModel) {
-                    ForEach(ImageSearchModel.allCases) { Text($0.title).tag($0) }
-                }.labelsHidden().pickerStyle(.menu).fixedSize()
-            }
-            Button {
-                model.requestedSettingsSection = settings.imageSearchModel == .gemma2 || settings.searchModality == .audio || settings.searchModality == .video ? "cliphoard-media" : "cliphoard-search"
-                model.settingsFocusRequest = UUID(); model.showSettings = true
-            } label: { Image(systemName: "slider.horizontal.3") }
-            .help("Choose enabled categories, prepare optional models, or index pictures and media")
-            if settings.imageSearchModel == .gemma2 && (settings.searchModality == .images || settings.searchModality == .all) && !store.mediaSearch.prepared {
-                Text("Gemma not prepared").font(.caption2).foregroundStyle(.secondary)
-            }
-
-        }
-        .help("Choose a category independently of its model. All enabled combines the categories enabled in Settings. Models are optional downloads.")
-        .accessibilityLabel("Search in: \(settings.searchModality.title)")
     }
 
     /// Choose a picture from disk and search BY it.

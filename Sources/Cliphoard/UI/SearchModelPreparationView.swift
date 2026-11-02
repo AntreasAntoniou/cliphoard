@@ -42,6 +42,8 @@ struct PictureIndexStatus: Equatable {
         return "\(indexed) of \(eligible) clipboard pictures searchable by description."
     }
     var canIndex: Bool { !working && remaining > 0 }
+    /// Healthy, idle models do not need a permanent status banner in the bar.
+    var needsAttention: Bool { working || remaining > 0 || indexed == 1 }
 }
 
 /// Lives in the bar, observing the same long-lived jobs as Settings. Closing the
@@ -124,6 +126,7 @@ struct SearchModelPreparationView: View {
             }
             if includesPictures && settings.imageSearchModel == .clip && store.imageSearchModelReady {
                 let index = pictureIndexStatus
+                if index.needsAttention {
                 HStack {
                     Text(settings.imageSearchModel.title + ": " + index.message)
                         .font(.caption).foregroundStyle(.secondary).lineLimit(2)
@@ -138,6 +141,7 @@ struct SearchModelPreparationView: View {
                         }.disabled(!mayPrepare)
                     }
                 }
+                }
             }
             if requirements.contains(.media), !media.prepared, !media.busy,
                media.status.hasPrefix("Couldn’t") || media.status.hasPrefix("Preparation stopped") {
@@ -147,10 +151,10 @@ struct SearchModelPreparationView: View {
                 consent(target)
             } else if !missing.isEmpty {
                 HStack {
-                    Text(mayPrepare ? "Prepare models to search: " + missing.map(\.title).joined(separator: ", ") : "Model preparation is unavailable while history is in recovery mode.")
+                    Text(mayPrepare ? "Optional search models aren’t ready yet." : "Model preparation is unavailable while history is in recovery mode.")
                         .font(.caption).foregroundStyle(.secondary).lineLimit(2)
                     Spacer()
-                    Button("Prepare…") { pending = missing.first }.disabled(!mayPrepare)
+                    Button("Set up search…") { pending = missing.first }.disabled(!mayPrepare)
                 }
             }
         }

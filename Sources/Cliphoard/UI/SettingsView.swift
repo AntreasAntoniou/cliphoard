@@ -668,69 +668,73 @@ struct SettingsView: View {
                     }
                 }
 
-                section("Search") {
-                    HStack {
-                        Text("Mode")
-                        Spacer()
-                        Picker("", selection: $settings.searchMode) {
-                            // UPSELL 1. The Pro mode is LISTED, named as Pro, and selecting it
-                            // is bounced by `AppSettings.searchMode`'s gate — so it can never
-                            // become a mode that is selected and silently returns nothing.
-                            ForEach(SearchMode.allCases.filter { $0 != .image && $0 != .media }) { mode in
-                                Text(SearchMode.available(settings.entitlement).contains(mode)
-                                     ? mode.title : "\(mode.title) — Pro").tag(mode)
-                            }
-                        }
-                        .labelsHidden().frame(width: 150)
-                    }
+                section("Search options") {
+                    Text("Choose what to search, then choose the models behind it.")
+                        .foregroundStyle(.secondary)
                     Picker("Search in", selection: $settings.searchModality) {
-                        ForEach(SearchModality.allCases) { Text($0.title).tag($0) }
-                    }
-                    Picker("Picture model", selection: $settings.imageSearchModel) {
-                        ForEach(ImageSearchModel.allCases) { Text($0.title).tag($0) }
-                    }
-                    Text("Models and search categories are separate. All enabled combines ranked results without comparing different models’ scores. Picture, audio and video search require Pro.")
-                        .font(.caption).foregroundStyle(.secondary)
-                    Toggle("Text in All enabled", isOn: $settings.searchTextEnabled)
-                    Toggle("Pictures in All enabled", isOn: $settings.searchImagesEnabled)
-                    Toggle("Audio in All enabled", isOn: $settings.searchAudioEnabled)
-                    Toggle("Video in All enabled", isOn: $settings.searchVideoEnabled)
-                    Text("CLIP searches clipboard pictures. Gemma searches explicitly indexed clipboard pictures and chosen files. Audio includes video soundtracks; Video includes frames and indexed speech. Enabling a category never downloads or indexes anything.")
-                        .font(.caption).foregroundStyle(.secondary)
-                    if let pitch = settings.pitch(.imageSearch) {
-                        ProPitchCard(message: pitch)
-                    }
-                    HStack {
-                        Text("Embedding model")
-                        Spacer()
-                        Picker("", selection: $settings.deepSearchLevel) {
-                            // All editions prepare optional Hugging Face downloads locally.
-                            ForEach(DeepSearchLevel.allCases) { Text($0.title).tag($0) }
+                        ForEach([SearchModality.all, .text, .images, .audio, .video]) {
+                            Text(SearchControlLabels.scope($0) +
+                                 (!settings.entitlement.isPro && $0 != .text && $0 != .all ? " · Pro" : "")).tag($0)
                         }
-                        .labelsHidden().frame(width: 200)
-                        .disabled(settings.searchMode == .exact)
                     }
-                    if settings.deepSearchLevel == .gemma2 {
-                        Text("EmbeddingGemma 2 powers text search, automatic tags and tag suggestions locally. It shares the optional media-model download. Long text uses its first 1,024 UTF-8 bytes; basic matching still searches the full text.")
+                    DisclosureGroup("Content types in Combined") {
+                        Toggle("Text", isOn: $settings.searchTextEnabled)
+                        Toggle("Images · Pro", isOn: $settings.searchImagesEnabled)
+                            .disabled(!settings.entitlement.isPro)
+                        Toggle("Audio · Pro", isOn: $settings.searchAudioEnabled)
+                            .disabled(!settings.entitlement.isPro)
+                        Toggle("Video · Pro", isOn: $settings.searchVideoEnabled)
+                            .disabled(!settings.entitlement.isPro)
+                    }
+                    Text(SearchControlLabels.combinedSummary(SearchCapabilities(
+                        text: settings.searchTextEnabled, images: settings.searchImagesEnabled,
+                        audio: settings.searchAudioEnabled, video: settings.searchVideoEnabled,
+                        imageModel: settings.imageSearchModel), pro: settings.entitlement.isPro))
+                        .font(.caption).foregroundStyle(.secondary)
+                    Divider()
+                    Picker("Text & automatic tags", selection: Binding(
+                        get: { settings.deepSearchLevel }, set: { settings.selectTextModelForSearch($0) })) {
+                        ForEach(DeepSearchLevel.allCases) { Text(SearchControlLabels.textModel($0)).tag($0) }
+                    }.disabled(settings.searchMode == .exact)
+                    if settings.searchMode == .exact {
+                        Text("Exact matching is selected. Switch to Smart in Advanced text search to use a model.")
                             .font(.caption).foregroundStyle(.secondary)
                     }
-                    HStack {
-                        Text("Vector detail")
-                        Spacer()
-                        Picker("", selection: $settings.vectorDetail) {
-                            ForEach(VectorDetail.allCases) { Text($0.title).tag($0) }
-                        }
-                        .labelsHidden().frame(width: 180)
-                        // Head selection exists only on the ogma models; the HF
-                        // tier (MiniLM) has a fixed output head.
-                        .disabled(settings.searchMode == .exact || !settings.deepSearchLevel.isOgma)
-                    }
-                    Text("Models download from Hugging Face when you choose, then run offline on this Mac. Full stores 1024-dimensional ogma vectors; Compact uses less storage. Changing a model re-indexes history after preparation.")
-                        .font(.system(size: 11)).foregroundStyle(.secondary)
+                    Text(SearchControlLabels.textDetail(settings.deepSearchLevel))
+                        .font(.caption).foregroundStyle(.secondary)
                     embedderStatus
-                    if store.entitlement.isPro { imageModelStatus }
-                    Text("Smart = clips containing exactly what you typed first, then the closest in meaning · Exact = only clips containing the typed text, ignoring case · Tag = clips in the auto category (of 100) closest to your query. You can also switch modes from the pill next to the search field. Models run on-device (CoreML).")
-                        .font(.system(size: 11)).foregroundStyle(.secondary)
+                    Divider()
+                    Picker("Images · Pro", selection: $settings.imageSearchModel) {
+                        ForEach(ImageSearchModel.allCases) { Text($0.title).tag($0) }
+                    }.disabled(!settings.entitlement.isPro)
+                    Text(SearchControlLabels.imageDetail(settings.imageSearchModel))
+                        .font(.caption).foregroundStyle(.secondary)
+                    if settings.entitlement.isPro && settings.imageSearchModel == .clip { imageModelStatus }
+                    if !settings.entitlement.isPro {
+                        Button("Explore Pro image, audio & video search") { model?.presentProSettings() }
+                    }
+                    if let pitch = settings.pitch(.imageSearch) { ProPitchCard(message: pitch) }
+                    Button("Media setup — audio, video & Gemma pictures…") {
+                        model?.requestedSettingsSection = "cliphoard-media"
+                        model?.settingsFocusRequest = UUID()
+                    }
+                    Text("Choose files, speech transcription and video sampling in Media setup.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    DisclosureGroup("Advanced text search") {
+                        Picker("Matching", selection: $settings.searchMode) {
+                            ForEach(SearchMode.allCases.filter { $0 != .image && $0 != .media }) { mode in
+                                Text(mode.title).tag(mode)
+                            }
+                        }
+                        Text(settings.searchMode.blurb).font(.caption).foregroundStyle(.secondary)
+                        Picker("Vector detail", selection: $settings.vectorDetail) {
+                            ForEach(VectorDetail.allCases) { Text($0.title).tag($0) }
+                        }.disabled(settings.searchMode == .exact || !settings.deepSearchLevel.isOgma)
+                        Text("Full stores 1024-dimensional Ogma vectors; Compact uses less storage. Changing a model re-indexes history after preparation.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    Text("Optional models download from Hugging Face only when you approve, then run on this Mac. Your clips stay local.")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
 
                 .id("cliphoard-search")
