@@ -1092,17 +1092,23 @@ final class ClipStore: ObservableObject {
     func imagesMatching(_ query: String, limit: Int = 24) -> [(ClipItem, Float)] {
         guard clipEmbedder != nil, let bridge = clipTextBridge else { return [] }
         let raw = bridge.embed(query, query: true)
-        guard !raw.isEmpty else { return [] }
-        let q = CLIPEmbedder.centred(raw, by: CLIPTextMean.vector)
-        guard !q.isEmpty else { return [] }
+        return Self.rankImageMatches(queryVector: raw, items: items, limit: limit)
+    }
+
+    /// Pure ranking seam: no model loading, clipboard access or persistence.
+    static func rankImageMatches(queryVector raw: [Float], items: [ClipItem], limit: Int = 24) -> [(ClipItem, Float)] {
+        guard raw.count == CLIPEmbedder.dimension, raw.allSatisfy(\.isFinite), limit > 0 else { return [] }
 
         let candidates = items.filter {
-            $0.kind == .image && !$0.isIndexVetoed
-                && ($0.embeddings[CLIPEmbedder.signature]?.vector.count ?? 0) == q.count
+            $0.kind == .image && !$0.isIndexVetoed && !SensitiveClipPolicy.requiresAuthentication($0)
+                && ($0.embeddings[CLIPEmbedder.signature]?.vector.count ?? 0) == raw.count
         }
-        // Fewer than two vectors makes a corpus mean meaningless — centring one vector by
-        // itself yields zero. Fall back to uncentred rather than returning nothing.
+        // Centring a single picture by itself yields zero. Keep the existing
+        // two-picture minimum: the centred relevance floor is not calibrated
+        // for raw similarity. Basic/OCR text search remains available.
         guard candidates.count >= 2 else { return [] }
+        let q = CLIPEmbedder.centred(raw, by: CLIPTextMean.vector)
+        guard !q.isEmpty else { return [] }
 
         var mean = [Float](repeating: 0, count: q.count)
         for item in candidates {

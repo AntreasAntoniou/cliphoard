@@ -197,7 +197,6 @@ final class PanelViewModel: ObservableObject {
         let capabilities = SearchPreferences.capabilities()
         let scoped = store.filtered(kind: activeKind, query: "", pinnedOnly: pinnedOnly,
                                     facets: activeFacets, userTags: activeUserTags, time: time)
-        let byID = Dictionary(uniqueKeysWithValues: scoped.map { ($0.id, $0) })
         var lanes: [SearchModality: [UUID]] = [:]
         if (modality == .text || modality == .all), (modality == .text || capabilities.contains(.text, pro: store.entitlement.isPro)) {
             lanes[.text] = textResults(query: q, time: time).map(\.id)
@@ -216,7 +215,37 @@ final class PanelViewModel: ObservableObject {
                 lanes[lane] = store.mediaSearch.matches.filter { $0.modality == lane && store.mediaSearch.visibleClip($0.clipID) != nil }.map(\.clipID)
             }
         }
-        return SearchPreferences.fuse(lanes).compactMap { byID[$0] }
+        return Self.combineSearchResults(query: q, scoped: scoped, lanes: lanes,
+            balanceCLIPPictures: modality == .all && capabilities.imageModel == .clip
+                && capabilities.contains(.images, pro: store.entitlement.isPro),
+            browseChronologically: referenceImage == nil || modality != .images)
+    }
+
+    /// Shared by the actual panel and synthetic search regressions without a DB.
+    static func combineSearchResults(query: String, scoped: [ClipItem], lanes: [SearchModality: [UUID]],
+                                     balanceCLIPPictures: Bool = false,
+                                     browseChronologically: Bool = true) -> [ClipItem] {
+        if browseChronologically && query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            // Browsing has no relevance signal. Duplicate membership (for example
+            // a picture with OCR) must not outrank newer clips in history.
+            let included = Set(lanes.values.flatMap { $0 })
+            return scoped.filter { included.contains($0.id) }
+        }
+        let byID = Dictionary(uniqueKeysWithValues: scoped.map { ($0.id, $0) })
+        var categories = lanes
+        if balanceCLIPPictures {
+            // In All + CLIP, OCR and pixels are two ways to find the same
+            // picture category, not two votes against a text-only match.
+            // Fuse them within Images first. Explicit Text retains its OCR
+            // results, and no image or text result is fabricated here.
+            let textual = lanes[.text] ?? []
+            let ocrPictures = textual.filter { byID[$0]?.kind == .image }
+            categories[.text] = textual.filter { byID[$0]?.kind != .image }
+            categories[.images] = SearchPreferences.fuse([
+                .text: ocrPictures, .images: lanes[.images] ?? []
+            ])
+        }
+        return SearchPreferences.fuse(categories).compactMap { byID[$0] }
     }
 
     private func textResults(query q: String, time: TimeFilter) -> [ClipItem] {

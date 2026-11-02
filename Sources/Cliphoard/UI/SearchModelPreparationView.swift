@@ -28,6 +28,22 @@ enum SearchModelRequirement: Hashable, Identifiable {
     }
 }
 
+/// Index readiness is separate from having downloaded/prepared a model.
+struct PictureIndexStatus: Equatable {
+    let indexed: Int
+    let eligible: Int
+    let working: Bool
+    var remaining: Int { max(0, eligible - indexed) }
+    var message: String {
+        if working { return "Indexing pictures in the background · \(indexed) of \(eligible) ready" }
+        if eligible == 0 { return "No eligible clipboard pictures to index." }
+        if indexed == 0 { return "Picture model ready, but clipboard pictures are not indexed yet." }
+        if indexed == 1 { return "1 of \(eligible) pictures indexed. CLIP description search needs at least two indexed pictures; basic text and OCR matching remain available." }
+        return "\(indexed) of \(eligible) clipboard pictures searchable by description."
+    }
+    var canIndex: Bool { !working && remaining > 0 }
+}
+
 /// Lives in the bar, observing the same long-lived jobs as Settings. Closing the
 /// panel neither restarts a transfer nor loses its progress. No inference or I/O
 /// is performed by a view body; consent buttons invoke the existing async owners.
@@ -67,6 +83,15 @@ struct SearchModelPreparationView: View {
     }
     private var missing: [SearchModelRequirement] { requirements.filter { !ready($0) && !working($0) } }
     private var mayPrepare: Bool { !store.safeMode && store.storageComplete }
+    private var pictureIndexStatus: PictureIndexStatus {
+        let eligible = store.items.filter { $0.kind == .image && !$0.isIndexVetoed && !SensitiveClipPolicy.requiresAuthentication($0) }
+        let indexed = eligible.filter { $0.embeddings[CLIPEmbedder.signature]?.vector.count == CLIPEmbedder.dimension }.count
+        return PictureIndexStatus(indexed: indexed, eligible: eligible.count,
+            working: store.imageProgress != nil)
+    }
+    private var includesPictures: Bool {
+        store.entitlement.isPro && (settings.searchModality == .images || (settings.searchModality == .all && settings.searchImagesEnabled))
+    }
     private func cached(_ requirement: SearchModelRequirement) -> Bool {
         switch requirement {
         case .text(let level): return level == .gemma2 ? GemmaMediaAssets.localCandidateExists() : level.modelName.map { ModelAssets.canPrepareLocally($0) } ?? true
@@ -96,6 +121,23 @@ struct SearchModelPreparationView: View {
             stateRow(store.imageModelState, title: "Picture model", cancel: store.cancelImageModelPreparation)
             if let title = media.preparationTitle {
                 progressRow(title, progress: media.preparationProgress, cancel: media.cancel)
+            }
+            if includesPictures && settings.imageSearchModel == .clip && store.imageSearchModelReady {
+                let index = pictureIndexStatus
+                HStack {
+                    Text(settings.imageSearchModel.title + ": " + index.message)
+                        .font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                    Spacer()
+                    if index.working {
+                        ProgressView().controlSize(.small)
+                    } else if index.canIndex {
+                        Button("Index pictures") {
+                            guard mayPrepare, includesPictures, settings.imageSearchModel == .clip,
+                                  store.imageSearchModelReady else { return }
+                            store.scheduleImageUnderstanding()
+                        }.disabled(!mayPrepare)
+                    }
+                }
             }
             if requirements.contains(.media), !media.prepared, !media.busy,
                media.status.hasPrefix("Couldn’t") || media.status.hasPrefix("Preparation stopped") {
