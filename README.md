@@ -210,3 +210,5 @@ Later: clip stack · customizable hotkey · smart actions on links & colors.
 
 MIT © Antreas Antoniou. Optional on-device models have their own licenses — see
 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
+
+Agents can search and retrieve explicitly shared clips from an encrypted export using the optional [local MCP companion](tools/agent-search/README.md).

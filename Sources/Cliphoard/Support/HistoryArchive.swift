@@ -700,6 +700,12 @@ enum HistoryArchive {
             return out
         }
 
+        /// Check that the end record consumed the last authenticated chunk.
+        func atAuthenticatedEnd() throws -> Bool {
+            guard offset == buffer.count else { return false }
+            return try chunks.next() == nil
+        }
+
         func next() throws -> RawRecord {
             let type = try read(1)[0]
             let nameLength = Int(HistoryArchive.readBE16(try read(2), at: 0))
