@@ -2,7 +2,7 @@
 
 This macOS companion works with the encrypted history export in Cliphoard Pro, including TestFlight 1.0.3 (18). It exposes four MCP tools over stdio. The agent can search and retrieve text you explicitly share. Search matches all query words without regard to case. Plain text, links and color strings are supported.
 
-1. Inspect a clip in Cliphoard and add the custom tag `agent-share` under **Tags → Yours**. In Settings, use **Move to a new Mac → Export** and save the encrypted archive.
+1. Inspect a clip in Cliphoard and add the custom tag `agent-share` under **Tags → Yours**. In Settings, use **Move to another Mac → Export** and save the encrypted archive.
 2. Run `tools/agent-search/install.sh` from a source checkout on the Mac. It requires the Swift compiler and Python 3.13 or newer. If needed set `CLIPHOARD_PYTHON` to the absolute interpreter path. The installer builds the archive reader from Cliphoard's own sources and installs the official Python MCP SDK in a private virtual environment.
 3. Register it with an MCP client. For Codex, use the following command and start a new chat.
 
