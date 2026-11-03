@@ -133,6 +133,9 @@ struct ContentView: View {
         }
     }
 
+    private var showsMediaResults: Bool { settings.searchModality == .audio || settings.searchModality == .video }
+    private var usesThumbnailStrip: Bool { !showsMediaResults && settings.layoutMode == .strip }
+
     var body: some View {
         VStack(spacing: 0) {
             BoundedChrome { safeModeBanner }
@@ -157,7 +160,7 @@ struct ContentView: View {
             // spotlight) from reporting its entire scrollable content and inflating
             // the bar to match. Settings uses its own resizable window.
             Group {
-                if settings.searchModality == .audio || settings.searchModality == .video {
+                if showsMediaResults {
                     MediaSearchResultsView(controller: store.mediaSearch, model: model)
                 } else {
                 switch settings.layoutMode {
@@ -167,7 +170,7 @@ struct ContentView: View {
                 }
                 }
             }
-            .frame(height: Theme.stripHeight)
+            .frame(height: usesThumbnailStrip ? Theme.thumbnailStripHeight : Theme.stripHeight)
             footer
         }
         .background(Theme.barBackground())
@@ -664,7 +667,7 @@ struct ContentView: View {
                     }
                 }
                 .padding(.horizontal, 16)
-                .padding(.vertical, 14)
+                .padding(.vertical, Theme.stripInset)
             }
             // Only keyboard navigation scrolls the strip; mouse clicks don't, so a
             // click registers and highlights instantly with no animated re-center.
@@ -958,7 +961,7 @@ struct ContentView: View {
                 .font(.system(size: 12))
                 .foregroundStyle(.tertiary)
         }
-        .frame(width: 420, height: Theme.cardHeight)
+        .frame(width: 420, height: usesThumbnailStrip ? Theme.thumbnailHeight : Theme.cardHeight)
     }
 
     // MARK: Footer

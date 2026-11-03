@@ -17,7 +17,7 @@ struct SearchBarView<Filters: View>: View {
     @ViewBuilder var filters: () -> Filters
 
     var body: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: 8) {
             HStack(spacing: 8) {
                 Group {
                     if let brandImage {
@@ -73,25 +73,44 @@ struct SearchBarView<Filters: View>: View {
                     Image(systemName: "gearshape").font(.system(size: 15))
                 }.buttonStyle(.plain).help("Settings").accessibilityLabel("Settings")
             }
-            if !badges.isEmpty {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 6) {
-                        ForEach(badges) { badge in
-                            Label(badge.label, systemImage: badge.symbol)
-                                .font(.system(size: 11, weight: .medium))
-                                .padding(.horizontal, 9).padding(.vertical, 5)
-                                .foregroundStyle(Theme.accent)
-                                .background(Theme.accent.opacity(0.09), in: Capsule())
-                                .help("Configured search: " + badge.label + ". Model readiness is shown separately.")
-                        }
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 12) {
+                    if !badges.isEmpty { configuredBadges }
+                    filterControls
+                }
+                .fixedSize(horizontal: true, vertical: false)
+
+                VStack(alignment: .leading, spacing: 6) {
+                    if !badges.isEmpty {
+                        ScrollView(.horizontal) { configuredBadges }
                     }
-                }.frame(height: 26)
-                .accessibilityLabel("Selected content types and configured models")
+                    ScrollView(.horizontal) { filterControls }
+                }
+                .fixedSize(horizontal: false, vertical: true)
             }
-            filters()
-                .font(.system(size: 11))
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(.horizontal, 16).padding(.vertical, 12)
+        .padding(.horizontal, 16).padding(.vertical, 9)
+    }
+
+    private var filterControls: some View {
+        filters().font(.system(size: 11)).fixedSize(horizontal: true, vertical: false)
+    }
+
+    private var configuredBadges: some View {
+        HStack(spacing: 6) {
+            ForEach(badges) { badge in
+                Label(badge.label, systemImage: badge.symbol)
+                    .font(.system(size: 11, weight: .medium))
+                    .padding(.horizontal, 9).padding(.vertical, 5)
+                    .foregroundStyle(Theme.accent)
+                    .background(Theme.accent.opacity(0.09), in: Capsule())
+                    .help("Configured search: " + badge.label + ". Model readiness is shown separately.")
+            }
+        }
+        .fixedSize(horizontal: true, vertical: false)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Selected content types and configured models")
     }
 }
 

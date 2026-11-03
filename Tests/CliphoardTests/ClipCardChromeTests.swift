@@ -345,7 +345,7 @@ final class ClipCardChromeTests: XCTestCase {
             bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
         ctx.draw(cg, in: CGRect(x: 0, y: 0, width: cg.width, height: cg.height))
         XCTAssertEqual(CGFloat(cg.width), Theme.cardWidth, accuracy: 1)
-        XCTAssertEqual(CGFloat(cg.height), Theme.cardHeight, accuracy: 1)
+        XCTAssertEqual(CGFloat(cg.height), Theme.thumbnailHeight, accuracy: 1)
         return Shot(w: cg.width, h: cg.height, px: buf)
     }
 

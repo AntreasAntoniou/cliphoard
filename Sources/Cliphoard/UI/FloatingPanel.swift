@@ -13,7 +13,7 @@ import SwiftUI
 final class FloatingPanel: NSPanel {
     /// Floor for the bar's height, and the size it opens at before the SwiftUI
     /// tree has ever been measured. Not the resting height — see `fit`.
-    static let minBarHeight: CGFloat = 380
+    static let minBarHeight: CGFloat = 320
 
     /// Generous allowance for the rows that are always present — toolbar, divider, footer and
     /// the outer top pad, measured at 112pt together. Used only to bound a runaway measurement

@@ -382,7 +382,7 @@ struct ClipCardView: View {
     @ViewBuilder var body: some View {
         if sensitiveReveal.isConcealed(item) {
             SensitiveClipPlaceholder(item: item)
-                .frame(width: Theme.cardWidth, height: Theme.cardHeight)
+                .frame(width: Theme.cardWidth, height: Theme.thumbnailHeight)
                 .background(Theme.cardBackground())
                 .clipShape(RoundedRectangle(cornerRadius: Theme.cornerRadius))
         } else {
@@ -411,7 +411,7 @@ struct ClipCardView: View {
             tagRow
             footer
         }
-        .frame(width: Theme.cardWidth, height: Theme.cardHeight)
+        .frame(width: Theme.cardWidth, height: Theme.thumbnailHeight)
         .background(Theme.cardBackground())
         .clipShape(RoundedRectangle(cornerRadius: Theme.cornerRadius, style: .continuous))
         .overlay(

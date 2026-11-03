@@ -74,6 +74,16 @@ final class SearchControlPresentationTests: XCTestCase {
         }
     }
 
+    func testToolbarSharesTheControlsRowOnlyWhenTheirNaturalWidthsFit() {
+        _ = NSApplication.shared
+        let host = NSHostingController(rootView: SearchBarFixture(pending: false))
+        let narrow = host.sizeThatFits(in: CGSize(width: 640, height: .infinity))
+        let wide = host.sizeThatFits(in: CGSize(width: 1440, height: .infinity))
+        XCTAssertLessThanOrEqual(narrow.width, 641)
+        XCTAssertGreaterThan(narrow.height - wide.height, 18)
+        XCTAssertLessThan(wide.height, 105)
+    }
+
     func testQuickOptionsFitsItsCompactPopover() throws {
         _ = NSApplication.shared
         let host = NSHostingView(rootView: SearchOptionsFixture())
