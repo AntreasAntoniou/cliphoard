@@ -5,7 +5,11 @@ import Combine
 /// current keyboard selection, and exposes intents the controller wires up.
 @MainActor
 final class PanelViewModel: ObservableObject {
-    @Published var query: String = ""
+    /// Only committed input participates in ranking and media request identity.
+    @Published var query: String = "" { didSet { searchInput.reset(to: query) } }
+    let searchInput = SearchInputController()
+    private var searchInputObserver: AnyCancellable?
+    private var searchTimingObserver: AnyCancellable?
     @Published var activeKind: ClipKind? = nil
     @Published var pinnedOnly: Bool = false
     /// Time window over `createdAt` (chip selection). A `when:` token typed in the
@@ -28,6 +32,11 @@ final class PanelViewModel: ObservableObject {
         didSet { if showSettings != oldValue { onSettingsChange?(showSettings) } }
     }
     var onSettingsChange: ((Bool) -> Void)?
+    /// The quick-options popover owns keys/focus while it is presented.
+    @Published var showSearchOptions = false {
+        didSet { if showSearchOptions != oldValue { onSearchOptionsChange?(showSearchOptions) } }
+    }
+    var onSearchOptionsChange: ((Bool) -> Void)?
     @Published var requestedSettingsSection: String?
     @Published var settingsFocusRequest = UUID()
 
@@ -111,6 +120,17 @@ final class PanelViewModel: ObservableObject {
 
     init(store: ClipStore) {
         self.store = store
+        searchInput.onCommit = { [weak self] value in
+            self?.query = value
+            self?.resetSelection()
+        }
+        searchInputObserver = searchInput.objectWillChange.sink { [weak self] _ in
+            self?.objectWillChange.send()
+        }
+        searchTimingObserver = NotificationCenter.default.publisher(for: SearchTiming.changed)
+            .receive(on: RunLoop.main).sink { [weak self] _ in
+                self?.searchInput.setTiming(.current())
+            }
         mediaObserver = store.mediaSearch.objectWillChange.sink { [weak self] _ in
             self?.cachedResultsKey = nil
             self?.objectWillChange.send()
@@ -398,6 +418,7 @@ final class PanelViewModel: ObservableObject {
     }
 
     func commitSelection(plain: Bool = false) {
+        if searchInput.submitPending() { return }
         let r = results
         guard r.indices.contains(selection) else { return }
         activate(r[selection], plain: plain)

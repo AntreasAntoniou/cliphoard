@@ -5,6 +5,25 @@ import AppKit
 
 @MainActor
 final class SearchControlPresentationTests: XCTestCase {
+    func testExactTextBadgeDoesNotPromiseAnUnusedConfiguredModel() {
+        let capabilities = SearchCapabilities(text: true, images: true, audio: false, video: false, imageModel: .clip)
+        XCTAssertEqual(SearchScopeBadge.selected(mode: .all, capabilities: capabilities, level: .normal,
+            pro: true, matching: .exact).map(\.label), ["Text · Exact", "Images · CLIP"])
+        XCTAssertEqual(SearchScopeBadge.selected(mode: .text, capabilities: capabilities, level: .normal,
+            pro: true, matching: .smart).map(\.label), ["Text · Ogma Small"])
+    }
+    func testAllTypesKeepsSavedScopeAndBadgesDescribeConfiguredSelection() {
+        XCTAssertEqual(SearchControlLabels.scope(.all), "All types")
+        XCTAssertEqual(SearchModality.all.rawValue, "all")
+        let selected = SearchCapabilities(text: true, images: true, audio: true, video: true, imageModel: .clip)
+        XCTAssertEqual(SearchScopeBadge.selected(mode: .all, capabilities: selected, level: .normal, pro: true).map(\.label),
+                       ["Text · Ogma Small", "Images · CLIP", "Audio · Gemma 2", "Video · Gemma 2"])
+        XCTAssertEqual(SearchScopeBadge.selected(mode: .all, capabilities: selected, level: .off, pro: false).map(\.label), ["Text · Basic"])
+        XCTAssertTrue(SearchScopeBadge.selected(mode: .images, capabilities: selected, level: .normal, pro: false).isEmpty)
+        let disabled = SearchCapabilities(text: false, images: false, audio: false, video: false, imageModel: .gemma2)
+        XCTAssertTrue(SearchScopeBadge.selected(mode: .all, capabilities: disabled, level: .gemma2, pro: true).isEmpty)
+        XCTAssertEqual(SearchScopeBadge.selected(mode: .images, capabilities: disabled, level: .normal, pro: true).map(\.label), ["Images · Gemma 2"])
+    }
     func testCombinedSummaryDoesNotPromiseDisabledOrPaidContent() {
         let selected = SearchCapabilities(text: true, images: true, audio: true, video: true, imageModel: .clip)
         XCTAssertEqual(SearchControlLabels.combinedSummary(selected, pro: false), "Text")
@@ -28,17 +47,18 @@ final class SearchControlPresentationTests: XCTestCase {
         _ = NSApplication.shared
         for width in [640.0, 900.0, 1440.0] {
             for dark in [false, true] {
-                let host = NSHostingView(rootView: SearchBarFixture()
+              for pending in [false, true] {
+                let host = NSHostingView(rootView: SearchBarFixture(pending: pending)
                     .frame(width: width).preferredColorScheme(dark ? .dark : .light))
-                let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: width, height: 115),
+                let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: width, height: 150),
                     styleMask: [.borderless], backing: .buffered, defer: false)
                 window.isReleasedWhenClosed = false
                 window.contentView = host
-                host.frame = NSRect(x: 0, y: 0, width: width, height: 115)
+                host.frame = NSRect(x: 0, y: 0, width: width, height: 150)
                 host.layoutSubtreeIfNeeded()
                 RunLoop.current.run(until: Date().addingTimeInterval(0.1))
                 XCTAssertLessThanOrEqual(host.fittingSize.width, width + 1)
-                XCTAssertLessThan(host.fittingSize.height, 125)
+                XCTAssertLessThan(host.fittingSize.height, 160)
                 XCTAssertFalse(window.isVisible)
                 if let output = ProcessInfo.processInfo.environment["CLIPHOARD_SEARCH_UI_SNAPSHOTS"] {
                     let root = URL(fileURLWithPath: output, isDirectory: true)
@@ -46,29 +66,62 @@ final class SearchControlPresentationTests: XCTestCase {
                     let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
                     host.cacheDisplay(in: host.bounds, to: bitmap)
                     let png = try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
-                    try png.write(to: root.appendingPathComponent("toolbar-\(Int(width))-\(dark ? "dark" : "light").png"), options: .withoutOverwriting)
+                    try png.write(to: root.appendingPathComponent("toolbar-\(Int(width))-\(dark ? "dark" : "light")-\(pending ? "pending" : "ready").png"), options: .withoutOverwriting)
                 }
                 window.close()
+              }
             }
+        }
+    }
+
+    func testQuickOptionsFitsItsCompactPopover() throws {
+        _ = NSApplication.shared
+        let host = NSHostingView(rootView: SearchOptionsFixture())
+        host.frame = NSRect(x: 0, y: 0, width: 300, height: 380)
+        host.layoutSubtreeIfNeeded()
+        XCTAssertLessThanOrEqual(host.fittingSize.width, 301)
+        XCTAssertLessThanOrEqual(host.fittingSize.height, 380)
+        if let output = ProcessInfo.processInfo.environment["CLIPHOARD_SEARCH_UI_SNAPSHOTS"] {
+            let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+            host.cacheDisplay(in: host.bounds, to: bitmap)
+            let png = try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
+            try png.write(to: URL(fileURLWithPath: output).appendingPathComponent("search-options.png"), options: .withoutOverwriting)
         }
     }
 }
 
 @MainActor private struct SearchBarFixture: View {
+    let pending: Bool
     @State private var query = "cat"
     @State private var scope = SearchModality.all
     @FocusState private var focused: Bool
     var body: some View {
         SearchBarView(query: $query, scope: $scope, searchFocused: $focused,
-                      isPro: true, openOptions: {}, openSettings: {}) {
+                      isPro: true, openOptions: {}, openSettings: {}, isPending: pending,
+                      timing: pending ? .enter : .pause, submitSearch: {},
+                      badges: SearchScopeBadge.selected(mode: .all,
+                        capabilities: SearchCapabilities(text: true, images: true, audio: true, video: true, imageModel: .clip),
+                        level: .normal, pro: true)) {
             HStack(spacing: 12) {
                 Label("Clip type", systemImage: "line.3.horizontal.decrease")
                 Label("Pinned", systemImage: "pin.fill")
                 Label("Time", systemImage: "clock")
                 Label("Filters", systemImage: "line.3.horizontal.decrease.circle")
                 Spacer()
-                Text("Text · Images").foregroundStyle(.secondary)
             }
         }.background(Color(nsColor: .windowBackgroundColor))
+    }
+}
+
+@MainActor private struct SearchOptionsFixture: View {
+    @State private var timing = SearchTiming.pause
+    @State private var text = true
+    @State private var images = true
+    @State private var audio = true
+    @State private var video = true
+    var body: some View {
+        SearchOptionsView(timing: $timing, text: $text, images: $images,
+                          audio: $audio, video: $video, isPro: true, manageModels: {})
+            .background(Color(nsColor: .windowBackgroundColor))
     }
 }

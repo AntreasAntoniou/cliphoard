@@ -187,6 +187,7 @@ final class AppSettings: ObservableObject {
     }
     @Published var themePreset: ThemePreset { didSet { Theme.preset = themePreset } }
     @Published var layoutMode: LayoutMode { didSet { Theme.layout = layoutMode } }
+    @Published var searchTiming: SearchTiming { didSet { SearchTiming.save(searchTiming) } }
     @Published var searchModality: SearchModality { didSet {
         if searchModality != .text && searchModality != .all && !entitlement.isPro {
             searchModality = oldValue; proPitch = ProPitch(.imageSearch, "Picture, audio and video search are Cliphoard Pro. " + Licence.pitch); return
@@ -307,6 +308,7 @@ final class AppSettings: ObservableObject {
         webSafeScreenshots = WebPaste.isEnabled
         themePreset = Theme.preset
         layoutMode = Theme.layout
+        searchTiming = SearchTiming.current()
         let capabilities = SearchPreferences.capabilities()
         searchModality = SearchPreferences.modality()
         imageSearchModel = capabilities.imageModel
@@ -677,7 +679,11 @@ struct SettingsView: View {
                                  (!settings.entitlement.isPro && $0 != .text && $0 != .all ? " · Pro" : "")).tag($0)
                         }
                     }
-                    DisclosureGroup("Content types in Combined") {
+                    Picker("Search timing", selection: $settings.searchTiming) {
+                        ForEach(SearchTiming.allCases) { Text($0.title).tag($0) }
+                    }
+                    Text(settings.searchTiming.detail).font(.caption).foregroundStyle(.secondary)
+                    DisclosureGroup("Content types in All types") {
                         Toggle("Text", isOn: $settings.searchTextEnabled)
                         Toggle("Images · Pro", isOn: $settings.searchImagesEnabled)
                             .disabled(!settings.entitlement.isPro)

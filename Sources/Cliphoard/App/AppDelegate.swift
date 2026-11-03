@@ -272,6 +272,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func setupPanel() {
         model.onPaste = { [weak self] item, plain in self?.commit(item, plain: plain) }
         model.onClose = { [weak self] in self?.hide(paste: false) }
+        model.searchInput.isComposing = { [weak self] in
+            (self?.panel.firstResponder as? NSTextView)?.hasMarkedText() ?? false
+        }
         model.onCopy = { [weak self] item in self?.copyToClipboard(item) }
         model.onFileVerb = { [weak self] item, verb in self?.perform(verb, on: item) }
         model.onSettingsChange = { [weak self] showing in
@@ -300,6 +303,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             if SensitiveClipReveal.shared.isAuthenticating { return }
             // An NSOpenPanel takes key; keep the requested picker visible underneath it.
             if self.model.isPresentingSystemPanel { return }
+            if self.model.showSearchOptions { return }
             #if APP_STORE
             if StorePurchase.shared.isPresentingSystemSheet { return }
             #endif
@@ -315,6 +319,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             guard self.isVisible else { return }
             NSApp.activate(ignoringOtherApps: true)
             self.panel.makeKeyAndOrderFront(nil)
+        }
+        model.onSearchOptionsChange = { [weak self] showing in
+            guard !showing else { return }
+            // Let the popover finish returning key status before deciding whether
+            // this was a close inside Cliphoard or a click into another app.
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.isVisible, !self.isClosing,
+                      !self.model.showSearchOptions, !self.model.showSettings,
+                      !self.panel.isKeyWindow else { return }
+                if NSApp.isActive {
+                    self.panel.makeKeyAndOrderFront(nil)
+                } else {
+                    self.hide(paste: false, restoreFocus: false)
+                }
+            }
         }
         inspector.onClose = { [weak self] in self?.model.closeInspector() }
         inspector.panel.onCancel = { [weak self] in self?.model.closeInspector() }
@@ -355,6 +374,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             if self.settingsWindow.window?.isKeyWindow == true {
                 return self.handleSettingsKey(event)
             }
+            if self.model.showSearchOptions {
+                if event.keyCode == 53 {
+                    self.model.showSearchOptions = false
+                    self.model.onRequestFocus?()
+                    return nil
+                }
+                return event // native picker/checkbox keys, never history shortcuts
+            }
             if event.keyCode == 53, self.inspector.panel.isKeyWindow { self.model.closeInspector(); return nil }
             guard self.panel.isKeyWindow else { return event }
             return self.handleKey(event)
@@ -386,6 +413,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func presentSettings() {
         SensitiveClipReveal.shared.lock()
+        model.showSearchOptions = false
         let screen = panel.isVisible ? panel.screen : NSScreen.screens.first {
             NSMouseInRect(NSEvent.mouseLocation, $0.frame, false)
         }
@@ -463,6 +491,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         SensitiveClipReveal.shared.lock()
         guard isVisible, !isClosing else { return }
         isClosing = true
+        model.showSearchOptions = false
+        model.searchInput.reset(to: model.query)
         model.closeInspector()
         panel.slideOut { [weak self] in
             guard let self else { return }
@@ -684,6 +714,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         case kVK_RightArrow, kVK_DownArrow:
             model.moveSelection(1); return nil
         case kVK_Return, kVK_ANSI_KeypadEnter:
+            // Holding Return after submitting a draft must not paste on repeat.
+            guard !event.isARepeat else { return nil }
+            // Let an input method finish composing before interpreting Return
+            // as search or paste.
+            if let editor = panel.firstResponder as? NSTextView, editor.hasMarkedText() { return event }
             if cmd { model.inspectSelection(); return nil }
             model.commitSelection(plain: plain); return nil
         // Standard text-editing keys: a menu-bar-less agent app has no Edit

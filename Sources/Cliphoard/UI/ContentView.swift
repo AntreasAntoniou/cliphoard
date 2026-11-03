@@ -281,18 +281,21 @@ struct ContentView: View {
     }
 
     private var toolbar: some View {
-        SearchBarView(query: $model.query, scope: Binding(get: { settings.searchModality }, set: { mode in
+        SearchBarView(query: Binding(get: { model.searchInput.draft }, set: { model.searchInput.updateDraft($0) }), scope: Binding(get: { settings.searchModality }, set: { mode in
             if mode != .text && mode != .all && !store.entitlement.isPro { model.presentProSettings() }
             else {
                 settings.searchModality = mode
                 model.applySearchModality(mode)
             }
         }), searchFocused: $searchFocused, isPro: store.entitlement.isPro,
-        openOptions: {
-            model.requestedSettingsSection = "cliphoard-search"
-            model.settingsFocusRequest = UUID()
-            model.showSettings = true
-        }, openSettings: { model.showSettings = true }, brandImage: brandIconImage) {
+        openOptions: { model.showSearchOptions.toggle() },
+        openSettings: { model.showSearchOptions = false; model.requestedSettingsSection = nil; model.showSettings = true },
+        isPending: model.searchInput.isPending, timing: model.searchInput.timing,
+        submitSearch: { _ = model.searchInput.submitPending() },
+        badges: SearchScopeBadge.selected(mode: settings.searchModality,
+            capabilities: SearchCapabilities(text: settings.searchTextEnabled, images: settings.searchImagesEnabled,
+                audio: settings.searchAudioEnabled, video: settings.searchVideoEnabled, imageModel: settings.imageSearchModel),
+            level: settings.deepSearchLevel, pro: store.entitlement.isPro, matching: settings.searchMode), brandImage: brandIconImage) {
             HStack(spacing: 8) {
                 clipTypeMenu
                 chip(title: "Pinned", systemImage: "pin.fill", active: model.pinnedOnly) {
@@ -310,14 +313,25 @@ struct ContentView: View {
                     }.buttonStyle(.plain).foregroundStyle(Theme.accent)
                 }
                 Spacer(minLength: 8)
-                if settings.searchModality == .all {
+                if settings.searchModality == .all && !settings.searchTextEnabled &&
+                    (!store.entitlement.isPro || (!settings.searchImagesEnabled && !settings.searchAudioEnabled && !settings.searchVideoEnabled)) {
                     Text(SearchControlLabels.combinedSummary(SearchCapabilities(
                         text: settings.searchTextEnabled, images: settings.searchImagesEnabled,
                         audio: settings.searchAudioEnabled, video: settings.searchVideoEnabled,
                         imageModel: settings.imageSearchModel), pro: store.entitlement.isPro))
                         .foregroundStyle(.secondary).lineLimit(1).truncationMode(.tail)
-                        .help("Combined searches these enabled content types. Change them in Search options.")
+                        .help("Choose included content types in Search options.")
                 }
+            }
+        }
+        .popover(isPresented: $model.showSearchOptions, arrowEdge: .bottom) {
+            SearchOptionsView(timing: $settings.searchTiming, text: $settings.searchTextEnabled,
+                images: $settings.searchImagesEnabled, audio: $settings.searchAudioEnabled,
+                video: $settings.searchVideoEnabled, isPro: store.entitlement.isPro) {
+                model.showSearchOptions = false
+                model.requestedSettingsSection = "cliphoard-search"
+                model.settingsFocusRequest = UUID()
+                model.showSettings = true
             }
         }
         .onChange(of: model.query) { _ in model.resetSelection() }
@@ -954,7 +968,7 @@ struct ContentView: View {
         Group {
             HStack(spacing: 14) {
                 hint("←→", "Navigate")
-                hint("↩", DistributionChannel.primaryActionTitle)
+                hint("↩", model.searchInput.isPending ? "Search" : DistributionChannel.primaryActionTitle)
                 hint("⌘C", "Copy")
                 hint("⌘1–9", DistributionChannel.quickActionTitle)
                 hint("⌘P", "Pin")
