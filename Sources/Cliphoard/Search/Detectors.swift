@@ -314,7 +314,8 @@ enum Detectors {
         //    already match Tier-1, so the low-confidence bit never piggybacks on
         //    a high-confidence hit and muddles what a caller is allowed to do.
         for (index, range) in tokens.enumerated() where !tier1Tokens.contains(index) {
-            if isHighEntropySecretCandidate(bytes[range]) {
+            let token = bytes[range]
+            if isHighEntropySecretCandidate(token) || (tokens.count == 1 && resemblesGeneratedPassword(token)) {
                 flags.insert(.secretEntropy)
                 break
             }
@@ -371,6 +372,31 @@ enum Detectors {
         // Header and payload must be real base64 payloads; the signature may be
         // short (or absent for `alg: none`, which we still treat as a token).
         return segments[0] >= 8 && segments[1] >= 8
+    }
+
+    /// Browser-generated passwords use punctuation outside the API-key alphabet.
+    /// Apply this extra heuristic to a standalone clip only, so snippets of
+    /// code or punctuation inside prose cannot conceal a whole paragraph.
+    private static func resemblesGeneratedPassword(_ token: ArraySlice<UInt8>) -> Bool {
+        guard (16...128).contains(token.count),
+              !isPathOrFilenameShaped(token),
+              !contains(token, pattern: Array("://".utf8)) else { return false }
+        var upper = false, lower = false, digit = false
+        var symbols = Set<UInt8>()
+        var lettersInARow = 0
+        for byte in token {
+            guard (33...126).contains(byte) else { return false }
+            if CharsetMask.letter.contains(byte) {
+                lettersInARow += 1
+                // Keep ordinary words, paths and source identifiers readable.
+                guard lettersInARow <= 5 else { return false }
+                if CharsetMask.upper.contains(byte) { upper = true } else { lower = true }
+            } else {
+                lettersInARow = 0
+                if CharsetMask.digit.contains(byte) { digit = true } else { symbols.insert(byte) }
+            }
+        }
+        return upper && lower && digit && symbols.count >= 2 && shannonEntropy(token) >= 3.5
     }
 
     /// Tier-2 generic entropy gate (§3.1), deliberately over-tight.

@@ -65,6 +65,30 @@ final class SensitiveClipRevealTests: XCTestCase {
         XCTAssertTrue(Detectors.scan(text: item.text, kind: item.kind, sourceApp: nil).flags.contains(.secretEntropy))
         XCTAssertTrue(SensitiveClipPolicy.requiresAuthentication(item))
     }
+    func testStandaloneGeneratedPasswordsRequireAuthenticationOnCaptureAndLegacyDisplay() {
+        // Invented browser clips, including a shorter password with punctuation
+        // outside the API-key alphabet and a longer one with an @ character.
+        let examples = ["Q4!zT7#pV2&rK9$x", "fR3@qV7%sB2(Mk9!pX4^wL6}"]
+        for example in examples {
+            let item = ClipItem(kind: .text, text: example)
+            item.sourceApp = "Google Chrome"
+            XCTAssertTrue(Detectors.scan(text: example, kind: .text, sourceApp: item.sourceApp)
+                .flags.contains(.secretEntropy))
+            XCTAssertTrue(SensitiveClipPolicy.requiresAuthentication(item))
+            XCTAssertTrue(item.flags.isEmpty)
+        }
+    }
+
+    func testPasswordHeuristicLeavesCommonBrowserTextVisible() {
+        for example in ["Invoice Q4! Ready for pickup #73", "John.Smith+Q4@example.com",
+                        "https://Example.org/A4?x=7&tag=Release", "build/Release-24/Test!Data.json",
+                        "if(A1!=B2){return(C3+D4);}", "0b6ec23e1a41e67680e6ee1466591357"] {
+            let item = ClipItem(kind: .text, text: example)
+            item.sourceApp = "Google Chrome"
+            XCTAssertFalse(SensitiveClipPolicy.requiresAuthentication(item))
+        }
+    }
+
     func testZeroOrNonfiniteClockCannotReviveGrant() {
         var state = SensitiveRevealState()
         let id = UUID()
