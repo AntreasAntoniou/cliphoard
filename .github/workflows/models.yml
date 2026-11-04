@@ -18,8 +18,12 @@ jobs:
     timeout-minutes: 35
     env:
       DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
-      CI_WORK: ${{ runner.temp }}/cliphoard-coreml
     steps:
+      - name: Set job-local output path
+        env:
+          CI_WORK: ${{ runner.temp }}/cliphoard-coreml
+        run: printf 'CI_WORK=%s\n' "$CI_WORK" >> "$GITHUB_ENV"
+
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           persist-credentials: false
