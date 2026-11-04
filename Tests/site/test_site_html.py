@@ -461,7 +461,7 @@ class SelectedFlowContracts(unittest.TestCase):
         pro_c = Collector(); pro_c.feed(pro)
         self.assertEqual(len(pro_c.of("dt")), 3)
         self.assertIn('class="feature-tier">Pro', pro)
-        self.assertIn("except the optional pro image tools", visible(menu))
+        self.assertIn("except the optional pro image and multimodal tools", visible(menu))
 
     def test_the_real_screenshot_remains_inspectable_and_the_demo_is_labelled(self):
         figure = re.search(r'<figure[^>]*>.*?</figure>', self.raw, re.S).group(0)
@@ -523,7 +523,7 @@ class CodeBackedClaims(unittest.TestCase):
 
     def test_the_image_tools_are_pro_in_the_code_and_the_page(self):
         deep = (REPO / "Sources/Cliphoard/Search/DeepSearch.swift").read_text(encoding="utf-8")
-        self.assertIn("allCases.filter { !$0.usesImageModel || entitlement.isPro }", deep)
+        self.assertIn("allCases.filter { (!$0.usesImageModel && $0 != .media) || entitlement.isPro }", deep)
         store = (REPO / "Sources/Cliphoard/Clipboard/ClipStore.swift").read_text(encoding="utf-8")
         self.assertIn("entitlement.isPro && imageUnderstandingEnabled", store)
         pro = visible(section("feature-visual"))
@@ -567,7 +567,7 @@ class CodeBackedClaims(unittest.TestCase):
 
     def test_model_licences_are_not_conflated_with_the_application_licence(self):
         for phrase in ("open-ogma-micro", "open-ogma-small", "all-minilm-l6-v2",
-                       "each model keeps its own licence and credit", "models have their own licences",
+                       "each model keeps its own licence and credit", "each model keeps its own licence and attribution",
                        "entire application codebase, including pro, is mit licensed"):
             self.assertIn(phrase, self.text)
         for wrong in ("mit all the way down", "all models are mit licensed"):

@@ -22,12 +22,26 @@ instant you need it (clip + hoard).
 Built with Swift, AppKit and SwiftUI. **No Electron, no telemetry, no account, no
 cloud.** Everything you copy stays on your Mac.
 
+## Current source and release status
+
+This branch includes the 1.0.3 build 18 compact search bar, guided model setup,
+audio and video search, download consent and progress, adjustable search timing,
+and authenticated sensitive previews. Build 18 is available in owner TestFlight
+and was submitted for App Store review on 3 November 2026. The public Direct
+release remains 1.0.2 while the new Stripe purchase path is being qualified.
+
+Pro supports image, audio and video search using optional local models. Choose
+models in Settings and use the search bar's modality labels to see which are
+configured. Models download from Hugging Face with consent and are prepared
+locally. The optional MCP companion can search clips explicitly shared through
+an encrypted export. See its [setup and privacy guide](tools/agent-search/README.md).
+
 ## Why Cliphoard
 
 - **🔎 Smart search, on-device.** The default **Smart** mode shows your exact matches
   first, then the semantically closest clips — find "that database query" by meaning
   *and* still get the literal token you typed. Switch modes (Smart / Exact / Tag)
-  right from the pill next to the search field. Three optional model tiers
+  in Search options. Three optional text model tiers
   (ogma micro/small and MiniLM) download from Hugging Face when you choose.
   Settings shows size, download progress and local preparation; after preparation
   models work offline. No model weights are bundled. Exact search works immediately,
@@ -39,7 +53,7 @@ cloud.** Everything you copy stays on your Mac.
   detector flags stay in the clear. The key is derived from a P-256 key generated inside the
   **Secure Enclave** where your Mac has one (a random login-Keychain key otherwise).
   Concealed pasteboards are never stored; clips from known password managers are
-  quarantined — flagged and never indexed, not hidden. Open source: inspect how content
+  quarantined and excluded from indexing. Sensitive previews require local authentication to reveal. Open source: inspect how content
   stays local and how optional models are downloaded. ([Details →](PRIVACY.md))
 - **🎨 17 themes, 3 layouts.** A clean Swiss greyscale, One Dark, Dracula, Tokyo Night,
   Catppuccin and more — follows your macOS Light/Dark appearance. Card strip, compact
@@ -200,9 +214,7 @@ reimplemented in Swift). For model conversion and provenance, see [`tools/`](too
 
 ## Next
 
-- Touch ID hiding for password-manager clips
 - A Settings UI for excluded apps
-- The Homebrew tap (the signed, notarized direct installer is available now)
 
 Later: clip stack · customizable hotkey · smart actions on links & colors.
 
