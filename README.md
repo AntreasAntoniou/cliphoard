@@ -34,7 +34,10 @@ Pro supports image, audio and video search using optional local models. Choose
 models in Settings and use the search bar's modality labels to see which are
 configured. Models download from Hugging Face with consent and are prepared
 locally. The optional MCP companion can search clips explicitly shared through
-an encrypted export. See its [setup and privacy guide](tools/agent-search/README.md).
+an encrypted export. Build 20 also adds agent note saves: enable a temporary session
+in Settings and approve each note before it is stored. Saved notes are pinned;
+connecting an agent never shares your live history. See the
+[setup and privacy guide](tools/agent-search/README.md).
 
 ## Why Cliphoard
 
@@ -223,4 +226,4 @@ Later: clip stack · customizable hotkey · smart actions on links & colors.
 MIT © Antreas Antoniou. Optional on-device models have their own licenses — see
 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 
-Agents can search and retrieve explicitly shared clips from an encrypted export using the optional [local MCP companion](tools/agent-search/README.md).
+Agents can search explicitly shared exports and request approved note saves using the optional [local MCP companion](tools/agent-search/README.md).

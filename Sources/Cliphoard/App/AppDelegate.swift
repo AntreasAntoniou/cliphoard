@@ -74,6 +74,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         setupPanel()
         setupHotKey()
         setupRemoteToggle()
+        store.agentWrites.onRequest = { [weak self] in
+            guard let self else { return }
+            self.model.requestedSettingsSection = "agent-inbox"
+            self.model.settingsFocusRequest = UUID()
+            self.openSettings()
+        }
         // Load the on-device embedder for the saved tier; re-index if the model
         // identity changed since last launch.
         EmbedderProvider.configureAndReindex(level: DeepSearch.level, store: store)

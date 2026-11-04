@@ -863,6 +863,10 @@ struct SettingsView: View {
                     ImportSection(model: importModel, store: store, panel: model)
                 }
 
+                section("AI agents") {
+                    AgentWriteSection(controller: store.agentWrites, panel: model)
+                }.id("agent-inbox")
+
                 section("Move to another Mac") {
                     MoveToNewMacSection(model: archiveModel, store: store, panel: model)
                 }

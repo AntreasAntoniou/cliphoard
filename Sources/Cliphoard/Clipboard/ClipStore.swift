@@ -6,7 +6,10 @@ import Combine
 /// projection that drives the reactive UI and in-memory search.
 @MainActor
 final class ClipStore: ObservableObject {
-    @Published private(set) var items: [ClipItem] = []
+    private var agentNoteHistoryRevision: UInt64 = 0
+    @Published private(set) var items: [ClipItem] = [] {
+        didSet { agentNoteHistoryRevision &+= 1 }
+    }
     /// The id of the clip most recently added or bumped — lets the bar scroll to
     /// reveal it wherever it lands in the (pinned-first) order.
     @Published private(set) var lastAddedID: UUID?
@@ -1672,7 +1675,49 @@ final class ClipStore: ObservableObject {
         return free > size + 64 * 1024 * 1024
     }
 
+    lazy var agentWrites = AgentWriteController(
+        save: { [weak self] id, text in await self?.saveAgentNote(id: id, text: text) ?? false },
+        sensitive: { !Detectors.scan(text: $0, kind: .text, sourceApp: "Cliphoard Agent").flags.isEmpty })
+
     // MARK: Mutations
+
+    /// Explicitly approved agent notes never touch the pasteboard, deduplicate by
+    /// content, trim history, or perform inference on the acknowledgement path.
+    @discardableResult
+    func saveAgentNote(id: UUID, text: String) async -> Bool {
+        guard !safeMode, storageComplete, Database.acceptsAgentNote(text), let db else { return false }
+        let revision = agentNoteHistoryRevision
+        guard await db.saveAgentNoteInBackground(id: id, text: text) else { return false }
+        // A commit can succeed while the user deletes/reloads history. Refuse stale
+        // publication rather than resurrecting a deleted row in memory. False here
+        // means acknowledgement is unavailable, NOT proof that no commit occurred.
+        guard self.db === db, !safeMode, storageComplete,
+              revision == agentNoteHistoryRevision else { return false }
+        if let existing = items.first(where: { $0.id == id }) {
+            return existing.kind == .text && existing.text.utf8.elementsEqual(text.utf8)
+                && existing.sourceApp == "Cliphoard Agent" && existing.pinned
+                && existing.userTags == ["agent-note", "agent-share"] && existing.flags.isEmpty
+                && existing.rtf == nil && existing.payloadFile == nil && existing.filePath == nil
+                && existing.colorHex == nil && existing.ocrText == nil
+        }
+        // A durable commit already happened. Publish it even if the bridge was
+        // disconnected during the await; disconnect cannot undo approved storage.
+        let now = Date()
+        let item = ClipItem(id: id, kind: .text, text: text, rtf: nil, payloadFile: nil,
+                            filePath: nil, colorHex: nil, createdAt: now, lastUsedAt: now,
+                            pinned: true, sourceApp: "Cliphoard Agent", useCount: 0,
+                            userTags: ["agent-note", "agent-share"])
+        items.append(item)
+        sortStable()
+        addToUserTagIndex(item)
+        lastAddedID = item.id
+        // Existing scheduler owns model work; saving can finish before it starts.
+        Task { [weak self] in
+            await Task.yield()
+            self?.reindexStale()
+        }
+        return true
+    }
 
     func add(_ item: ClipItem) {
         item.userTags = ClipItem.normalizedUserTags(item.userTags)

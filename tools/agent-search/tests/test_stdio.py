@@ -21,7 +21,7 @@ async def exercise() -> None:
     async with stdio_client(params) as (receive, send), ClientSession(receive, send) as client:
         await client.initialize()
         assert {t.name for t in (await client.list_tools()).tools} == {
-            "connect", "search", "get_clip", "disconnect"}
+            "connect", "search", "get_clip", "disconnect", "connect_writer", "save_clip", "check_save"}
         call = client.call_tool
         assert (await call("search", {"query": "bicycle"})).isError
         opened = await call("connect", {})
