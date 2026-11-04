@@ -1,13 +1,31 @@
 import Foundation
 import SQLite3
+import Darwin
 
 /// Thin SQLite store for the clipboard history. Replaces the whole-file JSON
 /// rewrite with incremental row operations, and stores embedding vectors as
 /// compact Float16 BLOBs instead of bloated JSON text.
 ///
-/// All access is on the main actor (mirroring `ClipStore`), so no extra locking.
+/// Ordinary history uses the main actor. Agent writes use dedicated utility
+/// connections with immutable sealed input; a connection is never shared across actors.
 final class Database {
     private var db: OpaquePointer?
+    private var agentNoteLocation: AgentNoteLocation?
+    private struct AgentNoteLocation: Sendable {
+        let path: String
+        let device: dev_t
+        let inode: ino_t
+        static func capture(_ path: String) -> Self? {
+            var info = stat()
+            guard lstat(path, &info) == 0, (info.st_mode & S_IFMT) == S_IFREG else { return nil }
+            return Self(path: path, device: info.st_dev, inode: info.st_ino)
+        }
+        func stillMatches() -> Bool {
+            guard let current = Self.capture(path) else { return false }
+            return current.device == device && current.inode == inode
+        }
+    }
+
     /// Set true by `step` whenever a write inside the current transaction fails,
     /// so `transaction` rolls back instead of committing a partial write.
     private var txnFailed = false
@@ -18,6 +36,7 @@ final class Database {
             NSLog("Cliphoard: failed to open db at \(path)")
             return nil
         }
+        agentNoteLocation = AgentNoteLocation.capture(path)
         exec("PRAGMA journal_mode = WAL;")
         exec("PRAGMA foreign_keys = ON;")
         exec("PRAGMA busy_timeout = 5000;")     // wait out brief WAL contention
@@ -376,6 +395,211 @@ final class Database {
     // MARK: Writes
 
     @discardableResult
+    /// Agent requests are insert-only and acknowledged only after a checked durable
+    /// commit and a fresh, sealed row readback. Ordinary clipboard dedup/upsert is
+    /// deliberately not involved. Callers serialize this connection on the main actor.
+    static func acceptsAgentNote(_ text: String) -> Bool {
+        !text.utf8.isEmpty && text.utf8.count <= 32_768
+            && !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && !text.unicodeScalars.contains(where: {
+                CharacterSet.controlCharacters.contains($0)
+                    && $0 != "\n" && $0 != "\r" && $0 != "\t"
+            })
+            && Detectors.scan(text: text, kind: .text, sourceApp: "Cliphoard Agent").flags.isEmpty
+    }
+
+    func saveAgentNote(id: UUID, text: String) -> Bool {
+        guard let sealed = Self.prepareAgentNote(text: text, snapshot: agentNoteSnapshot(id: id)) else { return false }
+        return commitAgentNote(id: id, sealed: sealed.values, mayInsert: sealed.mayInsert)
+    }
+
+    /// All SQLite waiting, commits and fsync run on private utility connections.
+    /// Crypto remains on the main actor, using the key already resolved at store
+    /// startup. Connections never migrate/create a schema or share a transaction.
+    @MainActor
+    func saveAgentNoteInBackground(id: UUID, text: String) async -> Bool {
+        guard Self.acceptsAgentNote(text), let location = agentNoteLocation else { return false }
+        let snapshot = await Task.detached(priority: .utility) {
+            guard let writer = Database(agentNoteLocation: location) else { return AgentNoteSnapshot.unavailable }
+            return writer.agentNoteSnapshot(id: id)
+        }.value
+        guard !Task.isCancelled, let sealed = Self.prepareAgentNote(text: text, snapshot: snapshot) else { return false }
+        return await Task.detached(priority: .utility) {
+            guard let writer = Database(agentNoteLocation: location) else { return false }
+            return writer.commitAgentNote(id: id, sealed: sealed.values, mayInsert: sealed.mayInsert) && location.stillMatches()
+        }.value
+    }
+
+    private init?(agentNoteLocation location: AgentNoteLocation) {
+        guard location.stillMatches(),
+              sqlite3_open_v2(location.path, &db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_NOMUTEX, nil) == SQLITE_OK else {
+            if let db { sqlite3_close_v2(db); self.db = nil }; return nil
+        }
+        var moved: Int32 = 1
+        guard location.stillMatches(),
+              sqlite3_file_control(db, "main", SQLITE_FCNTL_HAS_MOVED, &moved) == SQLITE_OK, moved == 0,
+              sqlite3_busy_timeout(db, 5_000) == SQLITE_OK,
+              sqlite3_exec(db, "PRAGMA foreign_keys = ON;", nil, nil, nil) == SQLITE_OK else {
+            sqlite3_close_v2(db); db = nil; return nil
+        }
+        agentNoteLocation = location
+    }
+
+    private enum AgentNoteSnapshot: Sendable { case absent, stored([String]), unavailable }
+
+    private func agentNoteSnapshot(id: UUID) -> AgentNoteSnapshot {
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, "SELECT text,source_app,user_tags FROM clips WHERE id=?;", -1, &stmt, nil) == SQLITE_OK,
+              sqlite3_bind_text(stmt, 1, id.uuidString, -1, Self.transient) == SQLITE_OK else {
+            sqlite3_finalize(stmt); return .unavailable
+        }
+        let first = sqlite3_step(stmt)
+        var result = AgentNoteSnapshot.unavailable
+        if first == SQLITE_DONE { result = .absent }
+        if first == SQLITE_ROW {
+            var values: [String] = []
+            for index in 0..<3 {
+                let i = Int32(index), size = sqlite3_column_bytes(stmt, Int32(index))
+                guard sqlite3_column_type(stmt, i) == SQLITE_TEXT, size > 0,
+                      size <= (index == 0 ? 65_536 : 1_024), let bytes = sqlite3_column_text(stmt, i),
+                      let value = String(bytes: UnsafeBufferPointer(start: bytes, count: Int(size)), encoding: .utf8)
+                else { sqlite3_finalize(stmt); return .unavailable }
+                values.append(value)
+            }
+            if sqlite3_step(stmt) == SQLITE_DONE { result = .stored(values) }
+        }
+        return sqlite3_finalize(stmt) == SQLITE_OK ? result : .unavailable
+    }
+
+    private struct PreparedAgentNote: Sendable { let values: [String]; let mayInsert: Bool }
+
+    private static func prepareAgentNote(text: String, snapshot: AgentNoteSnapshot) -> PreparedAgentNote? {
+        guard acceptsAgentNote(text), let sealedText = Crypto.sealStrict(text),
+              let sealedSource = Crypto.sealStrict("Cliphoard Agent"),
+              let sealedTags = Crypto.sealStrict("agent-note\nagent-share") else { return nil }
+        switch snapshot {
+        case .absent: return PreparedAgentNote(values: [sealedText, sealedSource, sealedTags], mayInsert: true)
+        case .unavailable: return nil
+        case .stored(let values):
+            let expected = [text, "Cliphoard Agent", "agent-note\nagent-share"]
+            guard values.count == 3, zip(values, expected).allSatisfy({ raw, plain in
+                let opened = Crypto.open(raw)
+                return Crypto.isSealed(raw) && opened != raw && opened.utf8.elementsEqual(plain.utf8)
+            }) else { return nil }
+            return PreparedAgentNote(values: values, mayInsert: false)
+        }
+    }
+
+    private func commitAgentNote(id: UUID, sealed: [String], mayInsert: Bool) -> Bool {
+        guard sealed.count == 3, let db, sqlite3_get_autocommit(db) != 0 else { return false }
+        let sealedText = sealed[0], sealedSource = sealed[1], sealedTags = sealed[2]
+        // FULL makes this acknowledgement stronger than the normal history writer's
+        // WAL/NORMAL policy. Restore this connection's previous policy on every exit.
+        var pragma: OpaquePointer?
+        guard sqlite3_prepare_v2(db, "PRAGMA synchronous;", -1, &pragma, nil) == SQLITE_OK else {
+            sqlite3_finalize(pragma); return false
+        }
+        guard sqlite3_step(pragma) == SQLITE_ROW else { sqlite3_finalize(pragma); return false }
+        let previous = sqlite3_column_int(pragma, 0)
+        let pragmaDone = sqlite3_step(pragma) == SQLITE_DONE
+        let pragmaFinalized = sqlite3_finalize(pragma) == SQLITE_OK
+        guard pragmaDone, pragmaFinalized, (0...3).contains(previous),
+              sqlite3_exec(db, "PRAGMA synchronous = FULL;", nil, nil, nil) == SQLITE_OK else { return false }
+        var active = false
+        var success = false
+        do {
+            guard sqlite3_exec(db, "BEGIN IMMEDIATE;", nil, nil, nil) == SQLITE_OK else {
+                throw AgentNoteFailure.storage
+            }
+            active = true
+            switch readAgentNote(id: id, sealed: sealed) {
+            case .exact: break
+            case .absent:
+                guard mayInsert else { throw AgentNoteFailure.storage }
+                var stmt: OpaquePointer?
+                let sql = """
+                    INSERT INTO clips
+                    (id,kind,text,created_at,last_used_at,pinned,source_app,use_count,user_tags,flags)
+                    VALUES (?,'text',?,?,?,1,?,0,?,0);
+                    """
+                guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+                    sqlite3_finalize(stmt); throw AgentNoteFailure.storage
+                }
+                let now = Date().timeIntervalSinceReferenceDate
+                let bound = sqlite3_bind_text(stmt, 1, id.uuidString, -1, Self.transient) == SQLITE_OK
+                    && sqlite3_bind_text(stmt, 2, sealedText, -1, Self.transient) == SQLITE_OK
+                    && sqlite3_bind_double(stmt, 3, now) == SQLITE_OK
+                    && sqlite3_bind_double(stmt, 4, now) == SQLITE_OK
+                    && sqlite3_bind_text(stmt, 5, sealedSource, -1, Self.transient) == SQLITE_OK
+                    && sqlite3_bind_text(stmt, 6, sealedTags, -1, Self.transient) == SQLITE_OK
+                let inserted = bound && sqlite3_step(stmt) == SQLITE_DONE && sqlite3_changes(db) == 1
+                let finalized = sqlite3_finalize(stmt) == SQLITE_OK
+                guard inserted, finalized else { throw AgentNoteFailure.storage }
+            case .conflict, .unavailable: throw AgentNoteFailure.storage
+            }
+            // Check before commit too: a local trigger must not change the accepted row.
+            guard readAgentNote(id: id, sealed: sealed) == .exact,
+                  sqlite3_exec(db, "COMMIT;", nil, nil, nil) == SQLITE_OK else {
+                throw AgentNoteFailure.storage
+            }
+            active = false
+            success = readAgentNote(id: id, sealed: sealed) == .exact
+        } catch { success = false }
+        if active, sqlite3_exec(db, "ROLLBACK;", nil, nil, nil) != SQLITE_OK { success = false }
+        // A failed ACK may follow a committed insert. The request ID allows a later
+        // exact readback retry; it never authorizes replacement or a fresh identity.
+        let restored = sqlite3_exec(db, "PRAGMA synchronous = \(previous);", nil, nil, nil) == SQLITE_OK
+        return success && restored
+    }
+
+    private enum AgentNoteFailure: Error { case storage }
+    private enum AgentNoteReadback { case absent, exact, conflict, unavailable }
+
+    private func readAgentNote(id: UUID, sealed: [String]) -> AgentNoteReadback {
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, """
+            SELECT kind,text,pinned,source_app,user_tags,flags,rtf,payload_file,
+                   file_path,color_hex,ocr_text,created_at,last_used_at,use_count
+            FROM clips WHERE id=?;
+            """, -1, &stmt, nil) == SQLITE_OK else {
+            sqlite3_finalize(stmt); return .unavailable
+        }
+        guard sqlite3_bind_text(stmt, 1, id.uuidString, -1, Self.transient) == SQLITE_OK else {
+            sqlite3_finalize(stmt); return .unavailable
+        }
+        let first = sqlite3_step(stmt)
+        var result: AgentNoteReadback = .unavailable
+        if first == SQLITE_DONE { result = .absent }
+        if first == SQLITE_ROW {
+            func exactString(_ index: Int32) -> String? {
+                guard sqlite3_column_type(stmt, index) == SQLITE_TEXT,
+                      let bytes = sqlite3_column_text(stmt, index) else { return nil }
+                return String(bytes: UnsafeBufferPointer(start: bytes,
+                    count: Int(sqlite3_column_bytes(stmt, index))), encoding: .utf8)
+            }
+            func sealedEquals(_ index: Int32, _ expected: String) -> Bool {
+                guard let raw = exactString(index) else { return false }
+                // Only ciphertext authenticated/prepared on the main actor is accepted;
+                // utility SQLite work never opens Crypto or consults Keychain.
+                return raw.utf8.elementsEqual(expected.utf8)
+            }
+            let matches = exactString(0) == "text" && sealedEquals(1, sealed[0])
+                && sqlite3_column_type(stmt, 2) == SQLITE_INTEGER && sqlite3_column_int64(stmt, 2) == 1
+                && sealedEquals(3, sealed[1]) && sealedEquals(4, sealed[2])
+                && sqlite3_column_type(stmt, 5) == SQLITE_INTEGER && sqlite3_column_int64(stmt, 5) == 0
+                && (6...10).allSatisfy { sqlite3_column_type(stmt, Int32($0)) == SQLITE_NULL }
+                && (11...12).allSatisfy {
+                    [SQLITE_INTEGER, SQLITE_FLOAT].contains(sqlite3_column_type(stmt, Int32($0)))
+                        && sqlite3_column_double(stmt, Int32($0)).isFinite
+                }
+                && sqlite3_column_type(stmt, 13) == SQLITE_INTEGER && sqlite3_column_int64(stmt, 13) >= 0
+            result = matches ? .exact : .conflict
+            if sqlite3_step(stmt) != SQLITE_DONE { result = .unavailable }
+        }
+        if sqlite3_finalize(stmt) != SQLITE_OK { return .unavailable }
+        return result
+    }
+
     func insert(_ item: ClipItem) -> Bool {
         let sql = """
             INSERT OR REPLACE INTO clips

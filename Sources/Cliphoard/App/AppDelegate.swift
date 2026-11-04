@@ -74,6 +74,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         setupPanel()
         setupHotKey()
         setupRemoteToggle()
+        store.agentWrites.onRequest = { [weak self] in
+            guard let self else { return }
+            self.model.requestedSettingsSection = "agent-note-approval"
+            self.model.settingsFocusRequest = UUID()
+            self.openSettings()
+        }
         // Load the on-device embedder for the saved tier; re-index if the model
         // identity changed since last launch.
         EmbedderProvider.configureAndReindex(level: DeepSearch.level, store: store)
@@ -917,6 +923,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// Only reached once termination is APPROVED, which is what makes "Relaunch" safe to
     /// cancel.
     func applicationWillTerminate(_ notification: Notification) {
+        store.agentWrites.disconnect()
         SensitiveClipReveal.shared.lock()
 #if CLIPHOARD_DEVICE_LICENSING_PROTOTYPE && !APP_STORE
         deviceLicenceRuntime?.stop()

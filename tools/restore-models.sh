@@ -43,8 +43,8 @@ cd "$(dirname "$0")"            # operate from tools/, like the README examples
 ROOT="$(cd .. && pwd)"
 
 # Default set for maintainer conversion checks, not an app bundle inventory.
-MODELS= explicitly still fetches it
-# for conversion work, but no default path pulls Gemma-licensed weights any more.
+# Set MODELS explicitly to select another maintainer conversion subset.
+# The default set below excludes gated Gemma weights.
 MODELS="${MODELS:-open-ogma-micro open-ogma-small all-MiniLM-L6-v2 openvision-tiny-p8-image openvision-tiny-p8-text}"
 HF_REPO_PREFIX="${HF_REPO_PREFIX:-axiotic}"
 
