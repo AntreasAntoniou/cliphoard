@@ -199,17 +199,37 @@ def verify_native_linkage(install_id,linked):
     require(len(dependencies)>1 and dependencies[0]==expected,'native self identity')
     require(all(path.startswith(('/System/Library/','/usr/lib/')) for path in dependencies[1:]),'unexpected native dependency')
 
-def verify_copied_runtime(python,base,base_pin):
-    require(python.resolve()==python and metadata(python)==base_pin and metadata(base)==base_pin,
-            'copied Python drift')
+def select_copy_source(info,base):
+    # CPython venv copies sys._base_executable, not necessarily argv[0].
+    prefix=Path(info['basePrefix']).resolve()
+    source=Path(info['baseExecutable']).resolve()
+    require(prefix==base.parent.parent and source.is_relative_to(prefix) and source.name=='python3.13',
+            'venv copy source outside admitted runtime')
+    return source,metadata(source)
+
+def verify_copied_runtime(python,base,base_pin,source=None,source_pin=None,receipt=None):
+    source=source or base;source_pin=source_pin or base_pin
+    # POSIX venv setup_python explicitly chmods copied executables to0755.
+    expected={**source_pin,'mode':0o755}
+    def observed(path):
+        try:return metadata(path)
+        except (OSError,Refused):return None
+    actual=observed(python);base_actual=observed(base);source_actual=observed(source)
+    checks={'targetIsUnaliased':python.resolve()==python,'targetMatchesExpected':actual==expected,
+            'originalBaseUnchanged':base_actual==base_pin,'copySourceUnchanged':source_actual==source_pin}
+    if receipt is not None:save(receipt,dict(expected=expected,actual=actual,baseExpected=base_pin,
+                                           baseActual=base_actual,sourceExpected=source_pin,
+                                           sourceActual=source_actual,checks=checks))
+    require(all(checks.values()),'copied Python drift')
 
 def setup(args,run):
     lock=json.loads((HERE/'coreml-backport-lock.json').read_text());require(lock['schema']==1 and len(lock['packages'])==47,'lock shape')
     for name,digest in lock['localFiles'].items():require(sha(HERE/name)==digest,'checked-in source pin')
     expected={n:p['version'] for n,p in lock['packages'].items()};requirements=''.join(f"{n}=={p['version']} --hash=sha256:{p['wheel']['sha256']}\n" for n,p in lock['packages'].items());require((HERE/'conversion-requirements.lock').read_text()==requirements,'requirements parity')
     base=Path(args.python313).resolve();require(base.is_file(),'base interpreter');base_pin=metadata(base)
-    info_code='import sys,sysconfig,platform,json; print(json.dumps(dict(version=platform.python_version(),machine=platform.machine(),include=sysconfig.get_path("include"),soabi=sysconfig.get_config_var("SOABI"))))'
+    info_code='import sys,sysconfig,platform,json; print(json.dumps(dict(version=platform.python_version(),machine=platform.machine(),include=sysconfig.get_path("include"),soabi=sysconfig.get_config_var("SOABI"),baseExecutable=sys._base_executable,basePrefix=sys.base_prefix)))'
     info=json.loads(run.command('base-identity',[str(base),'-I','-B','-c',info_code]).read_text());require(info['version']==lock['pythonVersion'] and info['machine']=='arm64' and info['soabi'].startswith('cpython-313'),'Python ABI')
+    copy_source,copy_pin=select_copy_source(info,base)
     include=Path(info['include']);require((include/'Python.h').is_file(),'Python headers');header_files=inventory(include,run)
     tools={k:metadata(Path(getattr(args,k)).resolve()) for k in ('cmake','ninja','cc','cxx')};sdk=Path(args.sdk).resolve();require(sdk.is_dir() and (sdk/'SDKSettings.json').is_file(),'SDK identity')
     cmake_version=run.command('cmake-version',[args.cmake,'--version']).read_text().splitlines()[0]
@@ -227,8 +247,13 @@ def setup(args,run):
         w=p['wheel'];require(Path(w['filename']).name==w['filename'],'wheel filename');path=wheels/w['filename'];download(w,path,run);expanded+=inspect_wheel(path,run);require(expanded<2*1024**3,'total wheel expansion')
     archive=run.root/'source.tar.gz';download(lock['source'],archive,run);source=run.root/'source';extract_source(archive,source,lock['source'],run)
     fixed=source/lock['fix']['path'];require(sha(fixed)==lock['fix']['beforeSHA256'],'original native source');shutil.copyfile(HERE/'coreml-native/CoreMLPythonArray.mm',fixed);require(sha(fixed)==lock['fix']['afterSHA256'],'patched native source');shutil.copyfile(HERE/'coreml-native/CMakeLists.txt',source/'CMakeLists.txt')
+    require(metadata(base)==base_pin and metadata(copy_source)==copy_pin,'source runtime drift before venv')
     venv=run.root/'venv';run.command('create-venv',[str(base),'-I','-B','-m','venv','--without-pip','--copies',str(venv)],60);python=venv/'bin/python3.13'
-    def runtime_pin():verify_copied_runtime(python,base,base_pin)
+    copy_checks=0
+    def runtime_pin():
+        nonlocal copy_checks
+        copy_checks+=1
+        verify_copied_runtime(python,base,base_pin,copy_source,copy_pin,run.root/f'copy-check-{copy_checks:02d}.json')
     runtime_pin();site=venv/'lib/python3.13/site-packages';require(site.is_dir() and not any(site.iterdir()),'fresh isolated site')
     parent=str(Path(sys.executable).resolve());run.command('install',[parent,'-I','-B','-m','pip','--python',str(python),'--isolated','--disable-pip-version-check','install','--no-index','--find-links',str(wheels),'--no-deps','--require-hashes','--no-compile','--no-cache-dir','-r',str(HERE/'conversion-requirements.lock')],180);runtime_pin()
     run.command('dependency-check',[parent,'-I','-B','-m','pip','--python',str(python),'--isolated','check'],60);runtime_pin()
@@ -243,7 +268,7 @@ def setup(args,run):
     run.command('native-uuid',['/usr/bin/dwarfdump','--uuid',str(artifact)],30)
     overlay=replace_native(site,artifact,run);after=inventory(site,run);changed=sorted(n for n in set(before)|set(after) if before.get(n)!=after.get(n));require(changed==['coremltools-9.0.dist-info/RECORD','coremltools/libcoremlpython.so'],'unexpected overlay change')
     records=validate_records(site,venv,expected,run);runtime_pin();require(inventory(include,run)==header_files and inventory(numpy_include,run)==numpy_headers,'headers changed')
-    run.remaining();save(run.root/'environment.json',{'schema':1,'qualification':lock['qualification'],'runtime':{'path':str(python),'metadata':metadata(python),**info},'source':lock['source'],'fix':lock['fix'],'lockSHA256':sha(HERE/'coreml-backport-lock.json'),'driverSHA256':sha(HERE/'coreml-native/CMakeLists.txt'),'toolchain':tools,'sdk':str(sdk),'sdkSettingsSHA256':sha(sdk/'SDKSettings.json'),'overlay':overlay,'sitePackagesRoot':str(site),'files':after,'recordVerification':records,'nativeImports':False,'modelExecution':False,'trustBoundary':'Existing Python/pip, host standard libraries, compiler runtime and full SDK are trusted host tooling; recorded hashes are not a hermetic toolchain.'});run.remaining()
+    run.remaining();save(run.root/'environment.json',{'schema':1,'qualification':lock['qualification'],'runtime':{'path':str(python),'metadata':metadata(python),**info},'copySource':{'path':str(copy_source),'metadata':copy_pin,'expectedTargetMode':0o755},'source':lock['source'],'fix':lock['fix'],'lockSHA256':sha(HERE/'coreml-backport-lock.json'),'driverSHA256':sha(HERE/'coreml-native/CMakeLists.txt'),'toolchain':tools,'sdk':str(sdk),'sdkSettingsSHA256':sha(sdk/'SDKSettings.json'),'overlay':overlay,'sitePackagesRoot':str(site),'files':after,'recordVerification':records,'nativeImports':False,'modelExecution':False,'trustBoundary':'Existing Python/pip, host standard libraries, compiler runtime and full SDK are trusted host tooling; recorded hashes are not a hermetic toolchain.'});run.remaining()
 
 def main():
     require(sys.version_info>=(3,14),'explicit Python 3.14+ required')

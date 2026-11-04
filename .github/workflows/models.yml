@@ -132,6 +132,10 @@ jobs:
             ${{ runner.temp }}/cliphoard-host.json
             ${{ env.CI_WORK }}/environment.json
             ${{ env.CI_WORK }}/RESULT.json
+            ${{ env.CI_WORK }}/copy-check-01.json
+            ${{ env.CI_WORK }}/copy-check-02.json
+            ${{ env.CI_WORK }}/copy-check-03.json
+            ${{ env.CI_WORK }}/copy-check-04.json
             ${{ env.CI_WORK }}/*/RESULT.json
             ${{ env.CI_WORK }}/minilm-report/CONVERSION.json
             ${{ env.CI_WORK }}/minilm-report/VERIFICATION.json

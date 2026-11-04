@@ -49,11 +49,33 @@ class Tests(unittest.TestCase):
         self.assertNotIn('HF_TOKEN',env);self.assertNotIn('AWS_SECRET_ACCESS_KEY',env)
     def test_copied_runtime_pin(self):
         base=self.root/'base';copied=self.root/'python';base.write_bytes(b'executable');copied.write_bytes(base.read_bytes())
-        pin=m.metadata(base);m.verify_copied_runtime(copied,base,pin)
+        copied.chmod(0o755);pin=m.metadata(base);m.verify_copied_runtime(copied,base,pin)
         copied.write_bytes(b'changed')
         with self.assertRaises(m.Refused):m.verify_copied_runtime(copied,base,pin)
         copied.unlink();copied.symlink_to(base)
         with self.assertRaises(m.Refused):m.verify_copied_runtime(copied,base,pin)
+    def test_copy_mode_normalization_and_original_pins(self):
+        base=self.root/'bin/python3.13';base.parent.mkdir();base.write_bytes(b'executable');base.chmod(0o775)
+        source,pin=m.select_copy_source(dict(basePrefix=str(self.root),baseExecutable=str(base)),base)
+        copied=self.root/'copied';copied.write_bytes(base.read_bytes());copied.chmod(0o755)
+        m.verify_copied_runtime(copied,base,pin,source,pin,self.root/'accepted.json')
+        for contents,mode in ((b'changed',0o755),(b'executableX',0o755),(b'executable',0o775)):
+            copied.write_bytes(contents);copied.chmod(mode)
+            with self.assertRaises(m.Refused):m.verify_copied_runtime(copied,base,pin,source,pin)
+        copied.write_bytes(b'executable');copied.chmod(0o755);base.chmod(0o755)
+        with self.assertRaises(m.Refused):m.verify_copied_runtime(copied,base,pin,source,pin)
+        outside=self.root/'other/python3.13';outside.parent.mkdir();outside.write_bytes(b'executable')
+        with self.assertRaises(m.Refused):m.select_copy_source(dict(basePrefix=str(self.root/'other'),baseExecutable=str(outside)),base)
+        with self.assertRaises(m.Refused):m.select_copy_source(dict(basePrefix=str(self.root),baseExecutable='/outside/python3.13'),base)
+    def test_distinct_copy_source_pinned_before_use(self):
+        base=self.root/'bin/python3.13';base.parent.mkdir();base.write_bytes(b'launcher');base.chmod(0o775)
+        source=self.root/'alternate/python3.13';source.parent.mkdir();source.write_bytes(b'actual');source.chmod(0o775)
+        source,source_pin=m.select_copy_source(dict(basePrefix=str(self.root),baseExecutable=str(source)),base)
+        base_pin=m.metadata(base);copied=self.root/'copied';copied.write_bytes(b'actual');copied.chmod(0o755)
+        m.verify_copied_runtime(copied,base,base_pin,source,source_pin)
+        source.write_bytes(b'change')
+        with self.assertRaises(m.Refused):m.verify_copied_runtime(copied,base,base_pin,source,source_pin,self.root/'refused.json')
+        proof=json.loads((self.root/'refused.json').read_text());self.assertFalse(proof['checks']['copySourceUnchanged'])
     def test_safe_source(self):
         archive=self.root/'source.tar.gz'
         with tarfile.open(archive,'w:gz') as t:

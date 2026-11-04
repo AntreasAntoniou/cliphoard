@@ -75,3 +75,20 @@ models and native binaries are not included in that reporting allowlist.
 
 Pure/fake tests (no network, installs, native imports or native execution):
 `python3.14 -B -m unittest discover -s tools/ci/tests -p test_coreml_backport.py -v`.
+
+## CPython copy-source and mode contract
+
+The failed first hosted attempt stopped before installation because the original
+full-metadata equality conflated source mode with destination mode. It retained
+no per-predicate metadata, so that specific mismatch remains unproved.
+[CPython3.13.13 venv](https://github.com/python/cpython/blob/v3.13.13/Lib/venv/__init__.py#L150)
+copies `sys._base_executable` and explicitly sets POSIX copies to0755. The
+[official installer](https://github.com/python/cpython/blob/v3.13.13/Mac/BuildScript/build-installer.py#L1166)
+adds group-write permission to framework files. The corrected contract pins the
+reported copy source within the already admitted base-version prefix before
+creation; it checks target bytes/size against that source and mode0755, while
+requiring both original source/base metadata to remain unchanged. It does not
+self-attest whatever new binary is produced. Each check retains fixed safe
+`copy-check-01.json` through `copy-check-04.json` metadata/predicates before
+refusal; these contain no environment variables or arbitrary paths. Original
+failed attempt and consumer are preserved separately.
