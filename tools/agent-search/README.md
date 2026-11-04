@@ -3,7 +3,7 @@
 This macOS companion works with the encrypted history export in Cliphoard, including TestFlight 1.0.3 (18). Export is available in Free. It exposes four MCP tools over stdio. The agent can search and retrieve text you explicitly share. Search matches all query words without regard to case. Plain text, links and color strings are supported.
 
 1. Inspect a clip in Cliphoard and add the custom tag `agent-share` under **Tags → Yours**. In Settings, use **Move to another Mac → Export** and save the encrypted archive.
-2. Run `tools/agent-search/install.sh` from a source checkout on the Mac. It requires the Swift compiler and Python 3.13 or newer. If needed set `CLIPHOARD_PYTHON` to the absolute interpreter path. The installer builds the archive reader from Cliphoard's own sources and installs the official Python MCP SDK in a private virtual environment.
+2. Run `tools/agent-search/install.sh` from a source checkout on the Mac. It requires the Swift compiler and Python 3.14 or newer. If needed set `CLIPHOARD_PYTHON` to the absolute interpreter path. The installer builds the archive reader from Cliphoard's own sources and installs the official Python MCP SDK in a private virtual environment.
 3. Register it with an MCP client. For Codex, use the following command and start a new chat.
 
 ```sh
@@ -19,7 +19,7 @@ Only explicitly tagged eligible records enter the server. The reader excludes ri
 
 ## Running the integration test
 
-From the repository root, use a Python 3.13+ virtual environment with the pinned MCP dependency installed. Compile the synthetic archive reader in its bin directory, then run the client test with that environment's Python. The test exercises a real encrypted archive and stdio session, including rejection of unknown flags, untagged IDs, a legacy sensitive source, a wrong passphrase, and trailing bytes.
+From the repository root, use a Python 3.14+ virtual environment with the pinned MCP dependency installed. Compile the synthetic archive reader in its bin directory, then run the client test with that environment's Python. The test exercises a real encrypted archive and stdio session, including rejection of unknown flags, untagged IDs, a legacy sensitive source, a wrong passphrase, and trailing bytes.
 
 ```sh
 swiftc Sources/Cliphoard/Support/HistoryArchive.swift Sources/Cliphoard/Search/Detectors.swift \

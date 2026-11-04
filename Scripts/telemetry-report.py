@@ -1,11 +1,11 @@
-"""Read-only aggregate report. Python 3.13+. Pass the Cloudflare token on stdin only.
+"""Read-only aggregate report. Python 3.14+. Pass the Cloudflare token on stdin only.
 
 The caller obtains credentials through its approved secret broker. This script does
 not inspect vaults, browser sessions, environment credentials or local secret files.
 """
 import sys
-if sys.version_info < (3, 13):
-    raise SystemExit("Python 3.13+ required")
+if sys.version_info < (3, 14):
+    raise SystemExit("Python 3.14+ required")
 
 import argparse
 from collections import Counter

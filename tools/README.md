@@ -19,20 +19,52 @@ open heads on a local retrieval set. License: MIT end-to-end (models AND teacher
 Legacy `axiotic/ogma-*` (CC-BY-NC, Jina teacher) still convert via
 `convert_ogma.py` but are no longer bundled.
 
-## Requirements
-`pip install -r requirements.txt` (torch, transformers, coremltools, sentencepiece,
-safetensors, huggingface_hub)
-Python 3.10 needs the `_compat.py` StrEnum shim (ogma's remote code uses 3.11's
-`enum.StrEnum`). If HF downloads hit a brotli decode error, use `_dl.py` which
-disables brotli content-encoding.
+## Requirements and Python policy
 
-## Run
+Use Python **3.14+** for ordinary tooling, tests, funding tools and release validation.
+The CoreML conversion environment is the one necessary exception: `coremltools==9.0`
+publishes macOS wheels through CPython 3.13, with no cp314 wheel (verified against
+[PyPI metadata](https://pypi.org/pypi/coremltools/9.0/json) on 2026-11-04). Use an
+explicitly verified Python 3.13 interpreter in a separate environment for these
+converters only. Do not change the system interpreter or downgrade other work.
+
 ```bash
-python3 _dl.py axiotic/open-ogma-micro                 # download → models/open-ogma-micro
-python3 convert_ogma_libre.py models/open-ogma-micro   # → models/open-ogma-micro.mlpackage (+parity)
-python3 _dl.py axiotic/open-ogma-small
-python3 convert_ogma_libre.py models/open-ogma-small
-bash restore-models.sh          # everything at once, incl. the pinned OpenVision zip (what CI runs)
+/opt/homebrew/bin/python3.13 --version  # must be 3.13.x; conversion-only exception
+/opt/homebrew/bin/python3.13 -m venv .venv-conversion
+.venv-conversion/bin/python -m pip install 'pip==26.3'
+.venv-conversion/bin/python -m pip install -r tools/requirements-openvision.txt
+.venv-conversion/bin/python -m pip check
+.venv-conversion/bin/python -m unittest discover -s tools -p test_coreml_numpy_compat.py -v
+CLIPHOARD_MODEL_PYTHON="$PWD/.venv-conversion/bin/python" bash tools/restore-models.sh
 ```
 
-The model's `forward(input_ids, attention_mask)` already returns the pooled, L2-normalised embedding. `Scripts/build-app.sh` compiles only the packages named in `BUNDLE_MODELS` (default: the two OpenVision towers) to `.mlmodelc` and bundles them, plus each text model's `<name>-tokenizer/` folder, into `Cliphoard.app/Contents/Resources`; `Scripts/verify-bundle.sh` then proves they landed. The other tiers download on demand.
+The patched stack uses PyTorch 2.13.0 / torchvision 0.28.0, NumPy 2.5.4 and
+Pillow 13.0.0. CoreML Tools still warns that its upstream-tested Torch version is
+2.7; this repository qualifies its own converter paths rather than claiming
+universal compatibility. `coreml_numpy_compat.py` temporarily corrects singleton
+constant casts during OpenVision conversion, retains upstream handling of dynamic
+values and invalid shapes, and restores the original converter even on failure.
+
+Local 2026-11-04 validation: both Ogma heads for Micro and Small, and MiniLM,
+reported cosine 1.00000; OpenVision passed 12 image / 6 text parity probes and
+all 5 cross-tower ranking comparisons. Worst cosine was 0.999289 (vision) and
+0.999681 (text). These are conversion checks, not new model quality claims.
+The existing scikit-learn-conversion warning concerns an unused CoreML frontend.
+
+## Run individual conversions
+
+From `tools/`, use the explicit environment path, for example:
+
+```bash
+../.venv-conversion/bin/python _dl.py axiotic/open-ogma-small
+../.venv-conversion/bin/python convert_ogma_libre.py models/open-ogma-small
+../.venv-conversion/bin/python convert_minilm.py
+../.venv-conversion/bin/python convert_openvision.py --out /absolute/scratch/openvision
+```
+
+Model weights are never bundled in the app. Production assets are separately
+reviewed, pinned Hugging Face downloads prepared locally after user consent.
+Conversion into a scratch directory does not publish assets or change existing
+release pins. OpenVision's restore script uses the historical pinned asset ZIP
+for maintainer checks; its converter also needs a reviewed centering manifest
+before any new asset publication. None of this work republishes model assets.

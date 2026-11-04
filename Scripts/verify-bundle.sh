@@ -2,8 +2,8 @@
 # Verify download-only bundle policy and unchanged licence distribution obligations.
 # Usage: verify-bundle.sh APP REPO [DMG_STAGE]; NOTICE_SOURCE/CHECKOUTS_DIR select channel.
 set -euo pipefail
-PYTHON="${CLIPHOARD_PYTHON:-/opt/homebrew/bin/python3.13}"
-"$PYTHON" -c 'import sys; assert sys.version_info >= (3, 13), "Python 3.13+ required"'
+PYTHON="${CLIPHOARD_PYTHON:-/opt/homebrew/bin/python3.14}"
+"$PYTHON" -c 'import sys; assert sys.version_info >= (3, 14), "Python 3.14+ required"'
 
 APP="${1:?usage: verify-bundle.sh <app> <repo-root> [stage-dir]}"
 ROOT="${2:?}"

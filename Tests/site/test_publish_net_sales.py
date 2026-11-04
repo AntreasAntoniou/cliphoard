@@ -1,4 +1,4 @@
-#!/usr/bin/env python3.13
+#!/usr/bin/env python3.14
 """The money matrix for tools/funding/publish_net_sales.py.
 
 Every fixture here is SYNTHETIC. None of it is a real settlement report, none of the
@@ -18,7 +18,7 @@ version of this file:
   * NO helper encodes missing data as zero. The absent case is built by giving a channel
     NO REPORTS, never by giving it an amount of 0.00 — those are different claims.
 
-Run:  /opt/homebrew/bin/python3.13 -m unittest discover -s Tests/site -p 'test_*.py'
+Run:  /opt/homebrew/bin/python3.14 -m unittest discover -s Tests/site -p 'test_*.py'
 """
 
 import datetime as dt

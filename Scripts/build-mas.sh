@@ -2,8 +2,8 @@
 # Assemble Cliphoard for Mac App Store review. Does not create certificates, profiles,
 # App Store Connect records, uploads, or purchases.
 set -euo pipefail
-PYTHON="${CLIPHOARD_PYTHON:-/opt/homebrew/bin/python3.13}"
-"$PYTHON" -c 'import sys; assert sys.version_info >= (3, 13), "Python 3.13+ required"'
+PYTHON="${CLIPHOARD_PYTHON:-/opt/homebrew/bin/python3.14}"
+"$PYTHON" -c 'import sys; assert sys.version_info >= (3, 14), "Python 3.14+ required"'
 
 cd "$(dirname "$0")/.."
 ROOT="$(pwd)"

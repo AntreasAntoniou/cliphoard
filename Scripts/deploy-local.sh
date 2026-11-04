@@ -14,7 +14,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 ROOT="$(pwd)"
-PYTHON="${CLIPHOARD_PYTHON:-/opt/homebrew/bin/python3.13}"
+PYTHON="${CLIPHOARD_PYTHON:-/opt/homebrew/bin/python3.14}"
 "$PYTHON" "$ROOT/Scripts/audit-no-models.py" --check-environment
 SKIP_TESTS="${1:-}"
 

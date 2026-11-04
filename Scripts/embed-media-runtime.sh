@@ -3,11 +3,11 @@ set -euo pipefail
 # Copy-only assembly of the pinned runtime into a NEW, unsigned app. Does not sign or launch.
 CLIPHOARD_EMBED_SCRIPT_ROOT="$(cd -- "$(dirname -- "$0")/.." && pwd -P)"
 export CLIPHOARD_EMBED_SCRIPT_ROOT
-CLIPHOARD_EMBED_PYTHON="${CLIPHOARD_PYTHON:-/opt/homebrew/bin/python3.13}"
+CLIPHOARD_EMBED_PYTHON="${CLIPHOARD_PYTHON:-/opt/homebrew/bin/python3.14}"
 exec "$CLIPHOARD_EMBED_PYTHON" -E - "$@" <<'PY'
 from pathlib import Path
 import hashlib, json, os, plistlib, shutil, stat, subprocess, sys
-if sys.version_info < (3, 13): raise SystemExit('Python 3.13+ required')
+if sys.version_info < (3, 14): raise SystemExit('Python 3.14+ required')
 if len(sys.argv) != 3: raise SystemExit('usage: embed-media-runtime.sh APP.app BIN_DIR')
 app, binaries = (Path(x).absolute() for x in sys.argv[1:])
 # The caller's cwd is not trusted for notices; use this repository-relative script path passed by shell.

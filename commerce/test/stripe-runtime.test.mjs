@@ -9,8 +9,9 @@ test("workerd: actual Stripe DO storage/serialization, encrypted token, webhook,
   const { EMAIL, CHECKOUT_RATE_LIMITER, ...bindings } = f.env;
   bindings.STRIPE_API_KEY = "rk_test_synthetic0123456789012345";
   const deliveries = [], outbound = [];
+  // Include the shared telemetry module outside commerce/ in Workerd's module root.
   const mf = new Miniflare({
-    modules: true, scriptPath: fileURLToPath(new URL("./stripe-runtime-harness.mjs", import.meta.url)),
+    modules: true, modulesRoot: fileURLToPath(new URL("../../", import.meta.url)), scriptPath: fileURLToPath(new URL("./stripe-runtime-harness.mjs", import.meta.url)),
     compatibilityDate: "2026-07-01", host: "127.0.0.1", port: 0, log: new Log(LogLevel.NONE), bindings,
     durableObjects: { STRIPE_ORDERS: { className: "TestStripeOrder", useSQLite: true } },
     serviceBindings: { TEST_EMAIL: async (request) => { deliveries.push(await request.json()); return Response.json({ messageId: "synthetic-runtime-accepted" }); } },

@@ -45,12 +45,12 @@ excluded from Cloudflare static assets by `.assetsignore`.
 
 ## Reading the dashboard
 
-Use verified Python 3.13+ and pipe the existing Cloudflare token from the approved
+Use verified Python 3.14+ and pipe the existing Cloudflare token from the approved
 secret broker directly into this command. Never paste a token into a shell command,
 file, chat, or an interactive stdin prompt.
 
 ```
-/absolute/python3.13 Scripts/telemetry-report.py --cloudflare-token-stdin --days 30 --output /private/report-folder
+/absolute/python3.14 Scripts/telemetry-report.py --cloudflare-token-stdin --days 30 --output /private/report-folder
 ```
 
 The caller owns the secret pipe; the report has no vault-discovery or unlock logic.
@@ -73,7 +73,7 @@ app diagnostics need a separate opt-in design and an updated app release.
 ## Verification
 
 - Node: `node --test Tests/site/test_telemetry.mjs commerce/test/stripe-metrics.test.mjs`
-- Python 3.13+: `python -m unittest discover -s Tests/site -p 'test_telemetry_report.py'`
+- Python 3.14+: `python -m unittest discover -s Tests/site -p 'test_telemetry_report.py'`
 - Preserve existing Stripe, rendered-page and workerd suites when changing commerce.
 - Browser QA uses `?metrics=qa`. API QA posts only mode `qa`; do not fake live sales.
 - Confirm events with Analytics Engine SQL, not only an HTTP 204 from ingestion.

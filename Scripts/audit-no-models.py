@@ -1,4 +1,4 @@
-#!/opt/homebrew/bin/python3.13
+#!/opt/homebrew/bin/python3.14
 """Read-only future-bundle policy: known code/resources only, never model payloads.
 
 This is an assembly allowlist, not a forensic claim about arbitrary executable bytes.
@@ -15,8 +15,8 @@ import plistlib
 import stat
 import sys
 
-if sys.version_info < (3, 13):
-    raise SystemExit("Python 3.13+ required")
+if sys.version_info < (3, 14):
+    raise SystemExit("Python 3.14+ required")
 
 
 class PolicyError(ValueError):

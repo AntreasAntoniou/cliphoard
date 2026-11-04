@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Builds Cliphoard.app — a self-contained macOS application bundle.
 set -euo pipefail
-PYTHON="${CLIPHOARD_PYTHON:-/opt/homebrew/bin/python3.13}"
-"$PYTHON" -c 'import sys; assert sys.version_info >= (3, 13), "Python 3.13+ required"'
+PYTHON="${CLIPHOARD_PYTHON:-/opt/homebrew/bin/python3.14}"
+"$PYTHON" -c 'import sys; assert sys.version_info >= (3, 14), "Python 3.14+ required"'
 
 cd "$(dirname "$0")/.."
 ROOT="$(pwd)"

@@ -46,6 +46,8 @@ import shutil
 import sys
 from pathlib import Path
 
+from coreml_numpy_compat import numpy_scalar_cast_compat
+
 import coremltools as ct
 import numpy as np
 import open_clip
@@ -150,15 +152,16 @@ def convert() -> dict:
     steps.update(1)
 
     steps.set_description("converting vision")
-    mlv = ct.convert(
-        traced_v,
-        inputs=[ct.ImageType(name="image", shape=(1, 3, SIDE, SIDE),
-                             scale=1.0 / 255.0, bias=[0.0, 0.0, 0.0],
-                             color_layout=ct.colorlayout.RGB)],
-        outputs=[ct.TensorType(name="embedding")],
-        compute_precision=ct.precision.FLOAT16,
-        minimum_deployment_target=ct.target.macOS13,
-    )
+    with numpy_scalar_cast_compat():
+        mlv = ct.convert(
+            traced_v,
+            inputs=[ct.ImageType(name="image", shape=(1, 3, SIDE, SIDE),
+                                 scale=1.0 / 255.0, bias=[0.0, 0.0, 0.0],
+                                 color_layout=ct.colorlayout.RGB)],
+            outputs=[ct.TensorType(name="embedding")],
+            compute_precision=ct.precision.FLOAT16,
+            minimum_deployment_target=ct.target.macOS13,
+        )
     mlv.save(str(OUT / f"{SIGNATURE}-image.mlpackage"))
     steps.update(1)
 
@@ -170,13 +173,14 @@ def convert() -> dict:
     steps.update(1)
 
     steps.set_description("converting text")
-    mlt = ct.convert(
-        traced_t,
-        inputs=[ct.TensorType(name="input_ids", shape=(1, CONTEXT), dtype=np.int32)],
-        outputs=[ct.TensorType(name="embedding")],
-        compute_precision=ct.precision.FLOAT16,
-        minimum_deployment_target=ct.target.macOS13,
-    )
+    with numpy_scalar_cast_compat():
+        mlt = ct.convert(
+            traced_t,
+            inputs=[ct.TensorType(name="input_ids", shape=(1, CONTEXT), dtype=np.int32)],
+            outputs=[ct.TensorType(name="embedding")],
+            compute_precision=ct.precision.FLOAT16,
+            minimum_deployment_target=ct.target.macOS13,
+        )
     mlt.save(str(OUT / f"{SIGNATURE}-text.mlpackage"))
     steps.update(1)
 

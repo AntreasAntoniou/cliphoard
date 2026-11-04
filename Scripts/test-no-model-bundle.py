@@ -1,4 +1,4 @@
-#!/opt/homebrew/bin/python3.13
+#!/opt/homebrew/bin/python3.14
 """Disposable artifact policy tests; never compile, sign, launch or fetch anything."""
 import importlib.util
 import os
@@ -9,7 +9,7 @@ import sys
 import tempfile
 import unittest
 
-assert sys.version_info >= (3, 13)
+assert sys.version_info >= (3, 14)
 ROOT = Path(__file__).resolve().parent.parent
 spec = importlib.util.spec_from_file_location("audit", ROOT / "Scripts/audit-no-models.py")
 audit = importlib.util.module_from_spec(spec)

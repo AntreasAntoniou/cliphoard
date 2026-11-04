@@ -57,13 +57,13 @@ jobs:
         id: python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.13'
+          python-version: '3.14'
 
       - name: Select the verified Python runtime
         env:
           SELECTED_PYTHON: ${{ steps.python.outputs.python-path }}
         run: |
-          "$SELECTED_PYTHON" -c 'import sys; assert sys.version_info >= (3, 13)'
+          "$SELECTED_PYTHON" -c 'import sys; assert sys.version_info >= (3, 14)'
           echo "CLIPHOARD_PYTHON=$SELECTED_PYTHON" >> "$GITHUB_ENV"
 
       # Model weights are downloaded by the app from Hugging Face, never packaged.

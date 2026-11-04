@@ -17,7 +17,7 @@ two private files, outside the repo         this tool          the one public fi
 
 ```sh
 # validate and print, writing nothing
-/opt/homebrew/bin/python3.13 tools/funding/publish_net_sales.py \
+/opt/homebrew/bin/python3.14 tools/funding/publish_net_sales.py \
     --scope  ~/private/cliphoard/scope.json \
     --input  ~/private/cliphoard/reconciliation-2026-12.json \
     --output docs/data/net-sales.json \
@@ -25,14 +25,14 @@ two private files, outside the repo         this tool          the one public fi
     --dry-run
 
 # publish
-/opt/homebrew/bin/python3.13 tools/funding/publish_net_sales.py \
+/opt/homebrew/bin/python3.14 tools/funding/publish_net_sales.py \
     --scope  ~/private/cliphoard/scope.json \
     --input  ~/private/cliphoard/reconciliation-2026-12.json \
     --output docs/data/net-sales.json
 ```
 
-Python 3.13+, standard library only. Commands below use the verified
-`/opt/homebrew/bin/python3.13`; select and verify an equivalent 3.13+ interpreter on
+Python 3.14+, standard library only. Commands below use the verified
+`/opt/homebrew/bin/python3.14`; select and verify an equivalent 3.14+ interpreter on
 another machine. The publisher refuses older runtimes. No packages to install, network
 access, credentials or provider API keys are needed.
 
@@ -415,7 +415,7 @@ The rest of the display rules:
 ## Tests
 
 ```sh
-/opt/homebrew/bin/python3.13 -m unittest discover -s Tests/site -p 'test_*.py'   # publisher + page
+/opt/homebrew/bin/python3.14 -m unittest discover -s Tests/site -p 'test_*.py'   # publisher + page
 /usr/local/bin/node --test Tests/site/test_funding_render.mjs              # the browser module
 ```
 
@@ -435,7 +435,7 @@ it.
 Serve the **repository root**:
 
 ```sh
-/opt/homebrew/bin/python3.13 -m http.server 4347 --bind 127.0.0.1
+/opt/homebrew/bin/python3.14 -m http.server 4347 --bind 127.0.0.1
 # the site:        http://127.0.0.1:4347/docs/
 # the QA harness:  http://127.0.0.1:4347/Tests/site/preview.html
 ```

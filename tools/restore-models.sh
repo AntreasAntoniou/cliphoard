@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 #
 # restore-models.sh — reproducibly materialise the on-device CoreML models
-# into the exact tools/models/ layout that Scripts/build-app.sh expects, WITHOUT
-# committing large binaries to git.
+# into tools/models/ for maintainer tests, WITHOUT committing large binaries
+# to git. The app downloads model assets separately; no weights are bundled.
 #
 # The .mlpackage CoreML files are NOT committed. Two paths produce them:
 #   - open-ogma-* and all-MiniLM-L6-v2 (download-on-demand tiers; restored here for the test
 #     suite and models.yml): download the PyTorch source via tools/_dl.py (→ tools/models/<name>/)
 #     and convert with tools/convert_ogma_libre.py / tools/convert_minilm.py
 #     (→ tools/models/<name>.mlpackage, with a parity check)
-#   - openvision-tiny-p8-{image,text} (the ONLY models the app BUNDLES): NOT converted here.
+#   - openvision-tiny-p8-{image,text}: historical pinned test assets, NOT converted here.
 #     One pinned zip (both towers + the text tokenizer folder + manifest, built by
 #     tools/convert_openvision.py + tools/pack-openvision.sh) is downloaded from the models-v1
 #     GitHub release, SHA-256-verified against OPENVISION_ZIP_SHA256 below, and unpacked.
@@ -25,7 +25,8 @@
 #
 # Requirements (install once before running):
 #   pip install torch transformers coremltools sentencepiece safetensors huggingface_hub
-# Python 3.10 is fine — tools/_compat.py provides the StrEnum shim ogma needs.
+# Conversion-only Python 3.13 exception: coremltools 9.0 lacks cp314 macOS wheels.
+# Pass an explicit verified environment via CLIPHOARD_MODEL_PYTHON (see README).
 #
 # Usage:
 #   tools/restore-models.sh                      # restore the default set
@@ -35,23 +36,20 @@
 # NOTE: the open-ogma (ogma-libre) models are MIT-licensed, distilled from
 # BAAI/bge-small-en-v1.5 and bge-large-en-v1.5 (both MIT).
 set -euo pipefail
+MODEL_PYTHON="${CLIPHOARD_MODEL_PYTHON:?Set CLIPHOARD_MODEL_PYTHON to the verified conversion environment}"
+"$MODEL_PYTHON" -c 'import sys; assert sys.version_info >= (3, 13), "CoreML conversion requires Python 3.13+"'
 
 cd "$(dirname "$0")"            # operate from tools/, like the README examples
 ROOT="$(cd .. && pwd)"
 
-# Default set of models to restore: everything a build or the test suite can consume.
-# Keep in sync with Scripts/build-app.sh (BUNDLE_MODELS = the openvision pair) and
-# Sources/Cliphoard/Search/DeepSearch.swift (low → open-ogma-micro, normal → open-ogma-small).
-# embeddinggemma-300m is deliberately absent: that tier was retired on licensing
-# grounds (see THIRD-PARTY-NOTICES.md). Passing MODELS= explicitly still fetches it
+# Default set for maintainer conversion checks, not an app bundle inventory.
+MODELS= explicitly still fetches it
 # for conversion work, but no default path pulls Gemma-licensed weights any more.
 MODELS="${MODELS:-open-ogma-micro open-ogma-small all-MiniLM-L6-v2 openvision-tiny-p8-image openvision-tiny-p8-text}"
 HF_REPO_PREFIX="${HF_REPO_PREFIX:-axiotic}"
 
-# The bundled OpenVision pair: one pinned zip on the models-v1 release. Nothing at runtime
-# downloads these (CLIPEmbedder loads them from the bundle only), so there is no ModelAssets
-# pin to fall back on — this line IS the pin. Recompute with tools/pack-openvision.sh and
-# re-upload whenever the towers are re-converted.
+# Historical test fixture pin. Runtime model downloads have their own reviewed
+# Hugging Face revisions in the app; this script does not publish or repin them.
 OPENVISION_ZIP_URL="${OPENVISION_ZIP_URL:-https://github.com/AntreasAntoniou/cliphoard/releases/download/models-v1/openvision-tiny-p8.zip}"
 OPENVISION_ZIP_SHA256="c137d2f76e9ed583488cf5e5955f11d173192c05ccae4daa922e8ab6fdfb772a"
 
@@ -109,19 +107,19 @@ for name in $MODELS; do
         open-ogma-*)
             repo="$HF_REPO_PREFIX/$name"
             echo "▸ Downloading $repo (PyTorch source) …"
-            python3 _dl.py "$repo"
-            python3 convert_ogma_libre.py "models/$name" ;;   # self-contained ogma-libre repos
+            "$MODEL_PYTHON" _dl.py "$repo"
+            "$MODEL_PYTHON" convert_ogma_libre.py "models/$name" ;;   # self-contained ogma-libre repos
         all-MiniLM-L6-v2)
-            python3 convert_minilm.py ;;                      # pulls from HF cache itself
+            "$MODEL_PYTHON" convert_minilm.py ;;                      # pulls from HF cache itself
         embeddinggemma-300m)
-            python3 convert_gemma.py ;;                       # gated: needs HF login w/ access
+            "$MODEL_PYTHON" convert_gemma.py ;;                       # gated: needs HF login w/ access
         openvision-tiny-p8-*)
             restore_openvision ;;                             # one pinned zip: both towers + tokenizer
         *)
             repo="$HF_REPO_PREFIX/$name"
             echo "▸ Downloading $repo (PyTorch source) …"
-            python3 _dl.py "$repo"
-            python3 convert_ogma.py "models/$name" ;;         # legacy HF trust_remote_code repos
+            "$MODEL_PYTHON" _dl.py "$repo"
+            "$MODEL_PYTHON" convert_ogma.py "models/$name" ;;         # legacy HF trust_remote_code repos
     esac
 
     [ -d "$pkg" ] || { echo "::error::restore produced no $pkg" >&2; exit 1; }

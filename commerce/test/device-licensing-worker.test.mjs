@@ -66,13 +66,14 @@ test('whole exported candidate: checkout, paid feed, setup, durable hold/allow, 
     else { unexpected++; throw Error('Unexpected Stripe endpoint'); }
     return Response.json(value);
   };
+  // Telemetry is imported from the repository root, outside commerce/.
   const options = { cf: false, host: '127.0.0.1', port: 0, log: new Log(LogLevel.NONE), durableObjectsPersist: disk,
-    workers: [{ name: 'candidate', modules: true, compatibilityDate: '2026-07-01',
+    workers: [{ name: 'candidate', modules: true, modulesRoot: fileURLToPath(new URL("../../", import.meta.url)), compatibilityDate: '2026-07-01',
       scriptPath: fileURLToPath(new URL('./device-licensing-runtime-harness.mjs', import.meta.url)), bindings: f.env,
       durableObjects: { STRIPE_ORDERS: { className: 'StripeOrder', useSQLite: true }, DEVICE_LICENCE_DIRECTORY: { className: 'DeviceLicenceDirectory', useSQLite: true },
         DEVICE_LICENCE_ENTITLEMENTS: { className: 'DeviceLicenceEntitlement', useSQLite: true } },
       serviceBindings: { EMAIL: { name: 'bindings', entrypoint: 'SyntheticEmail' }, CHECKOUT_RATE_LIMITER: { name: 'bindings', entrypoint: 'SyntheticRateLimit' } }, outboundService: outbound },
-    { name: 'bindings', modules: true, compatibilityDate: '2026-07-01', scriptPath: fileURLToPath(new URL('./device-licensing-bindings-harness.mjs', import.meta.url)), outboundService: outbound }] };
+    { name: 'bindings', modules: true, modulesRoot: fileURLToPath(new URL("../../", import.meta.url)), compatibilityDate: '2026-07-01', scriptPath: fileURLToPath(new URL('./device-licensing-bindings-harness.mjs', import.meta.url)), outboundService: outbound }] };
   const post = (path, value, headers = {}) => runtime.dispatchFetch(f.env.PUBLIC_ORIGIN + path, { method: 'POST',
     headers: { 'content-type': 'application/json', origin: f.env.PUBLIC_ORIGIN, 'CF-Connecting-IP': '192.0.2.1', ...headers }, body: JSON.stringify(value) });
   const waitMail = async count => { const deadline = Date.now() + 12000; while (mail.length < count && Date.now() < deadline) await new Promise(r => setTimeout(r, 100)); assert.equal(mail.length,count,'mail count'); };

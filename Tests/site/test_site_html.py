@@ -1,4 +1,4 @@
-#!/usr/bin/env python3.13
+#!/usr/bin/env python3.14
 """Production-page contracts for the owner-selected Flow design.
 
 These checks cover link resolution, accessible structure, release and purchase facts,
@@ -6,7 +6,7 @@ privacy boundaries, neutral funding state, and the System/Light/Dark theme paths
 Visual spacing and actual responsive fit are inspected in Chrome; a CSS substring or
 an estimated glyph width is not evidence that a layout fits.
 
-Run: /opt/homebrew/bin/python3.13 -m unittest discover -s Tests/site -p 'test_*.py'
+Run: /opt/homebrew/bin/python3.14 -m unittest discover -s Tests/site -p 'test_*.py'
 """
 
 import json

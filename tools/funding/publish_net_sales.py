@@ -1,7 +1,7 @@
-#!/usr/bin/env python3.13
+#!/usr/bin/env python3.14
 """Publish the public net-sales aggregate for cliphoard.dev from private reconciliation.
 
-    /opt/homebrew/bin/python3.13 tools/funding/publish_net_sales.py \
+    /opt/homebrew/bin/python3.14 tools/funding/publish_net_sales.py \
         --scope  ~/private/cliphoard/scope.json \
         --input  ~/private/cliphoard/reconciliation-2026-12.json \
         --output docs/data/net-sales.json
@@ -51,8 +51,8 @@ import tempfile
 from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 
-if sys.version_info < (3, 13):
-    raise SystemExit("python_runtime_below_3_13")
+if sys.version_info < (3, 14):
+    raise SystemExit("python_runtime_below_3_14")
 
 INPUT_SCHEMA = "cliphoard.net-sales.reconciliation/3"
 SCOPE_SCHEMA = "cliphoard.net-sales.scope/2"

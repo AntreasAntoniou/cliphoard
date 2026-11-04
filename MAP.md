@@ -119,7 +119,7 @@ Cross-cutting **Support** (`Sources/Cliphoard/Support`) provides audible feedbac
 | `reference.py` | python | Compute PyTorch reference embeddings for fixed sample texts (models/ogma-small) → `reference.json` | `P`, `samples`, `reference.py` |
 | `reference.json` | json | Golden parity data: ids, first-6 dims, L2 norm for 3 sample texts | `reference[0..2]` |
 | `_compat.py` | python | Backport `enum.StrEnum` on Python 3.10 so ogma trust_remote_code modules import | `StrEnum` |
-| `requirements.txt` | text | Frozen pins (Python 3.11): torch 2.7.1, coremltools 9.0, numpy 1.26.4, transformers, etc. | — |
+| `requirements.txt` | text | Patched conversion pins: torch 2.13.0, coremltools 9.0, numpy 2.5.4; Python 3.13 conversion-only exception (see tools/README.md). | — |
 
 ### .github/workflows/
 

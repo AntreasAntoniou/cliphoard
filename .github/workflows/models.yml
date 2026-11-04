@@ -1,8 +1,5 @@
-# Proves the auto-download-and-convert path end to end, WITHOUT needing the
-# Apple signing cert. Run it from the Actions tab (Run workflow) any time, and
-# it runs automatically when the conversion tooling changes. This is the
-# cert-free guarantee that a release build will get working on-device models
-# rather than silently falling back to the weak hashing embedder.
+# Maintainer-only download/conversion checks. Model weights are downloaded
+# separately by users and are never bundled by the release workflow.
 name: Models (restore + convert)
 
 on:
@@ -19,24 +16,30 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Set up Python
+        id: model-python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          # CoreML Tools 9.0 has macOS wheels only through cp313.
+          # Narrow conversion exception; release/general tooling uses 3.14+.
+          python-version: '3.13'
 
       - name: Cache on-device models
         uses: actions/cache@v4
         with:
           path: tools/models
-          key: models-v2-${{ hashFiles('tools/restore-models.sh', 'tools/pack-openvision.sh', 'tools/convert_openvision.py', 'tools/convert_ogma_libre.py', 'tools/convert_minilm.py', 'tools/_dl.py', 'tools/_compat.py', 'tools/requirements.txt') }}
+          key: models-v3-${{ hashFiles('tools/restore-models.sh', 'tools/pack-openvision.sh', 'tools/convert_openvision.py', 'tools/coreml_numpy_compat.py', 'tools/convert_ogma_libre.py', 'tools/convert_minilm.py', 'tools/_dl.py', 'tools/_compat.py', 'tools/requirements*.txt') }}
 
       - name: Install conversion deps
         run: |
-          python3 -m pip install --upgrade pip
-          python3 -m pip install -r tools/requirements.txt
+          "${{ steps.model-python.outputs.python-path }}" -c 'import sys; assert sys.version_info[:2] == (3, 13)'
+          "${{ steps.model-python.outputs.python-path }}" -m pip install 'pip==26.3'
+          "${{ steps.model-python.outputs.python-path }}" -m pip install -r tools/requirements.txt
+          "${{ steps.model-python.outputs.python-path }}" -m unittest discover -s tools -p test_coreml_numpy_compat.py -v
 
       - name: Restore + convert on-device models (ogma + MiniLM from HuggingFace; OpenVision from the pinned zip)
         env:
           HF_HUB_DISABLE_TELEMETRY: '1'
+          CLIPHOARD_MODEL_PYTHON: ${{ steps.model-python.outputs.python-path }}
         run: bash tools/restore-models.sh
 
       - name: Verify artifacts + tokenizers

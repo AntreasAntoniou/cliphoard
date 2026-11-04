@@ -14,7 +14,7 @@
 
   Serve the REPO ROOT and open this file:
 
-      /opt/homebrew/bin/python3.13 -m http.server 4347 --bind 127.0.0.1      # from the repository root
+      /opt/homebrew/bin/python3.14 -m http.server 4347 --bind 127.0.0.1      # from the repository root
       http://127.0.0.1:4347/Tests/site/preview.html
 
   Every amount below is SYNTHETIC. None of it is real revenue, none of it is written to
@@ -259,7 +259,7 @@ for (const button of document.querySelectorAll("button[data-fixture]")) {
     const root = fundingRoot();
     if (!root) {
       note("Cannot reach the framed document. Serve the REPOSITORY ROOT "
-         + "(/opt/homebrew/bin/python3.13 -m http.server 4347 --bind 127.0.0.1) and open this file over HTTP.", true);
+         + "(/opt/homebrew/bin/python3.14 -m http.server 4347 --bind 127.0.0.1) and open this file over HTTP.", true);
       return;
     }
     const { payload, today } = FIXTURES[button.dataset.fixture];
