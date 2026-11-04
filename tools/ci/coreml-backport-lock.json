@@ -1,0 +1,498 @@
+{
+  "architecture": "arm64",
+  "fix": {
+    "afterSHA256": "10a9a6147d1667a285db573cb9455cfb53058107659a5ae884bbcaebac18981a",
+    "beforeSHA256": "7a99d1b91c3c50c9be2d27a744824644c750aa83da242284057c06634433c9c3",
+    "commit": "a207b1a3452eafe02f2d870f486287834af2c82d",
+    "path": "coremlpython/CoreMLPythonArray.mm"
+  },
+  "localFiles": {
+    "coreml-native/CMakeLists.txt": "79c0bef071a2b2e1ad5a9edbb3c00df51e538c4de4a2225ef6d325fd6ecf3e34",
+    "coreml-native/CoreMLPythonArray.mm": "10a9a6147d1667a285db573cb9455cfb53058107659a5ae884bbcaebac18981a",
+    "coreml-native/owner-release.patch": "4fb94893682003d3c080bac5c68cadcc61edf0bd00471ea5dfdc2ced71bb6632"
+  },
+  "packages": {
+    "annotated-doc": {
+      "version": "0.0.5",
+      "wheel": {
+        "filename": "annotated_doc-0.0.5-py3-none-any.whl",
+        "sha256": "117bac03a25ede5df5440e855b32d556049ca169ead221505badf432fed4b101",
+        "size": 5302,
+        "url": "https://files.pythonhosted.org/packages/3e/30/e900b21425a860e195f32e37657aa1f7c7f2b1bfb26f03ca209b90933c06/annotated_doc-0.0.5-py3-none-any.whl",
+        "yanked": false
+      }
+    },
+    "anyio": {
+      "version": "4.16.0",
+      "wheel": {
+        "filename": "anyio-4.16.0-py3-none-any.whl",
+        "sha256": "c66ae634e0b8228396b801741beb3294326d4b6102f7bba4041c0dfb58c29026",
+        "size": 134521,
+        "url": "https://files.pythonhosted.org/packages/a9/16/7757fb84c819accc7d7e9af5291b261e4abb8627ee040f99e7d35ef2457a/anyio-4.16.0-py3-none-any.whl",
+        "yanked": false
+      }
+    },
+    "attrs": {
+      "version": "26.1.0",
+      "wheel": {
+        "filename": "attrs-26.1.0-py3-none-any.whl",
+        "sha256": "c647aa4a12dfbad9333ca4e71fe62ddc36f4e63b2d260a37a8b83d2f043ac309",
+        "size": 67548,
+        "url": "https://files.pythonhosted.org/packages/64/b4/17d4b0b2a2dc85a6df63d1157e028ed19f90d4cd97c36717afef2bc2f395/attrs-26.1.0-py3-none-any.whl",
+        "yanked": false
+      }
+    },
+    "cattrs": {
+      "version": "26.2.1",
+      "wheel": {
+        "filename": "cattrs-26.2.1-py3-none-any.whl",
+        "sha256": "a12aaa3453dc8f633a815293179f08b7421ed18d2575c459c3c736f840beac24",
+        "size": 74843,
+        "url": "https://files.pythonhosted.org/packages/e8/cf/22794a399d99480486120e26e879ef008e21f5e85274c2ed591d568bb326/cattrs-26.2.1-py3-none-any.whl",
+        "yanked": false
+      }
+    },
+    "certifi": {
+      "version": "2026.10.23",
+      "wheel": {
+        "filename": "certifi-2026.10.23-py3-none-any.whl",
+        "sha256": "e9b54de76e530bb6cf0ccd036787103acb58fd42ba930ea8bf948ddbaa2f61d1",
+        "size": 135082,
+        "url": "https://files.pythonhosted.org/packages/32/d1/a3652fe2c19134d0d15922177821d863cbd7e842d53a21bbe7e8e3a1b5ac/certifi-2026.10.23-py3-none-any.whl",
+        "yanked": false
+      }
+    },
+    "click": {
+      "version": "8.5.0",
+      "wheel": {
+        "filename": "click-8.5.0-py3-none-any.whl",
+        "sha256": "255bc9599cf7748b4b1a446ccc735421bd08a2ae529a8b88597d3de5664ee360",
+        "size": 125251,
+        "url": "https://files.pythonhosted.org/packages/58/50/6c0d534c5f134586a8e1ba4e330569e32f057e33372ae556463212fb4cd3/click-8.5.0-py3-none-any.whl",
+        "yanked": false
+      }
+    },
+    "cloudpickle": {
+      "version": "3.1.2",
+      "wheel": {
+        "filename": "cloudpickle-3.1.2-py3-none-any.whl",
+        "sha256": "9acb47f6afd73f60dc1df93bb801b472f05ff42fa6c84167d25cb206be1fbf4a",
+        "size": 22228,
+        "url": "https://files.pythonhosted.org/packages/88/39/799be3f2f0f38cc727ee3b4f1445fe6d5e4133064ec2e4115069418a5bb6/cloudpickle-3.1.2-py3-none-any.whl",
+        "yanked": false
+      }
+    },
+    "coremltools": {
+      "version": "9.0",
+      "wheel": {
+        "filename": "coremltools-9.0-cp313-none-macosx_11_0_arm64.whl",
+        "sha256": "9f2f858beec7f5d486cd1a59aefb452d59347e236670b67db325795bf692f480",
+        "size": 2764608,
+        "url": "https://files.pythonhosted.org/packages/62/50/76d5a828d875ed8ad7392bf9294233261747de02f7415f51d4add8dc0acf/coremltools-9.0-cp313-none-macosx_11_0_arm64.whl",
+        "yanked": false
+      }
+    },
+    "filelock": {
+      "version": "4.2.7",
+      "wheel": {
+        "filename": "filelock-4.2.7-py3-none-any.whl",
+        "sha256": "d08972bbca2b8767ee552aff877b091dd111ffb1d22de7de885766ea7d719d5e",
+        "size": 164345,
+        "url": "https://files.pythonhosted.org/packages/1d/1a/1fcf0d3886bad15b92459a0e529dd86a1ec4d9ef30e789df48044fd3698c/filelock-4.2.7-py3-none-any.whl",
+        "yanked": false
+      }
+    },
+    "fsspec": {
+      "version": "2026.9.0",
+      "wheel": {
+        "filename": "fsspec-2026.9.0-py3-none-any.whl",
+        "sha256": "8dd6e646e99ea382bd85f97a45e6b526a442d79423a7dc673f1e2756d05fcb5f",
+        "size": 221738,
+        "url": "https://files.pythonhosted.org/packages/6c/c0/a98505f18594f1bce828bb159cec0fcf9860562f1a2c85913409fc8f3d9e/fsspec-2026.9.0-py3-none-any.whl",
+        "yanked": false
+      }
+    },
+    "h11": {
+      "version": "0.16.0",
+      "wheel": {
+        "filename": "h11-0.16.0-py3-none-any.whl",
+        "sha256": "63cf8bbe7522de3bf65932fda1d9c2772064ffb3dae62d55932da54b31cb6c86",
+        "size": 37515,
+        "url": "https://files.pythonhosted.org/packages/04/4b/29cac41a4d98d144bf5f6d33995617b185d14b22401f75ca86f384e87ff1/h11-0.16.0-py3-none-any.whl",
+        "yanked": false
+      }
+    },
+    "hf-xet": {
+      "version": "1.8.0",
+      "wheel": {
+        "filename": "hf_xet-1.8.0-cp38-abi3-macosx_11_0_arm64.whl",
+        "sha256": "3e8934784425781f0f779b91044df441f3a7af4dab47375d7e3aeaecbb8eecb4",
+        "size": 3600947,
+        "url": "https://files.pythonhosted.org/packages/d4/f2/ef25e2085e92dcaeaa675331e443923aed2006f6fe2d984e15d8b8d40766/hf_xet-1.8.0-cp38-abi3-macosx_11_0_arm64.whl",
+        "yanked": false
+      }
+    },
+    "httpcore": {
+      "version": "1.0.9",
+      "wheel": {
+        "filename": "httpcore-1.0.9-py3-none-any.whl",
+        "sha256": "2d400746a40668fc9dec9810239072b40b4484b640a8c38fd654a024c7a1bf55",
+        "size": 78784,
+        "url": "https://files.pythonhosted.org/packages/7e/f5/f66802a942d491edb555dd61e3a9961140fd64c90bce1eafd741609d334d/httpcore-1.0.9-py3-none-any.whl",
+        "yanked": false
+      }
+    },
+    "httpx": {
+      "version": "0.28.1",
+      "wheel": {
+        "filename": "httpx-0.28.1-py3-none-any.whl",
+        "sha256": "d909fcccc110f8c7faf814ca82a9a4d816bc5a6dbfea25d6591d6985b8ba59ad",
+        "size": 73517,
+        "url": "https://files.pythonhosted.org/packages/2a/39/e50c7c3a983047577ee07d2a9e53faf5a69493943ec3f6a384bdc792deb2/httpx-0.28.1-py3-none-any.whl",
+        "yanked": false
+      }
+    },
+    "huggingface-hub": {
+      "version": "1.21.0",
+      "wheel": {
+        "filename": "huggingface_hub-1.21.0-py3-none-any.whl",
+        "sha256": "eadaa3678c512c82aea69e8675d90a184861e68de32f1105668628b4dce0e7cd",
+        "size": 721078,
+        "url": "https://files.pythonhosted.org/packages/4f/85/b505a99a133d9f99d21af182af416e9baef70bdeef019983479651e494c2/huggingface_hub-1.21.0-py3-none-any.whl",
+        "yanked": false
+      }
+    },
+    "idna": {
+      "version": "3.20",
+      "wheel": {
+        "filename": "idna-3.20-py3-none-any.whl",
+        "sha256": "ab7ae7122974553370f0bdb919e1a960b2cd1bc1ef0276416d896db81c14582c",
+        "size": 69583,
+        "url": "https://files.pythonhosted.org/packages/58/a2/bb081bab032533a855d44de1d56f8e8426114ff1ba5d1f07a438a0a654f8/idna-3.20-py3-none-any.whl",
+        "yanked": false
+      }
+    },
+    "jinja2": {
+      "version": "3.1.6",
+      "wheel": {
+        "filename": "jinja2-3.1.6-py3-none-any.whl",
+        "sha256": "85ece4451f492d0c13c5dd7c13a64681a86afae63a5f347908daf103ce6d2f67",
+        "size": 134899,
+        "url": "https://files.pythonhosted.org/packages/62/a1/3d680cbfd5f4b8f15abc1d571870c5fc3e594bb582bc3b64ea099db13e56/jinja2-3.1.6-py3-none-any.whl",
+        "yanked": false
+      }
+    },
+    "joblib": {
+      "version": "1.6.0",
+      "wheel": {
+        "filename": "joblib-1.6.0-py3-none-any.whl",
+        "sha256": "3dbbf9f6e4b592a2357b854608e980fe6390d131d7a82f011a377ef2ebef7aba",
+        "size": 306115,
+        "url": "https://files.pythonhosted.org/packages/18/53/84099323c2ec4be98d935f63c033ac4151ee83836ca1050ede3b3aadf155/joblib-1.6.0-py3-none-any.whl",
+        "yanked": false
+      }
+    },
+    "markdown-it-py": {
+      "version": "4.2.0",
+      "wheel": {
+        "filename": "markdown_it_py-4.2.0-py3-none-any.whl",
+        "sha256": "9f7ebbcd14fe59494226453aed97c1070d83f8d24b6fc3a3bcf9a38092641c4a",
+        "size": 91687,
+        "url": "https://files.pythonhosted.org/packages/b3/81/4da04ced5a082363ecfa159c010d200ecbd959ae410c10c0264a38cac0f5/markdown_it_py-4.2.0-py3-none-any.whl",
+        "yanked": false
+      }
+    },
+    "markupsafe": {
+      "version": "3.0.4",
+      "wheel": {
+        "filename": "markupsafe-3.0.4-cp313-cp313-macosx_11_0_arm64.whl",
+        "sha256": "73e77980c7207854f00fc4e71fb1626868d5740ab4012623d55c7a99ad122a72",
+        "size": 12061,
+        "url": "https://files.pythonhosted.org/packages/ca/e0/4030bea613677e333c8a2c901fd405055f657f9d06acba5b7357984b6ef7/markupsafe-3.0.4-cp313-cp313-macosx_11_0_arm64.whl",
+        "yanked": false
+      }
+    },
+    "mdurl": {
+      "version": "0.1.2",
+      "wheel": {
+        "filename": "mdurl-0.1.2-py3-none-any.whl",
+        "sha256": "84008a41e51615a49fc9966191ff91509e3c40b939176e643fd50a5c2196b8f8",
+        "size": 9979,
+        "url": "https://files.pythonhosted.org/packages/b3/38/89ba8ad64ae25be8de66a6d463314cf1eb366222074cfda9ee839c56a4b4/mdurl-0.1.2-py3-none-any.whl",
+        "yanked": false
+      }
+    },
+    "mpmath": {
+      "version": "1.3.0",
+      "wheel": {
+        "filename": "mpmath-1.3.0-py3-none-any.whl",
+        "sha256": "a0b2b9fe80bbcd81a6647ff13108738cfb482d481d826cc0e02f5b35e5c88d2c",
+        "size": 536198,
+        "url": "https://files.pythonhosted.org/packages/43/e3/7d92a15f894aa0c9c4b49b8ee9ac9850d6e63b03c9c32c0367a13ae62209/mpmath-1.3.0-py3-none-any.whl",
+        "yanked": false
+      }
+    },
+    "narwhals": {
+      "version": "2.28.0",
+      "wheel": {
+        "filename": "narwhals-2.28.0-py3-none-any.whl",
+        "sha256": "1f69d6385ec30e2fa6e1fdeb37c562ecabd0f713f6f3e3b58a668c5c9df9567f",
+        "size": 490591,
+        "url": "https://files.pythonhosted.org/packages/cf/82/8ef9c7e0f50493307a49c09cfa7f00c5a778b6d1921f7b2dabe1d3a5809e/narwhals-2.28.0-py3-none-any.whl",
+        "yanked": false
+      }
+    },
+    "networkx": {
+      "version": "3.7",
+      "wheel": {
+        "filename": "networkx-3.7-py3-none-any.whl",
+        "sha256": "e3fd2c13a7814cee3746340d8d7f8598a67f16a58bf47fb7f8793fab6efca1b0",
+        "size": 2142205,
+        "url": "https://files.pythonhosted.org/packages/7e/cd/fe58041e9011f307c490e3e17dd48cc516448f7c698a3f2d9d9d65d7e6a8/networkx-3.7-py3-none-any.whl",
+        "yanked": false
+      }
+    },
+    "numpy": {
+      "version": "2.5.4",
+      "wheel": {
+        "filename": "numpy-2.5.4-cp313-cp313-macosx_14_0_arm64.whl",
+        "sha256": "6d6a71b9d9a97c03633aa12565ef2825ffa036cc1d99cfd50dacf0f128af4fe2",
+        "size": 5445803,
+        "url": "https://files.pythonhosted.org/packages/e2/84/6a3d75b3ba3dfe84ac0053450753d1e6d250a8bf80f66474cc46d1fb643f/numpy-2.5.4-cp313-cp313-macosx_14_0_arm64.whl",
+        "yanked": false
+      }
+    },
+    "packaging": {
+      "version": "26.3",
+      "wheel": {
+        "filename": "packaging-26.3-py3-none-any.whl",
+        "sha256": "d7193f7c8e4e93f444fde0262bf90af30e16fa0ad0ad44cb553c87339b23cd1c",
+        "size": 129956,
+        "url": "https://files.pythonhosted.org/packages/63/34/ba1c580383c9eada3711951fef0795c80b829a078d72188184bcab9dd527/packaging-26.3-py3-none-any.whl",
+        "yanked": false
+      }
+    },
+    "protobuf": {
+      "version": "7.36.2",
+      "wheel": {
+        "filename": "protobuf-7.36.2-cp310-abi3-macosx_10_9_universal2.whl",
+        "sha256": "cbc70b17ee27e28894c7fee8bb04be1abead49e936bc70eb60052531eee2079e",
+        "size": 456039,
+        "url": "https://files.pythonhosted.org/packages/32/72/98342feb672507c8f3a69e34b4fa8961f608edba5c1a48a6f47156d92cb5/protobuf-7.36.2-cp310-abi3-macosx_10_9_universal2.whl",
+        "yanked": false
+      }
+    },
+    "pyaml": {
+      "version": "26.7.0",
+      "wheel": {
+        "filename": "pyaml-26.7.0-py3-none-any.whl",
+        "sha256": "cfa382780c43ae660669b87d394d550a41856ef175f5749f51f753e12d7077ac",
+        "size": 27226,
+        "url": "https://files.pythonhosted.org/packages/a6/26/3f05f9e3692853dff663913d5d62fb8df3f5640c8d70b06588c0b51ed953/pyaml-26.7.0-py3-none-any.whl",
+        "yanked": false
+      }
+    },
+    "pygments": {
+      "version": "2.21.0",
+      "wheel": {
+        "filename": "pygments-2.21.0-py3-none-any.whl",
+        "sha256": "2363c69b61c4a97c838da3b130dcd6468f4848992b21a82f2a63ec34377137d9",
+        "size": 1250147,
+        "url": "https://files.pythonhosted.org/packages/71/46/17f022dd3e953bf20a04a028a21ec746d942f8d2af30fa0f124fa0e6a684/pygments-2.21.0-py3-none-any.whl",
+        "yanked": false
+      }
+    },
+    "pyyaml": {
+      "version": "6.0.3",
+      "wheel": {
+        "filename": "pyyaml-6.0.3-cp313-cp313-macosx_11_0_arm64.whl",
+        "sha256": "2283a07e2c21a2aa78d9c4442724ec1eb15f5e42a723b99cb3d822d48f5f7ad1",
+        "size": 173252,
+        "url": "https://files.pythonhosted.org/packages/b1/16/95309993f1d3748cd644e02e38b75d50cbc0d9561d21f390a76242ce073f/pyyaml-6.0.3-cp313-cp313-macosx_11_0_arm64.whl",
+        "yanked": false
+      }
+    },
+    "regex": {
+      "version": "2026.9.29",
+      "wheel": {
+        "filename": "regex-2026.9.29-cp313-cp313-macosx_11_0_arm64.whl",
+        "sha256": "c90fcf7804ea0a54b896ce0f2b9565350220b8d4890fd0db461a476a4c687963",
+        "size": 293472,
+        "url": "https://files.pythonhosted.org/packages/11/9e/aa0f4cde3bc4688c1d58b0cd8415edd708339bc0bc401a195b0b1e8c8f0c/regex-2026.9.29-cp313-cp313-macosx_11_0_arm64.whl",
+        "yanked": false
+      }
+    },
+    "rich": {
+      "version": "15.0.0",
+      "wheel": {
+        "filename": "rich-15.0.0-py3-none-any.whl",
+        "sha256": "33bd4ef74232fb73fe9279a257718407f169c09b78a87ad3d296f548e27de0bb",
+        "size": 310654,
+        "url": "https://files.pythonhosted.org/packages/82/3b/64d4899d73f91ba49a8c18a8ff3f0ea8f1c1d75481760df8c68ef5235bf5/rich-15.0.0-py3-none-any.whl",
+        "yanked": false
+      }
+    },
+    "safetensors": {
+      "version": "0.8.0",
+      "wheel": {
+        "filename": "safetensors-0.8.0-cp310-abi3-macosx_11_0_arm64.whl",
+        "sha256": "c80201d22cbf405b80647a60ada77bba06c8fba2da2743ba1e89cdcc39a81f25",
+        "size": 484562,
+        "url": "https://files.pythonhosted.org/packages/f5/b1/fa7c600e7dceae12e9606c7578cbc9ff1e1ed55844883ee5c92205e86226/safetensors-0.8.0-cp310-abi3-macosx_11_0_arm64.whl",
+        "yanked": false
+      }
+    },
+    "scikit-learn": {
+      "version": "1.9.1",
+      "wheel": {
+        "filename": "scikit_learn-1.9.1-cp313-cp313-macosx_12_0_arm64.whl",
+        "sha256": "61cd968ab831a76d0ecbaf0347ab2270268716da28f94fd022497e3d6f205f13",
+        "size": 8262364,
+        "url": "https://files.pythonhosted.org/packages/2f/81/3c6392c03665d2899457a76e535a9a6f597dddddf3220fd2e1d790da88c5/scikit_learn-1.9.1-cp313-cp313-macosx_12_0_arm64.whl",
+        "yanked": false
+      }
+    },
+    "scipy": {
+      "version": "1.18.1",
+      "wheel": {
+        "filename": "scipy-1.18.1-cp313-cp313-macosx_14_0_arm64.whl",
+        "sha256": "ea324d9dd34c38bfb9bec8ca4d1b407db97dbb74029f566b8e322b1b6fe56fe6",
+        "size": 20456846,
+        "url": "https://files.pythonhosted.org/packages/9a/d7/21d890274f75ea37a8209d5519e72da3da90302e3b9fb8397a0918386a62/scipy-1.18.1-cp313-cp313-macosx_14_0_arm64.whl",
+        "yanked": false
+      }
+    },
+    "sentence-transformers": {
+      "version": "5.6.0",
+      "wheel": {
+        "filename": "sentence_transformers-5.6.0-py3-none-any.whl",
+        "sha256": "d2075b5e687a1611005e20ab04a6846994d51adfcf39610aed066af3c0c0b81f",
+        "size": 596411,
+        "url": "https://files.pythonhosted.org/packages/76/c1/dc1582b79e9a2eb0cddf9559cd9bcdff084f541d6fe881fdd9d98630dba7/sentence_transformers-5.6.0-py3-none-any.whl",
+        "yanked": false
+      }
+    },
+    "sentencepiece": {
+      "version": "0.2.1",
+      "wheel": {
+        "filename": "sentencepiece-0.2.1-cp313-cp313-macosx_11_0_arm64.whl",
+        "sha256": "097f3394e99456e9e4efba1737c3749d7e23563dd1588ce71a3d007f25475fff",
+        "size": 1253641,
+        "url": "https://files.pythonhosted.org/packages/8d/de/5a007fb53b1ab0aafc69d11a5a3dd72a289d5a3e78dcf2c3a3d9b14ffe93/sentencepiece-0.2.1-cp313-cp313-macosx_11_0_arm64.whl",
+        "yanked": false
+      }
+    },
+    "setuptools": {
+      "version": "84.2.1",
+      "wheel": {
+        "filename": "setuptools-84.2.1-py3-none-any.whl",
+        "sha256": "ca140b45d5325a9478f880e351484f62fef15f336462e449ca0c03c873d589c2",
+        "size": 876263,
+        "url": "https://files.pythonhosted.org/packages/ef/55/6dc6d6bb953bdfc52519a0059592c52b6e3b8ad51cf8256dffceb55b0610/setuptools-84.2.1-py3-none-any.whl",
+        "yanked": false
+      }
+    },
+    "shellingham": {
+      "version": "1.5.4",
+      "wheel": {
+        "filename": "shellingham-1.5.4-py2.py3-none-any.whl",
+        "sha256": "7ecfff8f2fd72616f7481040475a65b2bf8af90a56c89140852d1120324e8686",
+        "size": 9755,
+        "url": "https://files.pythonhosted.org/packages/e0/f9/0595336914c5619e5f28a1fb793285925a8cd4b432c9da0a987836c7f822/shellingham-1.5.4-py2.py3-none-any.whl",
+        "yanked": false
+      }
+    },
+    "sympy": {
+      "version": "1.14.0",
+      "wheel": {
+        "filename": "sympy-1.14.0-py3-none-any.whl",
+        "sha256": "e091cc3e99d2141a0ba2847328f5479b05d94a6635cb96148ccb3f34671bd8f5",
+        "size": 6299353,
+        "url": "https://files.pythonhosted.org/packages/a2/09/77d55d46fd61b4a135c444fc97158ef34a095e5681d0a6c10b75bf356191/sympy-1.14.0-py3-none-any.whl",
+        "yanked": false
+      }
+    },
+    "threadpoolctl": {
+      "version": "3.7.0",
+      "wheel": {
+        "filename": "threadpoolctl-3.7.0-py3-none-any.whl",
+        "sha256": "cd8b60b5641b45c67bbf73c64c843235fc2d8a480c87389f52f5dbee893b86be",
+        "size": 26362,
+        "url": "https://files.pythonhosted.org/packages/43/3f/f88a53f60a472b46f4023f56d204dd7de33d34c5d2acbfa0d70a674e639e/threadpoolctl-3.7.0-py3-none-any.whl",
+        "yanked": false
+      }
+    },
+    "tokenizers": {
+      "version": "0.22.2",
+      "wheel": {
+        "filename": "tokenizers-0.22.2-cp39-abi3-macosx_11_0_arm64.whl",
+        "sha256": "1e418a55456beedca4621dbab65a318981467a2b188e982a23e117f115ce5001",
+        "size": 2981472,
+        "url": "https://files.pythonhosted.org/packages/2e/47/174dca0502ef88b28f1c9e06b73ce33500eedfac7a7692108aec220464e7/tokenizers-0.22.2-cp39-abi3-macosx_11_0_arm64.whl",
+        "yanked": false
+      }
+    },
+    "torch": {
+      "version": "2.13.0",
+      "wheel": {
+        "filename": "torch-2.13.0-cp313-cp313-macosx_14_0_arm64.whl",
+        "sha256": "33449899ce5496c1b84b4853179d94fd102028ae1407314d9fb956bb79e70d09",
+        "size": 111213743,
+        "url": "https://files.pythonhosted.org/packages/0d/fa/c1c10b7aff4a9a3e8956d4f0a5f468fa6db7abc3208805719076772b4833/torch-2.13.0-cp313-cp313-macosx_14_0_arm64.whl",
+        "yanked": false
+      }
+    },
+    "tqdm": {
+      "version": "4.70.1",
+      "wheel": {
+        "filename": "tqdm-4.70.1-py3-none-any.whl",
+        "sha256": "c293e525e6fef9c20e8728fd4612df02a0aa31bb5fe91ecd93e123b1b7bffa73",
+        "size": 80199,
+        "url": "https://files.pythonhosted.org/packages/a7/03/921a3d3c75785aca9ebfbfcabfbc3a1be12e2ab5265deb026d55a5a3f83e/tqdm-4.70.1-py3-none-any.whl",
+        "yanked": false
+      }
+    },
+    "transformers": {
+      "version": "5.12.1",
+      "wheel": {
+        "filename": "transformers-5.12.1-py3-none-any.whl",
+        "sha256": "2a5e109d2021265df7098ffbb738295acaf5ad256f12cbc586db2ea4dcbb1a8a",
+        "size": 11150587,
+        "url": "https://files.pythonhosted.org/packages/df/56/bbd60dd8668055803bf8ba55a81f9b8a8b31497f620109a9671d26a2076d/transformers-5.12.1-py3-none-any.whl",
+        "yanked": false
+      }
+    },
+    "typer": {
+      "version": "0.25.1",
+      "wheel": {
+        "filename": "typer-0.25.1-py3-none-any.whl",
+        "sha256": "75caa44ed46a03fb2dab8808753ffacdbfea88495e74c85a28c5eefcf5f39c89",
+        "size": 58409,
+        "url": "https://files.pythonhosted.org/packages/3f/f9/2b3ff4e56e5fa7debfaf9eb135d0da96f3e9a1d5b27222223c7296336e5f/typer-0.25.1-py3-none-any.whl",
+        "yanked": false
+      }
+    },
+    "typing-extensions": {
+      "version": "4.16.0",
+      "wheel": {
+        "filename": "typing_extensions-4.16.0-py3-none-any.whl",
+        "sha256": "481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8",
+        "size": 45571,
+        "url": "https://files.pythonhosted.org/packages/49/d3/b8441a820a491ddfc024b0b0cf0393375b75ea13866d9c66727e54c2fc80/typing_extensions-4.16.0-py3-none-any.whl",
+        "yanked": false
+      }
+    }
+  },
+  "pythonVersion": "3.13.13",
+  "qualification": "Stable9.0 plus upstream11-line owner-release fix; CI-local custom native overlay, not an official fixed wheel.",
+  "schema": 1,
+  "source": {
+    "bytes": 27339604,
+    "commit": "428d4b2658dfc44194f27f4f36870751be402ff7",
+    "expandedBytes": 81262342,
+    "fileCount": 3999,
+    "prefix": "coremltools-428d4b2658dfc44194f27f4f36870751be402ff7",
+    "sha256": "575888d3f2de2ff4da73b6e229f28b943642503f973888362e5d59870983e5d2",
+    "url": "https://codeload.github.com/apple/coremltools/tar.gz/428d4b2658dfc44194f27f4f36870751be402ff7"
+  }
+}

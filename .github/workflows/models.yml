@@ -2,6 +2,9 @@
 # separately by users and are never bundled by the release workflow.
 name: Models (restore + convert)
 
+permissions:
+  contents: read
+
 on:
   workflow_dispatch:
   pull_request:
@@ -12,35 +15,93 @@ on:
 jobs:
   restore-convert:
     runs-on: macos-26
+    timeout-minutes: 35
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+      CI_WORK: ${{ runner.temp }}/cliphoard-coreml
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
 
-      - name: Set up Python
-        id: model-python
-        uses: actions/setup-python@v5
+      - name: Set up orchestration Python
+        id: python314
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.14.6'
+          architecture: arm64
+
+      - name: Set up conversion compatibility Python
+        id: python313
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
         with:
           # CoreML Tools 9.0 has macOS wheels only through cp313.
           # Narrow conversion exception; release/general tooling uses 3.14+.
-          python-version: '3.13'
+          python-version: '3.13.13'
+          architecture: arm64
 
-      - name: Cache on-device models
-        uses: actions/cache@v4
-        with:
-          path: tools/models
-          key: models-v3-${{ hashFiles('tools/restore-models.sh', 'tools/pack-openvision.sh', 'tools/convert_openvision.py', 'tools/coreml_numpy_compat.py', 'tools/convert_ogma_libre.py', 'tools/convert_minilm.py', 'tools/_dl.py', 'tools/_compat.py', 'tools/requirements*.txt') }}
-
-      - name: Install conversion deps
+      # No model/native cache: this changed runtime must actually convert and
+      # reopen its own outputs before the remaining full-model checks.
+      - name: Admit hosted toolchain and exact runtimes
+        id: host
         run: |
-          "${{ steps.model-python.outputs.python-path }}" -c 'import sys; assert sys.version_info[:2] == (3, 13)'
-          "${{ steps.model-python.outputs.python-path }}" -m pip install 'pip==26.3'
-          "${{ steps.model-python.outputs.python-path }}" -m pip install -r tools/requirements.txt
-          "${{ steps.model-python.outputs.python-path }}" -m unittest discover -s tools -p test_coreml_numpy_compat.py -v
+          "${{ steps.python314.outputs.python-path }}" -I -B tools/ci/admit_host.py \
+            --python313 "${{ steps.python313.outputs.python-path }}" \
+            --report "${{ runner.temp }}/cliphoard-host.json"
+
+      - name: Test CI controls without native imports
+        run: |
+          "${{ steps.python314.outputs.python-path }}" -I -B -m unittest discover -s tools/ci -p "test_*.py" -v
+          "${{ steps.python314.outputs.python-path }}" -I -B -m unittest discover -s tools/ci/tests -p "test_coreml_backport.py" -v
+
+      - name: Prepare pinned conversion environment and native ownership backport
+        run: |
+          "${{ steps.python314.outputs.python-path }}" -I -B tools/ci/coreml_backport.py setup \
+            --python313 "${{ steps.python313.outputs.python-path }}" --work-dir "$CI_WORK" \
+            --cmake "${{ steps.host.outputs.cmake }}" --ninja "${{ steps.host.outputs.ninja }}" \
+            --cc "${{ steps.host.outputs.cc }}" --cxx "${{ steps.host.outputs.cxx }}" --sdk "${{ steps.host.outputs.sdk }}"
+
+      - name: Check NumPy conversion compatibility
+        run: |
+          "${{ steps.python314.outputs.python-path }}" -I -B tools/ci/coreml_backport.py run \
+            --seconds 60 --log-dir "$CI_WORK/numpy-check" -- \
+            "$CI_WORK/venv/bin/python3.13" -I -B -m unittest discover -s tools -p test_coreml_numpy_compat.py -v
+
+      - name: Check native ownership and ordinary interpreter exit
+        run: |
+          "${{ steps.python314.outputs.python-path }}" -I -B tools/ci/coreml_backport.py run \
+            --seconds 60 --log-dir "$CI_WORK/ownership-build" -- \
+            "$CI_WORK/venv/bin/python3.13" -I -B "$GITHUB_WORKSPACE/tools/ci/native_ownership.py" \
+            build --package "$CI_WORK/tiny.mlpackage" --compute all --allow-conversion-exception313
+          "${{ steps.python314.outputs.python-path }}" -I -B tools/ci/coreml_backport.py run \
+            --seconds 60 --log-dir "$CI_WORK/ownership-predict" -- \
+            "$CI_WORK/venv/bin/python3.13" -I -B "$GITHUB_WORKSPACE/tools/ci/native_ownership.py" \
+            predict --package "$CI_WORK/tiny.mlpackage" --compute all --allow-conversion-exception313
+
+      - name: Fetch immutable MiniLM safetensors and tokenizer inputs
+        run: |
+          "${{ steps.python314.outputs.python-path }}" -I -B tools/ci/fetch_minilm.py \
+            --manifest tools/ci/minilm-inputs.json --output "$CI_WORK/minilm-source"
+
+      - name: Convert MiniLM and reopen the saved model in a fresh process
+        run: |
+          "${{ steps.python314.outputs.python-path }}" -I -B tools/ci/coreml_backport.py run \
+            --seconds 600 --log-dir "$CI_WORK/minilm-convert" -- \
+            "$CI_WORK/venv/bin/python3.13" -I -B "$GITHUB_WORKSPACE/tools/ci/minilm_validation.py" convert \
+            --model "$CI_WORK/minilm-source" --model-manifest "$GITHUB_WORKSPACE/tools/ci/minilm-inputs.json" \
+            --converter "$GITHUB_WORKSPACE/tools/convert_minilm.py" --out "$GITHUB_WORKSPACE/tools" \
+            --report-dir "$CI_WORK/minilm-report" --allow-conversion-exception313
+          "${{ steps.python314.outputs.python-path }}" -I -B tools/ci/coreml_backport.py run \
+            --seconds 120 --log-dir "$CI_WORK/minilm-reopen" -- \
+            "$CI_WORK/venv/bin/python3.13" -I -B "$GITHUB_WORKSPACE/tools/ci/minilm_validation.py" verify \
+            --out "$GITHUB_WORKSPACE/tools" --report-dir "$CI_WORK/minilm-report" --allow-conversion-exception313
 
       - name: Restore + convert on-device models (ogma + MiniLM from HuggingFace; OpenVision from the pinned zip)
-        env:
-          HF_HUB_DISABLE_TELEMETRY: '1'
-          CLIPHOARD_MODEL_PYTHON: ${{ steps.model-python.outputs.python-path }}
-        run: bash tools/restore-models.sh
+        run: |
+          "${{ steps.python314.outputs.python-path }}" -I -B tools/ci/coreml_backport.py run \
+            --seconds 900 --log-dir "$CI_WORK/full-restore" \
+            --model-python "$CI_WORK/venv/bin/python3.13" --allow-model-downloads -- \
+            /bin/bash "$GITHUB_WORKSPACE/tools/restore-models.sh"
 
       - name: Verify artifacts + tokenizers
         run: |
@@ -53,3 +114,20 @@ jobs:
           [ -f tools/models/openvision-tiny-p8-text/config.json ] || { echo "::error::missing openvision tokenizer config.json"; fail=1; }
           [ "$fail" -eq 0 ] && echo "✓ ogma, MiniLM and OpenVision restored"
           exit $fail
+
+      - name: Preserve CI provenance and phase results
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: coreml-ci-provenance-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 14
+          if-no-files-found: warn
+          # Exact report paths only: no wheels, model weights, environments,
+          # native binaries, raw download logs or credentials.
+          path: |
+            ${{ runner.temp }}/cliphoard-host.json
+            ${{ env.CI_WORK }}/environment.json
+            ${{ env.CI_WORK }}/RESULT.json
+            ${{ env.CI_WORK }}/*/RESULT.json
+            ${{ env.CI_WORK }}/minilm-report/CONVERSION.json
+            ${{ env.CI_WORK }}/minilm-report/VERIFICATION.json
