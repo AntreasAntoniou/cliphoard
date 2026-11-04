@@ -26,10 +26,11 @@ import Darwin
         // Repeated check is read-only: exact same encrypted request and one file.
         check(try directory.read(name + ".request", maxBytes: AgentWriteProtocol.maximumWireBytes) == encrypted)
         check(try directory.requestNames().count == 1)
-        try directory.writeExclusive(name + ".reply", data: AgentWriteProtocol.sealReceipt(status: .saved, opened: opened))
+        let originalReceipt = try AgentWriteProtocol.sealReceipt(status: .saved, opened: opened)
+        try directory.writeExclusive(name + ".reply", data: originalReceipt)
         check(try writer.check(id: id) == ["status": "saved", "request_id": name, "clip_id": name])
         do { _ = try writer.write(id: id, text: "duplicate"); fatalError("duplicate accepted") } catch {}
-        check(try directory.requestNames().count == 1)
+        check(try directory.requestNames().count == 0)
         let rejected = UUID(); let rejectedName = rejected.uuidString.lowercased()
         _ = try writer.write(id: rejected, text: "reject fixture")
         let rejectedOpened = try AgentWriteProtocol.open(directory.read(rejectedName + ".request", maxBytes: 65_536)!, session: session, privateKey: privateKey)
@@ -37,7 +38,7 @@ import Darwin
         check(try writer.check(id: rejected)["status"] == "rejected")
         let tampered = UUID(); let tamperedName = tampered.uuidString.lowercased()
         _ = try writer.write(id: tampered, text: "tampered fixture")
-        try directory.writeExclusive(tamperedName + ".reply", data: directory.read(name + ".reply", maxBytes: 2_048)!)
+        try directory.writeExclusive(tamperedName + ".reply", data: originalReceipt)
         do { _ = try writer.check(id: tampered); fatalError("cross-request receipt accepted") } catch {}
         let collision = UUID(); let collisionName = collision.uuidString.lowercased()
         let unrelated = Data("unrelated ciphertext placeholder".utf8)

@@ -9,14 +9,29 @@ import SQLite3
         defer { try? FileManager.default.removeItem(at: parent) }
         let path = parent.appendingPathComponent("fixture.sqlite").path
         guard let database = Database(path: path) else { fatalError("synthetic database unavailable") }
+        let suite = "Cliphoard.ComposedFixture." + UUID().uuidString
+        let preferences = UserDefaults(suiteName: suite)!
+        defer { preferences.removePersistentDomain(forName: suite) }
+        let continuous = ProcessInfo.processInfo.environment["CLIPHOARD_COMPOSED_CONTINUOUS"] == "1"
+        var clockOffset: Double = continuous ? -1_000 : 0
         let controller = AgentWriteController(save: { id, text in
             await database.saveAgentNoteInBackground(id: id, text: text)
-        }, sensitive: { !Database.acceptsAgentNote($0) })
+        }, sensitive: { !Database.acceptsAgentNote($0) },
+           now: { Date().addingTimeInterval(clockOffset) },
+           ticks: { ProcessInfo.processInfo.systemUptime + clockOffset }, defaults: preferences)
+        if continuous { controller.setPermission(.fullAccess) }
         try await controller.enable(in: parent, startTimer: false)
+        // Simulate >15 minutes of wall AND monotonic time, without waiting or
+        // altering any host clock. New request times remain actual current time.
+        clockOffset = 0
+        if continuous {
+            precondition(controller.connectionLifetime == .whileAppRuns && controller.expiresAt == nil)
+        }
         let writer = try WriterConnection(url: controller.folder!)
         defer { writer.disconnect(); controller.disconnect() }
         emit(["status": "ready", "session_id": writer.session.sessionID.uuidString.lowercased(),
-              "expires_at": writer.session.expiresAt])
+              "expires_at": writer.session.expiresAt as Any? ?? NSNull(),
+              "lifetime": writer.session.lifetime?.rawValue ?? "bounded"])
         while let line = readLine() {
             let command = try JSONSerialization.jsonObject(with: Data(line.utf8)) as! [String: String]
             guard command["action"] != "disconnect" else { break }
@@ -37,7 +52,8 @@ import SQLite3
                 emit(try writer.write(id: id, text: command["text"]!))
             } else {
                 await controller.poll()
-                if controller.pending != nil { await controller.approve() } // synthetic fixture decision
+                if continuous { precondition(controller.pending == nil, "Full access unexpectedly requested manual approval") }
+                else if controller.pending != nil { await controller.approve() } // synthetic fixture decision
                 let response = try writer.check(id: id)
                 if response["status"] == "saved" {
                     // A separately opened real SQLite connection must observe the exact row.

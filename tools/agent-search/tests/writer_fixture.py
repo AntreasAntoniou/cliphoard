@@ -1,11 +1,15 @@
 #!/opt/homebrew/bin/python3.14
 """Synthetic transport only. No app, chooser, database, clipboard, or filesystem writes."""
 import json
+import os
 import sys
 import time
 from uuid import uuid4
 
-print(json.dumps({"status": "ready", "session_id": str(uuid4()), "expires_at": time.time() + 890}), flush=True)
+continuous = os.environ.get("CLIPHOARD_SYNTHETIC_CONTINUOUS") == "1"
+print(json.dumps({"status": "ready", "session_id": str(uuid4()),
+                  "expires_at": None if continuous else time.time() + 890,
+                  "lifetime": "whileAppRuns" if continuous else "bounded"}), flush=True)
 requests = {}
 for raw in sys.stdin:
     command = json.loads(raw)
@@ -13,6 +17,8 @@ for raw in sys.stdin:
     if action == "disconnect":
         break
     if action == "write":
+        if command["text"].startswith("exit:"):
+            sys.exit(0)
         assert ident not in requests, "synthetic test would reject duplicate write"
         requests[ident] = [command["text"], 0]
         result = {"status": "pending", "request_id": ident}

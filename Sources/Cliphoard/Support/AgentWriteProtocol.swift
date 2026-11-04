@@ -1,10 +1,11 @@
 import Foundation
 import CryptoKit
+import Darwin
 
 /// Shared by the native app and the separately installed MCP writer. Only encrypted
 /// requests and authenticated, content-free receipts cross the chosen folder.
 /// Possession of the folder is not a sender identity: any same-user writer can
-/// request a save. The native per-note approval is the authorization boundary.
+/// request a save. The owner's explicit native permission policy is the authorization boundary.
 enum AgentWriteProtocol {
     static let maximumTextBytes = 32_768
     static let maximumWireBytes = 65_536
@@ -14,14 +15,45 @@ enum AgentWriteProtocol {
     enum Failure: Error { case invalid, expired, authentication }
     enum Status: String, Codable { case saved, rejected, expired, unavailable }
 
+    enum Lifetime: String, Codable { case bounded, whileAppRuns }
+    struct Host: Codable, Equatable {
+        let processID: Int32
+        let startSeconds: UInt64
+        let startMicroseconds: UInt64
+        let bootSession: String
+    }
+    private static func bootSession() throws -> String {
+        var size = 0
+        guard sysctlbyname("kern.bootsessionuuid", nil, &size, nil, 0) == 0,
+              (1...128).contains(size) else { throw Failure.invalid }
+        var bytes = [CChar](repeating: 0, count: size)
+        guard sysctlbyname("kern.bootsessionuuid", &bytes, &size, nil, 0) == 0,
+              let value = UUID(uuidString: String(cString: bytes)) else { throw Failure.invalid }
+        return value.uuidString.lowercased()
+    }
+    private static func host(_ pid: Int32) throws -> Host {
+        var info = proc_bsdinfo()
+        guard pid > 0,
+              proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &info, Int32(MemoryLayout<proc_bsdinfo>.size)) == MemoryLayout<proc_bsdinfo>.size,
+              info.pbi_status != SZOMB, info.pbi_start_tvsec > 0, info.pbi_start_tvusec < 1_000_000 else { throw Failure.invalid }
+        return Host(processID: pid, startSeconds: info.pbi_start_tvsec,
+                    startMicroseconds: info.pbi_start_tvusec, bootSession: try bootSession())
+    }
+    static func currentHost() throws -> Host { try host(getpid()) }
+    static func hostIsAlive(_ identity: Host) -> Bool { (try? host(identity.processID)) == identity }
+
     struct Session: Codable, Equatable {
         var version: Int
         var sessionID: UUID
-        var expiresAt: Double
+        var expiresAt: Double?
+        var lifetime: Lifetime?
+        var host: Host?
         var publicKey: Data
-        init(sessionID: UUID, expiresAt: Double, publicKey: Data, version: Int = 1) {
+        init(sessionID: UUID, expiresAt: Double?, publicKey: Data, version: Int = 1,
+             lifetime: Lifetime? = nil, host: Host? = nil) {
             self.version = version; self.sessionID = sessionID
             self.expiresAt = expiresAt; self.publicKey = publicKey
+            self.lifetime = lifetime; self.host = host
         }
     }
     struct Request: Codable, Equatable {
@@ -86,10 +118,18 @@ enum AgentWriteProtocol {
         return value
     }
     static func validateSession(_ session: Session, now: Double = Date().timeIntervalSince1970) throws {
-        guard session.version == 1, now.isFinite, session.expiresAt.isFinite,
-              session.publicKey.count == 32 else { throw Failure.invalid }
-        guard now < session.expiresAt, session.expiresAt - now <= sessionDuration + 5 else {
-            throw Failure.expired
+        guard now.isFinite, session.publicKey.count == 32 else { throw Failure.invalid }
+        if session.version == 1 {
+            guard session.lifetime == nil, session.host == nil, session.expiresAt != nil else { throw Failure.invalid }
+        } else if session.version == 2 {
+            guard let lifetime = session.lifetime, let host = session.host,
+                  host.processID > 0, host.startSeconds > 0, host.startMicroseconds < 1_000_000,
+                  UUID(uuidString: host.bootSession)?.uuidString.lowercased() == host.bootSession,
+                  (lifetime == .whileAppRuns) == (session.expiresAt == nil) else { throw Failure.invalid }
+        } else { throw Failure.invalid }
+        if let expiry = session.expiresAt {
+            guard expiry.isFinite else { throw Failure.invalid }
+            guard now < expiry, expiry - now <= sessionDuration + 5 else { throw Failure.expired }
         }
         _ = try Curve25519.KeyAgreement.PublicKey(rawRepresentation: session.publicKey)
     }
@@ -110,7 +150,7 @@ enum AgentWriteProtocol {
               request.text.utf8.count <= maximumTextBytes,
               !request.text.unicodeScalars.contains(where: { $0.value == 0 }) else { throw Failure.invalid }
         guard request.createdAt <= now + 5, now - request.createdAt < requestDuration,
-              request.createdAt < session.expiresAt else { throw Failure.expired }
+              session.expiresAt.map({ request.createdAt < $0 }) ?? true else { throw Failure.expired }
     }
     private static func context(_ direction: String, session: UUID, request: UUID, digest: String) -> Data {
         Data("Cliphoard.AgentWrite.v1|\(direction)|\(session.uuidString)|\(request.uuidString)|\(digest)".utf8)

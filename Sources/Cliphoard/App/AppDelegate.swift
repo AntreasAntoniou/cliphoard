@@ -76,7 +76,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         setupRemoteToggle()
         store.agentWrites.onRequest = { [weak self] in
             guard let self else { return }
-            self.model.requestedSettingsSection = "agent-inbox"
+            self.model.requestedSettingsSection = "agent-note-approval"
             self.model.settingsFocusRequest = UUID()
             self.openSettings()
         }
@@ -923,6 +923,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// Only reached once termination is APPROVED, which is what makes "Relaunch" safe to
     /// cancel.
     func applicationWillTerminate(_ notification: Notification) {
+        store.agentWrites.disconnect()
         SensitiveClipReveal.shared.lock()
 #if CLIPHOARD_DEVICE_LICENSING_PROTOTYPE && !APP_STORE
         deviceLicenceRuntime?.stop()
