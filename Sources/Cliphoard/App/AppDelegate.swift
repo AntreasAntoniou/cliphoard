@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import Combine
 import Carbon.HIToolbox
 import ServiceManagement
 
@@ -52,6 +53,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var statusItem: NSStatusItem!
     private let statusMenu = NSMenu()
     private var keyMonitor: Any?
+    private var agentRequestNotifications: AgentRequestNotifications?
+    private var agentRequestObservation: AnyCancellable?
     private var clickMonitor: Any?
 
     private var previousApp: NSRunningApplication?
@@ -74,11 +77,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         setupPanel()
         setupHotKey()
         setupRemoteToggle()
-        store.agentWrites.onRequest = { [weak self] in
+        let notifications = AgentRequestNotifications()
+        agentRequestNotifications = notifications
+        notifications.onOpen = { [weak self] in
+            guard let self, !self.store.agentWrites.pendingNotes.isEmpty else { return }
+            self.model.reviewingAgentRequests = true
+            self.show()
+        }
+        store.agentWrites.onConnectionEnabled = { [weak notifications] in notifications?.requestPermission() }
+        store.agentWrites.onRequest = { [weak self, weak notifications] in
             guard let self else { return }
-            self.model.requestedSettingsSection = "agent-note-approval"
-            self.model.settingsFocusRequest = UUID()
-            self.openSettings()
+            self.model.reviewingAgentRequests = true
+            notifications?.notify(count: self.store.agentWrites.pendingNotes.count)
+        }
+        agentRequestObservation = store.agentWrites.$pendingNotes.sink { [weak notifications] notes in
+            if notes.isEmpty { notifications?.clear() }
         }
         // Load the on-device embedder for the saved tier; re-index if the model
         // identity changed since last launch.
@@ -704,6 +717,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func handleKey(_ event: NSEvent) -> NSEvent? {
+        // The approval queue replaces the history viewport. Never apply history
+        // shortcuts to an invisible selection; let buttons/text handle these keys.
+        if model.isReviewingAgentRequests {
+            if Int(event.keyCode) == kVK_Escape { hide(paste: false); return nil }
+            return event
+        }
         let cmd = event.modifierFlags.contains(.command)
         let control = event.modifierFlags.contains(.control)
         // Holding Option at commit time requests "paste as plain text" — the

@@ -59,6 +59,7 @@ private struct DisplayedClip: Identifiable {
 struct ContentView: View {
     @ObservedObject var sensitiveReveal = SensitiveClipReveal.shared
     @ObservedObject var model: PanelViewModel
+    @ObservedObject var agentWrites: AgentWriteController
     @ObservedObject var store: ClipStore
     /// Paste outcome surfaced by `AppDelegate.commit()`: a persistent banner when
     /// auto-paste is blocked (no Accessibility), and a brief success flash when a
@@ -85,6 +86,7 @@ struct ContentView: View {
     init(model: PanelViewModel, store: ClipStore, pasteStatus: PasteStatus) {
         self.model = model
         self.store = store
+        self.agentWrites = store.agentWrites
         self.pasteStatus = pasteStatus
         _settings = StateObject(wrappedValue: AppSettings(store: store))
     }
@@ -142,6 +144,16 @@ struct ContentView: View {
             toolbar
             Divider().opacity(0.5)
             BoundedChrome {
+                if !agentWrites.pendingNotes.isEmpty {
+                    HStack {
+                        Label("Agent requests (\(agentWrites.pendingNotes.count))", systemImage: "sparkles")
+                        Text("Accept or reject each clip").foregroundStyle(.secondary)
+                        Spacer()
+                        Button(model.isReviewingAgentRequests ? "Show history" : "Review clips") {
+                            model.reviewingAgentRequests.toggle()
+                        }
+                    }.font(.caption).padding(.horizontal, 14).padding(.vertical, 8)
+                }
                 SearchModelPreparationView(settings: settings, store: store, media: store.mediaSearch)
                 if let message = pasteStatus.blockedMessage {
                     banner(message, action: ("Open Settings",
@@ -160,7 +172,9 @@ struct ContentView: View {
             // spotlight) from reporting its entire scrollable content and inflating
             // the bar to match. Settings uses its own resizable window.
             Group {
-                if showsMediaResults {
+                if model.isReviewingAgentRequests {
+                    AgentApprovalInbox(controller: agentWrites)
+                } else if showsMediaResults {
                     MediaSearchResultsView(controller: store.mediaSearch, model: model)
                 } else {
                 switch settings.layoutMode {

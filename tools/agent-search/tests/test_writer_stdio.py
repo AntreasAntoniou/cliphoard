@@ -56,7 +56,8 @@ async def exercise():
         assert (await call("check_save", {"request_id": str(uuid4())})).isError
         flight = asyncio.create_task(call("save_clip", {"text": "forever: pending revocation"}))
         await asyncio.sleep(0.1)
-        assert (await call("save_clip", {"text": "parallel request"})).isError
+        parallel = value(await call("save_clip", {"text": "parallel request"}))
+        assert parallel["status"] == "saved" and not flight.done()
         await call("disconnect", {})
         assert value(await flight)["status"] == "unknown"
         assert (await call("get_clip", {"clip_id": saved["clip_id"]})).isError
@@ -64,7 +65,7 @@ async def exercise():
         assert not (await call("connect_writer", {})).isError
         assert (await call("get_clip", {"clip_id": saved["clip_id"]})).isError
         await call("disconnect", {})
-    print("PASS MCP writer: connection, byte bounds, approved-only cache, rejection, lost-ACK reconciliation, identity fencing, single flight, disconnect/reconnect")
+    print("PASS MCP writer: connection, byte bounds, approved-only cache, rejection, lost-ACK reconciliation, identity fencing, independent concurrent requests, disconnect/reconnect")
 
 
 if __name__ == "__main__":

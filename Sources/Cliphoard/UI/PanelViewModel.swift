@@ -116,6 +116,9 @@ final class PanelViewModel: ObservableObject {
 
     /// Ask the panel to take key focus back. Needed after a modal closes: the panel is still
     /// on screen but no longer key, so the results are visible and the keyboard does nothing.
+    @Published var reviewingAgentRequests = false
+    var isReviewingAgentRequests: Bool { reviewingAgentRequests && !store.agentWrites.pendingNotes.isEmpty }
+
     var onRequestFocus: (() -> Void)?
 
     init(store: ClipStore) {

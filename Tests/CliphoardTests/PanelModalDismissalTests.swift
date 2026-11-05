@@ -42,7 +42,10 @@ final class PanelModalDismissalTests: XCTestCase {
         guard let start = source.range(of: "panel.onResignKey = ") else {
             return XCTFail("onResignKey wiring was renamed — move this test with it")
         }
-        let body = String(source[start.upperBound...].prefix(900))
+        guard let end = source.range(of: "model.onRequestFocus = ", range: start.upperBound..<source.endIndex) else {
+            return XCTFail("could not locate the end of onResignKey wiring")
+        }
+        let body = String(source[start.upperBound..<end.lowerBound])
 
         XCTAssertTrue(body.contains("self.model.inspectedItem != nil"),
                       "the inspector-sheet exemption disappeared; opening a clip's detail "

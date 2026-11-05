@@ -24,7 +24,7 @@ final class AgentWriteController: ObservableObject {
         }
     }
     private enum EnableFailure: Error { case hostUnavailable }
-    struct Pending {
+    struct Pending: Identifiable {
         let opened: AgentWriteProtocol.Opened
         let bytes: Data
         let deadline: Double
@@ -51,11 +51,15 @@ final class AgentWriteController: ObservableObject {
     @Published private(set) var folder: URL?
     @Published private(set) var expiresAt: Date?
     @Published private(set) var connectionLifetime: AgentWriteProtocol.Lifetime?
-    @Published private(set) var pending: Pending?
+    @Published private(set) var pendingNotes: [Pending] = []
+    /// Compatibility for callers inspecting the oldest request. Decisions use IDs.
+    var pending: Pending? { pendingNotes.first }
+    static let maximumPending = 32
     @Published private(set) var isWorking = false
     @Published private(set) var permission: Permission
     @Published private(set) var message = "Agent saves are off. Your history is not shared automatically."
     var onRequest: (() -> Void)?
+    var onConnectionEnabled: (() -> Void)?
     private let save: (UUID, String) async -> Bool
     private let sensitive: (String) -> Bool
     private let now: () -> Date
@@ -64,7 +68,7 @@ final class AgentWriteController: ObservableObject {
     private let defaults: UserDefaults
     private static let permissionKey = "agentWritePermission"
     private var policyGeneration = UUID()
-    private var forcedApproval: UUID?
+    private var forcedApproval: Set<UUID> = []
     private var context: Context?
     private var timer: Timer?
     private var generation = UUID()
@@ -142,6 +146,7 @@ final class AgentWriteController: ObservableObject {
                 }
                 return
             }
+            onConnectionEnabled?()
             context = created; folder = url; expiresAt = created.session.expiresAt.map(Date.init(timeIntervalSince1970:))
             connectionLifetime = created.session.lifetime
             isWorking = false
@@ -170,11 +175,11 @@ final class AgentWriteController: ObservableObject {
         generation = UUID(); timer?.invalidate(); timer = nil
         policyGeneration = UUID()
         if resetSession, permission == .session { permission = .askEveryTime }
-        forcedApproval = nil
+        forcedApproval.removeAll()
         if let old = context {
             Task.detached(priority: .utility) { try? old.directory.remove("session.json") }
         }
-        pending = nil; context = nil; folder = nil; expiresAt = nil; connectionLifetime = nil; handled.removeAll()
+        pendingNotes.removeAll(); context = nil; folder = nil; expiresAt = nil; connectionLifetime = nil; handled.removeAll()
         isWorking = false
         message = "Agent saves are off. Previously saved notes stay in your history."
     }
@@ -201,67 +206,88 @@ final class AgentWriteController: ObservableObject {
         defer { polling = false }
         let capturedGeneration = generation
         let capturedPolicy = policyGeneration
-        if let note = pending {
-            if !unexpired(note) { await finish(note, status: .expired, context: current); return }
+        // Reconcile every visible request independently. One unanswered note must
+        // not prevent later notes from appearing, expiring or being cancelled.
+        for note in pendingNotes {
+            guard active(current, generation: capturedGeneration), !isWorking else { return }
+            if !unexpired(note) { await finish(note, status: .expired, context: current); continue }
             let bytes = await Task.detached(priority: .utility) {
                 try? current.directory.read(note.id.uuidString.lowercased() + ".request", maxBytes: 65536)
             }.value
-            guard active(current, generation: capturedGeneration), !isWorking, pending?.id == note.id else { return }
+            guard active(current, generation: capturedGeneration), !isWorking else { return }
+            guard pendingNotes.contains(where: { $0.id == note.id }) else { continue }
             if !unexpired(note) { await finish(note, status: .expired, context: current) }
             else if bytes != note.bytes {
-                pending = nil; message = "The agent cancelled or changed its request. Nothing was saved."
+                pendingNotes.removeAll { $0.id == note.id }
+                handled[note.id] = note.opened.request.createdAt + AgentWriteProtocol.requestDuration
+                forcedApproval.remove(note.id)
+                message = "An agent cancelled or changed a request. That clip was not saved."
             } else if capturedPolicy != policyGeneration {
-                forcedApproval = note.id
-                message = "Agent permissions changed. Review this note before saving."
-                onRequest?()
-            } else if permission != .askEveryTime, forcedApproval != note.id {
-                await savePending(automaticPolicy: capturedPolicy)
+                forcedApproval.insert(note.id)
             }
-            return
         }
-        guard handled.count < 64 else { return }
         let time = effectiveNow(current)
         let tick = ticks()
-        let alreadyHandled = handled
+        let excluded = Set(handled.keys).union(pendingNotes.map(\.id))
+        let capacity = min(Self.maximumPending - pendingNotes.count, 64 - handled.count - pendingNotes.count)
         let detector = sensitive
-        let found: (Pending, Bool)? = await Task.detached(priority: .utility) {
-            guard let names = try? current.directory.requestNames(limit: 64) else { return nil }
+        let found: [(Pending, Bool)] = await Task.detached(priority: .utility) {
+            guard capacity > 0, let names = try? current.directory.requestNames(limit: 64) else { return [] }
+            var result: [(Pending, Bool)] = []
             for name in names {
-                guard let id = UUID(uuidString: String(name.dropLast(8))), alreadyHandled[id] == nil,
+                guard let id = UUID(uuidString: String(name.dropLast(8))), !excluded.contains(id),
                       let data = try? current.directory.read(name, maxBytes: 65536),
                       let opened = try? AgentWriteProtocol.open(data, session: current.session, privateKey: current.key, now: time),
                       opened.request.requestID == id else { continue }
                 let note = Pending(opened: opened, bytes: data, deadline: tick + min(120, max(0, opened.request.createdAt + 120 - time)))
-                return (note, detector(note.text))
+                result.append((note, detector(note.text)))
+                if result.count == capacity { break }
             }
-            return nil
+            return result.sorted {
+                if $0.0.opened.request.createdAt != $1.0.opened.request.createdAt {
+                    return $0.0.opened.request.createdAt < $1.0.opened.request.createdAt
+                }
+                return $0.0.id.uuidString < $1.0.id.uuidString
+            }
         }.value
-        guard active(current, generation: capturedGeneration), !isWorking, let (found, flagged) = found,
-              unexpired(found) else { return }
-        if flagged {
-            await finish(found, status: .rejected, context: current)
-            if active(current, generation: capturedGeneration) { message = "A note flagged as sensitive was declined without being shown or saved." }
-            return
+        guard active(current, generation: capturedGeneration), !isWorking else { return }
+        var needsNotice = false
+        for (note, flagged) in found {
+            guard active(current, generation: capturedGeneration), !isWorking else { return }
+            guard unexpired(note), !pendingNotes.contains(where: { $0.id == note.id }), handled[note.id] == nil else { continue }
+            if flagged {
+                await finish(note, status: .rejected, context: current)
+                continue
+            }
+            pendingNotes.append(note)
+            if capturedPolicy != policyGeneration { forcedApproval.insert(note.id) }
+            if permission == .askEveryTime || forcedApproval.contains(note.id) { needsNotice = true }
         }
-        pending = found
-        if permission != .askEveryTime, capturedPolicy == policyGeneration {
-            await savePending(automaticPolicy: capturedPolicy)
-            return
+        if needsNotice {
+            message = "An agent is asking for permission to save clips. Review them in the clipboard pane."
+            onRequest?()
         }
-        if capturedPolicy != policyGeneration { forcedApproval = found.id }
-        message = "An agent wants to save a note. Review it below."
-        onRequest?()
+        for note in pendingNotes {
+            guard active(current, generation: capturedGeneration), !isWorking else { return }
+            if permission != .askEveryTime, capturedPolicy == policyGeneration, !forcedApproval.contains(note.id) {
+                await savePending(id: note.id, automaticPolicy: capturedPolicy)
+            }
+        }
     }
 
-    func approve() async {
-        await savePending(automaticPolicy: nil)
+    func approve(id: UUID? = nil, expectedBytes: Data? = nil) async {
+        guard let id = id ?? pending?.id else { return }
+        if let expectedBytes {
+            guard pendingNotes.first(where: { $0.id == id })?.bytes == expectedBytes else { return }
+        }
+        await savePending(id: id, automaticPolicy: nil)
     }
 
-    private func savePending(automaticPolicy: UUID?) async {
-        guard !isWorking, let current = context, let note = pending else { return }
+    private func savePending(id: UUID, automaticPolicy: UUID?) async {
+        guard !isWorking, let current = context, let note = pendingNotes.first(where: { $0.id == id }) else { return }
         if let automaticPolicy {
             guard automaticPolicy == policyGeneration, permission != .askEveryTime,
-                  forcedApproval != note.id else { return }
+                  !forcedApproval.contains(note.id) else { return }
         }
         let capturedGeneration = generation
         guard active(current, generation: capturedGeneration), unexpired(note) else {
@@ -279,7 +305,7 @@ final class AgentWriteController: ObservableObject {
         guard valid else { await finish(note, status: .rejected, context: current); return }
         if let automaticPolicy, automaticPolicy != policyGeneration || permission == .askEveryTime {
             isWorking = false
-            forcedApproval = note.id
+            forcedApproval.insert(note.id)
             message = "Agent permissions changed. Review this note before saving."
             onRequest?()
             return
@@ -291,8 +317,10 @@ final class AgentWriteController: ObservableObject {
         await finish(note, status: stored ? .saved : .unavailable, context: current, generation: capturedGeneration)
     }
 
-    func decline() async {
-        guard !isWorking, let current = context, let note = pending else { return }
+    func decline(id: UUID? = nil, expectedBytes: Data? = nil) async {
+        guard !isWorking, let current = context, let id = id ?? pending?.id,
+              let note = pendingNotes.first(where: { $0.id == id }) else { return }
+        if let expectedBytes, note.bytes != expectedBytes { return }
         await finish(note, status: .rejected, context: current)
     }
 
@@ -300,8 +328,9 @@ final class AgentWriteController: ObservableObject {
                         generation expected: UUID? = nil) async {
         let capturedGeneration = expected ?? generation
         if generation == capturedGeneration, context === current {
-            handled[note.id] = note.opened.request.createdAt + AgentWriteProtocol.requestDuration; pending = nil; isWorking = true
-            if forcedApproval == note.id { forcedApproval = nil }
+            handled[note.id] = note.opened.request.createdAt + AgentWriteProtocol.requestDuration
+            pendingNotes.removeAll { $0.id == note.id }; isWorking = true
+            forcedApproval.remove(note.id)
         }
         let confirmed = await Task.detached(priority: .utility) {
             do {

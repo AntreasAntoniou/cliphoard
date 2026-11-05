@@ -56,7 +56,11 @@ final class AgentWriteControllerTests: XCTestCase {
         time = 1_800_000_000; tick = 1_000; try await enable(); let revoked = try submit(); await controller.poll()
         controller.disconnect(); await controller.approve(); XCTAssertTrue(saves.count == 1 && controller.pending == nil)
         for _ in 0..<100 {
-            if try revoked.0.read("session.json", maxBytes: 1024) == nil { break }
+            // The async unlink can race fstat and correctly make read reject
+            // a just-unlinked descriptor. Wait for absence, then assert below.
+            do {
+                if try revoked.0.read("session.json", maxBytes: 1024) == nil { break }
+            } catch AgentWriteDirectory.Failure.unsafeFile { /* unlink in progress */ }
             try await Task.sleep(for: .milliseconds(10))
         }
         check(try revoked.0.read("session.json", maxBytes: 1024) == nil)
