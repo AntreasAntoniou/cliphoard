@@ -718,9 +718,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func handleKey(_ event: NSEvent) -> NSEvent? {
         // The approval queue replaces the history viewport. Never apply history
-        // shortcuts to an invisible selection; let buttons/text handle these keys.
+        // shortcuts to an invisible selection. This accessory app has no Edit
+        // menu, so focused text still needs explicit command-key routing.
         if model.isReviewingAgentRequests {
             if Int(event.keyCode) == kVK_Escape { hide(paste: false); return nil }
+            if Self.routeAgentReviewTextKey(event, editor: panel.firstResponder as? NSTextView) { return nil }
             return event
         }
         let cmd = event.modifierFlags.contains(.command)
@@ -797,6 +799,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             }
             return event
         }
+    }
+
+    /// Review mode must never fall back from an editor command to a history action.
+    static func routeAgentReviewTextKey(_ event: NSEvent, editor: NSTextView?) -> Bool {
+        guard event.modifierFlags.contains(.command), let editor else { return false }
+        switch Int(event.keyCode) {
+        case kVK_ANSI_A: editor.selectAll(nil)
+        case kVK_ANSI_V: editor.paste(nil)
+        case kVK_ANSI_C where editor.selectedRange().length > 0: editor.copy(nil)
+        case kVK_ANSI_X where editor.selectedRange().length > 0: editor.cut(nil)
+        default: return false
+        }
+        return true
     }
 
     private func digit(for keyCode: Int) -> Int? {
