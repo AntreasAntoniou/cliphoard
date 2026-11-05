@@ -35,14 +35,14 @@ enum AgentWritePermissionPresentation {
             case .session:
                 return "The previous connection is closed. Enable a new 15-minute session to save notes automatically; Ask every time returns when it ends."
             case .askEveryTime:
-                return "Enable a 15-minute session, then choose its folder in the MCP companion. Each note waits for your approval here."
+                return "Enable a 15-minute session, then choose its folder in the MCP companion. Each note waits for your approval in the clipboard pane."
             }
         }
         if lifetime == .whileAppRuns {
             return "New notes save automatically until you disconnect or quit Cliphoard. Choosing a lower permission closes this connection immediately; your agent must reconnect."
         }
         switch permission {
-        case .askEveryTime: return "Every note waits for your approval here. This connection keeps its 15-minute deadline."
+        case .askEveryTime: return "Every note waits for your approval in the clipboard pane. This connection keeps its 15-minute deadline."
         case .session: return "New notes save automatically for this 15-minute connection only. Disconnecting or expiry restores Ask every time."
         case .fullAccess: return "New notes save automatically, but this connection keeps its timed deadline. Disconnect and enable a new connection to stay connected until you quit."
         }
