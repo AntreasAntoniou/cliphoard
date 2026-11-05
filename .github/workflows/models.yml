@@ -46,11 +46,18 @@ jobs:
 
       # No model/native cache: this changed runtime must actually convert and
       # reopen its own outputs before the remaining full-model checks.
+      - name: Provision pinned CMake without changing hosted tools
+        id: build_tools
+        run: |
+          "${{ steps.python314.outputs.python-path }}" -I -B tools/ci/provision_cmake.py \
+            --work-dir "${{ runner.temp }}/cliphoard-cmake"
+
       - name: Admit hosted toolchain and exact runtimes
         id: host
         run: |
           "${{ steps.python314.outputs.python-path }}" -I -B tools/ci/admit_host.py \
             --python313 "${{ steps.python313.outputs.python-path }}" \
+            --cmake "${{ steps.build_tools.outputs.cmake }}" \
             --report "${{ runner.temp }}/cliphoard-host.json"
 
       - name: Test CI controls without native imports
@@ -130,6 +137,8 @@ jobs:
           # native binaries, raw download logs or credentials.
           path: |
             ${{ runner.temp }}/cliphoard-host.json
+            ${{ runner.temp }}/cliphoard-cmake/PROVENANCE.json
+            ${{ runner.temp }}/cliphoard-cmake/RESULT.json
             ${{ env.CI_WORK }}/environment.json
             ${{ env.CI_WORK }}/RESULT.json
             ${{ env.CI_WORK }}/copy-check-01.json

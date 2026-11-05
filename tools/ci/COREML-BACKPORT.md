@@ -38,6 +38,16 @@ is intentionally different from the earlier local comparison and is not claimed
 to reproduce the earlier CI host exactly. Python/pip and host toolchain/SDK code
 are trusted host tooling, not a complete hermetic byte inventory.
 
+`provision_cmake.py` supplies CMake4.4.4 from its exact PyPI universal2 wheel
+URL, size and SHA-256, using a fresh Python3.14.6 environment and offline,
+dependency-free installation. It validates installed RECORD files and the native
+binary's version before publishing its absolute path to host admission. The
+180-second tool phase retains provenance and cleanup results; only JSON reports
+are uploaded. Hosted CMake is neither modified nor accepted as a fallback. This
+avoids the runner-image inventory's change to4.4.5 without widening the existing
+CMake, Ninja, Xcode or SDK checks. A newly built native backport must still pass
+the complete required Models job; tool provisioning alone is not qualification.
+
 The runtime is created fresh with copied, byte-checked Python and no system site
 packages. Every installed distribution version and every in-site/out-of-site
 RECORD payload is validated; no inherited script exclusions are used. Only the
