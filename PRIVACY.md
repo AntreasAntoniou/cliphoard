@@ -218,8 +218,10 @@ Cliphoard deliberately tries **not** to capture secrets, in three ways:
 2. Clips that still arrive from a known password manager (1Password, Bitwarden, KeePassXC,
    Dashlane, LastPass, Apple Passwords, Keychain Access, Secretive, Enpass, Strongbox) are
    stored encrypted but flagged **password app** and excluded from every search index — no
-   embedding, no tags, no recognition. They are **not** hidden and **not** locked behind
-   Touch ID: they stay visible and pastable in your history; delete with ⌘⌫.
+   embedding, no tags, no recognition. Sensitive cards are hidden until successful
+   macOS authentication reveals that individual item for up to 60 seconds. This uses
+   the system authentication options available on your Mac, rather than a separate
+   clipboard-vault password. You can delete clips with ⌘⌫.
 3. You can add any app to an exclusion denylist (`excludedBundleIDs`) so Cliphoard never
    records what you copy from it. In the Mac App Store edition, use **Settings → Excluded
    apps** and enter the app's bundle identifier. In the direct 1.0.1 edition, quit

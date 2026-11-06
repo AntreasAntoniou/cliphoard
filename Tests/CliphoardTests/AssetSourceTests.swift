@@ -175,12 +175,13 @@ final class OgmaLicenceSourceTests: XCTestCase {
         let reachable = DeepSearchLevel.allCases.compactMap(\.modelName)
         XCTAssertFalse(reachable.isEmpty, "no tier names — the enum changed shape")
         for name in reachable {
-            XCTAssertNotNil(ModelAssets.expectedSHA256[name],
+            let digest = name == DeepSearchLevel.gemma2.modelName ? GemmaMediaAssets.sha256 : ModelAssets.expectedSHA256[name]
+            XCTAssertNotNil(digest,
                             "'\(name)' can be requested by DeepSearch but has no pinned "
                             + "SHA-256. `ensure` now refuses to install an unpinned model, so "
                             + "this tier would fail at runtime rather than silently accept "
                             + "whatever the network returned — but it must not ship at all.")
-            XCTAssertEqual(ModelAssets.expectedSHA256[name]?.count, 64,
+            XCTAssertEqual(digest?.count, 64,
                            "'\(name)' has a digest that is not a 64-char SHA-256 hex string")
         }
     }
