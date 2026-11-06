@@ -1,25 +1,17 @@
-# Homebrew Cask for Cliphoard.
-#
-# The checksum is computed from the exact signed, notarized and customer-tested
-# DMG published on GitHub. Never rebuild it between acceptance and publication.
-# Scripts/publish-cask.sh checks the public download before copying this cask
-# into a tap; the Ruby guard also refuses an all-zero placeholder.
-# A cask in this source repository does not establish a published Homebrew tap.
+# Homebrew cask for the exact signed, stapled Cliphoard 1.0.4 build 29 ZIP.
+# Publish only after the public archive checksum has been verified.
 cask "cliphoard" do
-  version "1.0.2"
-  sha256 "3412a573fe949d518f632814903dda487202b71eae0f57315870914aeac852fb"
+  version "1.0.4"
+  sha256 "d3afb2a1613e1cc79829c25e6dc8b7e890cfe018945dfb47cfb50d8cd3e6ca06"
 
-  # Belt-and-braces: refuse to install/audit a cask that still carries the
-  # all-zero placeholder sha256. Gated to non-development runs so `--debug`/local
-  # cask editing is unaffected; the publish-time download check lives in
-  # Scripts/publish-cask.sh. Kept side-effect-free so `ruby -c` / `brew` parsing pass.
+  # Refuse a placeholder checksum.
   if sha256.to_s == "0000000000000000000000000000000000000000000000000000000000000000" &&
      !Homebrew::EnvConfig.developer?
     odie "Casks/cliphoard.rb still has the all-zero placeholder sha256 — fill in the " \
-         "released DMG's sha256 (see RELEASING.md) before publishing."
+         "released archive's sha256 (see RELEASING.md) before publishing."
   end
 
-  url "https://github.com/AntreasAntoniou/cliphoard/releases/download/v#{version}/Cliphoard-#{version}.dmg"
+  url "https://github.com/AntreasAntoniou/cliphoard/releases/download/direct-v1.0.4-build29/Cliphoard-1.0.4-Direct-build29.zip"
   name "Cliphoard"
   desc "Fast, private clipboard manager with on-device semantic search"
   homepage "https://github.com/AntreasAntoniou/cliphoard"
