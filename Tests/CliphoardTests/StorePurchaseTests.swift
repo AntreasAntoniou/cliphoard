@@ -288,3 +288,29 @@ final class StorePurchaseLifecycleTests: XCTestCase {
     }
 }
 #endif
+
+#if APP_STORE && LOCAL_PERFORMANCE_PRO
+@MainActor
+final class LocalPerformanceProTests: XCTestCase {
+    func testLocalUnlockSurvivesRefreshWithoutPurchasesOrPersistence() async {
+        let before = UserDefaults.standard.string(forKey: Licence.defaultsKey)
+        for _ in 0..<2 {
+            let client = FakeStorePurchaseClient()
+            let purchase = StorePurchase(client: client)
+            purchase.localOwnerUnlock = true
+            purchase.startObserving()
+            await purchase.refreshEntitlements()
+            await purchase.loadProduct()
+            await purchase.restore()
+            await purchase.purchase()
+            XCTAssertEqual(purchase.entitlement, .localTestingPro)
+            XCTAssertTrue(purchase.entitlement.isPro)
+            XCTAssertFalse(purchase.canPurchase)
+            XCTAssertEqual(client.listeners, 0)
+            XCTAssertEqual(client.syncs, 0)
+            XCTAssertEqual(client.purchases, 0)
+            XCTAssertEqual(UserDefaults.standard.string(forKey: Licence.defaultsKey), before)
+        }
+    }
+}
+#endif

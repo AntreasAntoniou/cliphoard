@@ -7,6 +7,10 @@ import Foundation
 enum Entitlement: Equatable {
     case free(reason: String?)
     case pro(orderID: String, issued: Date)
+#if LOCAL_PERFORMANCE_PRO
+    /// Owner-authorized local testing, never a purchase or signed customer receipt.
+    case localTestingPro
+#endif
 
 #if CLIPHOARD_DEVICE_LICENSING_PROTOTYPE && !APP_STORE
     /// Actual verified receipt metadata, never a fabricated legacy order/date.
@@ -14,6 +18,9 @@ enum Entitlement: Equatable {
 #endif
     var isPro: Bool {
         if case .pro = self { return true }
+#if LOCAL_PERFORMANCE_PRO
+        if case .localTestingPro = self { return true }
+#endif
 #if CLIPHOARD_DEVICE_LICENSING_PROTOTYPE && !APP_STORE
         if case .devicePro = self { return true }
 #endif
