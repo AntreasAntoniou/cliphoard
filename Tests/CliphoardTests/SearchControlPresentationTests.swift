@@ -84,6 +84,30 @@ final class SearchControlPresentationTests: XCTestCase {
         XCTAssertLessThanOrEqual(wide.height, 52, "Wide toolbar must fit one 34pt controls row plus 18pt padding")
     }
 
+    func testToolbarMenuItemsExplainEachChoice() throws {
+        _ = NSApplication.shared
+        let host = NSHostingView(rootView: SearchBarFixture(pending: false))
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1440, height: 150),
+            styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = host
+        host.layoutSubtreeIfNeeded()
+        RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+        func menus(_ view: NSView) -> [NSPopUpButton] {
+            (view as? NSPopUpButton).map { [$0] } ?? view.subviews.flatMap(menus)
+        }
+        let controls = menus(host)
+        XCTAssertEqual(controls.count, 2)
+        for control in controls {
+            let items = control.itemArray.filter { !$0.title.isEmpty && !$0.isSeparatorItem }
+            XCTAssertGreaterThanOrEqual(items.count, 4)
+            for item in items {
+                XCTAssertFalse((item.toolTip ?? "").isEmpty, "Missing hover explanation: \(item.title)")
+            }
+        }
+        window.close()
+    }
+
     func testQuickOptionsFitsItsCompactPopover() throws {
         _ = NSApplication.shared
         let host = NSHostingView(rootView: SearchOptionsFixture())
@@ -120,6 +144,11 @@ final class SearchControlPresentationTests: XCTestCase {
                 (view as? NSPopUpButton).map { [$0] } ?? view.subviews.flatMap(menus)
             }
             let controls = menus(host)
+            for control in controls {
+                for item in control.itemArray where !item.isSeparatorItem && !item.title.isEmpty {
+                    XCTAssertFalse((item.toolTip ?? "").isEmpty, "Missing hover explanation: \(item.title)")
+                }
+            }
             let textMenu = try XCTUnwrap(controls.first { $0.itemTitles.contains("MiniLM") })
             let imageMenu = try XCTUnwrap(controls.first { $0.itemTitles.contains("CLIP · OpenVision") })
             XCTAssertEqual(textMenu.isEnabled, matching != .exact)

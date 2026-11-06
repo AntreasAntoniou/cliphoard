@@ -130,6 +130,26 @@ extension ClipSignal {
         }
     }
 
+    /// Explanation for an unopened choice in the filter menu.
+    var filterHelp: String {
+        let detail: String
+        switch self {
+        case .lifecycle(let value):
+            switch value {
+            case "sticky": detail = "Clips that are pinned or have been reused at least three times."
+            case "fresh": detail = "Unpinned, unused clips copied less than an hour ago."
+            case "throwaway": detail = "Unpinned, unused clips more than fourteen days old. This filter does not delete them."
+            case "to-open": detail = "Unused links copied less than an hour ago."
+            case "read-later": detail = "Unused links more than an hour old."
+            case "reference": detail = "Links recognised as scholarly references, or containing a DOI or ISBN."
+            default: detail = "Clips with status: \(value)."
+            }
+        case .shape(let value): detail = "Clips whose content is recognised as \(value)."
+        default: detail = spoken
+        }
+        return detail + " Select to toggle this filter."
+    }
+
     /// The menu wording, which can afford to be longer than the chip.
     var menuTitle: String {
         switch self {

@@ -31,33 +31,32 @@ struct SearchBarView<Filters: View>: View {
             VStack(alignment: .leading, spacing: 6) {
                 FlowLayout(spacing: 8) {
                     searchField
+                    Button(action: openOptions) {
+                        Image(systemName: "slider.horizontal.3").frame(width: 26, height: 34)
+                    }.buttonStyle(.plain).help((["Search options: models, timing and content types"] + badges.map(\.label)).joined(separator: "\n"))
+                        .accessibilityLabel("Search options")
                     Picker("Matching", selection: $matching) {
                         ForEach(SearchControlLabels.matchingModes) { mode in
-                            Text(mode.title).tag(mode)
+                            Text(mode.title).tag(mode).help(mode.blurb)
                         }
                     }
                     .labelsHidden().pickerStyle(.menu).frame(width: 85, height: 34)
-                    .accessibilityLabel("Matching").help(matching.blurb)
+                    .accessibilityLabel("Matching")
                     Picker("Search in", selection: $scope) {
                         ForEach([SearchModality.all, .text, .images, .audio, .video]) { mode in
                             Text(SearchControlLabels.scope(mode) +
                                  (!isPro && mode != .text && mode != .all ? " · Pro" : ""))
-                                .tag(mode)
+                                .tag(mode).help(SearchControlLabels.scopeDetail(mode))
                         }
                     }
                     .labelsHidden().pickerStyle(.menu).frame(width: 105, height: 34)
                     .accessibilityLabel("Search in")
-                    .help("Choose text, images, audio, video or all enabled types.")
                     Button(action: searchByImage) {
                         Image(systemName: ContentView.matchImageSymbol)
                             .font(.system(size: 15)).frame(width: 26, height: 34)
                     }.buttonStyle(.plain)
                         .help("Search by image — choose a picture, or set up image search")
                         .accessibilityLabel("Search by image")
-                    Button(action: openOptions) {
-                        Image(systemName: "slider.horizontal.3").frame(width: 26, height: 34)
-                    }.buttonStyle(.plain).help((["Search options: models, timing and content types"] + badges.map(\.label)).joined(separator: "\n"))
-                        .accessibilityLabel("Search options")
                     Button(action: openSettings) {
                         Image(systemName: "gearshape").frame(width: 26, height: 34)
                     }.buttonStyle(.plain).help("Settings").accessibilityLabel("Settings")
@@ -102,6 +101,39 @@ enum SearchControlLabels {
 
     static func scope(_ mode: SearchModality) -> String {
         mode == .all ? "All types" : mode.title
+    }
+
+    static func clipKindDetail(_ kind: ClipKind) -> String {
+        switch kind {
+        case .text: return "Only clips classified as text, such as notes and code."
+        case .link: return "Only clips classified as links."
+        case .color: return "Only clips classified as color values."
+        case .image: return "Only copied pictures and screenshots."
+        case .file: return "Only copied files."
+        }
+    }
+
+    static func timeDetail(_ filter: TimeFilter) -> String {
+        switch filter {
+        case .any: return "Show clips from any copied date."
+        case .today: return "Only clips copied today, using your local calendar."
+        case .yesterday: return "Only clips copied on the previous calendar day."
+        case .thisWeek: return "Only clips copied in the current calendar week."
+        case .thisMonth: return "Only clips copied in the current calendar month."
+        case .last7: return "Only clips copied in the seven days leading up to now."
+        case .last30: return "Only clips copied in the thirty days leading up to now."
+        case .range: return "Only clips copied between the selected dates, including both days."
+        }
+    }
+
+    static func scopeDetail(_ mode: SearchModality) -> String {
+        switch mode {
+        case .all: return "Search the content types enabled in Search options. Media search requires Pro."
+        case .text: return "Search clip text using the selected matching mode."
+        case .images: return "Search pictures by their content. Requires Pro and an image model."
+        case .audio: return "Search indexed sounds and speech. Requires Pro and media setup."
+        case .video: return "Search indexed video moments. Requires Pro and media setup."
+        }
     }
 
     static func textModel(_ level: DeepSearchLevel) -> String {
@@ -175,23 +207,23 @@ struct SearchOptionsView: View {
         VStack(alignment: .leading, spacing: 10) {
             Label("Search options", systemImage: "slider.horizontal.3").font(.headline)
             Picker("Search timing", selection: $timing) {
-                ForEach(SearchTiming.allCases) { Text($0.title).tag($0) }
+                ForEach(SearchTiming.allCases) { Text($0.title).tag($0).help($0.detail) }
             }
             Text(timing.detail).font(.caption).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             Divider()
             Text("Included in All types").font(.subheadline.bold())
-            Toggle("Text", isOn: $text)
-            Toggle("Images · Pro", isOn: $images).disabled(!isPro)
-            Toggle("Audio · Pro", isOn: $audio).disabled(!isPro)
-            Toggle("Video · Pro", isOn: $video).disabled(!isPro)
+            Toggle("Text", isOn: $text).help("Include text when searching All types.")
+            Toggle("Images · Pro", isOn: $images).disabled(!isPro).help("Include images when searching All types. Requires Pro.")
+            Toggle("Audio · Pro", isOn: $audio).disabled(!isPro).help("Include audio when searching All types. Requires Pro.")
+            Toggle("Video · Pro", isOn: $video).disabled(!isPro).help("Include video when searching All types. Requires Pro.")
             Text("These switches apply when All types is selected.")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             Divider()
             Text("Models").font(.subheadline.bold())
             Picker("Text & tags", selection: $textModel) {
                 ForEach(DeepSearchLevel.allCases) {
-                    Text(SearchControlLabels.textModel($0)).tag($0)
+                    Text(SearchControlLabels.textModel($0)).tag($0).help(SearchControlLabels.textDetail($0))
                 }
             }.disabled(matching == .exact)
                 .accessibilityIdentifier("search-options-text-model")
@@ -201,7 +233,7 @@ struct SearchOptionsView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             Picker("Images · Pro", selection: $imageModel) {
-                ForEach(ImageSearchModel.allCases) { Text($0.title).tag($0) }
+                ForEach(ImageSearchModel.allCases) { Text($0.title).tag($0).help(SearchControlLabels.imageDetail($0)) }
             }.disabled(!isPro)
                 .accessibilityIdentifier("search-options-image-model")
             Text("Audio & video · EmbeddingGemma 2 · Pro")

@@ -351,19 +351,19 @@ struct ContentView: View {
     private var clipTypeMenu: some View {
         Menu {
             Button("Any clip type") { model.activeKind = nil; model.resetSelection() }
+                .help("Remove the clipboard-type filter; keep your other search choices.")
             ForEach(ClipKind.allCases, id: \.self) { kind in
                 Button {
                     model.activeKind = kind; model.resetSelection()
                 } label: {
                     Label(kind.title, systemImage: model.activeKind == kind ? "checkmark" : kind.symbolName)
-                }
+                }.help(SearchControlLabels.clipKindDetail(kind))
             }
         } label: {
             filterChipLabel(icon: "line.3.horizontal.decrease", text: model.activeKind?.title ?? "Clip type",
                             active: model.activeKind != nil)
         }
         .menuStyle(.borderlessButton).fixedSize()
-        .help("Narrow the selected search to a clipboard type")
     }
 
     private func chip(title: String, systemImage: String, active: Bool, action: @escaping () -> Void) -> some View {
@@ -492,13 +492,13 @@ struct ContentView: View {
                 } label: {
                     if model.timeFilter == filter { Label(title, systemImage: "checkmark") }
                     else { Text(title) }
-                }
+                }.help(SearchControlLabels.timeDetail(filter))
             }
             Divider()
             Button("Custom range…") {
                 if case .range(let a, let b) = model.timeFilter { customFrom = a; customTo = b }
                 showCustomDate = true
-            }
+            }.help("Choose the first and last copied dates to include, including both days.")
         } label: {
             filterChipLabel(icon: "clock",
                             text: model.timeFilter.isActive ? model.timeFilter.label : "Time",
@@ -507,7 +507,6 @@ struct ContentView: View {
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
         .fixedSize()
-        .help("Filter by when the clip was copied")
         .popover(isPresented: $showCustomDate, arrowEdge: .bottom) { customDatePopover }
     }
 
@@ -1041,6 +1040,7 @@ final class FacetMenuController: NSObject {
             let n = model.activeFacets.count + model.activeUserTags.count + signalCount
             let clear = NSMenuItem(title: "Clear \(n) filter\(n == 1 ? "" : "s")",
                                    action: #selector(clearAll), keyEquivalent: "")
+            clear.toolTip = "Remove tag and signal filters; keep the search, clip type, pinned and time choices."
             clear.target = self
             menu.addItem(clear)
             menu.addItem(.separator())
@@ -1052,11 +1052,13 @@ final class FacetMenuController: NSObject {
             for (i, tagName) in dim.tags.enumerated() {
                 let item = NSMenuItem(title: tagName, action: #selector(toggle(_:)), keyEquivalent: "")
                 item.target = self
+                item.toolTip = "Toggle the \(tagName) category in \(dim.name). Choices within this group match any; different groups must all match."
                 item.tag = base + i
                 item.state = model.activeFacets.contains(base + i) ? .on : .off
                 sub.addItem(item)
             }
             let parent = NSMenuItem(title: dim.name, action: nil, keyEquivalent: "")
+            parent.toolTip = "Filter clips by automatic categories in \(dim.name)."
             parent.submenu = sub
             menu.addItem(parent)
         }
@@ -1066,11 +1068,13 @@ final class FacetMenuController: NSObject {
             for tag in userTags {
                 let item = NSMenuItem(title: tag, action: #selector(toggleUserTag(_:)), keyEquivalent: "")
                 item.target = self
+                item.toolTip = "Toggle filtering by your tag: \(tag)."
                 item.representedObject = tag
                 item.state = model.activeUserTags.contains(tag) ? .on : .off
                 sub.addItem(item)
             }
             let parent = NSMenuItem(title: "Your tags", action: nil, keyEquivalent: "")
+            parent.toolTip = "Filter by tags you added to clips."
             parent.submenu = sub
             menu.addItem(parent)
         }
@@ -1126,11 +1130,13 @@ final class FacetMenuController: NSObject {
                 let item = NSMenuItem(title: signal.menuTitle,
                                       action: #selector(toggleSignal(_:)), keyEquivalent: "")
                 item.target = self
+                item.toolTip = signal.filterHelp
                 item.representedObject = SignalBox(signal)
                 item.state = signals.active.contains(signal) ? .on : .off
                 sub.addItem(item)
             }
             let parent = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+            parent.toolTip = "Filter by \(title.lowercased()) values present in your clips."
             parent.submenu = sub
             menu.addItem(parent)
             added = true
