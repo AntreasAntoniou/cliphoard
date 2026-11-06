@@ -456,7 +456,7 @@ struct ClipCardView: View {
     /// tooltip is the one place a card can say all that without changing its layout: the
     /// header geometry is pinned by `ClipCardChromeTests`.
     private var helpText: String {
-        guard item.kind == .file else { return item.preview }
+        guard item.kind == .file else { return item.cardPreview }
         let path = item.filePath ?? "no path recorded"
         if let reason = FileClipAction.unavailableReason(path: item.filePath) {
             return "\(path)\n\(reason) — Open and Reveal are unavailable; Copy Path still works"
@@ -476,7 +476,7 @@ struct ClipCardView: View {
     /// do next.
     private var accessibilityLabelText: String {
         let source = item.sourceApp ?? item.kind.title
-        let preview = String(item.preview.prefix(80))
+        let preview = String(item.cardPreview.prefix(80))
         let row = chipRow
         // Order is already certainty-descending, and protective chips sort first.
         var parts = row.shown.map(\.spoken)
@@ -504,6 +504,8 @@ struct ClipCardView: View {
                 Button(action: onInspect) {
                     Image(systemName: "arrow.up.left.and.arrow.down.right")
                         .font(.system(size: 9, weight: .semibold))
+                        .frame(width: 22, height: 14)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 // The bare 9pt glyph is an 11x11pt target (121pt²) on a card in
@@ -511,8 +513,6 @@ struct ClipCardView: View {
                 // under the header's 28pt, and the `Spacer` absorbs the width.
                 // The obvious alternative, `.padding(5)`, grows the header to
                 // 35pt and takes 7pt out of every card's image slot forever.
-                .frame(width: 22, height: 14)
-                .contentShape(Rectangle())
                 .help("Inspect clip (Command-Return)")
                 .accessibilityLabel("Inspect clip")
             }
@@ -579,14 +579,14 @@ struct ClipCardView: View {
                 Image(systemName: "link")
                     .font(.system(size: 22))
                     .foregroundStyle(Theme.accent)
-                Text(item.text)
+                Text(item.cardText)
                     .font(.system(size: 12))
                     .foregroundStyle(.blue)
                     .lineLimit(6)
             }
             .padding(10)
         case .text:
-            Text(item.text)
+            Text(item.cardText)
                 .font(.system(size: 12))
                 .lineLimit(11)
                 .multilineTextAlignment(.leading)

@@ -38,23 +38,6 @@ final class SignalFilterModel: ObservableObject {
     }
 }
 
-/// One clip as it appears on screen, carrying its index in `model.results`.
-///
-/// The index is load-bearing: the model owns keyboard selection, ⌘1–9 quick
-/// paste and Enter-to-commit, and every one of those indexes into
-/// `model.results`. Rendering a filtered subset with *renumbered* positions
-/// would make ⌘3 paste a different clip from the card labelled ⌘3 — with a
-/// sensitivity filter on, quite possibly a secret the user could not see. So the
-/// view renumbers nothing: it hides rows and keeps their real indices.
-private struct DisplayedClip: Identifiable {
-    /// Position in `model.results` — NOT the position on screen.
-    let index: Int
-    let item: ClipItem
-    var id: UUID { item.id }
-}
-
-/// The bar content: search + category filters on top, a horizontal strip of
-/// clip cards, and a keyboard-hint footer.
 @MainActor
 struct ContentView: View {
     @ObservedObject var sensitiveReveal = SensitiveClipReveal.shared
@@ -587,15 +570,12 @@ struct ContentView: View {
     ///
     /// `Date()` is sampled once per pass so every row in one render answers the
     /// age-derived predicates against the same instant.
-    private var displayed: [DisplayedClip] {
+    private var displayed: DisplayedClips {
         let results = model.results
-        guard !signals.active.isEmpty else {
-            return results.enumerated().map { DisplayedClip(index: $0.offset, item: $0.element) }
-        }
+        guard !signals.active.isEmpty else { return DisplayedClips(results) }
         let now = Date()
-        return results.enumerated().compactMap { offset, item in
-            signals.matches(item, now: now) ? DisplayedClip(index: offset, item: item) : nil
-        }
+        let visible = results.indices.filter { signals.matches(results[$0], now: now) }
+        return DisplayedClips(results, visibleIndices: visible)
     }
 
     /// Move keyboard selection off a clip the signal filter is hiding, in the

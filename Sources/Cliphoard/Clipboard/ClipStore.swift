@@ -2062,16 +2062,18 @@ final class ClipStore: ObservableObject {
     /// reshuffled `items`. Only the moved item's own buckets can be affected, so
     /// this stays cheap (O(itemTags · bucket)).
     private func repositionInTagIndex(_ item: ClipItem) {
-        let tags = tags(of: item)
-        guard !tags.isEmpty else { return }
-        var order: [UUID: Int] = [:]
-        order.reserveCapacity(items.count)
-        for (i, it) in items.enumerated() { order[it.id] = i }
-        for tag in tags {
-            guard var bucket = tagIndex[tag], bucket.contains(where: { $0.id == item.id })
-            else { continue }
-            bucket.sort { (order[$0.id] ?? .max) < (order[$1.id] ?? .max) }
+        for tag in tags(of: item) {
+            guard var bucket = tagIndex[tag] else { continue }
+            ClipOrdering.reposition(item, in: &bucket)
             tagIndex[tag] = bucket
+        }
+    }
+
+    private func repositionInUserTagIndex(_ item: ClipItem) {
+        for tag in item.userTags {
+            guard var bucket = userTagIndex[tag] else { continue }
+            ClipOrdering.reposition(item, in: &bucket)
+            userTagIndex[tag] = bucket
         }
     }
 
@@ -2221,13 +2223,14 @@ final class ClipStore: ObservableObject {
     }
 
     func togglePin(_ item: ClipItem) {
+        guard items.contains(where: { $0.id == item.id }) else { return }
         item.pinned.toggle()
-        sortStable()
+        ClipOrdering.reposition(item, in: &items)
         // Toggling the pin moves only this item across the pinned boundary; other
         // items keep their relative order, so repositioning just this item's
         // buckets keeps tagIndex identical to a full rebuild (BL-08 correctness).
         repositionInTagIndex(item)
-        rebuildUserTagIndex()
+        repositionInUserTagIndex(item)
         db?.updateMeta(item)
     }
 
@@ -2266,7 +2269,6 @@ final class ClipStore: ObservableObject {
         item.lastUsedAt = Date()
         item.useCount += 1
         move(item, toFront: true)
-        rebuildUserTagIndex()
         db?.updateMeta(item)
     }
 
@@ -2321,7 +2323,8 @@ final class ClipStore: ObservableObject {
 
     private func move(_ item: ClipItem, toFront: Bool) {
         guard items.contains(where: { $0.id == item.id }) else { return }
-        sortStable()   // pinned-first, then recency — fully determines order
+        ClipOrdering.reposition(item, in: &items)
+        repositionInUserTagIndex(item)
         // Reordering `items` shifts where `item` sits inside its tag buckets.
         // Keep the buckets in `items` order so the index stays identical to a full
         // rebuild without paying for one on every bump (markUsed / dedup).
@@ -2329,10 +2332,7 @@ final class ClipStore: ObservableObject {
     }
 
     private func sortStable() {
-        items.sort { a, b in
-            if a.pinned != b.pinned { return a.pinned && !b.pinned }
-            return a.lastUsedAt > b.lastUsedAt
-        }
+        items.sort(by: ClipOrdering.precedes)
     }
 
     private func removePayload(_ item: ClipItem) {
