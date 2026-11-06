@@ -77,25 +77,92 @@ final class SearchControlPresentationTests: XCTestCase {
     func testToolbarSharesTheControlsRowOnlyWhenTheirNaturalWidthsFit() {
         _ = NSApplication.shared
         let host = NSHostingController(rootView: SearchBarFixture(pending: false))
-        let narrow = host.sizeThatFits(in: CGSize(width: 640, height: .infinity))
-        let wide = host.sizeThatFits(in: CGSize(width: 1440, height: .infinity))
+        let narrow = host.sizeThatFits(in: CGSize(width: 640, height: CGFloat.infinity))
+        let wide = host.sizeThatFits(in: CGSize(width: 1440, height: CGFloat.infinity))
         XCTAssertLessThanOrEqual(narrow.width, 641)
         XCTAssertGreaterThan(narrow.height - wide.height, 18)
-        XCTAssertLessThan(wide.height, 105)
+        XCTAssertLessThanOrEqual(wide.height, 52, "Wide toolbar must fit one 34pt controls row plus 18pt padding")
+    }
+
+    func testToolbarMenuItemsExplainEachChoice() throws {
+        _ = NSApplication.shared
+        let host = NSHostingView(rootView: SearchBarFixture(pending: false))
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1440, height: 150),
+            styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = host
+        host.layoutSubtreeIfNeeded()
+        RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+        func menus(_ view: NSView) -> [NSPopUpButton] {
+            (view as? NSPopUpButton).map { [$0] } ?? view.subviews.flatMap(menus)
+        }
+        let controls = menus(host)
+        XCTAssertEqual(controls.count, 2)
+        for control in controls {
+            let items = control.itemArray.filter { !$0.title.isEmpty && !$0.isSeparatorItem }
+            XCTAssertGreaterThanOrEqual(items.count, 4)
+            for item in items {
+                XCTAssertFalse((item.toolTip ?? "").isEmpty, "Missing hover explanation: \(item.title)")
+            }
+        }
+        window.close()
     }
 
     func testQuickOptionsFitsItsCompactPopover() throws {
         _ = NSApplication.shared
         let host = NSHostingView(rootView: SearchOptionsFixture())
-        host.frame = NSRect(x: 0, y: 0, width: 300, height: 380)
+        host.frame = NSRect(x: 0, y: 0, width: 360, height: 480)
         host.layoutSubtreeIfNeeded()
-        XCTAssertLessThanOrEqual(host.fittingSize.width, 301)
-        XCTAssertLessThanOrEqual(host.fittingSize.height, 380)
+        XCTAssertLessThanOrEqual(host.fittingSize.width, 361)
+        XCTAssertLessThanOrEqual(host.fittingSize.height, 480)
         if let output = ProcessInfo.processInfo.environment["CLIPHOARD_SEARCH_UI_SNAPSHOTS"] {
+            try FileManager.default.createDirectory(atPath: output, withIntermediateDirectories: true)
             let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
             host.cacheDisplay(in: host.bounds, to: bitmap)
             let png = try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
             try png.write(to: URL(fileURLWithPath: output).appendingPathComponent("search-options.png"), options: .withoutOverwriting)
+        }
+    }
+
+    func testPopoverModelMenusChangeBindingsAndRespectExactAndFree() throws {
+        _ = NSApplication.shared
+        var chosenText = DeepSearchLevel.normal
+        var chosenImage = ImageSearchModel.clip
+        for (pro, matching) in [(true, SearchMode.smart), (false, .exact)] {
+            let host = NSHostingView(rootView: SearchOptionsView(timing: .constant(.pause),
+                text: .constant(true), images: .constant(true), audio: .constant(false), video: .constant(false),
+                textModel: Binding(get: { chosenText }, set: { chosenText = $0 }),
+                imageModel: Binding(get: { chosenImage }, set: { chosenImage = $0 }),
+                isPro: pro, matching: matching, manageModels: {}))
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 360, height: 520),
+                styleMask: [.borderless], backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false
+            window.contentView = host
+            host.layoutSubtreeIfNeeded()
+            RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+            func menus(_ view: NSView) -> [NSPopUpButton] {
+                (view as? NSPopUpButton).map { [$0] } ?? view.subviews.flatMap(menus)
+            }
+            let controls = menus(host)
+            for control in controls {
+                for item in control.itemArray where !item.isSeparatorItem && !item.title.isEmpty {
+                    XCTAssertFalse((item.toolTip ?? "").isEmpty, "Missing hover explanation: \(item.title)")
+                }
+            }
+            let textMenu = try XCTUnwrap(controls.first { $0.itemTitles.contains("MiniLM") })
+            let imageMenu = try XCTUnwrap(controls.first { $0.itemTitles.contains("CLIP · OpenVision") })
+            XCTAssertEqual(textMenu.isEnabled, matching != .exact)
+            XCTAssertEqual(imageMenu.isEnabled, pro)
+            if pro {
+                let textItems = try XCTUnwrap(textMenu.menu)
+                textItems.performActionForItem(at: textMenu.indexOfItem(withTitle: "MiniLM"))
+                let imageItems = try XCTUnwrap(imageMenu.menu)
+                imageItems.performActionForItem(at: imageMenu.indexOfItem(withTitle: "EmbeddingGemma 2"))
+                RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+                XCTAssertEqual(chosenText, .high)
+                XCTAssertEqual(chosenImage, .gemma2)
+            }
+            window.close()
         }
     }
 }
@@ -106,18 +173,19 @@ final class SearchControlPresentationTests: XCTestCase {
     @State private var scope = SearchModality.all
     @FocusState private var focused: Bool
     var body: some View {
-        SearchBarView(query: $query, scope: $scope, searchFocused: $focused,
+        SearchBarView(query: $query, scope: $scope, matching: .constant(.smart), searchFocused: $focused,
                       isPro: true, openOptions: {}, openSettings: {}, isPending: pending,
                       timing: pending ? .enter : .pause, submitSearch: {},
                       badges: SearchScopeBadge.selected(mode: .all,
                         capabilities: SearchCapabilities(text: true, images: true, audio: true, video: true, imageModel: .clip),
                         level: .normal, pro: true)) {
-            HStack(spacing: 12) {
+            Group {
                 Label("Clip type", systemImage: "line.3.horizontal.decrease")
                 Label("Pinned", systemImage: "pin.fill")
                 Label("Time", systemImage: "clock")
                 Label("Filters", systemImage: "line.3.horizontal.decrease.circle")
-                Spacer()
+                Label("reference-picture.png", systemImage: "photo.fill").frame(width: 170)
+                Button("Clear filters") {}
             }
         }.background(Color(nsColor: .windowBackgroundColor))
     }
@@ -129,9 +197,13 @@ final class SearchControlPresentationTests: XCTestCase {
     @State private var images = true
     @State private var audio = true
     @State private var video = true
+    @State private var textModel = DeepSearchLevel.normal
+    @State private var imageModel = ImageSearchModel.clip
     var body: some View {
         SearchOptionsView(timing: $timing, text: $text, images: $images,
-                          audio: $audio, video: $video, isPro: true, manageModels: {})
+                          audio: $audio, video: $video,
+                          textModel: $textModel, imageModel: $imageModel,
+                          isPro: true, manageModels: {})
             .background(Color(nsColor: .windowBackgroundColor))
     }
 }

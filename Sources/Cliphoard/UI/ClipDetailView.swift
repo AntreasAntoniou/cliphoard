@@ -32,6 +32,29 @@ struct ClipDetailView: View {
     private var historyIsMutable: Bool { !store.safeMode }
 
     @State private var newTag = ""
+    @State private var similarIDs: [UUID] = []
+    @State private var similarItemID: UUID?
+
+    private struct SimilarRequest: Equatable {
+        let id: UUID
+        let revision: Int
+        let count: Int
+    }
+
+    private func loadSimilarImages() async {
+        similarIDs = []
+        similarItemID = nil
+        guard !sensitiveReveal.isConcealed(item), let feature = item.imageFeature else { return }
+        let query = InspectorImageSearch.Feature(id: item.id, revision: feature.revision, vector: feature.vector)
+        let candidates = store.items.compactMap { clip -> InspectorImageSearch.Feature? in
+            guard !clip.isIndexVetoed, let feature = clip.imageFeature else { return nil }
+            return .init(id: clip.id, revision: feature.revision, vector: feature.vector)
+        }
+        guard let ids = try? await InspectorImageSearch.search(query: query, candidates: candidates, limit: 8),
+              !Task.isCancelled, !sensitiveReveal.isConcealed(item) else { return }
+        similarIDs = ids
+        similarItemID = item.id
+    }
 
     /// Derived, never stored — see `ClipStore.tags(of:)`.
     private var activeTagIDs: [Int] { store.tags(of: item) }
@@ -80,6 +103,9 @@ struct ClipDetailView: View {
         }
         .frame(minWidth: 560, idealWidth: 680, minHeight: 520, idealHeight: 650)
         .background(Theme.barBackground())
+        .task(id: SimilarRequest(id: item.id, revision: store.imageUnderstandingRevision, count: store.items.count)) {
+            await loadSimilarImages()
+        }
     }
 
     private var header: some View {
@@ -100,10 +126,8 @@ struct ClipDetailView: View {
         GroupBox("Content") {
             switch item.kind {
             case .image:
-                if let image = payloadImage {
-                    Image(nsImage: image).resizable().aspectRatio(contentMode: .fit)
-                        .frame(maxWidth: .infinity, maxHeight: 320)
-                } else { Text("Image unavailable").foregroundStyle(.secondary) }
+                InspectorPayloadImage(item: item, directory: store.storeDirectory, maxPixelSize: 1_280)
+                    .frame(maxWidth: .infinity, minHeight: 120, maxHeight: 320)
             case .color:
                 HStack(spacing: 16) {
                     RoundedRectangle(cornerRadius: 12)
@@ -126,13 +150,6 @@ struct ClipDetailView: View {
                 }
             }
         }
-    }
-
-    private var payloadImage: NSImage? {
-        guard let file = item.payloadFile,
-              let stored = try? Data(contentsOf: store.storeDirectory.appendingPathComponent(file)),
-              let opened = Crypto.open(stored) else { return nil }
-        return NSImage(data: opened)
     }
 
     /// If recognised text is searchable, the user must be able to SEE it. A hidden
@@ -162,7 +179,10 @@ struct ClipDetailView: View {
     }
 
     @ViewBuilder private var similarImages: some View {
-        let similar = store.similarImages(to: item, limit: 8).filter { !sensitiveReveal.isConcealed($0) }
+        // Recheck live membership and protection before exposing a worker result.
+        let wanted = similarItemID == item.id ? similarIDs : []
+        let byID: [UUID: ClipItem] = wanted.isEmpty ? [:] : Dictionary(uniqueKeysWithValues: store.items.filter { wanted.contains($0.id) }.map { ($0.id, $0) })
+        let similar = wanted.compactMap { byID[$0] }.filter { !$0.isIndexVetoed && !sensitiveReveal.isConcealed($0) }
         if !similar.isEmpty {
             GroupBox("Similar images") {
                 ScrollView(.horizontal, showsIndicators: false) {
@@ -187,17 +207,9 @@ struct ClipDetailView: View {
         }
     }
 
-    @ViewBuilder private func thumbnail(for other: ClipItem) -> some View {
-        if let file = other.payloadFile,
-           let stored = try? Data(contentsOf: store.storeDirectory.appendingPathComponent(file)),
-           let opened = Crypto.open(stored), let image = NSImage(data: opened) {
-            Image(nsImage: image).resizable().aspectRatio(contentMode: .fill)
-                .frame(width: 72, height: 72).clipShape(RoundedRectangle(cornerRadius: 6))
-        } else {
-            RoundedRectangle(cornerRadius: 6).fill(Theme.t.tagFill)
-                .frame(width: 72, height: 72)
-                .overlay(Image(systemName: "photo").foregroundStyle(.secondary))
-        }
+    private func thumbnail(for other: ClipItem) -> some View {
+        InspectorPayloadImage(item: other, directory: store.storeDirectory, maxPixelSize: 144, contentMode: .fill)
+            .frame(width: 72, height: 72).clipShape(RoundedRectangle(cornerRadius: 6))
     }
 
     private var metadata: some View {

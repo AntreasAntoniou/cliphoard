@@ -97,3 +97,9 @@ swiftc -parse-as-library Sources/Cliphoard/Support/AgentWriteProtocol.swift \
 ```
 
 These are local synthetic integration checks, not a claim that a real owner approved a note in the signed app or that a packaged companion has been installed. Forced process death can leave encrypted transport files; local cleanup is best-effort and cannot undo an already committed note.
+
+## Reviewing several agent clips
+
+With **Ask every time**, pending clips appear together in Cliphoard’s clipboard pane. Each has **Accept** and **Reject** controls. A macOS notification says “An agent is asking for permission to save clips”; clicking it opens the review queue. Notifications contain no clip text. If notifications are denied, the queue remains accessible from the menu-bar clipboard pane. Settings manages connection permissions rather than displaying note approval prompts.
+
+Agents may call `save_clip` concurrently for several notes; up to 32 unresolved requests are retained per companion connection. Each call has its own request ID and outcome. `This session` and `Full access` still save eligible notes automatically. Pending requests retain their original two-minute expiry; expiry, rejection and disconnect never imply acceptance. An unknown result must be reconciled with `check_save` using its original request ID, never resubmitted automatically.

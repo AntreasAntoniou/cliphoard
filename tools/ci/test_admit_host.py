@@ -41,7 +41,7 @@ class HostTests(unittest.TestCase):
                  patch.object(host.shutil, "which", side_effect=lambda n, path: str(root/n)), \
                  patch.object(host.platform, "system", return_value="Darwin"), \
                  patch.object(host.platform, "machine", return_value="arm64"), \
-                 patch.dict(os.environ, env), patch.object(sys, "argv", ["admit_host.py", "--python313", sys.executable, "--report", str(report)]):
+                 patch.dict(os.environ, env), patch.object(sys, "argv", ["admit_host.py", "--python313", sys.executable, "--cmake", str(root/"cmake"), "--report", str(report)]):
                 if changed:
                     with self.assertRaises((ValueError, json.JSONDecodeError)):
                         host.main()

@@ -49,28 +49,29 @@ final class LicenceGateTests: XCTestCase {
     /// are not touched, because a mode is a preference and a clip is data.
     func testGate1APersistedImageModeIsCorrectedAtLaunchForAFreeBuild() throws {
         try skipIfKeychainUnreachable()
-        let saved = UserDefaults.standard.string(forKey: "searchMode")
-        defer {
-            if let saved { UserDefaults.standard.set(saved, forKey: "searchMode") }
-            else { UserDefaults.standard.removeObject(forKey: "searchMode") }
+        let keys = ["searchMode", "searchModality", "imageSearchModel", "searchTextEnabled", "searchImagesEnabled", "searchAudioEnabled", "searchVideoEnabled"]
+        let defaults = UserDefaults.standard
+        let saved = keys.map { defaults.object(forKey: $0) }
+        defer { for (key, value) in zip(keys, saved) { if let value { defaults.set(value, forKey: key) } else { defaults.removeObject(forKey: key) } } }
+        for entitlement in [free, pro] {
+            for key in keys { defaults.removeObject(forKey: key) }
+            DeepSearch.mode = .image
+            let store = tempStore(); store.entitlement = entitlement
+            let settings = AppSettings(store: store)
+            XCTAssertEqual(settings.searchMode, .smart)
+            XCTAssertEqual(settings.searchModality, entitlement.isPro ? .images : .text)
+            XCTAssertEqual(defaults.string(forKey: "searchModality"), entitlement.isPro ? "images" : "text")
+            if entitlement.isPro {
+                for scope in [SearchModality.images, .audio, .video] {
+                    store.entitlement = pro
+                    settings.searchModality = scope
+                    store.entitlement = free
+                    settings.syncGatedSettingsToEntitlement()
+                    XCTAssertEqual(settings.searchModality, .text)
+                    XCTAssertEqual(defaults.string(forKey: "searchModality"), "text")
+                }
+            }
         }
-        DeepSearch.mode = .image
-        let store = tempStore()
-        store.entitlement = free
-        let settings = AppSettings(store: store)
-        XCTAssertNotEqual(settings.searchMode, .image,
-                          "a free build opened in Image mode — selected, unable to run, and "
-                          + "able to return only an empty list")
-        XCTAssertNotEqual(DeepSearch.mode, .image,
-                          "the correction was not written through, so the next launch reads "
-                          + "`.image` back and nothing was actually fixed")
-
-        // And it is NOT corrected for someone entitled to it.
-        DeepSearch.mode = .image
-        let proStore = tempStore()
-        proStore.entitlement = pro
-        XCTAssertEqual(AppSettings(store: proStore).searchMode, .image,
-                       "Pro's own selection was overwritten")
     }
 
     // MARK: - Gate 2 · reading text in images, and the towers behind it
@@ -228,39 +229,21 @@ final class LicenceGateTests: XCTestCase {
         XCTAssertEqual(proStore.items.count, 3, "Pro must reach the same writer")
     }
 
-    // MARK: - Gate 5 · the Touch ID vault is NOT BUILT
+    // MARK: - Gate 5 · sensitive reveal is time-limited, not a separate vault
 
-    /// Gate 5 is the one with no code, and this is the test that keeps it that way.
-    ///
-    /// The site and PRIVACY.md say the vault is "coming, not yet built". A half-built
-    /// `LAContext` call sitting in `Sources` would make that sentence false in the direction
-    /// that matters — a security promise the user believes and the code does not keep — and
-    /// it is exactly the drift a paid roadmap invites. If someone builds it, this test is the
-    /// prompt to update the copy in the same commit.
-    func testGate5TheTouchIDVaultIsNotBuiltAnywhere() throws {
-        let sources = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent().deletingLastPathComponent()
-            .deletingLastPathComponent().appendingPathComponent("Sources")
-        var offenders: [String] = []
-        // `while let … where` would STOP at the first non-.swift entry rather than skip it,
-        // which would quietly scan a fraction of the tree and pass for the wrong reason.
-        for case let url as URL in FileManager.default
-                .enumerator(at: sources, includingPropertiesForKeys: nil)!
-        where url.pathExtension == "swift" {
-            let text = try String(contentsOf: url, encoding: .utf8)
-            let code = text.split(separator: "\n", omittingEmptySubsequences: false)
-                .filter { !$0.trimmingCharacters(in: .whitespaces).hasPrefix("//") }
-                .joined(separator: "\n")
-            for needle in ["LocalAuthentication", "LAContext", "evaluatePolicy",
-                           "deviceOwnerAuthentication"] where code.contains(needle) {
-                offenders.append("\(url.lastPathComponent): \(needle)")
-            }
-        }
-        XCTAssertTrue(offenders.isEmpty,
-                      "the Touch ID vault is advertised as COMING and unbuilt, but \(offenders) "
-                      + "exists. Either it shipped — in which case the site, PRIVACY.md and "
-                      + "the pricing table must stop saying 'coming' in the same commit — or "
-                      + "it is half-built, which is the worse of the two.")
+    func testSensitiveRevealAndPrivacyDescriptionAgree() throws {
+        var state = SensitiveRevealState()
+        let id = UUID()
+        let request = state.begin(id: id, fingerprint: "test-content")
+        XCTAssertFalse(state.permits(id: id, fingerprint: "test-content", now: 0))
+        state.complete(request, success: true, fingerprint: "test-content", now: 10)
+        XCTAssertTrue(state.permits(id: id, fingerprint: "test-content", now: 69))
+        XCTAssertFalse(state.permits(id: id, fingerprint: "test-content", now: 70))
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let privacy = try String(contentsOf: root.appendingPathComponent("PRIVACY.md"), encoding: .utf8)
+        XCTAssertTrue(privacy.contains("macOS authentication"))
+        XCTAssertTrue(privacy.contains("60 seconds"))
+        XCTAssertFalse(privacy.contains("They are **not** hidden"))
     }
 
     // MARK: - Gate 6 · the Settings section
@@ -329,15 +312,15 @@ final class LicenceGateTests: XCTestCase {
                 .deletingLastPathComponent().appendingPathComponent(path), encoding: .utf8)
         }
         let settings = try source("Sources/Cliphoard/UI/SettingsView.swift")
-        let panel = try source("Sources/Cliphoard/UI/ContentView.swift")
+        let panel = try source("Sources/Cliphoard/UI/SearchBarView.swift")
         let importPanel = try source("Sources/Cliphoard/UI/ImportPanel.swift")
         let appDelegate = try source("Sources/Cliphoard/App/AppDelegate.swift")
 
         // 1 · the locked row in BOTH search-mode pickers
-        XCTAssertTrue(panel.contains("— Pro"),
+        XCTAssertTrue(panel.contains(" · Pro") && panel.contains("!isPro"),
                       "the panel's mode picker no longer names the Pro row — hiding it means "
                       + "nobody ever learns the feature exists")
-        XCTAssertTrue(settings.contains("SearchMode.available(settings.entitlement)"),
+        XCTAssertTrue(settings.contains("!settings.entitlement.isPro") && settings.contains("$settings.searchModality"),
                       "the Settings mode picker is no longer entitlement-aware")
         // 2 · the OCR toggle
         XCTAssertTrue(settings.contains("Toggle(\"Read text in images\", isOn: $settings.imageUnderstanding)")

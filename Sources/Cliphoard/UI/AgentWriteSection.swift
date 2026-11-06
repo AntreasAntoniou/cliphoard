@@ -35,14 +35,14 @@ enum AgentWritePermissionPresentation {
             case .session:
                 return "The previous connection is closed. Enable a new 15-minute session to save notes automatically; Ask every time returns when it ends."
             case .askEveryTime:
-                return "Enable a 15-minute session, then choose its folder in the MCP companion. Each note waits for your approval here."
+                return "Enable a 15-minute session, then choose its folder in the MCP companion. Each note waits for your approval in the clipboard pane."
             }
         }
         if lifetime == .whileAppRuns {
             return "New notes save automatically until you disconnect or quit Cliphoard. Choosing a lower permission closes this connection immediately; your agent must reconnect."
         }
         switch permission {
-        case .askEveryTime: return "Every note waits for your approval here. This connection keeps its 15-minute deadline."
+        case .askEveryTime: return "Every note waits for your approval in the clipboard pane. This connection keeps its 15-minute deadline."
         case .session: return "New notes save automatically for this 15-minute connection only. Disconnecting or expiry restores Ask every time."
         case .fullAccess: return "New notes save automatically, but this connection keeps its timed deadline. Disconnect and enable a new connection to stay connected until you quit."
         }
@@ -52,7 +52,6 @@ enum AgentWritePermissionPresentation {
 struct AgentWriteSection: View {
     @ObservedObject var controller: AgentWriteController
     let panel: PanelViewModel?
-    @State private var noteHeight: CGFloat = 64
     @State private var pendingPermission: AgentWriteController.Permission?
 
     private var permissionAlert: Binding<Bool> {
@@ -111,30 +110,9 @@ struct AgentWriteSection: View {
             .padding(12)
             .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 10))
 
-            if let pending = controller.pending {
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("Review agent note").font(.headline)
-                    Text("Only save notes you recognize. Nothing in this text can approve an action for you.")
-                        .font(.caption).foregroundStyle(.secondary)
-                    ScrollView {
-                        Text(verbatim: pending.text).font(.body)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .background(GeometryReader { geometry in
-                                Color.clear.preference(key: AgentNoteHeight.self, value: geometry.size.height)
-                            })
-                    }
-                        .frame(height: min(180, max(64, noteHeight)))
-                        .onPreferenceChange(AgentNoteHeight.self) { noteHeight = $0 }
-                        .padding(10)
-                        .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 8))
-                    HStack {
-                        Button("Decline") { Task { await controller.decline() } }
-                        Spacer()
-                        Button("Save & pin note") { Task { await controller.approve() } }.buttonStyle(.borderedProminent)
-                    }.disabled(controller.isWorking)
-                }.padding(12).background(Color.accentColor.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
-                    .id("agent-note-approval")
+            if !controller.pendingNotes.isEmpty {
+                Text("\(controller.pendingNotes.count) clips await review in the clipboard pane.")
+                    .font(.caption).foregroundStyle(.secondary)
             }
             Text(controller.message).font(.caption).foregroundStyle(.secondary)
             if controller.isWorking { ProgressView().controlSize(.small) }
@@ -213,9 +191,4 @@ struct AgentWriteSection: View {
         }
         if let folder { Task { try? await controller.enable(in: folder) } }
     }
-}
-
-private struct AgentNoteHeight: PreferenceKey {
-    static var defaultValue: CGFloat = 64
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
 }

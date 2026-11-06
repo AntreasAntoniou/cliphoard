@@ -14,7 +14,7 @@ spec.loader.exec_module(server)
 async def exercise():
     with tempfile.TemporaryDirectory() as temp:
         helper = Path(temp) / "writer"
-        helper.write_text(f"#!{sys.executable}\n" + '''import json,sys,time
+        helper.write_text(f"#!{Path(sys.executable).resolve()}\n" + '''import json,sys,time
 from uuid import uuid4
 print(json.dumps({"status":"ready","session_id":str(uuid4()),"expires_at":time.time()+30}),flush=True)
 seen=set()

@@ -243,28 +243,19 @@ final class ClipCardChromeTests: XCTestCase {
     /// into its top-left corner: foreheads, ceilings, the left third of a
     /// screenshot. That is a regression no assertion about chrome can see.
     ///
-    /// The fixture paints its LEADING quarter red — the top quarter for a
-    /// portrait, the left quarter for a landscape, i.e. whichever edge a
-    /// `.topLeading` anchor would keep. A centred fill crop never shows it.
-    ///
-    /// Kills: reverting the `Color.clear.overlay(…)` at the image site while
-    /// leaving the slot clamp in place; and any `alignment:` other than centre on
-    /// the image's own overlay.
+    /// Mark both opposing edges. A centred crop exposes equal amounts, even
+    /// when compact cards have a slot too short to hide the entire 10% stripe.
+    /// The old absence-of-red check assumed a taller slot and falsely failed
+    /// the correctly centred 16:9 image by 4.5% on compact cards.
     func testTheCropStaysCentredOnThePicture() throws {
-        // Only the ratios that genuinely crop. A square or 4:3 image is scaled to
-        // very nearly the slot, so its crop window is most of the picture and the
-        // anchor barely moves it — including them would only weaken the margin.
-        // The narrowest window here still starts 15% into the picture, so a 10%
-        // leading band cannot show under a centred crop.
         let cropping = Self.ratios.filter { $0.0 != "square" && $0.0 != "landscape 4:3" }
-        XCTAssertEqual(cropping.count, 5, "the cropping-ratio list has drifted")
+        XCTAssertEqual(cropping.count, 5)
         for (label, w, h) in cropping {
             let s = try shoot(card(imageClip(w, h, markLeadingEdge: true)))
-            let content = s.redFraction(rows: (s.h / 2 - 40)..<(s.h / 2 + 40))
-            XCTAssertLessThan(content, 0.02,
-                "\(label): \(Int(content * 100))% of the content band is the picture's "
-                + "leading edge — the fill crop is anchored to the leading edge "
-                + "instead of the centre")
+            let rows = (s.h / 2 - 40)..<(s.h / 2 + 40)
+            XCTAssertEqual(s.edgeFraction(rows: rows, trailing: false),
+                           s.edgeFraction(rows: rows, trailing: true), accuracy: 0.02,
+                           "\(label): opposing edge markers must be symmetric under a centred crop")
         }
     }
 
@@ -312,6 +303,9 @@ final class ClipCardChromeTests: XCTestCase {
             // high-y band.
             if h >= w { NSRect(x: 0, y: h - h / 10, width: w, height: h / 10).fill() }
             else      { NSRect(x: 0, y: 0, width: w / 10, height: h).fill() }
+            NSColor(srgbRed: 0, green: 1, blue: 1, alpha: 1).setFill()
+            if h >= w { NSRect(x: 0, y: 0, width: w, height: h / 10).fill() }
+            else { NSRect(x: w - w / 10, y: 0, width: w / 10, height: h).fill() }
         }
         NSGraphicsContext.restoreGraphicsState()
         return rep.representation(using: .png, properties: [:])!
@@ -326,6 +320,21 @@ final class ClipCardChromeTests: XCTestCase {
         item.payloadFile = name
         item.sourceApp = "WhatsApp"
         return item
+    }
+
+    func testSuggestedModelTagsFitTheCard() throws {
+        let item = ClipItem(kind: .text, text: "A synthetic Python example for the card preview")
+        let view = ClipCardView(item: item, index: 10, selected: false, storeDir: dir,
+            onActivate: {}, onInspect: {}, onInspectTags: {}, onPin: {}, onDelete: {},
+            historyIsMutable: true, modelTags: ["code", "python", "api", "regex", "git"])
+        _ = try shoot(view)
+        if let output = ProcessInfo.processInfo.environment["CLIPHOARD_CARD_UI_SNAPSHOT"] {
+            let renderer = ImageRenderer(content: view)
+            renderer.scale = 2
+            let cg = try XCTUnwrap(renderer.cgImage)
+            let png = try XCTUnwrap(NSBitmapImageRep(cgImage: cg).representation(using: .png, properties: [:]))
+            try png.write(to: URL(fileURLWithPath: output), options: .withoutOverwriting)
+        }
     }
 
     private func card(_ item: ClipItem, selected: Bool = false) -> some View {
@@ -414,15 +423,17 @@ final class ClipCardChromeTests: XCTestCase {
             return false
         }
 
-        /// Saturated red — the fixture's leading-quarter marker.
-        func redFraction(rows: Range<Int>) -> Double {
+        /// Red leading and cyan trailing edge markers.
+        func edgeFraction(rows: Range<Int>, trailing: Bool) -> Double {
             var hit = 0, total = 0
             for y in rows where y >= 0 && y < h {
                 for x in 10..<(w - 10) {
                     let p = rgba(x, y)
                     guard p.a > 200 else { continue }
                     total += 1
-                    if p.r > 180 && p.g < 90 && p.b < 90 { hit += 1 }
+                    let marked = trailing ? (p.r < 90 && p.g > 180 && p.b > 180)
+                                          : (p.r > 180 && p.g < 90 && p.b < 90)
+                    if marked { hit += 1 }
                 }
             }
             return total == 0 ? 0 : Double(hit) / Double(total)

@@ -11,37 +11,41 @@ enum SensitiveClipPolicy {
         !flags.subtracting(.pii).isEmpty
     }
     static func requiresAuthentication(_ item: ClipItem) -> Bool {
-        // Alternate rich content may contain different text, attachments or link
-        // destinations. Conceal it conservatively without parsing untrusted rich
-        // content before authentication. Preserve the original representation.
-        if let rtf = item.rtf, !rtf.isEmpty { return true }
-        if requiresAuthentication(flags: item.flags) { return true }
-        // Old rows predate new vendor signatures; presentation must protect them
-        // immediately without changing or migrating the user's stored history.
-        let fields = [item.text, item.ocrText ?? "", item.filePath ?? "", item.colorHex ?? "", item.sourceApp ?? ""] + item.userTags
-        return fields.contains {
-            requiresAuthentication(flags: Detectors.scan(text: $0, kind: item.kind, sourceApp: item.sourceApp).flags)
+        item.memoizedSensitivity {
+            // Alternate rich content may contain different text, attachments or link
+            // destinations. Conceal it conservatively without parsing untrusted rich
+            // content before authentication. Preserve the original representation.
+            if let rtf = item.rtf, !rtf.isEmpty { return true }
+            if requiresAuthentication(flags: item.flags) { return true }
+            // Old rows predate new vendor signatures; presentation must protect them
+            // immediately without changing or migrating the user's stored history.
+            let fields = [item.text, item.ocrText ?? "", item.filePath ?? "", item.colorHex ?? "", item.sourceApp ?? ""] + item.userTags
+            return fields.contains {
+                requiresAuthentication(flags: Detectors.scan(text: $0, kind: item.kind, sourceApp: item.sourceApp).flags)
+            }
         }
     }
     static func visibleUserTags(in items: [ClipItem]) -> [String] {
         Array(Set(items.filter { !requiresAuthentication($0) }.flatMap(\.userTags))).sorted()
     }
     static func fingerprint(_ item: ClipItem) -> String {
-        // Length-prefixed fields prevent ambiguous joins. The digest never leaves memory.
-        let fields = [item.text, item.ocrText ?? "", item.filePath ?? "", item.payloadFile ?? "",
-                      item.colorHex ?? "", item.sourceApp ?? "", String(item.flags.rawValue),
-                      String(describing: item.kind)] + item.userTags
-        var hash = SHA256()
-        hash.update(data: Data("fields=\(fields.count);".utf8))
-        for field in fields {
-            let bytes = Data(field.utf8)
-            hash.update(data: Data("\(bytes.count):".utf8))
-            hash.update(data: bytes)
+        item.memoizedFingerprint {
+            // Length-prefixed fields prevent ambiguous joins. The digest never leaves memory.
+            let fields = [item.text, item.ocrText ?? "", item.filePath ?? "", item.payloadFile ?? "",
+                          item.colorHex ?? "", item.sourceApp ?? "", String(item.flags.rawValue),
+                          String(describing: item.kind)] + item.userTags
+            var hash = SHA256()
+            hash.update(data: Data("fields=\(fields.count);".utf8))
+            for field in fields {
+                let bytes = Data(field.utf8)
+                hash.update(data: Data("\(bytes.count):".utf8))
+                hash.update(data: bytes)
+            }
+            let rtf = item.rtf ?? Data()
+            hash.update(data: Data("rtf=\(rtf.count):".utf8))
+            hash.update(data: rtf)
+            return hash.finalize().map { String(format: "%02x", $0) }.joined()
         }
-        let rtf = item.rtf ?? Data()
-        hash.update(data: Data("rtf=\(rtf.count):".utf8))
-        hash.update(data: rtf)
-        return hash.finalize().map { String(format: "%02x", $0) }.joined()
     }
 }
 

@@ -52,13 +52,13 @@ final class ClipItem: Codable, Identifiable {
     let id: UUID
     /// Mutable so the embedding tagger can refine it after ingest (e.g. promote a
     /// model-recognised link out of the text bucket).
-    var kind: ClipKind
+    var kind: ClipKind { didSet { invalidatePresentationCache() } }
     /// Human readable text. For images this is a placeholder caption.
-    var text: String
+    var text: String { didSet { invalidatePresentationCache() } }
     /// Original RTF data when the source provided styled text.
-    var rtf: Data?
+    var rtf: Data? { didSet { invalidatePresentationCache() } }
     /// Relative filename (inside the store directory) for binary payloads.
-    var payloadFile: String?
+    var payloadFile: String? { didSet { invalidatePresentationCache() } }
     /// SHA-256 (hex) of the plaintext PNG bytes for `.image` clips. Drives
     /// content-based dedup so byte-identical images collapse to one entry.
     /// `nil` for legacy items captured before content hashing existed.
@@ -86,7 +86,7 @@ final class ClipItem: Codable, Identifiable {
     /// tag index and all three substring paths WITHOUT any of them having to know the
     /// rule. The gate is at the write, so every present and future reader is safe by
     /// construction rather than by remembering.
-    var ocrText: String?
+    var ocrText: String? { didSet { invalidatePresentationCache() } }
     /// Vision perceptual print for `.image` clips, with the revision that produced it.
     ///
     /// Kept OUT of `embeddings`: that is documented as a per-text-model cache, and a
@@ -99,18 +99,18 @@ final class ClipItem: Codable, Identifiable {
     /// has no business carrying it.
     var imageFeature: (revision: Int, vector: [Float])?
     /// Absolute file path for `.file` clips.
-    var filePath: String?
+    var filePath: String? { didSet { invalidatePresentationCache() } }
     /// Hex string for `.color` clips, e.g. "#FF8800".
-    var colorHex: String?
+    var colorHex: String? { didSet { invalidatePresentationCache() } }
     var createdAt: Date
     var lastUsedAt: Date
     var pinned: Bool
     /// Bundle id / name of the app the clip was copied from.
-    var sourceApp: String?
+    var sourceApp: String? { didSet { invalidatePresentationCache() } }
     var useCount: Int
     /// User-owned labels. They are independent of model-generated embeddings so
     /// a model or vocabulary switch can never erase them.
-    var userTags: [String] = []
+    var userTags: [String] = [] { didSet { invalidatePresentationCache() } }
     /// Per-model cache: embedder signature → {vector, tags}. Keeping one entry
     /// per model means switching to a model the clip was already embedded by is
     /// free (no recompute) — only genuinely unprocessed (model, clip) pairs run.
@@ -124,7 +124,7 @@ final class ClipItem: Codable, Identifiable {
     /// by construction). Unknown bits written by a newer build are carried
     /// through untouched: the raw value is never masked down to the bits this
     /// build happens to know.
-    var flags: ClipFlags = []
+    var flags: ClipFlags = [] { didSet { invalidatePresentationCache() } }
     /// The §3.4 structural shape ("url", "json", "path", …) or `nil` for prose.
     /// Cosmetic and non-content — a short enum-like token, never clip text — so
     /// it is stored in the clear alongside `flags`.
@@ -264,6 +264,57 @@ final class ClipItem: Codable, Identifiable {
         }
     }
 
+    // Ephemeral derived values only; never encoded or written to the database.
+    // ClipItem's mutable fields are owned by the main-actor store. Invalidate on
+    // EVERY field read by the sensitivity policy/fingerprint, including in-place
+    // mutations such as userTags.append. Pin/use-count changes need no rescan.
+    private var sensitivityMemo: Bool?
+    private var fingerprintMemo: String?
+    private var cardTextMemo: String?
+    private var characterCountMemo: Int?
+
+    private func invalidatePresentationCache() {
+        sensitivityMemo = nil
+        fingerprintMemo = nil
+        cardTextMemo = nil
+        characterCountMemo = nil
+    }
+
+    func memoizedSensitivity(_ compute: () -> Bool) -> Bool {
+        if let sensitivityMemo { return sensitivityMemo }
+        let value = compute()
+        sensitivityMemo = value
+        return value
+    }
+
+    func memoizedFingerprint(_ compute: () -> String) -> String {
+        if let fingerprintMemo { return fingerprintMemo }
+        let value = compute()
+        fingerprintMemo = value
+        return value
+    }
+
+    /// A card shows only a few lines. Do not lay out megabytes of copied text
+    /// just to clip it afterwards. Copy, search, export and Inspect use full text.
+    var cardText: String {
+        if let cardTextMemo { return cardTextMemo }
+        let prefix = text.prefix(2_048)
+        let value = String(prefix) + (prefix.endIndex < text.endIndex ? "…" : "")
+        cardTextMemo = value
+        return value
+    }
+
+    /// Preserve the preview labels while bounding the text supplied to the UI.
+    var cardPreview: String {
+        switch kind {
+        case .image: return "Image"
+        case .color: return colorHex ?? cardText
+        default:
+            let trimmed = cardText.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? "(empty)" : trimmed
+        }
+    }
+
     /// A short preview string used in the card header / accessibility.
     var preview: String {
         switch kind {
@@ -281,7 +332,8 @@ final class ClipItem: Codable, Identifiable {
         case .file:  return (filePath as NSString?)?.lastPathComponent ?? "File"
         case .color: return colorHex ?? "Color"
         default:
-            let n = text.count
+            let n = characterCountMemo ?? text.count
+            characterCountMemo = n
             return n == 1 ? "1 character" : "\(n) characters"
         }
     }

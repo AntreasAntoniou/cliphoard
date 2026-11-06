@@ -29,7 +29,6 @@ writer_deadline: float | None = 0.0
 writer_expiry: asyncio.TimerHandle | None = None
 writer_connecting = asyncio.Lock()
 writer_io = asyncio.Lock()
-saving = asyncio.Lock()
 written: dict[str, dict] = {}
 submitted: dict[str, str] = {}
 SAVE_WAIT_SECONDS = 120.0
@@ -266,32 +265,28 @@ async def save_clip(text: Annotated[str, Field(min_length=1, max_length=32_768)]
         raise ValueError("Enter nonblank text of at most 32 KiB without NUL characters.")
     if not writer_live():
         raise ValueError("Ask the user to connect_writer first.")
-    if saving.locked():
-        raise ValueError("A note is already being processed. Check its result before requesting another.")
-    async with saving:
-        if len(submitted) >= 32:
-            raise ValueError("32 saves still have unresolved outcomes. Use check_save with their original IDs; do not resubmit them.")
-        process, epoch = writer_process, generation
-        request_id = str(uuid4())
-        submitted[request_id] = text
-        deadline = time.monotonic() + SAVE_WAIT_SECONDS
-        if writer_deadline is not None:
-            deadline = min(deadline, writer_deadline)
-        try:
-            result = save_result(await writer_command({"action": "write", "request_id": request_id, "text": text},
-                                                      process, epoch), request_id, process, epoch)
-            while result["status"] == "pending" and time.monotonic() < deadline:
-                await asyncio.sleep(min(0.25, max(0, deadline - time.monotonic())))
-                result = await reconcile(request_id, process, epoch)
-            if result["status"] == "pending":
-                result = {"status": "unknown", "request_id": request_id}
-            if result["status"] == "unknown":
-                result["message"] = "Outcome unknown. Use check_save with this request_id while connected; do not automatically submit the note again."
-            return result
-        except (ValueError, asyncio.CancelledError):
-            return {"status": "unknown", "request_id": request_id,
-                    "message": "No automatic retry was made. Use check_save while connected, or inspect Cliphoard before submitting again."}
-
+    if len(submitted) >= 32:
+        raise ValueError("32 saves still have unresolved outcomes. Use check_save with their original IDs; do not resubmit them.")
+    process, epoch = writer_process, generation
+    request_id = str(uuid4())
+    submitted[request_id] = text
+    deadline = time.monotonic() + SAVE_WAIT_SECONDS
+    if writer_deadline is not None:
+        deadline = min(deadline, writer_deadline)
+    try:
+        result = save_result(await writer_command({"action": "write", "request_id": request_id, "text": text},
+                                                  process, epoch), request_id, process, epoch)
+        while result["status"] == "pending" and time.monotonic() < deadline:
+            await asyncio.sleep(min(0.25, max(0, deadline - time.monotonic())))
+            result = await reconcile(request_id, process, epoch)
+        if result["status"] == "pending":
+            result = {"status": "unknown", "request_id": request_id}
+        if result["status"] == "unknown":
+            result["message"] = "Outcome unknown. Use check_save with this request_id while connected; do not automatically submit the note again."
+        return result
+    except (ValueError, asyncio.CancelledError):
+        return {"status": "unknown", "request_id": request_id,
+                "message": "No automatic retry was made. Use check_save while connected, or inspect Cliphoard before submitting again."}
 
 @server.tool()
 async def check_save(request_id: UUID) -> dict:

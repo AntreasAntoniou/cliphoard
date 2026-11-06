@@ -27,6 +27,7 @@ def main():
     require(sys.version_info[:3] == (3, 14, 6), "explicit Python3.14.6 required")
     parser = argparse.ArgumentParser()
     parser.add_argument("--python313", type=Path, required=True)
+    parser.add_argument("--cmake", type=Path, required=True)
     parser.add_argument("--report", type=Path, required=True)
     args = parser.parse_args()
     require(platform.system() == "Darwin" and platform.machine() == "arm64", "Darwin arm64 required")
@@ -35,7 +36,8 @@ def main():
     env = {"PATH": "/opt/homebrew/bin:/usr/bin:/bin", "DEVELOPER_DIR": DEVELOPER}
     if "HOME" in os.environ:
         env["HOME"] = os.environ["HOME"]
-    paths = {name: shutil.which(name, path=env["PATH"]) for name in ("cmake", "ninja")}
+    require(args.cmake.is_absolute() and args.cmake.is_file(), "explicit provisioned CMake required")
+    paths = {"cmake": str(args.cmake), "ninja": shutil.which("ninja", path=env["PATH"])}
     require(all(paths.values()), "build tools unavailable")
     paths = {name: str(Path(value).resolve(strict=True)) for name, value in paths.items()}
     paths.update({name: checked(["/usr/bin/xcrun", "--sdk", "macosx", "--find", tool], env)
@@ -49,7 +51,7 @@ def main():
                 "clang": checked([paths["cc"], "--version"], env),
                 "sdk": checked(["/usr/bin/xcrun", "--sdk", "macosx", "--show-sdk-version"], env),
                 "xcode": checked(["/usr/bin/xcodebuild", "-version"], env)}
-    require(versions["cmake"].splitlines()[0] == "cmake version 4.4.4", "unsupported hosted CMake")
+    require(versions["cmake"].splitlines()[0] == "cmake version 4.4.4", "unsupported CMake: " + versions["cmake"].splitlines()[0])
     require(versions["ninja"] == "1.13.2", "unsupported hosted Ninja")
     require(versions["sdk"] == "26.5", "unsupported hosted SDK")
     require(versions["xcode"].splitlines() == ["Xcode 26.6", "Build version 17F113"], "unsupported hosted Xcode")

@@ -103,4 +103,26 @@ final class IncrementalIndexTests: XCTestCase {
         XCTAssertEqual(actualIndex(store), expectedIndex(store),
                        "index must re-sync to items order across bump-then-add")
     }
+    func testUserTagBucketsFollowPinUseAndDuplicateMoves() {
+        let store = tempStore()
+        let items = (0..<12).map { ClipItem(kind: .text, text: "ordinary project note \($0)") }
+        for (i, item) in items.enumerated() {
+            store.add(item)
+            XCTAssertTrue(store.addUserTag("Shared", to: item))
+            if i % 2 == 0 { XCTAssertTrue(store.addUserTag("Even", to: item)) }
+        }
+        func check() {
+            for tag in ["shared", "even"] {
+                XCTAssertEqual(store.items(withUserTag: tag).map(\.id),
+                               store.items.filter { $0.userTags.contains(tag) }.map(\.id))
+            }
+            XCTAssertEqual(actualIndex(store), expectedIndex(store))
+        }
+        store.togglePin(items[4]); check()
+        store.togglePin(items[8]); check()
+        store.togglePin(items[4]); check()
+        store.markUsed(items[2]); check()
+        store.add(ClipItem(kind: .text, text: items[6].text)); check()
+    }
+
 }

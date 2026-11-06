@@ -5,10 +5,12 @@ import SwiftUI
 struct SearchBarView<Filters: View>: View {
     @Binding var query: String
     @Binding var scope: SearchModality
+    @Binding var matching: SearchMode
     var searchFocused: FocusState<Bool>.Binding
     let isPro: Bool
     let openOptions: () -> Void
     let openSettings: () -> Void
+    var searchByImage: () -> Void = {}
     var isPending = false
     var timing: SearchTiming = .pause
     var submitSearch: () -> Void = {}
@@ -17,106 +19,121 @@ struct SearchBarView<Filters: View>: View {
     @ViewBuilder var filters: () -> Filters
 
     var body: some View {
-        VStack(spacing: 8) {
-            HStack(spacing: 8) {
-                Group {
-                    if let brandImage {
-                        Image(nsImage: brandImage).resizable().frame(width: 30, height: 30)
-                    } else {
-                        Image(systemName: "doc.on.clipboard.fill")
-                            .font(.system(size: 22)).foregroundStyle(Theme.accent)
+        HStack(alignment: .top, spacing: 10) {
+            Group {
+                if let brandImage {
+                    Image(nsImage: brandImage).resizable().frame(width: 30, height: 30)
+                } else {
+                    Image(systemName: "doc.on.clipboard.fill")
+                        .font(.system(size: 22)).foregroundStyle(Theme.accent)
+                }
+            }.frame(width: 30, height: 34).accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 6) {
+                FlowLayout(spacing: 8) {
+                    searchField
+                    Button(action: openOptions) {
+                        Image(systemName: "slider.horizontal.3").frame(width: 26, height: 34)
+                    }.buttonStyle(.plain).help((["Search options: models, timing and content types"] + badges.map(\.label)).joined(separator: "\n"))
+                        .accessibilityLabel("Search options")
+                    Picker("Matching", selection: $matching) {
+                        ForEach(SearchControlLabels.matchingModes) { mode in
+                            Text(mode.title).tag(mode).help(mode.blurb)
+                        }
                     }
-                }.accessibilityHidden(true)
-                HStack(spacing: 8) {
-                    Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                    TextField(timing == .enter ? "Type a search, then press Return…" : "Search your clips…", text: $query)
-                        .textFieldStyle(.plain).font(.system(size: 15))
-                        .focused(searchFocused)
-                        .accessibilityLabel("Search clipboard")
-                        .frame(minWidth: 60, maxWidth: .infinity)
-                    if isPending {
-                        Button(action: submitSearch) {
-                            Label("Search", systemImage: "return")
-                                .font(.system(size: 11, weight: .semibold))
-                        }.buttonStyle(.borderedProminent)
-                            .accessibilityLabel("Search now")
-                            .help("Search now, or press Return")
-                    }
-                    if !query.isEmpty {
-                        Button { query = ""; searchFocused.wrappedValue = true } label: {
-                            Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
-                        }.buttonStyle(.plain).help("Clear search")
-                            .accessibilityLabel("Clear search")
-                    }
-                    Divider().frame(height: 18)
+                    .labelsHidden().pickerStyle(.menu).frame(width: 85, height: 34)
+                    .accessibilityLabel("Matching")
                     Picker("Search in", selection: $scope) {
                         ForEach([SearchModality.all, .text, .images, .audio, .video]) { mode in
                             Text(SearchControlLabels.scope(mode) +
                                  (!isPro && mode != .text && mode != .all ? " · Pro" : ""))
-                                .tag(mode)
+                                .tag(mode).help(SearchControlLabels.scopeDetail(mode))
                         }
                     }
-                    .labelsHidden().pickerStyle(.menu).frame(width: 105)
+                    .labelsHidden().pickerStyle(.menu).frame(width: 105, height: 34)
                     .accessibilityLabel("Search in")
-                    .help("Choose what to find. All types uses the content types selected in Search options.")
+                    Button(action: searchByImage) {
+                        Image(systemName: ContentView.matchImageSymbol)
+                            .font(.system(size: 15)).frame(width: 26, height: 34)
+                    }.buttonStyle(.plain)
+                        .help("Search by image — choose a picture, or set up image search")
+                        .accessibilityLabel("Search by image")
+                    Button(action: openSettings) {
+                        Image(systemName: "gearshape").frame(width: 26, height: 34)
+                    }.buttonStyle(.plain).help("Settings").accessibilityLabel("Settings")
+                    filters().font(.system(size: 11)).frame(height: 34)
                 }
-                .padding(.horizontal, 12).padding(.vertical, 9)
-                .background(Color.primary.opacity(searchFocused.wrappedValue ? 0.09 : 0.05),
-                            in: RoundedRectangle(cornerRadius: 10))
-                .overlay(RoundedRectangle(cornerRadius: 10)
-                    .strokeBorder(Theme.accent.opacity(searchFocused.wrappedValue ? 0.6 : 0.15), lineWidth: 1))
-                Button(action: openOptions) {
-                    Label("Search options", systemImage: "slider.horizontal.3")
-                        .font(.system(size: 12, weight: .medium))
-                }.help("Search timing and content types")
-                Button(action: openSettings) {
-                    Image(systemName: "gearshape").font(.system(size: 15))
-                }.buttonStyle(.plain).help("Settings").accessibilityLabel("Settings")
             }
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: 12) {
-                    if !badges.isEmpty { configuredBadges }
-                    filterControls
-                }
-                .fixedSize(horizontal: true, vertical: false)
-
-                VStack(alignment: .leading, spacing: 6) {
-                    if !badges.isEmpty {
-                        ScrollView(.horizontal) { configuredBadges }
-                    }
-                    ScrollView(.horizontal) { filterControls }
-                }
-                .fixedSize(horizontal: false, vertical: true)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(.horizontal, 16).padding(.vertical, 9)
     }
 
-    private var filterControls: some View {
-        filters().font(.system(size: 11)).fixedSize(horizontal: true, vertical: false)
-    }
-
-    private var configuredBadges: some View {
+    private var searchField: some View {
         HStack(spacing: 6) {
-            ForEach(badges) { badge in
-                Label(badge.label, systemImage: badge.symbol)
-                    .font(.system(size: 11, weight: .medium))
-                    .padding(.horizontal, 9).padding(.vertical, 5)
-                    .foregroundStyle(Theme.accent)
-                    .background(Theme.accent.opacity(0.09), in: Capsule())
-                    .help("Configured search: " + badge.label + ". Model readiness is shown separately.")
+            Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+            TextField("Search clips…", text: $query)
+                .textFieldStyle(.plain).font(.system(size: 13))
+                .focused(searchFocused).accessibilityLabel("Search clipboard")
+                .frame(minWidth: 60, maxWidth: .infinity)
+            if isPending {
+                Button(action: submitSearch) {
+                    Image(systemName: "return").font(.system(size: 12, weight: .semibold))
+                }.buttonStyle(.borderedProminent)
+                    .accessibilityLabel("Search now").help("Search now, or press Return")
+            }
+            if !query.isEmpty {
+                Button { query = ""; searchFocused.wrappedValue = true } label: {
+                    Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
+                }.buttonStyle(.plain).help("Clear search").accessibilityLabel("Clear search")
             }
         }
-        .fixedSize(horizontal: true, vertical: false)
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Selected content types and configured models")
+        .padding(.horizontal, 10).frame(width: 220, height: 34)
+        .background(Color.primary.opacity(searchFocused.wrappedValue ? 0.09 : 0.05),
+                    in: RoundedRectangle(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 10)
+            .strokeBorder(Theme.accent.opacity(searchFocused.wrappedValue ? 0.6 : 0.15), lineWidth: 1))
     }
+
+
 }
 
 enum SearchControlLabels {
+    static let matchingModes: [SearchMode] = [.exact, .tag, .neural, .smart]
+
     static func scope(_ mode: SearchModality) -> String {
         mode == .all ? "All types" : mode.title
+    }
+
+    static func clipKindDetail(_ kind: ClipKind) -> String {
+        switch kind {
+        case .text: return "Only clips classified as text, such as notes and code."
+        case .link: return "Only clips classified as links."
+        case .color: return "Only clips classified as color values."
+        case .image: return "Only copied pictures and screenshots."
+        case .file: return "Only copied files."
+        }
+    }
+
+    static func timeDetail(_ filter: TimeFilter) -> String {
+        switch filter {
+        case .any: return "Show clips from any copied date."
+        case .today: return "Only clips copied today, using your local calendar."
+        case .yesterday: return "Only clips copied on the previous calendar day."
+        case .thisWeek: return "Only clips copied in the current calendar week."
+        case .thisMonth: return "Only clips copied in the current calendar month."
+        case .last7: return "Only clips copied in the seven days leading up to now."
+        case .last30: return "Only clips copied in the thirty days leading up to now."
+        case .range: return "Only clips copied between the selected dates, including both days."
+        }
+    }
+
+    static func scopeDetail(_ mode: SearchModality) -> String {
+        switch mode {
+        case .all: return "Search the content types enabled in Search options. Media search requires Pro."
+        case .text: return "Search clip text using the selected matching mode."
+        case .images: return "Search pictures by their content. Requires Pro and an image model."
+        case .audio: return "Search indexed sounds and speech. Requires Pro and media setup."
+        case .video: return "Search indexed video moments. Requires Pro and media setup."
+        }
     }
 
     static func textModel(_ level: DeepSearchLevel) -> String {
@@ -181,28 +198,49 @@ struct SearchOptionsView: View {
     @Binding var images: Bool
     @Binding var audio: Bool
     @Binding var video: Bool
+    @Binding var textModel: DeepSearchLevel
+    @Binding var imageModel: ImageSearchModel
     let isPro: Bool
+    var matching: SearchMode = .smart
     let manageModels: () -> Void
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Label("Search options", systemImage: "slider.horizontal.3").font(.headline)
             Picker("Search timing", selection: $timing) {
-                ForEach(SearchTiming.allCases) { Text($0.title).tag($0) }
+                ForEach(SearchTiming.allCases) { Text($0.title).tag($0).help($0.detail) }
             }
             Text(timing.detail).font(.caption).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             Divider()
             Text("Included in All types").font(.subheadline.bold())
-            Toggle("Text", isOn: $text)
-            Toggle("Images · Pro", isOn: $images).disabled(!isPro)
-            Toggle("Audio · Pro", isOn: $audio).disabled(!isPro)
-            Toggle("Video · Pro", isOn: $video).disabled(!isPro)
+            Toggle("Text", isOn: $text).help("Include text when searching All types.")
+            Toggle("Images · Pro", isOn: $images).disabled(!isPro).help("Include images when searching All types. Requires Pro.")
+            Toggle("Audio · Pro", isOn: $audio).disabled(!isPro).help("Include audio when searching All types. Requires Pro.")
+            Toggle("Video · Pro", isOn: $video).disabled(!isPro).help("Include video when searching All types. Requires Pro.")
             Text("These switches apply when All types is selected.")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             Divider()
+            Text("Models").font(.subheadline.bold())
+            Picker("Text & tags", selection: $textModel) {
+                ForEach(DeepSearchLevel.allCases) {
+                    Text(SearchControlLabels.textModel($0)).tag($0).help(SearchControlLabels.textDetail($0))
+                }
+            }.disabled(matching == .exact)
+                .accessibilityIdentifier("search-options-text-model")
+            if matching == .exact {
+                Text("Exact matching does not use a model. Choose Smart, Neural or Tag in the toolbar to change it.")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Picker("Images · Pro", selection: $imageModel) {
+                ForEach(ImageSearchModel.allCases) { Text($0.title).tag($0).help(SearchControlLabels.imageDetail($0)) }
+            }.disabled(!isPro)
+                .accessibilityIdentifier("search-options-image-model")
+            Text("Audio & video · EmbeddingGemma 2 · Pro")
+                .font(.caption).foregroundStyle(.secondary)
             Button("Manage models…", action: manageModels)
-            Text("Choose models in Settings. Downloads always ask first.")
+            Text("Downloads always ask first. Preparation appears below the toolbar.")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-        }.padding(16).frame(width: 300)
+        }.padding(16).frame(width: 360)
     }
 }
