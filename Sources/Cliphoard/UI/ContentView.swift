@@ -333,8 +333,11 @@ struct ContentView: View {
         .popover(isPresented: $model.showSearchOptions, arrowEdge: .bottom) {
             SearchOptionsView(timing: $settings.searchTiming, text: $settings.searchTextEnabled,
                 images: $settings.searchImagesEnabled, audio: $settings.searchAudioEnabled,
-                video: $settings.searchVideoEnabled, isPro: store.entitlement.isPro,
-                configuredModels: configuredSearchModels) {
+                video: $settings.searchVideoEnabled,
+                textModel: Binding(get: { settings.deepSearchLevel },
+                    set: { settings.selectTextModelForSearch($0) }),
+                imageModel: $settings.imageSearchModel,
+                isPro: store.entitlement.isPro, matching: settings.searchMode) {
                 model.showSearchOptions = false
                 model.requestedSettingsSection = "cliphoard-search"
                 model.settingsFocusRequest = UUID()

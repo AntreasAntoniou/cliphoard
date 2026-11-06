@@ -56,7 +56,7 @@ struct SearchBarView<Filters: View>: View {
                         .accessibilityLabel("Search by image")
                     Button(action: openOptions) {
                         Image(systemName: "slider.horizontal.3").frame(width: 26, height: 34)
-                    }.buttonStyle(.plain).help((["Search options: timing and content types"] + badges.map(\.label)).joined(separator: "\n"))
+                    }.buttonStyle(.plain).help((["Search options: models, timing and content types"] + badges.map(\.label)).joined(separator: "\n"))
                         .accessibilityLabel("Search options")
                     Button(action: openSettings) {
                         Image(systemName: "gearshape").frame(width: 26, height: 34)
@@ -166,8 +166,10 @@ struct SearchOptionsView: View {
     @Binding var images: Bool
     @Binding var audio: Bool
     @Binding var video: Bool
+    @Binding var textModel: DeepSearchLevel
+    @Binding var imageModel: ImageSearchModel
     let isPro: Bool
-    var configuredModels: [SearchScopeBadge] = []
+    var matching: SearchMode = .smart
     let manageModels: () -> Void
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -186,16 +188,27 @@ struct SearchOptionsView: View {
             Text("These switches apply when All types is selected.")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             Divider()
-            if !configuredModels.isEmpty {
-                Text("Configured models").font(.subheadline.bold())
-                ForEach(configuredModels) { model in
-                    Label(model.label, systemImage: model.symbol)
-                        .font(.caption).foregroundStyle(.secondary)
+            Text("Models").font(.subheadline.bold())
+            Picker("Text & tags", selection: $textModel) {
+                ForEach(DeepSearchLevel.allCases) {
+                    Text(SearchControlLabels.textModel($0)).tag($0)
                 }
+            }.disabled(matching == .exact)
+                .accessibilityIdentifier("search-options-text-model")
+            if matching == .exact {
+                Text("Exact matching does not use a model. Choose Smart, Neural or Tag in the toolbar to change it.")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
+            Picker("Images · Pro", selection: $imageModel) {
+                ForEach(ImageSearchModel.allCases) { Text($0.title).tag($0) }
+            }.disabled(!isPro)
+                .accessibilityIdentifier("search-options-image-model")
+            Text("Audio & video · EmbeddingGemma 2 · Pro")
+                .font(.caption).foregroundStyle(.secondary)
             Button("Manage models…", action: manageModels)
-            Text("Choose models in Settings. Downloads always ask first.")
+            Text("Downloads always ask first. Preparation appears below the toolbar.")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-        }.padding(16).frame(width: 300)
+        }.padding(16).frame(width: 360)
     }
 }
