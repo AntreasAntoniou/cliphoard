@@ -141,7 +141,11 @@ final class FloatingPanel: NSPanel {
     /// Size the bar to its content, anchored at the screen's bottom edge.
     func fit() {
         guard isSettled, let screen = presentedScreen ?? targetScreen() else { return }
-        let visible = screen.visibleFrame
+        fit(to: screen.visibleFrame)
+    }
+
+    /// Also used by offscreen native-window regression tests.
+    func fit(to visible: NSRect) {
         let target = Self.barFrame(visible: visible,
                                    contentHeight: contentHeight(width: visible.width),
                                    ceiling: Self.layoutCeiling)
@@ -191,6 +195,10 @@ final class FloatingPanel: NSPanel {
     func refresh() {
         guard let make = makeRootView else { return }
         let controller = make()
+        // We own width-aware sizing in fit(). SwiftUI's automatic minimum-size
+        // probe wraps FlowLayout at its narrowest width and imposes that tall
+        // minimum on the window, centring the real bar in transparent space.
+        controller.sizingOptions = []
         controller.view.autoresizingMask = [.width, .height]
         hostingController = controller
         contentViewController = controller

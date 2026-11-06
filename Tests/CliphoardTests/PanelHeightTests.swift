@@ -20,9 +20,9 @@ import SwiftUI
 /// is therefore a pure function, and the chrome cap is a named view.
 /// COVERAGE TRUTH, stated so nobody has to rediscover it: these tests cover two pure statics
 /// (`barFrame`, `offScreenFrame`), the `Theme` constants, and `BoundedChrome`. They do NOT
-/// cover `fit()`, `contentHeight(width:)`, `startFitting()`, `windowDidResize` or
-/// `presentedScreen` — the behavioural half of the panel fix is unpinned, and verifying it
-/// needs a running app. Three tests below measure REPLICAS of the real view and are labelled
+/// cover `startFitting()`, `windowDidResize` or `presentedScreen`. PanelAnchoringTests
+/// separately exercises the real hidden panel's fit/hosting/content geometry.
+/// Three tests below measure REPLICAS of the real view and are labelled
 /// as documentation rather than guards.
 @MainActor
 final class PanelHeightTests: XCTestCase {
