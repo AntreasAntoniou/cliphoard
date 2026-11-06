@@ -11,6 +11,14 @@ final class NativeCardInteractionTests: XCTestCase {
         override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
     }
     func testInspectButtonRespondsToNativeMouseEventsAcrossItsLabel() async throws {
+        try await inspectClicks(selected: true)
+    }
+
+    func testUnselectedInspectRemainsAvailableDuringPointerDwell() async throws {
+        try await inspectClicks(selected: false)
+    }
+
+    private func inspectClicks(selected: Bool) async throws {
         _ = NSApplication.shared
         let saved = UserDefaults.standard.string(forKey: "themePreset")
         UserDefaults.standard.set("swiss", forKey: "themePreset")
@@ -18,7 +26,7 @@ final class NativeCardInteractionTests: XCTestCase {
                 else { UserDefaults.standard.removeObject(forKey: "themePreset") } }
         let item = ClipItem(kind: .text, text: "Synthetic card for native inspect interaction")
         var inspected = 0
-        let card = ClipCardView(item: item, index: 10, selected: true,
+        let card = ClipCardView(item: item, index: 10, selected: selected,
             storeDir: FileManager.default.temporaryDirectory,
             onActivate: {}, onInspect: { inspected += 1 }, onInspectTags: {},
             onPin: {}, onDelete: {}, historyIsMutable: true)
@@ -40,6 +48,16 @@ final class NativeCardInteractionTests: XCTestCase {
         for (index, x) in [190.0, 199.0, 208.0].enumerated() {
             let point = host.convert(NSPoint(x: x, y: y), to: nil)
             let start = Date()
+            window.acceptsMouseMovedEvents = true
+            for step in 0..<12 {
+                let motion = try XCTUnwrap(NSEvent.mouseEvent(with: .mouseMoved, location: point,
+                    modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                    windowNumber: window.windowNumber, context: nil, eventNumber: step,
+                    clickCount: 0, pressure: 0))
+                NSApp.sendEvent(motion)
+                try await Task.sleep(nanoseconds: 20_000_000)
+            }
+            XCTAssertEqual(inspected, index, "Hover must never activate Inspect")
             for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
                 let event = try XCTUnwrap(NSEvent.mouseEvent(with: type, location: point,
                     modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,

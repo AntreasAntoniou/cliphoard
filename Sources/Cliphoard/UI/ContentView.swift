@@ -201,7 +201,10 @@ struct ContentView: View {
         .task(id: model.searchRequestKey) { model.scheduleMediaSearch() }
         .onChange(of: store.mediaSearch.busy) { busy in if !busy { model.scheduleMediaSearch() } }
         .onChange(of: store.mediaSearch.prepared) { _ in model.scheduleMediaSearch() }
-        .onChange(of: settings.imageSearchModel) { _ in model.referenceImage = nil; model.resetSelection() }
+        .onChange(of: settings.imageSearchModel) { mode in
+            if mode != .clip { model.referenceImage = nil }
+            model.resetSelection()
+        }
         .onChange(of: settings.searchModality) { model.applySearchModality($0) }
         .onChange(of: settings.searchMode) { _ in model.resetSelection() }
         // Keep keyboard selection on a card the user can actually see. Arrow keys
@@ -287,16 +290,16 @@ struct ContentView: View {
                 settings.searchModality = mode
                 model.applySearchModality(mode)
             }
-        }), searchFocused: $searchFocused, isPro: store.entitlement.isPro,
+        }), matching: $settings.searchMode, searchFocused: $searchFocused, isPro: store.entitlement.isPro,
         openOptions: { model.showSearchOptions.toggle() },
         openSettings: { model.showSearchOptions = false; model.requestedSettingsSection = nil; model.showSettings = true },
-        isPending: model.searchInput.isPending, timing: model.searchInput.timing,
+        searchByImage: beginImageSearch, isPending: model.searchInput.isPending, timing: model.searchInput.timing,
         submitSearch: { _ = model.searchInput.submitPending() },
         badges: SearchScopeBadge.selected(mode: settings.searchModality,
             capabilities: SearchCapabilities(text: settings.searchTextEnabled, images: settings.searchImagesEnabled,
                 audio: settings.searchAudioEnabled, video: settings.searchVideoEnabled, imageModel: settings.imageSearchModel),
             level: settings.deepSearchLevel, pro: store.entitlement.isPro, matching: settings.searchMode), brandImage: brandIconImage) {
-            HStack(spacing: 8) {
+            Group {
                 clipTypeMenu
                 chip(title: "Pinned", systemImage: "pin.fill", active: model.pinnedOnly) {
                     model.pinnedOnly.toggle(); model.resetSelection()
@@ -312,14 +315,13 @@ struct ContentView: View {
                         model.resetSelection()
                     }.buttonStyle(.plain).foregroundStyle(Theme.accent)
                 }
-                Spacer(minLength: 8)
                 if settings.searchModality == .all && !settings.searchTextEnabled &&
                     (!store.entitlement.isPro || (!settings.searchImagesEnabled && !settings.searchAudioEnabled && !settings.searchVideoEnabled)) {
                     Text(SearchControlLabels.combinedSummary(SearchCapabilities(
                         text: settings.searchTextEnabled, images: settings.searchImagesEnabled,
                         audio: settings.searchAudioEnabled, video: settings.searchVideoEnabled,
                         imageModel: settings.imageSearchModel), pro: store.entitlement.isPro))
-                        .foregroundStyle(.secondary).lineLimit(1).truncationMode(.tail)
+                        .foregroundStyle(.secondary).lineLimit(1).truncationMode(.tail).frame(maxWidth: 240)
                         .help("Choose included content types in Search options.")
                 }
             }
@@ -371,19 +373,10 @@ struct ContentView: View {
         .buttonStyle(.plain)
     }
 
-    /// Choose a picture from disk and search BY it.
-    ///
-    /// Only in Image mode, and only when the towers loaded — offering it otherwise would be
-    /// a control that opens a file panel and then silently does nothing, which is worse than
-    /// no control. Once a reference is set the button becomes a chip showing the filename
-    /// with an X, because a search that is silently filtered by an invisible picture is the
-    /// most confusing state this feature could have.
+    /// A selected reference stays visible until cleared or a different search is chosen.
     @ViewBuilder
     private var referenceImagePicker: some View {
-        // EVERY mode, not just Image. Searching by a picture is a thing you decide to do,
-        // not a thing you first have to reconfigure the search for — and hiding it behind a
-        // mode nobody has selected yet meant nobody found it.
-        if settings.imageSearchModel == .clip && settings.searchModality == .images && store.clipEmbedder != nil {
+        if settings.imageSearchModel == .clip && settings.searchModality == .images {
             if let reference = model.referenceImage {
                 HStack(spacing: 4) {
                     Image(systemName: "photo.fill")
@@ -405,22 +398,6 @@ struct ContentView: View {
                 .background(Capsule().fill(Theme.accent.opacity(0.18)))
                 .accessibilityLabel("Searching by image \(reference.name). Activate the "
                                     + "clear button to stop.")
-            } else {
-                Button {
-                    chooseReferenceImage()
-                } label: {
-                    Image(systemName: Self.matchImageSymbol)
-                        .font(.system(size: 14))
-                        .foregroundStyle(Theme.accent)
-                }
-                .buttonStyle(.plain)
-                // The label is gone from the button, so the tooltip and the accessibility
-                // label carry the whole meaning. An icon-only control with no accessible
-                // name is a control VoiceOver users cannot identify at all.
-                .help("Search by image — pick a picture and find clips that look like it")
-                .accessibilityLabel("Search by image")
-                .accessibilityHint("Opens a file picker. Clips will be ranked by how much "
-                                   + "they resemble the picture you choose.")
             }
         }
     }
@@ -436,6 +413,22 @@ struct ContentView: View {
         return NSImage(systemSymbolName: preferred, accessibilityDescription: nil) != nil
             ? preferred : "camera.viewfinder"
     }()
+
+    private func beginImageSearch() {
+        guard !GuidedSetupDraft.presentsPro(for: .image, entitlement: store.entitlement) else {
+            model.presentProSettings()
+            return
+        }
+        guard store.clipEmbedder != nil else {
+            settings.imageSearchModel = .clip
+            model.showSearchOptions = false
+            model.requestedSettingsSection = "cliphoard-search"
+            model.settingsFocusRequest = UUID()
+            model.showSettings = true
+            return
+        }
+        chooseReferenceImage()
+    }
 
     /// Reads the bytes rather than keeping the URL, so the search survives the file being
     /// moved or deleted while the panel is open.
@@ -464,7 +457,6 @@ struct ContentView: View {
               let data = DistributionChannel.withSecurityScopedAccess(to: url, {
                   try? Data(contentsOf: url)
               }) else { return }
-        model.referenceImage = (name: url.lastPathComponent, data: data)
         // SWITCH TO IMAGE MODE, visibly. The reference only ranks image clips, so leaving the
         // user in Exact or Tag would give them a file picker that changes nothing — the
         // "control that looks live and does nothing" defect FrozenControlsTests exists for.
@@ -472,6 +464,8 @@ struct ContentView: View {
         // did, because the mode picker updates in front of them.
         settings.searchModality = .images
         settings.imageSearchModel = .clip
+        model.applySearchModality(.images)
+        model.referenceImage = (name: url.lastPathComponent, data: data)
         model.resetSelection()
     }
 
@@ -646,6 +640,7 @@ struct ContentView: View {
                                 // reads as a broken app, and the next thing someone tries
                                 // when the app looks broken is to clear it.
                                 historyIsMutable: !store.safeMode,
+                                modelTags: ClipCardTags.modelLabels(for: row.item, embedder: EmbedderProvider.active),
                                 onFileVerb: { model.onFileVerb?(row.item, $0) }
                             )
                             // Identity is the clip's id (from ForEach) — NOT the index.

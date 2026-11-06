@@ -92,6 +92,7 @@ final class SearchControlPresentationTests: XCTestCase {
         XCTAssertLessThanOrEqual(host.fittingSize.width, 301)
         XCTAssertLessThanOrEqual(host.fittingSize.height, 380)
         if let output = ProcessInfo.processInfo.environment["CLIPHOARD_SEARCH_UI_SNAPSHOTS"] {
+            try FileManager.default.createDirectory(atPath: output, withIntermediateDirectories: true)
             let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
             host.cacheDisplay(in: host.bounds, to: bitmap)
             let png = try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
@@ -106,18 +107,19 @@ final class SearchControlPresentationTests: XCTestCase {
     @State private var scope = SearchModality.all
     @FocusState private var focused: Bool
     var body: some View {
-        SearchBarView(query: $query, scope: $scope, searchFocused: $focused,
+        SearchBarView(query: $query, scope: $scope, matching: .constant(.smart), searchFocused: $focused,
                       isPro: true, openOptions: {}, openSettings: {}, isPending: pending,
                       timing: pending ? .enter : .pause, submitSearch: {},
                       badges: SearchScopeBadge.selected(mode: .all,
                         capabilities: SearchCapabilities(text: true, images: true, audio: true, video: true, imageModel: .clip),
                         level: .normal, pro: true)) {
-            HStack(spacing: 12) {
+            Group {
                 Label("Clip type", systemImage: "line.3.horizontal.decrease")
                 Label("Pinned", systemImage: "pin.fill")
                 Label("Time", systemImage: "clock")
                 Label("Filters", systemImage: "line.3.horizontal.decrease.circle")
-                Spacer()
+                Label("reference-picture.png", systemImage: "photo.fill").frame(width: 170)
+                Button("Clear filters") {}
             }
         }.background(Color(nsColor: .windowBackgroundColor))
     }

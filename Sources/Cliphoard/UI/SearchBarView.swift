@@ -5,10 +5,12 @@ import SwiftUI
 struct SearchBarView<Filters: View>: View {
     @Binding var query: String
     @Binding var scope: SearchModality
+    @Binding var matching: SearchMode
     var searchFocused: FocusState<Bool>.Binding
     let isPro: Bool
     let openOptions: () -> Void
     let openSettings: () -> Void
+    var searchByImage: () -> Void = {}
     var isPending = false
     var timing: SearchTiming = .pause
     var submitSearch: () -> Void = {}
@@ -17,38 +19,25 @@ struct SearchBarView<Filters: View>: View {
     @ViewBuilder var filters: () -> Filters
 
     var body: some View {
-        VStack(spacing: 8) {
-            HStack(spacing: 8) {
-                Group {
-                    if let brandImage {
-                        Image(nsImage: brandImage).resizable().frame(width: 30, height: 30)
-                    } else {
-                        Image(systemName: "doc.on.clipboard.fill")
-                            .font(.system(size: 22)).foregroundStyle(Theme.accent)
+        HStack(alignment: .top, spacing: 10) {
+            Group {
+                if let brandImage {
+                    Image(nsImage: brandImage).resizable().frame(width: 30, height: 30)
+                } else {
+                    Image(systemName: "doc.on.clipboard.fill")
+                        .font(.system(size: 22)).foregroundStyle(Theme.accent)
+                }
+            }.frame(width: 30, height: 34).accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 6) {
+                FlowLayout(spacing: 8) {
+                    searchField
+                    Picker("Matching", selection: $matching) {
+                        ForEach(SearchControlLabels.matchingModes) { mode in
+                            Text(mode.title).tag(mode)
+                        }
                     }
-                }.accessibilityHidden(true)
-                HStack(spacing: 8) {
-                    Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                    TextField(timing == .enter ? "Type a search, then press Return…" : "Search your clips…", text: $query)
-                        .textFieldStyle(.plain).font(.system(size: 15))
-                        .focused(searchFocused)
-                        .accessibilityLabel("Search clipboard")
-                        .frame(minWidth: 60, maxWidth: .infinity)
-                    if isPending {
-                        Button(action: submitSearch) {
-                            Label("Search", systemImage: "return")
-                                .font(.system(size: 11, weight: .semibold))
-                        }.buttonStyle(.borderedProminent)
-                            .accessibilityLabel("Search now")
-                            .help("Search now, or press Return")
-                    }
-                    if !query.isEmpty {
-                        Button { query = ""; searchFocused.wrappedValue = true } label: {
-                            Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
-                        }.buttonStyle(.plain).help("Clear search")
-                            .accessibilityLabel("Clear search")
-                    }
-                    Divider().frame(height: 18)
+                    .labelsHidden().pickerStyle(.menu).frame(width: 85, height: 34)
+                    .accessibilityLabel("Matching").help(matching.blurb)
                     Picker("Search in", selection: $scope) {
                         ForEach([SearchModality.all, .text, .images, .audio, .video]) { mode in
                             Text(SearchControlLabels.scope(mode) +
@@ -56,65 +45,75 @@ struct SearchBarView<Filters: View>: View {
                                 .tag(mode)
                         }
                     }
-                    .labelsHidden().pickerStyle(.menu).frame(width: 105)
+                    .labelsHidden().pickerStyle(.menu).frame(width: 105, height: 34)
                     .accessibilityLabel("Search in")
-                    .help("Choose what to find. All types uses the content types selected in Search options.")
+                    .help("Choose text, images, audio, video or all enabled types.")
+                    Button(action: searchByImage) {
+                        Image(systemName: ContentView.matchImageSymbol)
+                            .font(.system(size: 15)).frame(width: 26, height: 34)
+                    }.buttonStyle(.plain)
+                        .help("Search by image — choose a picture, or set up image search")
+                        .accessibilityLabel("Search by image")
+                    Button(action: openOptions) {
+                        Image(systemName: "slider.horizontal.3").frame(width: 26, height: 34)
+                    }.buttonStyle(.plain).help("Search options: timing and content types")
+                        .accessibilityLabel("Search options")
+                    Button(action: openSettings) {
+                        Image(systemName: "gearshape").frame(width: 26, height: 34)
+                    }.buttonStyle(.plain).help("Settings").accessibilityLabel("Settings")
+                    filters().font(.system(size: 11)).frame(height: 34)
                 }
-                .padding(.horizontal, 12).padding(.vertical, 9)
-                .background(Color.primary.opacity(searchFocused.wrappedValue ? 0.09 : 0.05),
-                            in: RoundedRectangle(cornerRadius: 10))
-                .overlay(RoundedRectangle(cornerRadius: 10)
-                    .strokeBorder(Theme.accent.opacity(searchFocused.wrappedValue ? 0.6 : 0.15), lineWidth: 1))
-                Button(action: openOptions) {
-                    Label("Search options", systemImage: "slider.horizontal.3")
-                        .font(.system(size: 12, weight: .medium))
-                }.help("Search timing and content types")
-                Button(action: openSettings) {
-                    Image(systemName: "gearshape").font(.system(size: 15))
-                }.buttonStyle(.plain).help("Settings").accessibilityLabel("Settings")
+                if !badges.isEmpty {
+                    FlowLayout(spacing: 6) { badgeViews }
+                }
             }
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: 12) {
-                    if !badges.isEmpty { configuredBadges }
-                    filterControls
-                }
-                .fixedSize(horizontal: true, vertical: false)
-
-                VStack(alignment: .leading, spacing: 6) {
-                    if !badges.isEmpty {
-                        ScrollView(.horizontal) { configuredBadges }
-                    }
-                    ScrollView(.horizontal) { filterControls }
-                }
-                .fixedSize(horizontal: false, vertical: true)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(.horizontal, 16).padding(.vertical, 9)
     }
 
-    private var filterControls: some View {
-        filters().font(.system(size: 11)).fixedSize(horizontal: true, vertical: false)
-    }
-
-    private var configuredBadges: some View {
+    private var searchField: some View {
         HStack(spacing: 6) {
-            ForEach(badges) { badge in
-                Label(badge.label, systemImage: badge.symbol)
-                    .font(.system(size: 11, weight: .medium))
-                    .padding(.horizontal, 9).padding(.vertical, 5)
-                    .foregroundStyle(Theme.accent)
-                    .background(Theme.accent.opacity(0.09), in: Capsule())
-                    .help("Configured search: " + badge.label + ". Model readiness is shown separately.")
+            Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+            TextField("Search clips…", text: $query)
+                .textFieldStyle(.plain).font(.system(size: 13))
+                .focused(searchFocused).accessibilityLabel("Search clipboard")
+                .frame(minWidth: 60, maxWidth: .infinity)
+            if isPending {
+                Button(action: submitSearch) {
+                    Image(systemName: "return").font(.system(size: 12, weight: .semibold))
+                }.buttonStyle(.borderedProminent)
+                    .accessibilityLabel("Search now").help("Search now, or press Return")
+            }
+            if !query.isEmpty {
+                Button { query = ""; searchFocused.wrappedValue = true } label: {
+                    Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
+                }.buttonStyle(.plain).help("Clear search").accessibilityLabel("Clear search")
             }
         }
-        .fixedSize(horizontal: true, vertical: false)
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Selected content types and configured models")
+        .padding(.horizontal, 10).frame(width: 220, height: 34)
+        .background(Color.primary.opacity(searchFocused.wrappedValue ? 0.09 : 0.05),
+                    in: RoundedRectangle(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 10)
+            .strokeBorder(Theme.accent.opacity(searchFocused.wrappedValue ? 0.6 : 0.15), lineWidth: 1))
     }
+
+    private var badgeViews: some View {
+        ForEach(badges) { badge in
+            Label(badge.label, systemImage: badge.symbol)
+                .font(.system(size: 11, weight: .medium))
+                .padding(.horizontal, 9).padding(.vertical, 5)
+                .foregroundStyle(Theme.accent)
+                .background(Theme.accent.opacity(0.09), in: Capsule())
+                .fixedSize()
+                .help("Configured search: " + badge.label + ". Model readiness is shown separately.")
+        }
+    }
+
 }
 
 enum SearchControlLabels {
+    static let matchingModes: [SearchMode] = [.exact, .tag, .neural, .smart]
+
     static func scope(_ mode: SearchModality) -> String {
         mode == .all ? "All types" : mode.title
     }

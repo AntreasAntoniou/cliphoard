@@ -366,7 +366,7 @@ final class PanelViewModel: ObservableObject {
 
     func applySearchModality(_ modality: SearchModality) {
         activeKind = SearchPreferences.kindFilter(afterSelecting: modality, current: activeKind)
-        referenceImage = nil
+        if modality != .images { referenceImage = nil }
         resetSelection()
     }
 

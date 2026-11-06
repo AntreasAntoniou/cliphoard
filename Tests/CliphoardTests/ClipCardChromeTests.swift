@@ -322,6 +322,21 @@ final class ClipCardChromeTests: XCTestCase {
         return item
     }
 
+    func testSuggestedModelTagsFitTheCard() throws {
+        let item = ClipItem(kind: .text, text: "A synthetic Python example for the card preview")
+        let view = ClipCardView(item: item, index: 10, selected: false, storeDir: dir,
+            onActivate: {}, onInspect: {}, onInspectTags: {}, onPin: {}, onDelete: {},
+            historyIsMutable: true, modelTags: ["code", "python", "api", "regex", "git"])
+        _ = try shoot(view)
+        if let output = ProcessInfo.processInfo.environment["CLIPHOARD_CARD_UI_SNAPSHOT"] {
+            let renderer = ImageRenderer(content: view)
+            renderer.scale = 2
+            let cg = try XCTUnwrap(renderer.cgImage)
+            let png = try XCTUnwrap(NSBitmapImageRep(cgImage: cg).representation(using: .png, properties: [:]))
+            try png.write(to: URL(fileURLWithPath: output), options: .withoutOverwriting)
+        }
+    }
+
     private func card(_ item: ClipItem, selected: Bool = false) -> some View {
         ClipCardView(item: item, index: 0, selected: selected, storeDir: dir,
                      onActivate: {}, onInspect: {}, onInspectTags: {},

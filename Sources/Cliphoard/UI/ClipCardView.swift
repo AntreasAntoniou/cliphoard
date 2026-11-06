@@ -348,13 +348,13 @@ struct ClipCardView: View {
     /// the primary Delete came to be the one control left ungated while three secondary
     /// ones were covered. Without a default the compiler makes each call site answer.
     let historyIsMutable: Bool
+    var modelTags: [String] = []
     /// Run a file verb on this clip. Optional so a call site that does not wire it renders
     /// NO items rather than dead ones — the same degrade `ClipDetailView.onInspectOther`
     /// uses, and not the `historyIsMutable` case, which is about a control that would look
     /// live while refusing.
     var onFileVerb: ((FileVerb) -> Void)? = nil
 
-    @State private var hovering = false
 
     /// Decoded thumbnails keyed by file name, so the body doesn't re-decode the
     /// image on every hover/selection re-evaluation (audit BL-09/H8).
@@ -416,14 +416,14 @@ struct ClipCardView: View {
         .clipShape(RoundedRectangle(cornerRadius: Theme.cornerRadius, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: Theme.cornerRadius, style: .continuous)
-                .strokeBorder(selected ? Theme.accent : (hovering ? Theme.t.borderHover : Theme.t.border),
+                .strokeBorder(selected ? Theme.accent : Theme.t.border,
                               lineWidth: selected ? Theme.t.selectedBorderWidth : 1)
+                .allowsHitTesting(false)
         )
         .shadow(color: .black.opacity(selected ? 0.25 : 0.12), radius: selected ? 10 : 5, y: 3)
         // No scaleEffect: shrinking unselected cards shifted their header baselines
         // out of row alignment. Selection reads via the ring + shadow instead.
         .animation(.spring(response: 0.25, dampingFraction: 0.8), value: selected)
-        .onHover { hovering = $0 }
         .contextMenu {
             Button(DistributionChannel.primaryActionTitle) { onActivate() }
             if item.kind == .file, let onFileVerb {
@@ -500,7 +500,9 @@ struct ClipCardView: View {
                     .font(.system(size: 10))
                     .foregroundStyle(Theme.pin)
             }
-            if hovering || selected {
+            // Keep the tool present: inserting it on hover changes the very
+            // hit-test subtree that owns hover and can make it flash repeatedly.
+            Group {
                 Button(action: onInspect) {
                     Image(systemName: "arrow.up.left.and.arrow.down.right")
                         .font(.system(size: 9, weight: .semibold))
@@ -607,23 +609,25 @@ struct ClipCardView: View {
     /// Not cached across renders on purpose: the inputs are two stored fields
     /// plus `Date()`, and a `fresh` clip must stop claiming to be fresh without
     /// anyone invalidating anything (design §5 — derived at render time).
-    private var chipRow: (shown: [ClipSignal], overflow: Int) { ClipChips.row(for: item) }
+    private var chipRow: (shown: [ClipCardTags.Entry], overflow: Int) {
+        ClipCardTags.row(for: item, modelTags: modelTags)
+    }
 
     @ViewBuilder private var tagRow: some View {
-        // At most three elements, certainty-ordered, and **frequently empty** —
-        // a blank row is the correct, common outcome (principle 2), not a gap to
-        // be filled. The old row showed the first two raw auto-tag strings
-        // whether or not they meant anything; the audit's finding was that those
-        // strings were decoration, so there is no fallback here.
-        //
-        // Every kind is eligible now: the old row was suppressed for images and
-        // colours because an embedding caption on a screenshot was noise, but a
-        // screenshot copied out of a password manager is exactly the case that
-        // must show its badge.
+        // Current, confidence-gated model suggestions are visible on cards.
+        // Protective warnings retain priority; all overflow opens the inspector.
         let row = chipRow
         if !row.shown.isEmpty {
             HStack(spacing: 4) {
-                ForEach(row.shown, id: \.self) { signal in chip(signal) }
+                ForEach(row.shown, id: \.self) { entry in
+                    switch entry {
+                    case .signal(let signal): chip(signal)
+                    case .model(let label):
+                        plainChip(label, style: ClipChips.colors(for: .neutral))
+                            .help("Suggested by the selected text model")
+                            .accessibilityLabel(entry.spoken)
+                    }
+                }
                 if row.overflow > 0 {
                     Button(action: onInspectTags) {
                         plainChip("+\(row.overflow)", style: ClipChips.colors(for: .neutral))
