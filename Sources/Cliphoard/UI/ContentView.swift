@@ -283,6 +283,13 @@ struct ContentView: View {
         Bundle.main.image(forResource: "Cliphoard") ?? NSApp.applicationIconImage
     }
 
+    private var configuredSearchModels: [SearchScopeBadge] {
+        SearchScopeBadge.selected(mode: settings.searchModality,
+            capabilities: SearchCapabilities(text: settings.searchTextEnabled, images: settings.searchImagesEnabled,
+                audio: settings.searchAudioEnabled, video: settings.searchVideoEnabled, imageModel: settings.imageSearchModel),
+            level: settings.deepSearchLevel, pro: store.entitlement.isPro, matching: settings.searchMode)
+    }
+
     private var toolbar: some View {
         SearchBarView(query: Binding(get: { model.searchInput.draft }, set: { model.searchInput.updateDraft($0) }), scope: Binding(get: { settings.searchModality }, set: { mode in
             if mode != .text && mode != .all && !store.entitlement.isPro { model.presentProSettings() }
@@ -295,10 +302,7 @@ struct ContentView: View {
         openSettings: { model.showSearchOptions = false; model.requestedSettingsSection = nil; model.showSettings = true },
         searchByImage: beginImageSearch, isPending: model.searchInput.isPending, timing: model.searchInput.timing,
         submitSearch: { _ = model.searchInput.submitPending() },
-        badges: SearchScopeBadge.selected(mode: settings.searchModality,
-            capabilities: SearchCapabilities(text: settings.searchTextEnabled, images: settings.searchImagesEnabled,
-                audio: settings.searchAudioEnabled, video: settings.searchVideoEnabled, imageModel: settings.imageSearchModel),
-            level: settings.deepSearchLevel, pro: store.entitlement.isPro, matching: settings.searchMode), brandImage: brandIconImage) {
+        badges: configuredSearchModels, brandImage: brandIconImage) {
             Group {
                 clipTypeMenu
                 chip(title: "Pinned", systemImage: "pin.fill", active: model.pinnedOnly) {
@@ -329,7 +333,8 @@ struct ContentView: View {
         .popover(isPresented: $model.showSearchOptions, arrowEdge: .bottom) {
             SearchOptionsView(timing: $settings.searchTiming, text: $settings.searchTextEnabled,
                 images: $settings.searchImagesEnabled, audio: $settings.searchAudioEnabled,
-                video: $settings.searchVideoEnabled, isPro: store.entitlement.isPro) {
+                video: $settings.searchVideoEnabled, isPro: store.entitlement.isPro,
+                configuredModels: configuredSearchModels) {
                 model.showSearchOptions = false
                 model.requestedSettingsSection = "cliphoard-search"
                 model.settingsFocusRequest = UUID()

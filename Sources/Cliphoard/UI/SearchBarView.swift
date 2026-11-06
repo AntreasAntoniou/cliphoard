@@ -56,15 +56,12 @@ struct SearchBarView<Filters: View>: View {
                         .accessibilityLabel("Search by image")
                     Button(action: openOptions) {
                         Image(systemName: "slider.horizontal.3").frame(width: 26, height: 34)
-                    }.buttonStyle(.plain).help("Search options: timing and content types")
+                    }.buttonStyle(.plain).help((["Search options: timing and content types"] + badges.map(\.label)).joined(separator: "\n"))
                         .accessibilityLabel("Search options")
                     Button(action: openSettings) {
                         Image(systemName: "gearshape").frame(width: 26, height: 34)
                     }.buttonStyle(.plain).help("Settings").accessibilityLabel("Settings")
                     filters().font(.system(size: 11)).frame(height: 34)
-                }
-                if !badges.isEmpty {
-                    FlowLayout(spacing: 6) { badgeViews }
                 }
             }
         }
@@ -97,17 +94,6 @@ struct SearchBarView<Filters: View>: View {
             .strokeBorder(Theme.accent.opacity(searchFocused.wrappedValue ? 0.6 : 0.15), lineWidth: 1))
     }
 
-    private var badgeViews: some View {
-        ForEach(badges) { badge in
-            Label(badge.label, systemImage: badge.symbol)
-                .font(.system(size: 11, weight: .medium))
-                .padding(.horizontal, 9).padding(.vertical, 5)
-                .foregroundStyle(Theme.accent)
-                .background(Theme.accent.opacity(0.09), in: Capsule())
-                .fixedSize()
-                .help("Configured search: " + badge.label + ". Model readiness is shown separately.")
-        }
-    }
 
 }
 
@@ -181,6 +167,7 @@ struct SearchOptionsView: View {
     @Binding var audio: Bool
     @Binding var video: Bool
     let isPro: Bool
+    var configuredModels: [SearchScopeBadge] = []
     let manageModels: () -> Void
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -199,6 +186,13 @@ struct SearchOptionsView: View {
             Text("These switches apply when All types is selected.")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             Divider()
+            if !configuredModels.isEmpty {
+                Text("Configured models").font(.subheadline.bold())
+                ForEach(configuredModels) { model in
+                    Label(model.label, systemImage: model.symbol)
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
             Button("Manage models…", action: manageModels)
             Text("Choose models in Settings. Downloads always ask first.")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)

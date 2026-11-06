@@ -81,16 +81,16 @@ final class SearchControlPresentationTests: XCTestCase {
         let wide = host.sizeThatFits(in: CGSize(width: 1440, height: CGFloat.infinity))
         XCTAssertLessThanOrEqual(narrow.width, 641)
         XCTAssertGreaterThan(narrow.height - wide.height, 18)
-        XCTAssertLessThan(wide.height, 105)
+        XCTAssertLessThanOrEqual(wide.height, 52, "Wide toolbar must fit one 34pt controls row plus 18pt padding")
     }
 
     func testQuickOptionsFitsItsCompactPopover() throws {
         _ = NSApplication.shared
         let host = NSHostingView(rootView: SearchOptionsFixture())
-        host.frame = NSRect(x: 0, y: 0, width: 300, height: 380)
+        host.frame = NSRect(x: 0, y: 0, width: 300, height: 480)
         host.layoutSubtreeIfNeeded()
         XCTAssertLessThanOrEqual(host.fittingSize.width, 301)
-        XCTAssertLessThanOrEqual(host.fittingSize.height, 380)
+        XCTAssertLessThanOrEqual(host.fittingSize.height, 480)
         if let output = ProcessInfo.processInfo.environment["CLIPHOARD_SEARCH_UI_SNAPSHOTS"] {
             try FileManager.default.createDirectory(atPath: output, withIntermediateDirectories: true)
             let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
@@ -133,7 +133,10 @@ final class SearchControlPresentationTests: XCTestCase {
     @State private var video = true
     var body: some View {
         SearchOptionsView(timing: $timing, text: $text, images: $images,
-                          audio: $audio, video: $video, isPro: true, manageModels: {})
+                          audio: $audio, video: $video, isPro: true,
+                          configuredModels: SearchScopeBadge.selected(mode: .all,
+                            capabilities: SearchCapabilities(text: true, images: true, audio: true, video: true, imageModel: .clip),
+                            level: .normal, pro: true), manageModels: {})
             .background(Color(nsColor: .windowBackgroundColor))
     }
 }
