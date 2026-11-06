@@ -114,15 +114,25 @@ final class ImageUnderstandingWiringTests: XCTestCase {
     /// Cheapest possible protection: an already-vetoed clip's pixels are never decoded.
     func testQuarantinedClipIsNeverHandedToTheAnalyzer() async throws {
         try skipIfKeychainUnreachable()
+        let defaults = UserDefaults.standard
+        let previous = defaults.object(forKey: "imageUnderstandingEnabled")
+        defer {
+            if let previous { defaults.set(previous, forKey: "imageUnderstandingEnabled") }
+            else { defaults.removeObject(forKey: "imageUnderstandingEnabled") }
+        }
+        ClipStore.setImageUnderstanding(true, entitlement: Self.proEntitlement)
         let store = tempStore()
+        XCTAssertTrue(ClipStore.imageUnderstandingAllowed(store.entitlement))
+        var calls = 0
+        ImageUnderstanding.analyze = { _ in calls += 1; return self.result("should never run") }
         let item = imageClip(source: "1Password")
         store.add(item)
         XCTAssertTrue(item.isIndexVetoed, "precondition: a sensitive source must quarantine")
-
-        var calls = 0
-        ImageUnderstanding.analyze = { _ in calls += 1; return self.result("should never run") }
         store.scheduleImageUnderstanding()
-        try? await Task.sleep(nanoseconds: 300_000_000)
+        let deadline = ContinuousClock.now.advanced(by: .seconds(2))
+        while item.ocrText == nil && ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
 
         XCTAssertEqual(calls, 0, "a vetoed clip must not be analysed at all")
         XCTAssertEqual(item.ocrText, "", "it must still be MARKED analysed, or it retries forever")
