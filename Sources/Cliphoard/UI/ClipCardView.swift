@@ -428,6 +428,10 @@ struct ClipCardView: View {
             Color.clear
                 .overlay(alignment: .topLeading) { content }
                 .clipped()
+                    // Clipping limits drawing, not SwiftUI hit testing. A tall
+                    // aspect-fill image can otherwise cover the header's Inspect
+                    // button with an invisible hit region.
+                    .contentShape(Rectangle())
             tagRow
             footer
         }
