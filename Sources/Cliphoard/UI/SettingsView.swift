@@ -144,7 +144,7 @@ final class AppSettings: ObservableObject {
     /// After a licence change, bring the gated settings back in line with what the build
     /// will actually do. Only ever turns things OFF (or leaves them), never deletes. The
     /// history limit is not an entitlement setting and is never touched here.
-    private func syncGatedSettingsToEntitlement() {
+    func syncGatedSettingsToEntitlement() {
         // A verified key turns the image features ON. 1.0.0's default was on for everyone,
         // and a buyer whose paid feature is silently off has bought a support ticket — so a
         // deliberate Verify press is allowed to override a previous off. Only a press does
@@ -153,6 +153,7 @@ final class AppSettings: ObservableObject {
         let allowed = ClipStore.imageUnderstandingAllowed(entitlement)
         if imageUnderstanding != allowed { imageUnderstanding = allowed }
         if !SearchMode.available(entitlement).contains(searchMode) { searchMode = .smart }
+        if !entitlement.isPro && searchModality != .text && searchModality != .all { searchModality = .text }
     }
     @Published var launchAtLogin: Bool { didSet { LoginItem.set(launchAtLogin) } }
     @Published var activateOnSummon: Bool { didSet { UserDefaults.standard.set(activateOnSummon, forKey: "activateOnSummon") } }
@@ -310,13 +311,15 @@ final class AppSettings: ObservableObject {
         layoutMode = Theme.layout
         searchTiming = SearchTiming.current()
         let capabilities = SearchPreferences.capabilities()
-        searchModality = SearchPreferences.modality()
+        let savedModality = SearchPreferences.modality()
+        let initialModality: SearchModality = !store.entitlement.isPro && savedModality != .text && savedModality != .all ? .text : savedModality
+        searchModality = initialModality
         imageSearchModel = capabilities.imageModel
         searchTextEnabled = capabilities.text; searchImagesEnabled = capabilities.images
         searchAudioEnabled = capabilities.audio; searchVideoEnabled = capabilities.video
         // Persist the legacy migration once, before the text matching style changes.
         let defaults = UserDefaults.standard
-        defaults.set(SearchPreferences.modality().rawValue, forKey: "searchModality")
+        defaults.set(initialModality.rawValue, forKey: "searchModality")
         defaults.set(capabilities.imageModel.rawValue, forKey: "imageSearchModel")
         defaults.set(capabilities.text, forKey: "searchTextEnabled")
         defaults.set(capabilities.images, forKey: "searchImagesEnabled")
@@ -365,6 +368,7 @@ final class AppSettings: ObservableObject {
                 if !SearchMode.available(self.entitlement).contains(self.searchMode) {
                     self.searchMode = .exact
                 }
+                if !self.entitlement.isPro && self.searchModality != .text && self.searchModality != .all { self.searchModality = .text }
                 if self.entitlement.isPro { self.proPitch = nil }
                 self.objectWillChange.send()
             }
@@ -602,6 +606,10 @@ struct SettingsView: View {
                     }
                     Text(settings.layoutMode.subtitle)
                         .font(.system(size: 11)).foregroundStyle(.secondary)
+                }
+
+                section("Content analysis") {
+                    ContentAnalysisOptions(analysis: store.contentAnalysis, isPro: settings.entitlement.isPro)
                 }
 
                 section("Images") {

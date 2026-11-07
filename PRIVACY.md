@@ -4,9 +4,9 @@
 not upload your clips, search queries, or search indexes. There is no Cliphoard account,
 advertising, usage telemetry, or cloud sync.**
 
-The Mac App Store edition uses Apple's StoreKit to purchase and restore Pro. The
-direct-download edition can fetch search models from public model hosts. Both editions
-can download optional speech models after you choose preparation. These
+The Mac App Store edition uses Apple's StoreKit to purchase and restore Pro. Both
+editions can fetch search models from public model hosts and download optional speech
+models after you choose preparation. These
 connections do not carry clipboard content; the network and purchase details are below.
 
 ## What Cliphoard stores, and where
@@ -48,8 +48,8 @@ are not admitted to this media index, even if you temporarily reveal them.
 
 Preparing a model downloads public model data and reveals ordinary connection data
 such as your IP address to the hosting service. It does not upload your media, search
-queries, extracted frames, audio, transcripts or vectors. The Store candidate bundles
-EmbeddingGemma 2; optional speech weights are separate explicit downloads. Model files
+queries, extracted frames, audio, transcripts or vectors. Search and optional speech
+weights are downloaded after installation; the app package does not contain them. Model files
 are cached under `Application Support/Cliphoard/` (inside the app container for Store).
 
 ## Reading text inside images
@@ -90,6 +90,36 @@ You can turn this off entirely in **Settings → Read text in images**, and **Fo
 recognised text** deletes everything that has already been read, in one action. Turning
 it off stops all future recognition; it does not by itself erase what was already read,
 which is what the Forget button is for.
+
+## Optional file text and NSFW screening
+
+**Search inside files is opt-in.** When enabled, Cliphoard reads accessible local
+text/source files, RTF, and embedded PDF text from copied file references. It stores
+an encrypted text snapshot beside the clip, shows it in Inspect, and uses it for
+search and optional model tags. Limits are 16 MB, 100 PDF pages and 200,000 characters;
+scanned PDFs are not OCRed. The original file is never modified. Credential-like
+text is withheld using the same rules as image OCR. PDF, RTF and tagging have
+separate controls. Disabling extraction stops new work and excludes retained file
+text from search and tags; the saved snapshot remains in Inspect. Delete the clip
+to remove that snapshot. Refresh explicitly after editing a source file.
+
+**Possible NSFW protection is enabled by default**, independently of search mode.
+It checks explicit text labels, filenames and full paths in Free, including paths
+to audio/video. When the existing local models are available, Free also screens
+sampled text and images; Pro can screen sampled audio and video frames. Models are
+not downloaded automatically for these checks. An explicit preparation button can
+download OpenVision. All screening stays on the Mac. It uses semantic similarity,
+not a calibrated safety classifier: false positives and missed content are possible,
+and a non-match is never a safety guarantee. The result is a detector flag, stored
+with the other flags; clips are concealed until macOS authentication when protection
+is active. Existing secret/password protections still apply if NSFW protection is off.
+
+Settings can limit NSFW protection to Focus modes explicitly configured with the
+Cliphoard Focus filter, such as Work or Do Not Disturb. Only the filter's protection
+setting is read, not private Focus databases or other apps' activity. An unreadable
+Focus state keeps protection on. Manual NSFW tags and an exemption control let you
+correct classifications. File parsing, embeddings and especially audio/video decoding
+use additional CPU, memory and battery; Settings explains these costs and controls.
 
 ## Encryption
 
@@ -175,7 +205,8 @@ in Hugging Face's model download statistics. These HTTPS requests reveal ordinar
 connection information, such as your IP address, to the hosting provider. They contain
 no clipboard data, account identifier, or persistent Cliphoard tracking identifier.
 
-**Mac App Store edition:** embedding models ship with the app; optional speech models download only after explicit preparation. Apple handles Pro
+**Mac App Store edition:** models download after installation when you prepare the
+corresponding feature. Apple handles Pro
 purchases, restoration and transaction verification through StoreKit under Apple's
 privacy terms. Cliphoard reads Apple's verified entitlement on your Mac to decide
 whether Pro is unlocked. It does not receive your payment-card details or upload your
@@ -218,8 +249,10 @@ Cliphoard deliberately tries **not** to capture secrets, in three ways:
 2. Clips that still arrive from a known password manager (1Password, Bitwarden, KeePassXC,
    Dashlane, LastPass, Apple Passwords, Keychain Access, Secretive, Enpass, Strongbox) are
    stored encrypted but flagged **password app** and excluded from every search index — no
-   embedding, no tags, no recognition. They are **not** hidden and **not** locked behind
-   Touch ID: they stay visible and pastable in your history; delete with ⌘⌫.
+   embedding, no tags, no recognition. Sensitive cards are hidden until successful
+   macOS authentication reveals that individual item for up to 60 seconds. This uses
+   the system authentication options available on your Mac, rather than a separate
+   clipboard-vault password. You can delete clips with ⌘⌫.
 3. You can add any app to an exclusion denylist (`excludedBundleIDs`) so Cliphoard never
    records what you copy from it. In the Mac App Store edition, use **Settings → Excluded
    apps** and enter the app's bundle identifier. In the direct 1.0.1 edition, quit
@@ -309,4 +342,4 @@ For privacy questions, contact `support@cliphoard.dev`. If you contact support,
 we receive the message and contact details you choose to send. Do not include your
 clipboard database, licence key, passwords or other sensitive content in a report.
 
-_Last updated: 2026-10-23._
+_Last updated: 2026-11-07._

@@ -1,6 +1,7 @@
 #!/opt/homebrew/bin/python3.14
 """Disposable artifact policy tests; never compile, sign, launch or fetch anything."""
 import importlib.util
+import json
 import os
 from pathlib import Path
 import plistlib
@@ -33,6 +34,18 @@ class BundlePolicyTests(unittest.TestCase):
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_bytes(data)
         return p
+
+    def test_focus_metadata_is_allowed_but_altered_payload_is_not(self):
+        prefix = "Contents/Resources/Metadata.appintents/"
+        for name in audit.FOCUS_METADATA_PINS:
+            self.put(prefix + name, (ROOT / "Scripts/fixtures/nsfw-focus-metadata" / name).read_bytes())
+        audit.audit_bundle(self.app)
+        path = self.app / (prefix + "extract.actionsdata")
+        value = json.loads(path.read_text())
+        value["weights"] = [0.2, 0.3]
+        path.write_text(json.dumps(value))
+        with self.assertRaises(audit.PolicyError):
+            audit.audit_bundle(self.app)
 
     def test_runtime_and_text_resources_are_allowed(self):
         self.put("Contents/Frameworks/libCLiteRTLM_mac.dylib", bytes.fromhex("cafebabe") + b"fixture")

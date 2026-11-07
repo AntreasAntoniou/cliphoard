@@ -220,6 +220,9 @@ extension ClipSignal {
         case .quarantined:
             return ("password app", "From a password app", "lock.shield.fill", .protective,
                     "Sensitive: copied from a password manager")
+        case .nsfw:
+            return ("NSFW", "NSFW", "eye.slash.fill", .caution,
+                    "Possible NSFW content: local heuristic or manual label")
         default:
             // A bit written by a NEWER build (the raw value is deliberately never
             // masked down — see `ClipItem.flags`). We cannot name it, so we say
@@ -341,7 +344,7 @@ enum ClipChips {
     /// Drawn from `ClipFlags.allKnown` bits only — there is deliberately no way
     /// to spell a positive "safe" label here.
     private static let protectiveOrder: [ClipFlags] = [
-        .secret, .financial, .piiSensitive, .quarantined, .otp, .secretEntropy, .pii
+        .secret, .financial, .piiSensitive, .quarantined, .otp, .secretEntropy, .nsfw, .pii
     ]
 }
 

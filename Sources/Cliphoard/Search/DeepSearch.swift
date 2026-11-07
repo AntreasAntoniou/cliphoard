@@ -722,7 +722,10 @@ enum ClipIndexer {
 enum SemanticRanker {
     static func searchText(_ item: ClipItem) -> String {
         switch item.kind {
-        case .file:  return (item.filePath as NSString?)?.lastPathComponent ?? item.text
+        case .file:
+            let name = (item.filePath as NSString?)?.lastPathComponent ?? item.text
+            guard ContentAnalysisPreferences.fileTextAllowed(item), let text = item.ocrText, !text.isEmpty else { return name }
+            return name + "\n" + text
         case .color: return item.colorHex ?? item.text
         // Recognised image text, when there is any. This ONE case is the entire search
         // integration for images: the embedder, `Detectors.scan`, `lengthConfidence`

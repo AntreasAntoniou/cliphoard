@@ -23,6 +23,7 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/Cliphoard"
 cp "$ROOT/Resources/Info.plist" "$APP/Contents/Info.plist"
 bash "$ROOT/Scripts/embed-media-runtime.sh" "$APP" "$BIN_DIR"
+"$PYTHON" "$ROOT/Scripts/build-app-intents.py" --scratch "$ROOT/.build" --configuration "$CONFIG" --app "$APP"
 # Icon (best effort). Built from the committed master PNG (the hoard-bag mascot,
 # Resources/AppIcon.png); falls back to the vector make-icon.swift (⌘V) if absent.
 if command -v iconutil >/dev/null 2>&1 && command -v sips >/dev/null 2>&1; then
