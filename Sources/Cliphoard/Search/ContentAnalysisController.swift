@@ -2,6 +2,16 @@ import AppKit
 import AppIntents
 import Combine
 import UniformTypeIdentifiers
+import CoreML
+import Tokenizers
+
+protocol ContentModelEvaluating: Actor {
+    func text(_ text: String) async throws -> Bool
+    func image(_ data: Data) async throws -> Bool
+    func media(_ url: URL, video: Bool, audio: Bool, cache: URL,
+               admit: @escaping @Sendable () async -> Bool) async throws -> Bool
+    func reset() async
+}
 
 /// A serial, local-only queue for optional document extraction and NSFW screening.
 /// Rechecks live membership, preferences, Focus and entitlement after every await.
@@ -17,17 +27,19 @@ final class ContentAnalysisController: ObservableObject {
     private var settingsObserver: AnyCancellable?
     private var processed: [UUID: String] = [:]
     private var generation = UUID()
-    private let evaluator = NSFWModelEvaluator()
+    private let evaluator: any ContentModelEvaluating
     private var documentConfiguration = [ContentAnalysisPreferences.documentText, ContentAnalysisPreferences.enabled("documentPDFEnabled"), ContentAnalysisPreferences.enabled("documentRichTextEnabled")]
 
-    init(store: ClipStore) {
+    init(store: ClipStore, evaluator: any ContentModelEvaluating = NSFWModelEvaluator(), monitorFocus: Bool = true) {
         self.store = store
+        self.evaluator = evaluator
         observer = store.objectWillChange.sink { [weak self] _ in
             Task { @MainActor [weak self] in self?.schedule() }
         }
         settingsObserver = NotificationCenter.default.publisher(for: ContentAnalysisPreferences.changed).sink { [weak self] _ in
             Task { @MainActor [weak self] in self?.refresh() }
         }
+        guard monitorFocus else { return }
         focusTask = Task { @MainActor [weak self] in
             while !Task.isCancelled {
                 guard self != nil else { return }
@@ -59,14 +71,15 @@ final class ContentAnalysisController: ObservableObject {
         if operation == nil { schedule() }
     }
     func prepareImages() {
-        modelStatus = "Preparing OpenVision for Free text and image NSFW checks…"
+        modelStatus = "Preparing existing text and image models for Free NSFW checks…"
         Task {
             do {
-                _ = try await ModelAssets.ensureImageModels(allowDownload: true)
-                modelStatus = "OpenVision ready. Local heuristic; matches can be wrong."
+                _ = try await ModelAssets.ensure("all-MiniLM-L6-v2", allowDownload: true)
+                try await ModelAssets.ensureImageModels(allowDownload: true)
+                modelStatus = "MiniLM and OpenVision ready. Local heuristics; matches can be wrong."
                 await evaluator.reset()
                 refresh()
-            } catch { modelStatus = "Could not prepare OpenVision. Explicit text/path labels still work." }
+            } catch { modelStatus = "Could not prepare all models. Explicit text/path labels still work." }
         }
     }
     func schedule() {
@@ -177,17 +190,24 @@ final class ContentAnalysisController: ObservableObject {
 }
 
 /// Model work is serialized away from the main actor. Nothing downloads here.
-actor NSFWModelEvaluator {
+actor NSFWModelEvaluator: ContentModelEvaluating {
     enum Failure: Error { case unavailable, stale }
+    private let imageRoot: URL
+    private let mediaDirectory: URL
+    init(imageRoot: URL = ModelAssets.storeDir, mediaDirectory: URL = GemmaMediaAssets.defaultDirectory) {
+        self.imageRoot = imageRoot; self.mediaDirectory = mediaDirectory
+    }
+    private var textModel: HFEmbedder?
+    private var textPrompts: (positive: [[Float]], negative: [[Float]])?
     private var clip: CLIPEmbedder?
     private var prompts: (positive: [[Float]], negative: [[Float]])?
     private let gemma = GemmaMediaEmbedder()
     private var mediaPrompts: (positive: [[Float]], negative: [[Float]])?
-    func reset() async { clip = nil; prompts = nil; mediaPrompts = nil; await gemma.close() }
+    func reset() async { clip = nil; prompts = nil; textModel = nil; textPrompts = nil; mediaPrompts = nil; await gemma.close() }
     private func prepare() async throws -> CLIPEmbedder {
         if let clip { return clip }
-        guard ModelAssets.canPrepareImageModelsLocally() else { throw Failure.unavailable }
-        _ = try await ModelAssets.ensureImageModels(allowDownload: false)
+        guard ModelAssets.canPrepareLocally("openvision-tiny-p8", root: imageRoot) else { throw Failure.unavailable }
+        _ = try await ModelAssets.ensureImageModels(allowDownload: false, root: imageRoot)
         guard let model = CLIPEmbedder.load() else { throw Failure.unavailable }
         clip = model
         prompts = (NSFWDetection.positivePrompts.map { CLIPEmbedder.centred(model.embed(text: $0), by: CLIPTextMean.vector) },
@@ -195,14 +215,24 @@ actor NSFWModelEvaluator {
         return model
     }
     func text(_ text: String) async throws -> Bool {
-        let model = try await prepare()
-        guard let prompts else { throw Failure.unavailable }
-        // Bounded chunks prevent the text tower's 80-token truncation from silently
-        // screening only the first line. This remains a sampled heuristic for long clips.
+        // Use the existing sentence model for language. OpenVision's text tower is
+        // aligned to images; calibration found unrelated text false positives there.
+        if textModel == nil {
+            guard ModelAssets.canPrepareLocally("all-MiniLM-L6-v2", root: imageRoot) else { throw Failure.unavailable }
+            let found = try await ModelAssets.ensure("all-MiniLM-L6-v2", allowDownload: false, root: imageRoot)
+            let model = try await MLModel.load(contentsOf: found.compiledModel, configuration: MLModelConfiguration())
+            let tokenizer = try await AutoTokenizer.from(modelFolder: found.tokenizerFolder)
+            let encoder = HFEmbedder(modelName: "all-MiniLM-L6-v2", model: model, tokenizer: tokenizer, dimension: 384)
+            textModel = encoder
+            textPrompts = (NSFWDetection.positivePrompts.map { encoder.embed($0) },
+                           NSFWDetection.negativePrompts.map { encoder.embed($0) })
+        }
+        guard let model = textModel, let prompts = textPrompts else { throw Failure.unavailable }
         let chars = Array(text.prefix(4096))
         for offset in stride(from: 0, to: chars.count, by: 160) {
             try Task.checkCancellation()
-            let vector = CLIPEmbedder.centred(model.embed(text: String(chars[offset..<min(offset + 200, chars.count)])), by: CLIPTextMean.vector)
+            let vector = model.embed(String(chars[offset..<min(offset + 200, chars.count)]))
+            guard vector.count == 384, vector.allSatisfy(\.isFinite), vector.contains(where: { $0 != 0 }) else { throw Failure.unavailable }
             if NSFWDetection.possibleMatch(vector: vector, positive: prompts.positive, negative: prompts.negative) { return true }
         }
         return false
@@ -210,13 +240,15 @@ actor NSFWModelEvaluator {
     func image(_ data: Data) async throws -> Bool {
         let model = try await prepare()
         guard let prompts else { throw Failure.unavailable }
-        return NSFWDetection.possibleMatch(vector: model.embed(imageData: data), positive: prompts.positive, negative: prompts.negative)
+        let vector = model.embed(imageData: data)
+        guard vector.count == CLIPEmbedder.dimension, vector.allSatisfy(\.isFinite), vector.contains(where: { $0 != 0 }) else { throw Failure.unavailable }
+        return NSFWDetection.possibleMatch(vector: vector, positive: prompts.positive, negative: prompts.negative)
     }
     func media(_ url: URL, video: Bool, audio: Bool, cache: URL,
                admit: @escaping @Sendable () async -> Bool) async throws -> Bool {
         guard await admit() else { throw Failure.stale }
-        guard GemmaMediaAssets.localCandidateExists() else { throw Failure.unavailable }
-        let model = try await GemmaMediaAssets().verifiedModel()
+        guard GemmaMediaAssets.localCandidateExists(directory: mediaDirectory) else { throw Failure.unavailable }
+        let model = try await GemmaMediaAssets(directory: mediaDirectory).verifiedModel()
         try await gemma.prepare(modelURL: model, cacheURL: cache)
         if mediaPrompts == nil {
             var positive: [[Float]] = [], negative: [[Float]] = []

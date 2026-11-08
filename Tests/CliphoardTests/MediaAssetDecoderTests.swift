@@ -38,6 +38,22 @@ final class MediaAssetDecoderTests: XCTestCase {
         input.markAsFinished(); await writer.finishWriting()
         XCTAssertEqual(writer.status, .completed); return url
     }
+    func testAACPaddingBeyondMovieDurationIsClippedNotRejected() async throws {
+        // Synthetic teal video + macOS speech, muxed by FFmpeg: movie4.1s,
+        // AAC track4.161s. No user media and no network access.
+        let url = try XCTUnwrap(Bundle.module.url(forResource: "aac-padding", withExtension: "mp4", subdirectory: "Fixtures"))
+        let decoder = try await MediaAssetDecoder(url: url)
+        let track = try await AVURLAsset(url: url).loadTracks(withMediaType: .audio)[0]
+        let mappings = try await track.load(.segments)
+        XCTAssertGreaterThan(try XCTUnwrap(mappings.last).timeMapping.target.end.seconds, decoder.metadata.duration)
+        var seen = 0
+        try await decoder.audio(plan: MediaSamplingPlan.make(duration: decoder.metadata.duration, preset: .lightweight, modality: .audio)) { window in
+            seen += 1
+            XCTAssertGreaterThan(window.sampleCount, 0)
+            XCTAssertLessThanOrEqual(window.end, decoder.metadata.duration)
+        }
+        XCTAssertGreaterThan(seen, 0)
+    }
     func testActualAudioExtractionWAVAndNoVideo() async throws {
         let folder = try fixtureDirectory(); let url = try wavFixture(folder)
         let decoder = try await MediaAssetDecoder(url: url)

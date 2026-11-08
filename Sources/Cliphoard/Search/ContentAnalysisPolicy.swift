@@ -32,8 +32,21 @@ enum FocusProtectionState {
 enum NSFWDetection {
     // Heuristics describe a possible match, never a safety guarantee. Keep neutral
     // medical, art and everyday people examples in the contrast set.
-    static let positivePrompts = ["sexually explicit pornography", "explicit nude sexual content", "sexual activity and explicit sexual sounds"]
-    static let negativePrompts = ["ordinary work document or screenshot", "people in everyday clothing", "landscape animals or objects", "medical anatomy or health education", "music conversation or ordinary environmental sounds"]
+    static let positivePrompts = [
+        "sexually explicit pornography", "explicit nude sexual content",
+        "people having sexual intercourse", "naked adults performing sexual acts",
+        "a closeup of naked adult genitals", "graphic sexual activity",
+        "sexual activity and explicit sexual sounds"
+    ]
+    static let negativePrompts = [
+        "ordinary work document or screenshot", "people in everyday clothing",
+        "landscape animals or objects", "medical anatomy or health education",
+        "music conversation or ordinary environmental sounds",
+        "medical examination and cancer screening", "classical nude art and figure drawing",
+        "people at the beach wearing swimsuits", "a romantic wedding kiss",
+        "programming source code and software documentation",
+        "sexual health education, contraception and reproductive biology"
+    ]
     static let minimumScore: Float = 0.20
     static let minimumMargin: Float = 0.06
 

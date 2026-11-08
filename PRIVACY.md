@@ -108,7 +108,7 @@ It checks explicit text labels, filenames and full paths in Free, including path
 to audio/video. When the existing local models are available, Free also screens
 sampled text and images; Pro can screen sampled audio and video frames. Models are
 not downloaded automatically for these checks. An explicit preparation button can
-download OpenVision. All screening stays on the Mac. It uses semantic similarity,
+download MiniLM for text and OpenVision for images. All screening stays on the Mac. It uses semantic similarity,
 not a calibrated safety classifier: false positives and missed content are possible,
 and a non-match is never a safety guarantee. The result is a detector flag, stored
 with the other flags; clips are concealed until macOS authentication when protection

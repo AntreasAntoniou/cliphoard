@@ -118,9 +118,9 @@ enum ModelAssets {
         guard let found = locate(name) else { throw Failure.corrupt }; return found
     }
     /// Both towers become visible together after all compilation and integrity checks.
-    static func ensureImageModels(allowDownload: Bool = true,
+    static func ensureImageModels(allowDownload: Bool = true, root: URL = storeDir,
         progress: @escaping @Sendable (Double) -> Void = { _ in }) async throws {
-        try await prepare("openvision-tiny-p8", allowDownload: allowDownload, root: storeDir, progress: progress)
+        try await prepare("openvision-tiny-p8", allowDownload: allowDownload, root: root, progress: progress)
     }
     private static let coordinator = PreparationCoordinator()
     private actor PreparationCoordinator {
