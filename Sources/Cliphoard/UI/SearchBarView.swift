@@ -19,9 +19,15 @@ struct SearchBarView<Filters: View>: View {
     var activeFilterCount = 0
     @ViewBuilder var filters: () -> Filters
 
+    /// Query construction stays in one bounded field. App utilities retain a
+    /// stable trailing home instead of stretching the field across the display.
+    static var maximumQueryWidth: CGFloat { 760 }
+    static var modelsButtonWidth: CGFloat { 96 }
+
     var body: some View {
-        VStack(spacing: 8) {
-            HStack(spacing: 12) {
+        GeometryReader { geometry in
+            let compact = geometry.size.width < 760
+            HStack(spacing: 10) {
                 Group {
                     if let brandImage {
                         Image(nsImage: brandImage).resizable().scaledToFit()
@@ -29,60 +35,38 @@ struct SearchBarView<Filters: View>: View {
                         Image(systemName: "doc.on.clipboard.fill").foregroundStyle(Theme.accent)
                     }
                 }.frame(width: 32, height: 36).accessibilityHidden(true)
-                searchField
-                HStack(spacing: 6) {
-                    Text("Match").font(.system(size: 11)).foregroundStyle(.secondary)
-                    SearchChoicePicker(label: "Matching", selection: $matching,
-                        choices: SearchControlLabels.matchingModes.map {
-                            .init(value: $0, title: $0.title, detail: $0.blurb)
-                        }).frame(width: 95, height: 34)
-                }
+                searchField(compact: compact)
+                    .frame(maxWidth: Self.maximumQueryWidth)
+                    .layoutPriority(1)
+                Button(action: openOptions) {
+                    HStack(spacing: 5) {
+                        Image(systemName: "cpu")
+                        if !compact { Text("Models") }
+                    }.font(.system(size: 12, weight: .medium))
+                        .frame(width: compact ? 36 : Self.modelsButtonWidth, height: 36)
+                        .contentShape(Rectangle())
+                }.buttonStyle(.plain)
+                    .help((["Models and search options: local models, timing and included content"] + badges.map(\.label)).joined(separator: "\n"))
+                    .accessibilityLabel("Models and search options")
+                Spacer(minLength: 0)
                 Button(action: openSettings) {
                     Image(systemName: "gearshape").font(.system(size: 17))
                         .frame(width: 36, height: 36).contentShape(Rectangle())
                 }.buttonStyle(.plain).help("Settings · ⌘,")
                     .accessibilityLabel("Settings").keyboardShortcut(",", modifiers: .command)
             }
-            HStack(alignment: .top, spacing: 12) {
-                HStack(spacing: 6) {
-                    Text("Search in").font(.system(size: 11)).foregroundStyle(.secondary)
-                    SearchChoicePicker(label: "Search in", selection: $scope,
-                        choices: [SearchModality.all, .text, .images, .audio, .video].map {
-                            .init(value: $0,
-                                  title: SearchControlLabels.scope($0) +
-                                    (!isPro && $0 != .text && $0 != .all ? " · Pro" : ""),
-                                  detail: SearchControlLabels.scopeDetail($0))
-                        }).frame(width: 115, height: 34)
-                }
-                Divider().frame(height: 28).padding(.top, 3)
-                ViewThatFits(in: .horizontal) {
-                    HStack(spacing: 8) { filters().font(.system(size: 11)).frame(height: 34) }
-                        .fixedSize()
-                    Menu { filters() } label: {
-                        Label(activeFilterCount > 0 ? "Filters (\(activeFilterCount))" : "Filters",
-                              systemImage: "line.3.horizontal.decrease")
-                            .font(.system(size: 12)).frame(height: 34)
-                    }.menuStyle(.borderlessButton).fixedSize()
-                }.frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
-                Button(action: openOptions) {
-                    Label("Models & search", systemImage: "cpu")
-                        .font(.system(size: 12, weight: .medium))
-                        .padding(.horizontal, 10).frame(height: 34)
-                        .background(Color.primary.opacity(0.035), in: Capsule())
-                        .contentShape(Capsule())
-                }.buttonStyle(.plain)
-                    .help((["Choose local models, search timing and included content"] + badges.map(\.label)).joined(separator: "\n"))
-                    .accessibilityLabel("Models and search options")
-            }
-        }
-        .padding(.horizontal, 16).padding(.vertical, 8)
+            .padding(.horizontal, 16).padding(.vertical, 8)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        }.frame(height: 56)
     }
 
-    private var searchField: some View {
-        HStack(spacing: 8) {
+    private var filterCount: Int { activeFilterCount + (scope == .all ? 0 : 1) }
+
+    private func searchField(compact: Bool) -> some View {
+        HStack(spacing: compact ? 5 : 8) {
             Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
             TextField("Search clips…", text: $query)
-                .textFieldStyle(.plain).font(.system(size: 14))
+                .textFieldStyle(.plain).font(.system(size: 13))
                 .focused(searchFocused).accessibilityLabel("Search clipboard")
                 .frame(minWidth: 60, maxWidth: .infinity)
             if isPending {
@@ -96,17 +80,51 @@ struct SearchBarView<Filters: View>: View {
                     Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
                 }.buttonStyle(.plain).help("Clear search").accessibilityLabel("Clear search")
             }
-            Divider().frame(height: 20)
             Button(action: searchByImage) {
                 Image(systemName: ContentView.matchImageSymbol)
-                    .font(.system(size: 16)).frame(width: 32, height: 34)
+                    .font(.system(size: 15)).frame(width: 28, height: 32)
                     .contentShape(Rectangle())
             }.buttonStyle(.plain).help("Search by image — choose a picture, or set up image search")
                 .accessibilityLabel("Search by image")
+            Divider().frame(height: 18)
+            SearchChoicePicker(label: "Matching", selection: $matching,
+                choices: SearchControlLabels.matchingModes.map {
+                    .init(value: $0, title: $0.title, detail: $0.blurb)
+                }, borderless: true)
+                .frame(width: compact ? 70 : 88, height: 30)
+                .overlay(alignment: .trailing) {
+                    Image(systemName: "chevron.down").font(.system(size: 8, weight: .semibold))
+                        .padding(.trailing, 2).allowsHitTesting(false).accessibilityHidden(true)
+                }
+            Divider().frame(height: 18)
+            Menu {
+                Menu("Search in") {
+                    ForEach([SearchModality.all, .text, .images, .audio, .video]) { mode in
+                        Button { scope = mode } label: {
+                            Label(SearchControlLabels.scope(mode) +
+                                  (!isPro && mode != .text && mode != .all ? " · Pro" : ""),
+                                  systemImage: scope == mode ? "checkmark" : "circle")
+                        }.help(SearchControlLabels.scopeDetail(mode))
+                    }
+                }
+                Divider()
+                filters()
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "line.3.horizontal.decrease")
+                    if !compact { Text("Filters") }
+                    if filterCount > 0 { Text("\(filterCount)").monospacedDigit() }
+                }
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(filterCount > 0 ? Theme.accent : Color.secondary)
+                .frame(minWidth: compact ? 26 : 62, minHeight: 32)
+                .contentShape(Rectangle())
+            }.menuStyle(.borderlessButton).fixedSize()
+                .accessibilityLabel(filterCount > 0 ? "Filters, \(filterCount) active" : "Filters")
+                .help("Filter clips by content, type, pinned state, time, tags and source")
         }
-        .padding(.horizontal, 12).frame(height: 36)
-        .background(Color.primary.opacity(searchFocused.wrappedValue ? 0.025 : 0.015),
-                    in: Capsule())
+        .padding(.horizontal, compact ? 9 : 12).frame(height: 38)
+        .background(Color.primary.opacity(searchFocused.wrappedValue ? 0.025 : 0.015), in: Capsule())
         .overlay(Capsule().strokeBorder(Theme.accent.opacity(searchFocused.wrappedValue ? 0.8 : 0.3), lineWidth: 1))
     }
 }

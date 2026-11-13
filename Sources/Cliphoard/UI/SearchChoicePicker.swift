@@ -12,6 +12,7 @@ struct SearchChoicePicker<Value: Equatable>: NSViewRepresentable {
     let label: String
     @Binding var selection: Value
     let choices: [Choice]
+    var borderless = false
     @Environment(\.isEnabled) private var isEnabled
     @Environment(\.colorScheme) private var colorScheme
 
@@ -40,6 +41,8 @@ struct SearchChoicePicker<Value: Equatable>: NSViewRepresentable {
             button.toolTip = choices[index].detail
         }
         button.isEnabled = isEnabled
+        button.isBordered = !borderless
+        (button.cell as? NSPopUpButtonCell)?.arrowPosition = borderless ? .noArrow : .arrowAtCenter
         button.appearance = NSAppearance(named: colorScheme == .dark ? .darkAqua : .aqua)
         button.setAccessibilityLabel(label)
     }

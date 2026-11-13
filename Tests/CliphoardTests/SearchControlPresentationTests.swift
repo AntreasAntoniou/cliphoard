@@ -48,11 +48,15 @@ final class SearchControlPresentationTests: XCTestCase {
     /// real model, application delegate, Keychain or network is involved.
     func testToolbarFitsNarrowAndWideWindows() throws {
         _ = NSApplication.shared
+        let oldTheme = Theme.preset
+        defer { Theme.preset = oldTheme }
         for width in [640.0, 900.0, 1440.0] {
             for dark in [false, true] {
+              Theme.preset = dark ? .oneDark : .floatingPalette
               for pending in [false, true] {
                 let host = NSHostingView(rootView: SearchBarFixture(pending: pending)
-                    .frame(width: width).preferredColorScheme(dark ? .dark : .light))
+                    .frame(width: width).preferredColorScheme(dark ? .dark : .light)
+                    .environment(\.colorScheme, dark ? .dark : .light))
                 let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: width, height: 150),
                     styleMask: [.borderless], backing: .buffered, defer: false)
                 window.isReleasedWhenClosed = false
@@ -77,15 +81,14 @@ final class SearchControlPresentationTests: XCTestCase {
         }
     }
 
-    func testToolbarKeepsIntentionalQueryAndFilterRows() {
+    func testToolbarKeepsOneCompactRowAtEveryWidth() {
         _ = NSApplication.shared
         let host = NSHostingController(rootView: SearchBarFixture(pending: false))
         let narrow = host.sizeThatFits(in: CGSize(width: 640, height: CGFloat.infinity))
         let wide = host.sizeThatFits(in: CGSize(width: 1440, height: CGFloat.infinity))
         XCTAssertLessThanOrEqual(narrow.width, 641)
-        XCTAssertGreaterThanOrEqual(wide.height, 90)
-        XCTAssertLessThanOrEqual(wide.height, 110)
-        XCTAssertLessThanOrEqual(narrow.height, 160)
+        XCTAssertEqual(wide.height, 56, accuracy: 1)
+        XCTAssertEqual(narrow.height, 56, accuracy: 1)
     }
 
     func testSettingsAndModelsButtonsHaveStableDistinctTargets() async throws {
@@ -107,7 +110,10 @@ final class SearchControlPresentationTests: XCTestCase {
             window.orderBack(nil)
             try await Task.sleep(nanoseconds: 100_000_000)
             print("TOOLBAR click width=\(width) host=\(host.bounds) frame=\(window.frame)")
-            for (x, top) in [(width - 34, 28.0), (width - 75, 73.0)] {
+            let modelsWidth = width < 760 ? 36.0 : 96.0
+            let queryWidth = min(760, width - 32 - 32 - modelsWidth - 36 - 40)
+            let modelsCenter = 16 + 32 + 10 + queryWidth + 10 + modelsWidth / 2
+            for (x, top) in [(width - 34, 28.0), (modelsCenter, 28.0)] {
                 let point = host.convert(NSPoint(x: x, y: host.isFlipped ? top : host.bounds.height - top), to: nil)
                 for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
                     let event = try XCTUnwrap(NSEvent.mouseEvent(with: type, location: point,
@@ -118,13 +124,15 @@ final class SearchControlPresentationTests: XCTestCase {
                 try await Task.sleep(nanoseconds: 50_000_000)
             }
             XCTAssertEqual(openedSettings, 1, "Settings must be reachable at the top-right at width \(width)")
-            XCTAssertEqual(openedModels, 1, "Models and search must have a separate second-row target")
+            XCTAssertEqual(openedModels, 1, "Models must stay reachable immediately beside the bounded query")
         }
     }
 
     func testToolbarMenuItemsExplainEachChoice() throws {
         _ = NSApplication.shared
-        let host = NSHostingView(rootView: SearchBarFixture(pending: false))
+        var selected = SearchMode.smart
+        let host = NSHostingView(rootView: SearchBarFixture(pending: false,
+            matching: Binding(get: { selected }, set: { selected = $0 })))
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1440, height: 150),
             styleMask: [.borderless], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
@@ -134,8 +142,13 @@ final class SearchControlPresentationTests: XCTestCase {
         func menus(_ view: NSView) -> [NSPopUpButton] {
             (view as? NSPopUpButton).map { [$0] } ?? view.subviews.flatMap(menus)
         }
-        let controls = menus(host)
-        XCTAssertEqual(controls.count, 2)
+        let controls = menus(host).filter { $0.itemTitles.contains("Exact") }
+        XCTAssertEqual(controls.count, 1, "Matching stays inside the query; content scope lives under Filters")
+        let matching = try XCTUnwrap(controls.first)
+        XCTAssertFalse(matching.isBordered)
+        XCTAssertEqual((matching.cell as? NSPopUpButtonCell)?.arrowPosition, .noArrow)
+        try XCTUnwrap(matching.menu).performActionForItem(at: matching.indexOfItem(withTitle: "Exact"))
+        XCTAssertEqual(selected, .exact, "The embedded native choice must still update search routing")
         for control in controls {
             let items = control.itemArray.filter { !$0.title.isEmpty && !$0.isSeparatorItem }
             XCTAssertGreaterThanOrEqual(items.count, 4)
@@ -162,10 +175,10 @@ final class SearchControlPresentationTests: XCTestCase {
         }
     }
 
-    func testSelectedLightPaletteRendersWithExistingLogoAndRealCards() throws {
+    func testDarkHeaderRendersWithExistingLogoAndRealCards() throws {
         _ = NSApplication.shared
         let old = Theme.preset
-        Theme.preset = .floatingPalette
+        Theme.preset = .oneDark
         defer { Theme.preset = old }
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
             .deletingLastPathComponent().deletingLastPathComponent()
@@ -188,8 +201,8 @@ final class SearchControlPresentationTests: XCTestCase {
             }.padding(14)
             Text("← → Navigate     ↵ Copy & Close     ⌘C Copy     Esc Close     ? Shortcuts")
                 .font(.system(size: 11)).frame(maxWidth: .infinity, alignment: .leading).padding(12)
-        }.frame(width: 1440).background(Theme.barBackground()).preferredColorScheme(.light)
-            .environment(\.colorScheme, .light)
+        }.frame(width: 1440).background(Theme.barBackground()).preferredColorScheme(.dark)
+            .environment(\.colorScheme, .dark)
         let panel = FloatingPanel()
         panel.isReleasedWhenClosed = false
         defer { panel.close() }
@@ -199,12 +212,13 @@ final class SearchControlPresentationTests: XCTestCase {
         host.layoutSubtreeIfNeeded()
         RunLoop.current.run(until: Date().addingTimeInterval(0.1))
         XCTAssertLessThan(panel.frame.height, 450)
-        XCTAssertEqual(Theme.preset, .floatingPalette)
+        XCTAssertEqual(Theme.preset, .oneDark)
         if let output = ProcessInfo.processInfo.environment["CLIPHOARD_SEARCH_UI_SNAPSHOTS"] {
+            try FileManager.default.createDirectory(atPath: output, withIntermediateDirectories: true)
             let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
             host.cacheDisplay(in: host.bounds, to: bitmap)
             try XCTUnwrap(bitmap.representation(using: .png, properties: [:])).write(
-                to: URL(fileURLWithPath: output).appendingPathComponent("floating-palette-native.png"),
+                to: URL(fileURLWithPath: output).appendingPathComponent("compact-search-dark-native.png"),
                 options: .withoutOverwriting)
         }
     }
@@ -257,11 +271,12 @@ final class SearchControlPresentationTests: XCTestCase {
     var settingsAction: () -> Void = {}
     var optionsAction: () -> Void = {}
     var brandImage: NSImage? = nil
+    var matching: Binding<SearchMode> = .constant(.smart)
     @State private var query = "cat"
     @State private var scope = SearchModality.all
     @FocusState private var focused: Bool
     var body: some View {
-        SearchBarView(query: $query, scope: $scope, matching: .constant(.smart), searchFocused: $focused,
+        SearchBarView(query: $query, scope: $scope, matching: matching, searchFocused: $focused,
                       isPro: true, openOptions: optionsAction, openSettings: settingsAction, isPending: pending,
                       timing: pending ? .enter : .pause, submitSearch: {},
                       badges: SearchScopeBadge.selected(mode: .all,
