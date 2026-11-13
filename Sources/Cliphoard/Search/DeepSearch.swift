@@ -440,7 +440,14 @@ enum EmbedderProvider {
         EmbedderState.shared.set(.loading(name))
         loadTask = Task { @MainActor in
             do {
-                let found = try await ModelAssets.ensure(name, allowDownload: allowDownloads)
+                let transfer = try EmbedderState.shared.beginTransfer(name)
+                defer { EmbedderState.shared.endTransfer(transfer) }
+                let found = try await ModelAssets.ensure(name, allowDownload: allowDownloads, progress: { value in
+                    Task { @MainActor in
+                        guard token == loadToken else { return }
+                        EmbedderState.shared.transferProgress(transfer, name: name, progress: value)
+                    }
+                })
                 guard token == loadToken, !Task.isCancelled else { return }         // superseded
                 EmbedderState.shared.set(.loading(name))
                 let model = try await MLModel.load(contentsOf: found.compiledModel,

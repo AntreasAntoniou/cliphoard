@@ -4,6 +4,10 @@ import AppKit
 @main
 struct Main {
     @MainActor static func main() {
+        if CommandLine.arguments.contains("--diagnose-search-models") {
+            SearchModelDiagnostics.run()
+            return
+        }
         AppIdentity.migratePreferencesIfNeeded()
         // Headless tag-quality audit: `Cliphoard --analyze-tags [outfile]`.
         // Runs the analysis in-process (so it can decrypt the store) and exits,

@@ -147,9 +147,7 @@ struct SearchModelPreparationView: View {
                media.status.hasPrefix("Couldn’t") || media.status.hasPrefix("Preparation stopped") {
                 Text(media.status).font(.caption).foregroundStyle(.orange)
             }
-            if let target = pending, requirements.contains(target), !ready(target), !working(target) {
-                consent(target)
-            } else if !missing.isEmpty {
+            if !missing.isEmpty {
                 HStack {
                     Text(mayPrepare ? "Optional search models aren’t ready yet." : "Model preparation is unavailable while history is in recovery mode.")
                         .font(.caption).foregroundStyle(.secondary).lineLimit(2)
@@ -160,6 +158,13 @@ struct SearchModelPreparationView: View {
         }
         .controlSize(.small)
         .padding(.horizontal, 14).padding(.vertical, 4)
+        // Consent has its own natural-height surface. It must not share the
+        // 100pt scrolling status region with progress rows and lose its buttons.
+        .popover(item: $pending, arrowEdge: .bottom) { target in
+            if requirements.contains(target), !ready(target), !working(target) {
+                consent(target).frame(width: 420).fixedSize(horizontal: false, vertical: true)
+            }
+        }
         .onChange(of: requirements) { _ in promptForSelection() }
         .onChange(of: store.entitlement.isPro) { _ in pending = nil }
     }

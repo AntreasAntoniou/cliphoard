@@ -4,6 +4,18 @@ import SQLite3
 
 /// Downloads use reviewed immutable Hugging Face artifacts in both distribution channels.
 final class AssetSourceTests: XCTestCase {
+    @MainActor func testBackgroundAssetPreparationCannotStealSearchProgressOwnership() async throws {
+        let state = EmbedderState.shared
+        let previous = state.state
+        defer { state.set(previous) }
+        state.set(.ready(signature: "already-loaded-search"))
+        let search = try state.beginTransfer("selected-search-model")
+        do { _ = try await ModelAssets.ensure("unknown", allowDownload: false) }
+        catch { XCTAssertTrue(error is ModelAssets.Failure) }
+        state.transferProgress(search, name: "selected-search-model", progress: 0.5)
+        XCTAssertEqual(state.state, .downloading("selected-search-model", progress: 0.5),
+                       "An auxiliary NSFW/model asset request must not replace the search model's transfer owner")
+    }
     func testPublishedSourcesArePinnedHuggingFaceOnly() {
         for name in ["open-ogma-micro", "open-ogma-small"] {
             let item = ModelAssets.catalog[name]!
