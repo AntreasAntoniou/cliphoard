@@ -27,7 +27,7 @@ struct ThemeTokens {
 /// Selectable theme presets (the visual-QA bake-off shortlist). `system` is the
 /// default and preserves the original look so nothing changes unless chosen.
 enum ThemePreset: String, CaseIterable, Identifiable {
-    case system, swiss, glass, highContrast, paper
+    case system, swiss, glass, highContrast, paper, floatingPalette
     // Popular code-editor palettes (One Dark, Dracula, …).
     case oneDark, dracula, tokyoNight, catppuccin, gruvbox, monokai, nightOwl
     // Popular light palettes.
@@ -37,6 +37,7 @@ enum ThemePreset: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .system:       return "Automatic (One Dark / Swiss)"
+        case .floatingPalette: return "Light Floating Palette"
         case .swiss:        return "Swiss Grayscale"
         case .glass:        return "Midnight Glass"
         case .highContrast: return "High Contrast"
@@ -88,6 +89,14 @@ enum ThemePreset: String, CaseIterable, Identifiable {
 
     var tokens: ThemeTokens {
         switch self {
+        case .floatingPalette:
+            return ThemeTokens(
+                accent: Theme.color(fromHex: "#087F7C"), pin: Theme.color(fromHex: "#956914"),
+                cornerRadius: 14, usesMaterials: false,
+                barFill: Theme.color(fromHex: "#F8F6F2"), cardFill: Theme.color(fromHex: "#FFFEFB"),
+                border: Theme.color(fromHex: "#D8D5CE"), borderHover: Theme.color(fromHex: "#999E98"),
+                selectedBorderWidth: 2, tagFill: Theme.color(fromHex: "#EEECE6"),
+                tagText: Theme.color(fromHex: "#555D59"), scheme: .light)
         case .system:
             // Follow the macOS appearance: One Dark in Dark Mode, Swiss in Light.
             let dark = NSApp.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua

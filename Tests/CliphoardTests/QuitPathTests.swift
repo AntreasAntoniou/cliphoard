@@ -240,10 +240,11 @@ final class QuitPathTests: XCTestCase {
                           + "of every healthy summon")
     }
 
-    func testTheFooterTeachesTheQuitKeyInBothStates() throws {
+    func testTheFooterShortcutMenuAndSettingsTeachTheQuitKey() throws {
         let ui = try source("Sources/Cliphoard/UI/ContentView.swift")
         let settings = try source("Sources/Cliphoard/UI/SettingsView.swift")
-        XCTAssertTrue(ui.contains("hint(\"⌘Q\", \"Quit\")"))
+        XCTAssertTrue(ui.contains("Text(\"⌘Q  Quit\")"))
+        XCTAssertTrue(ui.contains("Label(\"Shortcuts\", systemImage: \"questionmark.circle\")"))
         XCTAssertTrue(settings.contains("Text(\"⌘Q Quit Cliphoard\")"),
                       "the dedicated Settings window must retain the quit hint")
     }

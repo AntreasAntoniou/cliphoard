@@ -186,6 +186,7 @@ struct ContentView: View {
         // makes semantic .primary/.secondary text adapt; fontDesign gives Paper its serif.
         .tint(Theme.accent)
         .preferredColorScheme(Theme.t.scheme)
+        .environment(\.colorScheme, Theme.t.scheme ?? .light)
         .fontDesign(Theme.t.fontDesign)
         // Focus the search field whenever the bar is summoned (and not in settings),
         // so summon-then-type always lands. Deferred a tick so it runs after the
@@ -303,7 +304,10 @@ struct ContentView: View {
         openSettings: { model.showSearchOptions = false; model.requestedSettingsSection = nil; model.showSettings = true },
         searchByImage: beginImageSearch, isPending: model.searchInput.isPending, timing: model.searchInput.timing,
         submitSearch: { _ = model.searchInput.submitPending() },
-        badges: configuredSearchModels, brandImage: brandIconImage) {
+        badges: configuredSearchModels, brandImage: brandIconImage,
+        activeFilterCount: (model.activeKind == nil ? 0 : 1) + (model.pinnedOnly ? 1 : 0)
+            + (model.timeFilter.isActive ? 1 : 0) + model.activeFacets.count
+            + model.activeUserTags.count + signals.active.count) {
             Group {
                 clipTypeMenu
                 chip(title: "Pinned", systemImage: "pin.fill", active: model.pinnedOnly) {
@@ -970,11 +974,17 @@ struct ContentView: View {
                 hint("←→", "Navigate")
                 hint("↩", model.searchInput.isPending ? "Search" : DistributionChannel.primaryActionTitle)
                 hint("⌘C", "Copy")
-                hint("⌘1–9", DistributionChannel.quickActionTitle)
-                hint("⌘P", "Pin")
-                hint("⌘⌫", "Delete")
                 hint("esc", "Close")
-                hint("⌘Q", "Quit")
+                Menu {
+                    Text("⌘1–9  \(DistributionChannel.quickActionTitle)")
+                    Text("⌘P  Pin")
+                    Text("⌘⌫  Delete")
+                    Text("⌘,  Settings")
+                    Text("⌘Q  Quit")
+                } label: {
+                    Label("Shortcuts", systemImage: "questionmark.circle")
+                        .font(.system(size: 10))
+                }.menuStyle(.borderlessButton).fixedSize()
                 Spacer()
                 // Count what is on screen, not what the model holds — with a
                 // signal filter on, those differ.

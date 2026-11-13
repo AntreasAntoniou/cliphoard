@@ -421,6 +421,7 @@ struct SettingsWindowContent: View {
         .background(Theme.barBackground())
         .tint(Theme.accent)
         .preferredColorScheme(Theme.t.scheme)
+        .environment(\.colorScheme, Theme.t.scheme ?? .light)
         .fontDesign(Theme.t.fontDesign)
     }
 }

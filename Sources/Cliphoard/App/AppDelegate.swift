@@ -66,6 +66,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var isAskingAboutQuit = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        applyRequestedAppearance()
 #if CLIPHOARD_DEVICE_LICENSING_PROTOTYPE && !APP_STORE
         if let deviceLicenceRuntime { store.startDeviceLicensing(deviceLicenceRuntime) }
 #endif
@@ -110,6 +111,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // Unlike AppStore.sync(), this does not ask them to authenticate.
         Task { await StorePurchase.shared.refreshEntitlements() }
         #endif
+    }
+
+    /// Apply an explicitly requested install appearance inside the app's own
+    /// preferences domain, including its sandbox. Ordinary launches keep it.
+    private func applyRequestedAppearance() {
+        let arguments = CommandLine.arguments
+        if let index = arguments.firstIndex(of: "--appearance"), arguments.indices.contains(index + 1),
+           let preset = ThemePreset(rawValue: arguments[index + 1]) {
+            Theme.preset = preset
+        }
     }
 
     /// A Darwin notification that toggles the bar — lets scripts/tests drive it
