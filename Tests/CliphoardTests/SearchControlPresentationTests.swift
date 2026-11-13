@@ -50,7 +50,7 @@ final class SearchControlPresentationTests: XCTestCase {
         _ = NSApplication.shared
         let oldTheme = Theme.preset
         defer { Theme.preset = oldTheme }
-        for width in [640.0, 900.0, 1440.0] {
+        for width in [640.0, 900.0, 1440.0, 1920.0] {
             for dark in [false, true] {
               Theme.preset = dark ? .oneDark : .floatingPalette
               for pending in [false, true] {
@@ -94,7 +94,7 @@ final class SearchControlPresentationTests: XCTestCase {
     func testSettingsAndModelsButtonsHaveStableDistinctTargets() async throws {
         _ = NSApplication.shared
         XCTAssertNotNil(NSImage(systemSymbolName: "cpu", accessibilityDescription: nil))
-        for width in [640.0, 1440.0] {
+        for width in [640.0, 1440.0, 1920.0] {
             var openedSettings = 0
             var openedModels = 0
             let host = ClickHostingView(rootView: SearchBarFixture(pending: false,
@@ -111,7 +111,7 @@ final class SearchControlPresentationTests: XCTestCase {
             try await Task.sleep(nanoseconds: 100_000_000)
             print("TOOLBAR click width=\(width) host=\(host.bounds) frame=\(window.frame)")
             let modelsWidth = width < 760 ? 36.0 : 96.0
-            let queryWidth = min(760, width - 32 - 32 - modelsWidth - 36 - 40)
+            let queryWidth = width - 32 - 32 - modelsWidth - 36 - 30
             let modelsCenter = 16 + 32 + 10 + queryWidth + 10 + modelsWidth / 2
             for (x, top) in [(width - 34, 28.0), (modelsCenter, 28.0)] {
                 let point = host.convert(NSPoint(x: x, y: host.isFlipped ? top : host.bounds.height - top), to: nil)
@@ -124,7 +124,7 @@ final class SearchControlPresentationTests: XCTestCase {
                 try await Task.sleep(nanoseconds: 50_000_000)
             }
             XCTAssertEqual(openedSettings, 1, "Settings must be reachable at the top-right at width \(width)")
-            XCTAssertEqual(openedModels, 1, "Models must stay reachable immediately beside the bounded query")
+            XCTAssertEqual(openedModels, 1, "Models must stay reachable beside the full-width query and Settings")
         }
     }
 

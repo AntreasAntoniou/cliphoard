@@ -19,9 +19,7 @@ struct SearchBarView<Filters: View>: View {
     var activeFilterCount = 0
     @ViewBuilder var filters: () -> Filters
 
-    /// Query construction stays in one bounded field. App utilities retain a
-    /// stable trailing home instead of stretching the field across the display.
-    static var maximumQueryWidth: CGFloat { 760 }
+    /// Query construction fills the row; app utilities retain a stable trailing home.
     static var modelsButtonWidth: CGFloat { 96 }
 
     var body: some View {
@@ -36,7 +34,7 @@ struct SearchBarView<Filters: View>: View {
                     }
                 }.frame(width: 32, height: 36).accessibilityHidden(true)
                 searchField(compact: compact)
-                    .frame(maxWidth: Self.maximumQueryWidth)
+                    .frame(maxWidth: .infinity)
                     .layoutPriority(1)
                 Button(action: openOptions) {
                     HStack(spacing: 5) {
@@ -48,7 +46,6 @@ struct SearchBarView<Filters: View>: View {
                 }.buttonStyle(.plain)
                     .help((["Models and search options: local models, timing and included content"] + badges.map(\.label)).joined(separator: "\n"))
                     .accessibilityLabel("Models and search options")
-                Spacer(minLength: 0)
                 Button(action: openSettings) {
                     Image(systemName: "gearshape").font(.system(size: 17))
                         .frame(width: 36, height: 36).contentShape(Rectangle())
