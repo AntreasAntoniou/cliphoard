@@ -201,19 +201,19 @@ enum Theme {
     static var accent: Color { t.accent }
     static var pin: Color { t.pin }
     static var cardWidth: CGFloat { t.cardWidth }
-    static var cardHeight: CGFloat { t.cardHeight }
+    @MainActor static var cardHeight: CGFloat { BarHeightSettings.shared.effectiveHeight }
 
     /// Keep history thumbnails compact while list, Spotlight and media detail retain
     /// their taller viewport. The inspector continues to show the full item.
-    static var thumbnailHeight: CGFloat { cardHeight - 48 }
-    static var thumbnailStripHeight: CGFloat { thumbnailHeight + stripInset * 2 }
+    @MainActor static var thumbnailHeight: CGFloat { cardHeight - 48 }
+    @MainActor static var thumbnailStripHeight: CGFloat { thumbnailHeight + stripInset * 2 }
     static let stripInset: CGFloat = 14
 
     /// The full results viewport: one whole card plus the strip's vertical
     /// inset. The strip is this tall or a card is clipped — `ClipCardView` is a
     /// fixed size and never squeezes — so this is the height the panel must
     /// reserve for the card area before any chrome gets a say.
-    static var stripHeight: CGFloat { cardHeight + stripInset * 2 }
+    @MainActor static var stripHeight: CGFloat { cardHeight + stripInset * 2 }
 
     /// Ceiling on each optional-chrome group above the card strip. Past this the
     /// chrome scrolls; the card strip never gives up a point.

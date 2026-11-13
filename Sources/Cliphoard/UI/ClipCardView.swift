@@ -353,6 +353,7 @@ enum ClipChips {
 /// A single clipboard entry rendered as a Paste-style card.
 @MainActor
 struct ClipCardView: View {
+    @ObservedObject private var barHeight = BarHeightSettings.shared
     @ObservedObject var sensitiveReveal = SensitiveClipReveal.shared
     let item: ClipItem
     let index: Int

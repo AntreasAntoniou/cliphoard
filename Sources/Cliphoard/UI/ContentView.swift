@@ -40,6 +40,7 @@ final class SignalFilterModel: ObservableObject {
 
 @MainActor
 struct ContentView: View {
+    @ObservedObject private var barHeight = BarHeightSettings.shared
     @ObservedObject var sensitiveReveal = SensitiveClipReveal.shared
     @ObservedObject var model: PanelViewModel
     @ObservedObject var agentWrites: AgentWriteController

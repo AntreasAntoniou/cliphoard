@@ -427,6 +427,7 @@ struct SettingsWindowContent: View {
 
 /// The scrollable contents of the dedicated Settings window.
 struct SettingsView: View {
+    @ObservedObject private var barHeight = BarHeightSettings.shared
     @ObservedObject var settings: AppSettings
     @ObservedObject var store: ClipStore
     /// Shared modal ownership keeps the global shortcut from dismissing a file picker
@@ -605,6 +606,19 @@ struct SettingsView: View {
                         .labelsHidden().frame(width: 180)
                     }
                     Text(settings.layoutMode.subtitle)
+                        .font(.system(size: 11)).foregroundStyle(.secondary)
+                    HStack {
+                        Text("Bar height")
+                        Slider(value: Binding(get: { barHeight.previewHeight },
+                                              set: { barHeight.setHeight($0) }),
+                               in: BarHeightSettings.range, step: 10)
+                            .accessibilityLabel("Bar height")
+                        Text("\(Int(barHeight.previewHeight / BarHeightSettings.defaultHeight * 100))%")
+                            .monospacedDigit().frame(width: 40)
+                        Button("Reset") { barHeight.setHeight(BarHeightSettings.defaultHeight) }
+                            .disabled(barHeight.previewHeight == BarHeightSettings.defaultHeight)
+                    }
+                    Text("Resize clip previews and the results area. Changes apply immediately and are saved. Extra height is limited on smaller displays; controls keep their normal size.")
                         .font(.system(size: 11)).foregroundStyle(.secondary)
                 }
 

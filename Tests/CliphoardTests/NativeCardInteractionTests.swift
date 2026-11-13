@@ -27,6 +27,19 @@ final class NativeCardInteractionTests: XCTestCase {
         }
     }
 
+    func testImageInspectAtCompactAndTallBarHeights() async throws {
+        let height = BarHeightSettings.shared
+        let saved = height.previewHeight
+        defer { height.setHeight(saved) }
+        height.setAvailableHeight(1084)
+        for value in [200.0, 400] {
+            height.setHeight(value)
+            for size in [NSSize(width: 90, height: 400), NSSize(width: 400, height: 90)] {
+                try await inspectClicks(selected: true, imageSize: size)
+            }
+        }
+    }
+
     private func inspectClicks(selected: Bool, imageSize: NSSize? = nil) async throws {
         _ = NSApplication.shared
         let saved = UserDefaults.standard.string(forKey: "themePreset")
@@ -56,7 +69,8 @@ final class NativeCardInteractionTests: XCTestCase {
             onPin: {}, onDelete: {}, historyIsMutable: true)
             .onTapGesture { selectedByClick += 1 }
         let host = TestHostingView(rootView: card)
-        let window = NSWindow(contentRect: NSRect(x: 80, y: 80, width: 220, height: 250),
+        let window = NSWindow(contentRect: NSRect(x: 80, y: 80, width: 220,
+                                                 height: max(250, Theme.thumbnailStripHeight)),
                               styleMask: [.borderless], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         window.contentView = host
