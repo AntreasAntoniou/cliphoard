@@ -14,8 +14,11 @@ enum SearchModelDiagnostics {
     @MainActor static func run() {
         Task { @MainActor in
             do {
-                let inputData = FileHandle.standardInput.readDataToEndOfFile()
-                guard inputData.count < 32 * 1024 * 1024 else { exit(2) }
+                var inputData = Data()
+                while let chunk = try FileHandle.standardInput.read(upToCount: 1 << 20), !chunk.isEmpty {
+                    inputData.append(chunk)
+                    guard inputData.count < 32 * 1024 * 1024 else { exit(2) }
+                }
                 let input = try JSONDecoder().decode(Input.self, from: inputData)
                 guard input.images.count <= 8, input.queries.count <= 16 else { exit(2) }
                 let start = Date()
@@ -36,10 +39,18 @@ enum SearchModelDiagnostics {
                     images.append((image.name, try await engine.embedImage(image.data)))
                 }
                 var rows: [[String: Any]] = []
+                var backgrounds: [[Float]] = []
+                for text in GemmaPictureRelevance.backgroundQueries {
+                    backgrounds.append(try await engine.embedQuery(text))
+                }
                 for query in input.queries {
                     let q = try await engine.embedQuery(query)
                     let scores = images.map { ["image": $0.0, "score": MediaSearchController.cosine(q, $0.1)] as [String: Any] }
-                    rows.append(["query": query, "scores": scores])
+                    let selected = images.compactMap { name, image -> [String: Any]? in
+                        guard let score = GemmaPictureRelevance.score(query: q, image: image, backgrounds: backgrounds) else { return nil }
+                        return ["image": name, "specificity": score]
+                    }
+                    rows.append(["query": query, "scores": scores, "selected": selected])
                 }
                 await engine.close()
                 let data = try JSONSerialization.data(withJSONObject: ["seconds": Date().timeIntervalSince(start), "results": rows], options: [.sortedKeys])

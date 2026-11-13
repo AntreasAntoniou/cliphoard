@@ -69,6 +69,7 @@ final class MediaSearchController: ObservableObject {
     private let directory: URL
     private let assets = GemmaMediaAssets()
     private let embedder = GemmaMediaEmbedder()
+    private var imageBackgrounds: [[Float]] = []
     private let transcriber = MediaSpeechTranscriber()
     private var entries: [UUID: Entry] = [:]
     private var operation: Task<Void, Never>?
@@ -122,6 +123,7 @@ final class MediaSearchController: ObservableObject {
     private func reconcile() {
         guard allowed else {
             cancel(); entries = [:]; indexedCount = 0; loaded = false; prepared = false; preparedSpeechModel = nil
+            imageBackgrounds = []
             Task { await embedder.close() }
             return
         }
@@ -241,7 +243,12 @@ final class MediaSearchController: ObservableObject {
                 try admit(ticket)
                 preparationTitle = "Preparing media search on this Mac…"; preparationProgress = nil
                 try await embedder.prepare(modelURL: url, cacheURL: directory.appendingPathComponent("Runtime", isDirectory: true))
+                var backgrounds: [[Float]] = []
+                for query in GemmaPictureRelevance.backgroundQueries {
+                    backgrounds.append(try await embedder.embedQuery(query))
+                }
                 try admit(ticket)
+                imageBackgrounds = backgrounds
                 try loadEntries(); prepared = true; status = "Ready offline. Choose files to index on this Mac."
             } catch {
                 guard ticket == epoch, !Task.isCancelled else { status = "Preparation stopped. You can try again when ready."; return }
@@ -452,7 +459,11 @@ final class MediaSearchController: ObservableObject {
                         let speechAllowed = MediaScopePolicy.includesSpeech(stillImage: entry.stillImage, hasVideo: hasVideo, scope: modality)
                         var best: Match?
                         for moment in moments {
-                            let score = q.isEmpty ? 0 : Self.cosine(vector, moment.vector)
+                            let score: Float
+                            if !q.isEmpty && modality == .images {
+                                guard let relevant = GemmaPictureRelevance.score(query: vector, image: moment.vector, backgrounds: imageBackgrounds) else { continue }
+                                score = relevant
+                            } else { score = q.isEmpty ? 0 : Self.cosine(vector, moment.vector) }
                             if best == nil || score > best!.score { best = Match(clipID: entry.clipID, start: moment.start, end: moment.end, score: score, source: entry.stillImage ? "Indexed picture · Gemma" : (modality == .video ? "Video frame" : "Audio track"), passage: nil, modality: modality) }
                         }
                         if speechAllowed {
@@ -468,7 +479,13 @@ final class MediaSearchController: ObservableObject {
                 if modalities.contains(.images), let store {
                     for item in store.items where item.kind == .image && visibleClip(item.id) != nil {
                         guard let value = item.embeddings[Self.clipboardImageSignature]?.vector, value.count == 768 else { continue }
-                        found.append(Match(clipID: item.id, start: 0, end: 0, score: q.isEmpty ? 0 : Self.cosine(vector, value), source: "Clipboard picture · Gemma", passage: nil, modality: .images))
+                        let score: Float
+                        if q.isEmpty { score = 0 }
+                        else {
+                            guard let relevant = GemmaPictureRelevance.score(query: vector, image: value, backgrounds: imageBackgrounds) else { continue }
+                            score = relevant
+                        }
+                        found.append(Match(clipID: item.id, start: 0, end: 0, score: score, source: "Clipboard picture · Gemma", passage: nil, modality: .images))
                     }
                 }
                 matches = found.sorted { $0.score == $1.score ? $0.clipID.uuidString < $1.clipID.uuidString : $0.score > $1.score }

@@ -163,6 +163,8 @@ struct SearchModelPreparationView: View {
         .popover(item: $pending, arrowEdge: .bottom) { target in
             if requirements.contains(target), !ready(target), !working(target) {
                 consent(target).frame(width: 420).fixedSize(horizontal: false, vertical: true)
+                    .preferredColorScheme(Theme.t.scheme)
+                    .environment(\.colorScheme, Theme.t.scheme ?? .light)
             }
         }
         .onChange(of: requirements) { _ in promptForSelection() }
@@ -172,35 +174,21 @@ struct SearchModelPreparationView: View {
         // Capture the permission shown on this rendering. A cache disappearing
         // before the click must not turn a local-only action into a download.
         let download = !cached(target)
-        return VStack(alignment: .leading, spacing: 6) {
-            Text("Prepare \(target.title)?").font(.callout.bold())
-            Text(!download
-                 ? "Downloaded files are available. Check them and prepare the model locally on this Mac?"
-                 : "Download approximately \(size(target)) from Hugging Face, then prepare it on this Mac? Extra disk space is needed during preparation. Your clips stay local.")
-                .font(.caption).fixedSize(horizontal: false, vertical: true)
-            Text(target == .pictures ? "This also enables background picture indexing. You can keep searching and copying clips."
-                 : "You can keep searching and copying clips. Media files are indexed only when you choose them.")
-                .font(.caption).foregroundStyle(.secondary)
-            HStack {
-                Button("Not now") { pending = nil }
-                Spacer()
-                Button(!download ? "Prepare on this Mac" : "Download & prepare") {
-                    // Recheck current selection, entitlement and busy state at the
-                    // actual action, not only when the prompt was first rendered.
-                    guard mayPrepare, requirements.contains(target), !ready(target), !working(target) else { pending = nil; return }
-                    pending = nil
-                    switch target {
-                    case .text(let level): EmbedderProvider.configureAndReindex(level: level, store: store, allowDownloads: download, userInitiated: true)
-                    case .pictures:
-                        settings.imageUnderstanding = true
-                        store.prepareImageSearchModel(allowDownload: download)
-                    case .media: media.prepare(download: download)
-                    case .speech: media.prepareSpeech(allowDownload: download)
-                    }
-                }.buttonStyle(.borderedProminent).disabled(!mayPrepare)
+        return SearchModelConsentCard(title: target.title, download: download, size: size(target),
+            pictures: target == .pictures, enabled: mayPrepare, cancel: { pending = nil }) {
+            // Recheck the live selection/entitlement, while retaining the exact
+            // local-only versus download permission shown in this consent.
+            guard mayPrepare, requirements.contains(target), !ready(target), !working(target) else { pending = nil; return }
+            pending = nil
+            switch target {
+            case .text(let level): EmbedderProvider.configureAndReindex(level: level, store: store, allowDownloads: download, userInitiated: true)
+            case .pictures:
+                settings.imageUnderstanding = true
+                store.prepareImageSearchModel(allowDownload: download)
+            case .media: media.prepare(download: download)
+            case .speech: media.prepareSpeech(allowDownload: download)
             }
         }
-        .padding(10).background(Theme.accent.opacity(0.10), in: RoundedRectangle(cornerRadius: 8))
     }
     @ViewBuilder private func stateRow(_ state: EmbedderState.State, title: String, cancel: @escaping () -> Void) -> some View {
         switch state {
@@ -224,5 +212,39 @@ struct SearchModelPreparationView: View {
             Button("Cancel", action: cancel)
         }
         .accessibilityElement(children: .contain)
+    }
+}
+
+
+/// Presentation only, shared with native layout/click qualification. Hosting the
+/// complete card in a popover keeps disclosures and both actions visible.
+@MainActor
+struct SearchModelConsentCard: View {
+    let title: String
+    let download: Bool
+    let size: String
+    let pictures: Bool
+    let enabled: Bool
+    let cancel: () -> Void
+    let prepare: () -> Void
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Prepare \(title)?").font(.callout.bold())
+            Text(!download
+                ? "Downloaded files are available. Check them and prepare the model locally on this Mac?"
+                : "Download approximately \(size) from Hugging Face, then prepare it on this Mac? Extra disk space is needed during preparation. Your clips stay local.")
+                .font(.caption).fixedSize(horizontal: false, vertical: true)
+            Text(pictures ? "This also enables background picture indexing. You can keep searching and copying clips."
+                 : "You can keep searching and copying clips. Media files are indexed only when you choose them.")
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            HStack {
+                Button("Not now", action: cancel)
+                Spacer()
+                Button(!download ? "Prepare on this Mac" : "Download & prepare", action: prepare)
+                    .buttonStyle(.borderedProminent).disabled(!enabled)
+            }
+        }
+        .padding(10).background(Theme.accent.opacity(0.10), in: RoundedRectangle(cornerRadius: 8))
+        .background(Theme.barBackground())
     }
 }
