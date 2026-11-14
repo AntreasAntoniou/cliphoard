@@ -64,6 +64,11 @@ final class MediaSearchController: ObservableObject {
     @Published var speechModel: MediaSpeechModel {
         didSet { defaults.set(speechModel.rawValue, forKey: "mediaSpeechModel"); cancel(); invalidateSearch() }
     }
+    struct RestorationHooks {
+        var media: @MainActor () async throws -> [[Float]]
+        var speech: @MainActor (MediaSpeechModel) async throws -> Void
+    }
+    private let restorationHooks: RestorationHooks?
     private weak var store: ClipStore?
     private let defaults: UserDefaults
     private let directory: URL
@@ -82,10 +87,11 @@ final class MediaSearchController: ObservableObject {
     private(set) var resultContext: String?
     static let clipboardImageSignature = GemmaMediaAssets.signature + "-clipboard-image-v1"
     private var loaded = false
+    private var preparationRequirement: SearchModelRequirement?
     private var activeIndexID: UUID?
 
-    init(store: ClipStore, defaults: UserDefaults = .standard) {
-        self.store = store; self.defaults = defaults
+    init(store: ClipStore, defaults: UserDefaults = .standard, restorationHooks: RestorationHooks? = nil) {
+        self.store = store; self.defaults = defaults; self.restorationHooks = restorationHooks
         directory = store.storeDirectory.appendingPathComponent("MediaSearch-v1", isDirectory: true)
         preset = MediaSamplingPreset(rawValue: defaults.string(forKey: "mediaSamplingPreset") ?? "") ?? .balanced
         speechCoverage = MediaSpeechCoverage(rawValue: defaults.string(forKey: "mediaSpeechCoverage") ?? "") ?? .off
@@ -112,7 +118,10 @@ final class MediaSearchController: ObservableObject {
             guard let item = clip(id), fingerprint == SensitiveClipPolicy.fingerprint(item) else { throw Failure.changed }
         }
     }
-    func cancel() {
+    func cancel() { cancel(rememberDeferral: true) }
+    private func cancel(rememberDeferral: Bool) {
+        if rememberDeferral, let preparationRequirement { ModelRestorationPreferences.deferPreparation(preparationRequirement, defaults: defaults) }
+
         epoch = UUID(); operation?.cancel(); decoder?.cancel(); decoder = nil
         searchTask?.cancel(); queryEpoch = UUID(); matches = []; lastQuery = nil
         accessRevision &+= 1
@@ -122,7 +131,7 @@ final class MediaSearchController: ObservableObject {
     private func invalidateSearch() { lastQuery = nil; matches = [] }
     private func reconcile() {
         guard allowed else {
-            cancel(); entries = [:]; indexedCount = 0; loaded = false; prepared = false; preparedSpeechModel = nil
+            cancel(rememberDeferral: false); entries = [:]; indexedCount = 0; loaded = false; prepared = false; preparedSpeechModel = nil
             imageBackgrounds = []
             Task { await embedder.close() }
             return
@@ -226,12 +235,13 @@ final class MediaSearchController: ObservableObject {
     }
     func prepare(download: Bool) {
         guard allowed, !busy else { return }
+        preparationRequirement = .media
         busy = true; preparationProgress = nil
         preparationTitle = download ? "Connecting to Hugging Face…" : "Checking downloaded media model…"
         status = "Preparing media search on this Mac…"
         let ticket = epoch
         operation = Task {
-            defer { busy = false; operation = nil; preparationTitle = nil; preparationProgress = nil }
+            defer { busy = false; operation = nil; preparationTitle = nil; preparationProgress = nil; preparationRequirement = nil }
             do {
                 try admit(ticket)
                 let url: URL
@@ -249,6 +259,7 @@ final class MediaSearchController: ObservableObject {
                 }
                 try admit(ticket)
                 imageBackgrounds = backgrounds
+                ModelRestorationPreferences.completed(.media, defaults: defaults)
                 try loadEntries(); prepared = true; status = "Ready offline. Choose files to index on this Mac."
             } catch {
                 guard ticket == epoch, !Task.isCancelled else { status = "Preparation stopped. You can try again when ready."; return }
@@ -258,18 +269,20 @@ final class MediaSearchController: ObservableObject {
     }
     func prepareSpeech(allowDownload: Bool = true) {
         guard allowed, !busy else { return }; busy = true
+        preparationRequirement = .speech(speechModel)
         let ticket = epoch, selected = speechModel
         preparedSpeechModel = nil; preparationProgress = nil
         preparationTitle = "Preparing \(selected.label)…"
         status = "Checking downloaded speech files…"
         operation = Task {
-            defer { busy = false; operation = nil; preparationTitle = nil; preparationProgress = nil }
+            defer { busy = false; operation = nil; preparationTitle = nil; preparationProgress = nil; preparationRequirement = nil }
             do {
                 try admit(ticket)
                 try await transcriber.prepare(model: selected, allowDownload: allowDownload) { [weak self] done, total in
                     Task { @MainActor [weak self] in self?.transferProgress(done, total, ticket: ticket, title: "Downloading \(selected.label)…") }
                 }
                 try admit(ticket); preparedSpeechModel = selected
+                ModelRestorationPreferences.completed(.speech(selected), defaults: defaults)
                 status = "Speech model ready offline. Re-index files to include spoken words."
             } catch {
                 guard ticket == epoch, !Task.isCancelled else { status = "Speech preparation stopped. Completed downloads are kept."; return }
@@ -277,6 +290,73 @@ final class MediaSearchController: ObservableObject {
             }
         }
     }
+    private func admitRestoration(_ ticket: UUID, requirement: SearchModelRequirement) throws {
+        try admit(ticket)
+        let live = ModelRestorationPolicy.requirements(pro: store?.entitlement.isPro == true,
+            safeMode: store?.safeMode ?? true, storageComplete: store?.storageComplete ?? false, defaults: defaults)
+        guard live.contains(requirement) else { throw Failure.unavailable }
+    }
+
+    /// One serial startup flight. Reloads existing authorized records without indexing.
+    /// Local verifiers and the offline Whisper backend cannot download missing assets.
+    func restorePreviouslySelectedModels() {
+        guard allowed, !busy else { return }
+        let selected = ModelRestorationPolicy.requirements(pro: store?.entitlement.isPro == true, safeMode: store?.safeMode ?? true, storageComplete: store?.storageComplete ?? false, defaults: defaults)
+        let media = selected.contains(.media) && ModelRestorationPreferences.authorized(.media, defaults: defaults)
+        let speech = selected.contains(.speech(speechModel)) && ModelRestorationPreferences.authorized(.speech(speechModel), defaults: defaults)
+        guard media || speech else { return }
+        busy = true; preparationProgress = nil
+        let ticket = epoch, model = speechModel
+        operation = Task {
+            defer { busy = false; operation = nil; preparationTitle = nil; preparationProgress = nil; preparationRequirement = nil }
+            if media {
+                preparationRequirement = .media; preparationTitle = "Checking and loading media model…"
+                do {
+                    try admitRestoration(ticket, requirement: .media)
+                    var backgrounds: [[Float]] = []
+                    if let restorationHooks {
+                        backgrounds = try await restorationHooks.media()
+                    } else {
+                    let url = try await assets.verifiedModel()
+                    try admitRestoration(ticket, requirement: .media)
+                    try await embedder.prepare(modelURL: url, cacheURL: directory.appendingPathComponent("Runtime", isDirectory: true))
+                    for query in GemmaPictureRelevance.backgroundQueries {
+                        try admitRestoration(ticket, requirement: .media); backgrounds.append(try await embedder.embedQuery(query))
+                    }
+                    }
+                    try admitRestoration(ticket, requirement: .media)
+                    imageBackgrounds = backgrounds
+                    if FileManager.default.fileExists(atPath: directory.path) { try loadEntries() }
+                    prepared = true
+                    ModelRestorationPreferences.completed(.media, defaults: defaults)
+                    status = "Ready offline. Choose files to index on this Mac."
+                } catch {
+                    await embedder.close()
+                    status = "Media model unavailable locally. Use Set up search to prepare it."
+                }
+            }
+            guard ticket == epoch, !Task.isCancelled, allowed else { return }
+            if speech {
+                preparationRequirement = .speech(model); preparationTitle = "Checking and loading \(model.label)…"
+                do {
+                    try admitRestoration(ticket, requirement: .speech(model))
+                    if let restorationHooks { try await restorationHooks.speech(model) }
+                    else { try await transcriber.prepare(model: model, allowDownload: false) }
+                    try admitRestoration(ticket, requirement: .speech(model))
+                    guard speechModel == model, speechCoverage != .off else { return }
+                    preparedSpeechModel = model
+                    ModelRestorationPreferences.completed(.speech(model), defaults: defaults)
+                    status = "Speech model ready offline."
+                } catch {
+                    try? await transcriber.unload()
+                    status = "Speech model unavailable locally. Use Set up search to prepare it."
+                }
+            }
+        }
+    }
+
+    func waitForCurrentPreparation() async { await operation?.value }
+
     func chooseFiles() {
         guard allowed, prepared, !busy else { return }
         let panel = NSOpenPanel(); panel.canChooseDirectories = false; panel.allowsMultipleSelection = true

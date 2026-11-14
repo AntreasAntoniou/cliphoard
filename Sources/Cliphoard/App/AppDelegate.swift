@@ -104,6 +104,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // Load the on-device embedder for the saved tier; re-index if the model
         // identity changed since last launch.
         EmbedderProvider.configureAndReindex(level: DeepSearch.level, store: store)
+        store.startSearchModelRestoration()
         monitor.start()
         // Note: we deliberately do NOT prompt for Accessibility on launch — that
         // nags on every start (and after every reinstall, since the code identity

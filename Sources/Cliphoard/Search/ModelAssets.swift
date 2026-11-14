@@ -74,6 +74,30 @@ enum ModelAssets {
         guard let item = snapshot(name), (try? inventory(item.located)) == item.hashes else { return nil }
         return item.located
     }
+    /// Read-only restart path: no directory creation, extraction, compilation or download.
+    /// Both towers publish atomically only after the pinned archive and receipt inventory pass.
+    @discardableResult
+    static func restoreCached(_ name: String, root: URL = storeDir) throws -> Located {
+        guard let artifact = catalog[name] else { throw Failure.unknownModel }
+        return try restoreCachedArtifact(artifact, archive: archiveURL(name, root: root), root: root)
+    }
+    /// Dependency seam for immutable synthetic receipts in regression tests.
+    static func restoreCachedArtifact(_ artifact: Artifact, archive: URL, root: URL) throws -> Located {
+        try Task.checkCancellation()
+        try verifyArchive(archive, artifact: artifact)
+        let platform = ProcessInfo.processInfo.operatingSystemVersionString + "-" + architecture
+        let hash = SHA256.hash(data: Data(platform.utf8)).map { String(format: "%02x", $0) }.joined()
+        let cache = root.appendingPathComponent("prepared-v1-\(artifact.sha256)-\(hash.prefix(16))", isDirectory: true)
+        let values = try readCache(cache, artifact: artifact, platform: platform)
+        try Task.checkCancellation()
+        publish(values)
+        guard let value = values[artifact.models[0]] else { throw Failure.corrupt }
+        return value.located
+    }
+    static func restoreCachedAsync(_ name: String, root: URL = storeDir) async throws -> Located {
+        let task = Task.detached(priority: .utility) { try restoreCached(name, root: root) }
+        return try await withTaskCancellationHandler(operation: { try await task.value }, onCancel: { task.cancel() })
+    }
     static func sha256Hex(ofFileAt url: URL) -> String? {
         guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
         defer { try? handle.close() }

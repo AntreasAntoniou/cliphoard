@@ -4,6 +4,10 @@ import AppKit
 @main
 struct Main {
     @MainActor static func main() {
+        if CommandLine.arguments.contains("--diagnose-model-restoration") {
+            SearchModelDiagnostics.runRestoration()
+            return
+        }
         if CommandLine.arguments.contains("--diagnose-search-models") {
             SearchModelDiagnostics.run()
             return

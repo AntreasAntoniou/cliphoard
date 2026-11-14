@@ -83,7 +83,7 @@ struct SearchModelPreparationView: View {
     static func isWorking(_ state: EmbedderState.State) -> Bool {
         switch state { case .loading, .downloading, .installing: return true; default: return false }
     }
-    private var missing: [SearchModelRequirement] { requirements.filter { !ready($0) && !working($0) } }
+    private var missing: [SearchModelRequirement] { store.searchModelsRestoring ? [] : requirements.filter { !ready($0) && !working($0) } }
     private var mayPrepare: Bool { !store.safeMode && store.storageComplete }
     private var pictureIndexStatus: PictureIndexStatus {
         let eligible = store.items.filter { $0.kind == .image && !$0.isIndexVetoed && !SensitiveClipPolicy.requiresAuthentication($0) }
@@ -115,7 +115,10 @@ struct SearchModelPreparationView: View {
     private func promptForSelection() {
         // Selection changes invalidate any previous consent; keystrokes and
         // progress updates do not repeatedly reopen a declined prompt.
-        pending = mayPrepare ? missing.first : nil
+        pending = mayPrepare ? missing.first(where: { UserDefaults.standard.string(forKey: ModelRestorationPreferences.key($0)) != "deferred" }) : nil
+    }
+    private func clearPendingIfResolved() {
+        if let pending, ready(pending) || working(pending) { self.pending = nil }
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -161,21 +164,27 @@ struct SearchModelPreparationView: View {
         // Consent has its own natural-height surface. It must not share the
         // 100pt scrolling status region with progress rows and lose its buttons.
         .popover(item: $pending, arrowEdge: .bottom) { target in
-            if requirements.contains(target), !ready(target), !working(target) {
+            if !store.searchModelsRestoring, requirements.contains(target), !ready(target), !working(target) {
                 consent(target).frame(width: 420).fixedSize(horizontal: false, vertical: true)
                     .preferredColorScheme(Theme.t.scheme)
                     .environment(\.colorScheme, Theme.t.scheme ?? .light)
             }
         }
         .onChange(of: requirements) { _ in promptForSelection() }
+        .onChange(of: store.searchModelsRestoring) { restoring in if restoring { pending = nil } }
         .onChange(of: store.entitlement.isPro) { _ in pending = nil }
+        .onChange(of: store.imageModelState) { _ in clearPendingIfResolved() }
+        .onChange(of: media.busy) { _ in clearPendingIfResolved() }
+        .onChange(of: media.prepared) { _ in clearPendingIfResolved() }
+        .onChange(of: media.preparedSpeechModel) { _ in clearPendingIfResolved() }
+        .onChange(of: text.state) { _ in clearPendingIfResolved() }
     }
     private func consent(_ target: SearchModelRequirement) -> some View {
         // Capture the permission shown on this rendering. A cache disappearing
         // before the click must not turn a local-only action into a download.
         let download = !cached(target)
         return SearchModelConsentCard(title: target.title, download: download, size: size(target),
-            pictures: target == .pictures, enabled: mayPrepare, cancel: { pending = nil }) {
+            pictures: target == .pictures, enabled: mayPrepare, cancel: { ModelRestorationPreferences.deferPreparation(target); pending = nil }) {
             // Recheck the live selection/entitlement, while retaining the exact
             // local-only versus download permission shown in this consent.
             guard mayPrepare, requirements.contains(target), !ready(target), !working(target) else { pending = nil; return }
@@ -193,7 +202,8 @@ struct SearchModelPreparationView: View {
     @ViewBuilder private func stateRow(_ state: EmbedderState.State, title: String, cancel: @escaping () -> Void) -> some View {
         switch state {
         case .downloading(let name, let progress): progressRow("Downloading \(name)…", progress: progress, cancel: cancel)
-        case .loading(let name), .installing(let name): progressRow("Preparing \(name) on this Mac…", progress: nil, cancel: cancel)
+        case .loading(let name): progressRow("Checking and loading \(name)…", progress: nil, cancel: cancel)
+        case .installing(let name): progressRow("Preparing \(name) on this Mac…", progress: nil, cancel: cancel)
         case .failed(_, let message): Text("\(title): \(message) Use Prepare to try again.").font(.caption).foregroundStyle(.orange)
         default: EmptyView()
         }

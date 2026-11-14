@@ -88,6 +88,8 @@ final class ClipStore: ObservableObject {
             referenceImageTask?.cancel(); referenceImageTask = nil
             referenceImageTicket = UUID()
             referenceImageInput = nil; referenceImageVector = []
+            if !entitlement.isPro { restorationAdmitted = false; searchModelsRestoring = false; startupRestorationTicket = UUID(); startupRestorationTask?.cancel() }
+            if startupRestorationEnabled { restoreSearchModelsAtStartup() }
         }
     }
 
@@ -997,24 +999,61 @@ final class ClipStore: ObservableObject {
     private var imageModelTask: Task<Void, Never>?
     private var imageModelTicket = UUID()
 
+    @Published private(set) var searchModelsRestoring = false
+    private var startupRestorationEnabled = false
+    func startSearchModelRestoration() {
+        startupRestorationEnabled = true
+        restoreSearchModelsAtStartup()
+    }
+    private var restorationAdmitted = false
+    private var startupRestorationTask: Task<Void, Never>?
+    private var startupRestorationTicket = UUID()
+    func restoreSearchModelsAtStartup() {
+        guard entitlement.isPro, !safeMode, storageComplete, !restorationAdmitted else { return }
+        restorationAdmitted = true
+        let requirements = ModelRestorationPolicy.requirements(pro: entitlement.isPro, safeMode: safeMode, storageComplete: storageComplete)
+        if requirements.contains(.pictures), Self.imageUnderstandingAllowed(entitlement) {
+            prepareImageSearchModel(allowDownload: false, restoring: true)
+        }
+        let startupTicket = UUID(); startupRestorationTicket = startupTicket
+        searchModelsRestoring = true
+        let pictureTask = imageModelTask
+        startupRestorationTask = Task { [weak self] in
+            guard let self else { return }
+            defer { if self.startupRestorationTicket == startupTicket { self.searchModelsRestoring = false; self.startupRestorationTask = nil } }
+            await ModelRestorationSequence.run(allowed: {
+                self.startupRestorationTicket == startupTicket && self.entitlement.isPro && !self.safeMode && self.storageComplete
+            }, pictures: { await pictureTask?.value }, media: {
+                self.mediaSearch.restorePreviouslySelectedModels()
+                await self.mediaSearch.waitForCurrentPreparation()
+            })
+        }
+    }
+
     func cancelImageModelPreparation() {
+        startupRestorationTask?.cancel()
+        ModelRestorationPreferences.deferPreparation(.pictures)
         imageModelTicket = UUID(); imageModelTask?.cancel()
         imageModelState = .notInstalled("OpenVision")
     }
-    func prepareImageSearchModel(allowDownload: Bool = true) {
+    func prepareImageSearchModel(allowDownload: Bool = true, restoring: Bool = false) {
         guard Self.imageUnderstandingAllowed(entitlement), !safeMode, storageComplete, !imageModelPreparing else { return }
         imageModelPreparing = true
         let ticket = UUID(); imageModelTicket = ticket
-        imageModelState = .downloading("OpenVision", progress: 0)
+        imageModelState = restoring ? .loading("OpenVision") : .downloading("OpenVision", progress: 0)
         imageModelTask = Task { [self] in
             defer { imageModelPreparing = false; imageModelTask = nil }
             do {
+                if restoring {
+                    try await ModelAssets.restoreCachedAsync("openvision-tiny-p8")
+                } else {
                 try await ModelAssets.ensureImageModels(allowDownload: allowDownload) { [weak self] progress in
                     Task { @MainActor [weak self] in
                         guard let self, self.imageModelTicket == ticket, self.imageModelPreparing,
                               Self.imageUnderstandingAllowed(self.entitlement), !self.safeMode else { return }
                         self.imageModelState = progress < 1 ? .downloading("OpenVision", progress: progress) : .installing("OpenVision")
                     }
+                }
                 }
                 try Task.checkCancellation()
                 guard imageModelTicket == ticket, Self.imageUnderstandingAllowed(entitlement), !safeMode, storageComplete else { return }
@@ -1023,9 +1062,11 @@ final class ClipStore: ObservableObject {
                       Self.imageUnderstandingAllowed(entitlement), !safeMode else { return }
                 guard let model else { throw CocoaError(.fileReadCorruptFile) }
                 clipEmbedderLoadedForPro = entitlement.isPro
+                guard !restoring || ModelRestorationPreferences.authorized(.pictures) else { return }
                 installCLIP(model)
+                ModelRestorationPreferences.completed(.pictures)
                 imageModelState = .ready(signature: CLIPEmbedder.signature)
-                scheduleImageUnderstanding()
+                if !restoring { scheduleImageUnderstanding() }
             } catch {
                 guard imageModelTicket == ticket, !Task.isCancelled else { return }
                 imageModelState = .failed("OpenVision", message: "Couldn’t prepare image search. Check your connection and available storage, then try again.")
