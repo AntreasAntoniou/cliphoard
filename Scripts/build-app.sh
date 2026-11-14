@@ -22,6 +22,15 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/Cliphoard"
 cp "$ROOT/Resources/Info.plist" "$APP/Contents/Info.plist"
+# Direct releases advance independently; the Store assembler keeps its own plist.
+"$PYTHON" - "$ROOT/Resources/DirectBuild.txt" "$APP/Contents/Info.plist" <<'PYDIRECT'
+import pathlib, plistlib, sys
+build = pathlib.Path(sys.argv[1]).read_text().strip()
+assert build.isascii() and build.isdigit() and int(build) > 0
+path = pathlib.Path(sys.argv[2]); info = plistlib.loads(path.read_bytes())
+info["CFBundleVersion"] = build
+path.write_bytes(plistlib.dumps(info))
+PYDIRECT
 bash "$ROOT/Scripts/embed-media-runtime.sh" "$APP" "$BIN_DIR"
 "$PYTHON" "$ROOT/Scripts/build-app-intents.py" --scratch "$ROOT/.build" --configuration "$CONFIG" --app "$APP"
 # Icon (best effort). Built from the committed master PNG (the hoard-bag mascot,

@@ -8,6 +8,24 @@ final class AgentRequestNotifications: NSObject, UNUserNotificationCenterDelegat
     static let title = "An agent is asking for permission to save clips"
     private let center = UNUserNotificationCenter.current()
     var onOpen: (() -> Void)?
+#if !APP_STORE || LOCAL_PERFORMANCE_PRO
+    var onOpenUpdate: (() -> Void)?
+    static let updateIdentifier = "cliphoard.direct-update"
+
+    func notifyUpdate(_ release: DirectRelease) async -> Bool {
+        do {
+            guard try await center.requestAuthorization(options: [.alert, .sound]),
+                  DirectUpdateChecker.shared.automaticChecks else { return false }
+            let content = UNMutableNotificationContent()
+            content.title = "A Cliphoard update is available"
+            content.body = "\(release.label) is ready for Free and Pro. Open Cliphoard to view the release."
+            content.sound = .default
+            try await center.add(UNNotificationRequest(identifier: Self.updateIdentifier,
+                                                       content: content, trigger: nil))
+            return true
+        } catch { return false } // The persistent in-app notice remains available.
+    }
+#endif
 
     override init() {
         super.init()
@@ -37,6 +55,13 @@ final class AgentRequestNotifications: NSObject, UNUserNotificationCenterDelegat
 
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter,
         didReceive response: UNNotificationResponse, withCompletionHandler completionHandler: @escaping () -> Void) {
+#if !APP_STORE || LOCAL_PERFORMANCE_PRO
+        if response.notification.request.identifier == "cliphoard.direct-update",
+           response.actionIdentifier == UNNotificationDefaultActionIdentifier {
+            Task { @MainActor [weak self] in self?.onOpenUpdate?(); completionHandler() }
+            return
+        }
+#endif
         guard response.notification.request.identifier == "cliphoard.agent-requests",
               response.actionIdentifier == UNNotificationDefaultActionIdentifier else { completionHandler(); return }
         Task { @MainActor [weak self] in self?.onOpen?(); completionHandler() }

@@ -138,6 +138,9 @@ struct ContentView: View {
                         }
                     }.font(.caption).padding(.horizontal, 14).padding(.vertical, 8)
                 }
+#if !APP_STORE || LOCAL_PERFORMANCE_PRO
+                DirectUpdateNotice()
+#endif
                 SearchModelPreparationView(settings: settings, store: store, media: store.mediaSearch)
                 if let message = pasteStatus.blockedMessage {
                     banner(message, action: ("Open Settings",

@@ -478,6 +478,11 @@ struct SettingsView: View {
                     }
                 }
 
+#if !APP_STORE || LOCAL_PERFORMANCE_PRO
+                section("Updates") { DirectUpdateSettingsView() }
+                    .id("cliphoard-updates")
+#endif
+
                 // GATE 6. Between General and Appearance, where someone looking for "how do
                 // I pay / where did my key go" will find it without scrolling past the tags.
                 section("Cliphoard Pro") {
