@@ -35,6 +35,16 @@ class BundlePolicyTests(unittest.TestCase):
         p.write_bytes(data)
         return p
 
+    def test_theme_icons_are_allowed_but_altered_payloads_are_not(self):
+        for name in audit.BRAND_ICON_PINS:
+            path = self.put("Contents/Resources/" + name, (ROOT / "Resources" / name).read_bytes())
+            audit.audit_bundle(self.app)
+            original = path.read_bytes()
+            path.write_bytes(original + b"unexpected payload")
+            with self.assertRaises(audit.PolicyError):
+                audit.audit_bundle(self.app)
+            path.write_bytes(original)
+
     def test_focus_metadata_is_allowed_but_altered_payload_is_not(self):
         prefix = "Contents/Resources/Metadata.appintents/"
         for name in audit.FOCUS_METADATA_PINS:

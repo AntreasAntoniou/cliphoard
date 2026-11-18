@@ -91,6 +91,39 @@ final class SearchControlPresentationTests: XCTestCase {
         XCTAssertEqual(narrow.height, 56, accuracy: 1)
     }
 
+    func testCaptureButtonPausesAndResumesAtNarrowAndWideWidths() async throws {
+        _ = NSApplication.shared
+        for width in [640.0, 1440.0] {
+            let suite = "CaptureToolbar.\(UUID().uuidString)"
+            let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+            defer { defaults.removePersistentDomain(forName: suite) }
+            let state = CaptureState(defaults: defaults)
+            let host = ClickHostingView(rootView: SearchBarFixture(pending: false, captureState: state))
+            let window = NSWindow(contentRect: NSRect(x: 80, y: 80, width: width, height: 56),
+                styleMask: [.borderless], backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false
+            window.contentView = host
+            defer { window.close() }
+            window.orderBack(nil)
+            host.layoutSubtreeIfNeeded()
+            try await Task.sleep(nanoseconds: 100_000_000)
+            let modelsWidth = width < 760 ? 36.0 : 96.0
+            let x = width - 16 - 36 - 10 - modelsWidth - 10 - 18
+            for expected in [true, false] {
+                let point = host.convert(NSPoint(x: x, y: 28), to: nil)
+                for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+                    let event = try XCTUnwrap(NSEvent.mouseEvent(with: type, location: point,
+                        modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                        windowNumber: window.windowNumber, context: nil, eventNumber: 1, clickCount: 1, pressure: 1))
+                    window.sendEvent(event)
+                }
+                try await Task.sleep(nanoseconds: 50_000_000)
+                XCTAssertEqual(state.isPaused, expected)
+                XCTAssertEqual(state.actionTitle, expected ? "Resume capture" : "Pause capture")
+            }
+        }
+    }
+
     func testSettingsAndModelsButtonsHaveStableDistinctTargets() async throws {
         _ = NSApplication.shared
         XCTAssertNotNil(NSImage(systemSymbolName: "cpu", accessibilityDescription: nil))
@@ -267,21 +300,25 @@ final class SearchControlPresentationTests: XCTestCase {
 }
 
 @MainActor private struct SearchBarFixture: View {
+    @Environment(\.colorScheme) private var colorScheme
     let pending: Bool
     var settingsAction: () -> Void = {}
     var optionsAction: () -> Void = {}
     var brandImage: NSImage? = nil
     var matching: Binding<SearchMode> = .constant(.smart)
+    var captureState: CaptureState? = nil
     @State private var query = "cat"
     @State private var scope = SearchModality.all
     @FocusState private var focused: Bool
     var body: some View {
-        SearchBarView(query: $query, scope: $scope, matching: matching, searchFocused: $focused,
+        SearchBarView(captureState: captureState ?? .shared, query: $query, scope: $scope, matching: matching, searchFocused: $focused,
                       isPro: true, openOptions: optionsAction, openSettings: settingsAction, isPending: pending,
                       timing: pending ? .enter : .pause, submitSearch: {},
                       badges: SearchScopeBadge.selected(mode: .all,
                         capabilities: SearchCapabilities(text: true, images: true, audio: true, video: true, imageModel: .clip),
-                        level: .normal, pro: true), brandImage: brandImage) {
+                        level: .normal, pro: true), brandImage: brandImage ?? BrandIcon.load(for: colorScheme,
+                            resourceDirectory: URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+                                .deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("Resources"))) {
             Group {
                 Label("Clip type", systemImage: "line.3.horizontal.decrease")
                 Label("Pinned", systemImage: "pin.fill")

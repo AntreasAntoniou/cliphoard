@@ -40,6 +40,7 @@ final class SignalFilterModel: ObservableObject {
 
 @MainActor
 struct ContentView: View {
+    @ObservedObject private var captureState = CaptureState.shared
     @ObservedObject private var barHeight = BarHeightSettings.shared
     @ObservedObject var sensitiveReveal = SensitiveClipReveal.shared
     @ObservedObject var model: PanelViewModel
@@ -128,6 +129,16 @@ struct ContentView: View {
             toolbar
             Divider().opacity(0.5)
             BoundedChrome {
+                if captureState.isPaused {
+                    HStack(spacing: 8) {
+                        Label("Capture paused", systemImage: "pause.circle.fill")
+                            .foregroundStyle(.orange)
+                        Text("New copies won’t be saved.").foregroundStyle(.secondary)
+                        Spacer()
+                        Button("Resume capture") { captureState.setPaused(false) }
+                            .controlSize(.small)
+                    }.font(.caption).padding(.horizontal, 16).padding(.vertical, 6)
+                }
                 if !agentWrites.pendingNotes.isEmpty {
                     HStack {
                         Label("Agent requests (\(agentWrites.pendingNotes.count))", systemImage: "sparkles")
@@ -281,13 +292,6 @@ struct ContentView: View {
 
     // MARK: Toolbar
 
-    /// The app's own hoard-bag icon for the top-left corner. Loaded from the
-    /// bundled `Cliphoard.icns` (present in the built `.app`), with `NSApp`'s icon
-    /// then the ⌘ glyph as fallbacks (e.g. a bare `swift run` with no bundled icon).
-    private var brandIconImage: NSImage? {
-        Bundle.main.image(forResource: "Cliphoard") ?? NSApp.applicationIconImage
-    }
-
     private var configuredSearchModels: [SearchScopeBadge] {
         SearchScopeBadge.selected(mode: settings.searchModality,
             capabilities: SearchCapabilities(text: settings.searchTextEnabled, images: settings.searchImagesEnabled,
@@ -307,7 +311,7 @@ struct ContentView: View {
         openSettings: { model.showSearchOptions = false; model.requestedSettingsSection = nil; model.showSettings = true },
         searchByImage: beginImageSearch, isPending: model.searchInput.isPending, timing: model.searchInput.timing,
         submitSearch: { _ = model.searchInput.submitPending() },
-        badges: configuredSearchModels, brandImage: brandIconImage,
+        badges: configuredSearchModels,
         activeFilterCount: (model.activeKind == nil ? 0 : 1) + (model.pinnedOnly ? 1 : 0)
             + (model.timeFilter.isActive ? 1 : 0) + model.activeFacets.count
             + model.activeUserTags.count + signals.active.count + (model.referenceImage == nil ? 0 : 1)) {

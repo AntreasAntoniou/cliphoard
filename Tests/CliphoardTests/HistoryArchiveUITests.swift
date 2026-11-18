@@ -148,10 +148,8 @@ final class HistoryArchiveUITests: ArchiveTestCase {
         XCTAssertTrue(try XCTUnwrap(body(of: "static func ask", in: src))
                         .contains("ClipboardMonitor.withCaptureSuspended"),
                       "the sheet does not stand the monitor down")
-        let monitor = try source("Sources/Cliphoard/Clipboard/ClipboardMonitor.swift")
-        XCTAssertTrue(monitor.contains("if Self.captureSuspensions > 0 {"),
-                      "poll() does not honour the suspension, so standing the monitor down "
-                      + "does nothing")
+        // CapturePauseTests drives the real polling path under a suspension,
+        // including a manual Resume. Avoid asserting the spelling of that guard.
         ClipboardMonitor.withCaptureSuspended {
             XCTAssertEqual(ClipboardMonitor.captureSuspensions, 1)
             ClipboardMonitor.withCaptureSuspended {

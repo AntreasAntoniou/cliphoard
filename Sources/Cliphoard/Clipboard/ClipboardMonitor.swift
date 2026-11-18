@@ -1,5 +1,6 @@
 import AppKit
 import CryptoKit
+import Combine
 import ImageIO
 import UniformTypeIdentifiers
 
@@ -26,6 +27,10 @@ extension NSPasteboard: PasteboardReading {
 @MainActor
 final class ClipboardMonitor {
     private let store: ClipStore
+    private let pasteboard: NSPasteboard
+    private let captureState: CaptureState
+    private var captureObservation: AnyCancellable?
+    private(set) var captureGeneration = 0
     private var timer: Timer?
     private var activity: NSObjectProtocol?
     private var lastChangeCount: Int
@@ -43,12 +48,26 @@ final class ClipboardMonitor {
     /// that has settled.
     private var pendingWebSafe: (changeCount: Int, image: NSImage)?
 
-    init(store: ClipStore) {
+    init(store: ClipStore, pasteboard: NSPasteboard? = nil,
+         captureState: CaptureState? = nil) {
+        let pasteboard = pasteboard ?? .general
+        let captureState = captureState ?? .shared
         self.store = store
-        self.lastChangeCount = NSPasteboard.general.changeCount
+        self.pasteboard = pasteboard
+        self.captureState = captureState
+        self.lastChangeCount = pasteboard.changeCount
+        captureObservation = captureState.$isPaused.dropFirst().sink { [weak self] _ in
+            guard let self else { return }
+            // Reset at both boundaries, even if pause/resume happens between timer
+            // ticks. A copy made during the pause must never be imported later.
+            self.lastChangeCount = self.pasteboard.changeCount
+            self.pendingWebSafe = nil
+            self.captureGeneration += 1
+        }
     }
 
     func start() {
+        guard timer == nil else { return }
         // Opt out of App Nap. Without this, macOS suspends a backgrounded
         // accessory app that looks idle and the poll timer stops firing —
         // so new copies are only picked up after a restart. `…AllowingIdleSystemSleep`
@@ -69,6 +88,8 @@ final class ClipboardMonitor {
     }
 
     func stop() {
+        captureGeneration += 1
+        pendingWebSafe = nil
         timer?.invalidate(); timer = nil
         if let activity { ProcessInfo.processInfo.endActivity(activity); self.activity = nil }
     }
@@ -86,21 +107,18 @@ final class ClipboardMonitor {
     ///     silently swallowed the following clip.
     ///   * A prediction is only correct if exactly one change lands. Reading the value the
     ///     write actually produced cannot drift, whatever the pasteboard did.
-    /// Reads `.general` specifically. `Paster.writeToPasteboard` gained a `to pb:`
-    /// parameter for tests, so the two are no longer structurally tied: suppressing a
-    /// write that went to some OTHER pasteboard would record the general board's count
-    /// and suppress an unrelated change. Both production callers use the default, and
-    /// only tests pass anything else — but if that ever stops being true, this must take
-    /// the pasteboard it is suppressing.
+    /// Uses the same pasteboard as polling, including an isolated board in tests.
     func suppressOwnWrite() {
-        ignoreChangeCount = NSPasteboard.general.changeCount
+        ignoreChangeCount = pasteboard.changeCount
     }
 
 
     /// The cheap, main-actor half of the web-safe rewrite. Split from the render so the
     /// expensive encode never blocks the UI.
-    private func applyWebSafe(png: Data, expecting: Int) {
-        let pb = NSPasteboard.general
+    func applyWebSafe(png: Data, expecting: Int, generation: Int) {
+        guard !captureState.isPaused, Self.captureSuspensions == 0,
+              generation == captureGeneration else { return }
+        let pb = pasteboard
         switch WebPaste.makeWebSafe(pb, png: png, expecting: expecting) {
         case .rewritten(let newCount):
             DebugLog.write("  → added public.png for web apps "
@@ -150,14 +168,14 @@ final class ClipboardMonitor {
         return body()
     }
 
-    private func poll() {
-        let pb = NSPasteboard.general
+    func poll() {
+        let pb = pasteboard
         let count = pb.changeCount
 
         // Suspended: swallow whatever appeared, rather than queue it for the moment the
         // sheet closes. A passphrase that reaches the history one tick late is still in
         // the history.
-        if Self.captureSuspensions > 0 {
+        if captureState.isPaused || Self.captureSuspensions > 0 {
             lastChangeCount = count
             pendingWebSafe = nil
             return
@@ -178,12 +196,13 @@ final class ClipboardMonitor {
                 // a second on every full-screen grab on a 5K/6K display. The pasteboard work
                 // that follows is cheap, and re-checks `count` immediately before clearing,
                 // so the longer gap is safe: a board that moved meanwhile is left alone.
+                let generation = captureGeneration
                 Task { @MainActor [weak self] in
                     guard let png = await WebPaste.renderWebSafePNG(from: pending.image) else { return }
                     // The render can take ~1.2s on a 6K grab; an OFF flipped during it is
                     // still a withdrawal. Read live, never cached.
                     guard WebPaste.isEnabled else { return }
-                    self?.applyWebSafe(png: png, expecting: count)
+                    self?.applyWebSafe(png: png, expecting: count, generation: generation)
                 }
                 return
             }

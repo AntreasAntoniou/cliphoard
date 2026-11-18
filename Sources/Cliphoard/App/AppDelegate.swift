@@ -52,6 +52,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private var statusItem: NSStatusItem!
     private let statusMenu = NSMenu()
+    private var captureObservation: AnyCancellable?
     private var keyMonitor: Any?
     private var agentRequestNotifications: AgentRequestNotifications?
     private var agentRequestObservation: AnyCancellable?
@@ -231,8 +232,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // later and the gate silently reverts.
         statusMenu.autoenablesItems = true
         statusItem.menu = statusMenu
+        updateCaptureStatus(paused: CaptureState.shared.isPaused)
+        captureObservation = CaptureState.shared.$isPaused.dropFirst().sink { [weak self] paused in
+            self?.updateCaptureStatus(paused: paused)
+        }
         rebuildMenu()
     }
+
+    private func updateCaptureStatus(paused: Bool) {
+        let symbol = paused ? "pause.circle" : "doc.on.clipboard"
+        statusItem.button?.image = NSImage(systemSymbolName: symbol, accessibilityDescription:
+            paused ? "Cliphoard — capture paused" : "Cliphoard")
+        statusItem.button?.image?.isTemplate = true
+        statusItem.button?.toolTip = paused
+            ? "Cliphoard — capture paused. Open the menu to resume."
+            : "Cliphoard — click for the menu, ⌃⌥⌘V to open the bar"
+    }
+
+    @objc private func toggleCapture() { CaptureState.shared.toggle() }
 
     /// The selector a destructive menu item should carry, or nil to let AppKit disable it.
     ///
@@ -253,6 +270,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.removeAllItems()
         menu.addItem(withTitle: "Open Cliphoard  (⌃⌥⌘V)", action: #selector(toggle), keyEquivalent: "")
         menu.addItem(withTitle: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
+        let captureItem = menu.addItem(withTitle: CaptureState.shared.actionTitle,
+                                      action: #selector(toggleCapture), keyEquivalent: "")
+        captureItem.target = self
 #if !APP_STORE || LOCAL_PERFORMANCE_PRO
         menu.addItem(withTitle: DirectUpdateChecker.shared.available.map { "\($0.label) available…" }
                      ?? "Check for Updates…", action: #selector(checkForUpdates), keyEquivalent: "")

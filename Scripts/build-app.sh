@@ -22,6 +22,7 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/Cliphoard"
 cp "$ROOT/Resources/Info.plist" "$APP/Contents/Info.plist"
+cp "$ROOT/Resources/BrandIconLight.png" "$ROOT/Resources/BrandIconDark.png" "$APP/Contents/Resources/"
 # Direct releases advance independently; the Store assembler keeps its own plist.
 "$PYTHON" - "$ROOT/Resources/DirectBuild.txt" "$APP/Contents/Info.plist" <<'PYDIRECT'
 import pathlib, plistlib, sys

@@ -3,6 +3,8 @@ import SwiftUI
 /// Presentation only. Search routing, saved model choices and acquisition stay
 /// with their existing owners. This view never loads a model or reads history.
 struct SearchBarView<Filters: View>: View {
+    @Environment(\.colorScheme) private var colorScheme
+    @ObservedObject var captureState: CaptureState = .shared
     @Binding var query: String
     @Binding var scope: SearchModality
     @Binding var matching: SearchMode
@@ -27,7 +29,7 @@ struct SearchBarView<Filters: View>: View {
             let compact = geometry.size.width < 760
             HStack(spacing: 10) {
                 Group {
-                    if let brandImage {
+                    if let brandImage = brandImage ?? BrandIcon.image(for: colorScheme) {
                         Image(nsImage: brandImage).resizable().scaledToFit()
                     } else {
                         Image(systemName: "doc.on.clipboard.fill").foregroundStyle(Theme.accent)
@@ -36,6 +38,16 @@ struct SearchBarView<Filters: View>: View {
                 searchField(compact: compact)
                     .frame(maxWidth: .infinity)
                     .layoutPriority(1)
+                Button(action: captureState.toggle) {
+                    Image(systemName: captureState.isPaused ? "play.circle" : "pause.circle")
+                        .font(.system(size: 17))
+                        .foregroundStyle(captureState.isPaused ? Color.orange : Color.secondary)
+                        .frame(width: 36, height: 36).contentShape(Rectangle())
+                }.buttonStyle(.plain)
+                    .accessibilityLabel(captureState.actionTitle)
+                    .help(captureState.isPaused
+                          ? "Resume capture — only new copies will be saved"
+                          : "Pause capture — keep using your history without saving new copies")
                 Button(action: openOptions) {
                     HStack(spacing: 5) {
                         Image(systemName: "cpu")

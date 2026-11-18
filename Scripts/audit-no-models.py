@@ -29,6 +29,11 @@ def check_environment(environment):
             raise PolicyError(f"{name} is retired: model weights download after installation; no bundling override")
 
 
+BRAND_ICON_PINS = {
+    "BrandIconDark.png": "7c6ca969780c5c2cdc229711a746ea204905d4fb12a03ab0beed2c7a3ee913a9",
+    "BrandIconLight.png": "d0a7df3015aa9d0b562fa975092d7ab982447a5d0ac0910a78787489f72fecb9",
+}
+
 TEXT_RESOURCES = {"LICENSE", "LICENSE-Apache-2.0.txt", "THIRD-PARTY-NOTICES.md"}
 # Compiler-produced Focus metadata: pin the complete JSON so permitted names
 # cannot carry renamed model data. Update deliberately when the intent/compiler changes.
@@ -98,6 +103,11 @@ def allowed_file(relative, path):
     resource = parts[2:]
     if len(resource) == 1 and resource[0] in TEXT_RESOURCES:
         text_resource(path)
+        return
+    if len(resource) == 1 and resource[0] in BRAND_ICON_PINS:
+        data = bounded_data(path, 4 * 1_048_576)
+        if not data.startswith(b"\x89PNG\r\n\x1a\n") or hashlib.sha256(data).hexdigest() != BRAND_ICON_PINS[resource[0]]:
+            raise PolicyError("invalid brand icon")
         return
     if resource == ("Cliphoard.icns",):
         data = bounded_data(path, 16 * 1_048_576)
