@@ -2,6 +2,7 @@ import AppKit
 import Combine
 import CryptoKit
 import LocalAuthentication
+import OSLog
 import SwiftUI
 
 enum SensitiveClipPolicy {
@@ -85,6 +86,7 @@ enum SensitiveRevealFailure: Error, Equatable {
 @MainActor
 final class SensitiveClipReveal: ObservableObject {
     static let shared = SensitiveClipReveal()
+    private static let logger = Logger(subsystem: "ai.a2-labs.cliphoard", category: "SensitiveReveal")
     @Published private(set) var revision = 0
     @Published private(set) var isAuthenticating = false
     @Published private var lastFailure: (clipID: UUID, failure: SensitiveRevealFailure)?
@@ -107,7 +109,7 @@ final class SensitiveClipReveal: ObservableObject {
         for name in [NSWorkspace.sessionDidResignActiveNotification, NSWorkspace.screensDidSleepNotification,
                      NSWorkspace.willSleepNotification] {
             observers.append(NSWorkspace.shared.notificationCenter.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
-                Task { @MainActor in self?.lock() }
+                Task { @MainActor in self?.lock(reason: "session inactive or display sleeping") }
             })
         }
         // macOS broadcasts this when locking without sleeping (for example
@@ -115,7 +117,7 @@ final class SensitiveClipReveal: ObservableObject {
         // independent invalidators; OS notification delivery needs device testing.
         observers.append(DistributedNotificationCenter.default().addObserver(
             forName: Notification.Name("com.apple.screenIsLocked"), object: nil, queue: .main) { [weak self] _ in
-                Task { @MainActor in self?.lock() }
+                Task { @MainActor in self?.lock(reason: "screen locked") }
             })
         observers.append(NotificationCenter.default.addObserver(forName: NSApplication.didResignActiveNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated {
@@ -177,7 +179,17 @@ final class SensitiveClipReveal: ObservableObject {
         SensitiveClipPolicy.requiresAuthentication(item)
             && !state.permits(id: item.id, fingerprint: SensitiveClipPolicy.fingerprint(item), now: ProcessInfo.processInfo.systemUptime)
     }
-    func lock() {
+    func classificationDidChange(for item: ClipItem) {
+        guard state.affects(id: item.id) else { return }
+        let wasPending = state.pending?.id == item.id
+        lock(reason: "clip classification changed")
+        if wasPending { lastFailure = (item.id, .clipChanged) }
+    }
+
+    func lock(reason: StaticString = #function) {
+        if isAuthenticating {
+            Self.logger.notice("Cancelled pending reveal: \(reason.description, privacy: .public)")
+        }
         state.lock()
         completion?.cancel()
         completion = nil

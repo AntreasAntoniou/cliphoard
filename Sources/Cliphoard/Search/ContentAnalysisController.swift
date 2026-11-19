@@ -29,6 +29,7 @@ final class ContentAnalysisController: ObservableObject {
     private var generation = UUID()
     private let evaluator: any ContentModelEvaluating
     private var documentConfiguration = [ContentAnalysisPreferences.documentText, ContentAnalysisPreferences.enabled("documentPDFEnabled"), ContentAnalysisPreferences.enabled("documentRichTextEnabled")]
+    private var nsfwProtectionActive = ContentAnalysisPreferences.nsfwActive
 
     init(store: ClipStore, evaluator: any ContentModelEvaluating = NSFWModelEvaluator(), monitorFocus: Bool = true) {
         self.store = store
@@ -59,7 +60,11 @@ final class ContentAnalysisController: ObservableObject {
 
     func refresh() {
         generation = UUID(); operation?.cancel(); processed.removeAll()
-        SensitiveClipReveal.shared.lock()
+        let protectionActive = ContentAnalysisPreferences.nsfwActive
+        if protectionActive != nsfwProtectionActive {
+            nsfwProtectionActive = protectionActive
+            store?.sensitiveReveal.lock(reason: "NSFW protection changed")
+        }
         let documentConfiguration = [ContentAnalysisPreferences.documentText, ContentAnalysisPreferences.enabled("documentPDFEnabled"), ContentAnalysisPreferences.enabled("documentRichTextEnabled")]
         if documentConfiguration != self.documentConfiguration {
             self.documentConfiguration = documentConfiguration

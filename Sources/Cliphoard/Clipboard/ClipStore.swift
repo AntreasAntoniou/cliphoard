@@ -202,6 +202,7 @@ final class ClipStore: ObservableObject {
 
     private let dir: URL
     private let db: Database?
+    let sensitiveReveal: SensitiveClipReveal
     lazy var mediaSearch = MediaSearchController(store: self)
     lazy var contentAnalysis = ContentAnalysisController(store: self)
 
@@ -232,7 +233,8 @@ final class ClipStore: ObservableObject {
 
     /// - Parameter directory: storage location. Defaults to
     ///   `~/Library/Application Support/Ditto`; tests inject a temp directory.
-    init(directory: URL? = nil) {
+    init(directory: URL? = nil, sensitiveReveal: SensitiveClipReveal? = nil) {
+        self.sensitiveReveal = sensitiveReveal ?? .shared
         let base = directory ?? FileManager.default
             .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Ditto", isDirectory: true)
@@ -825,10 +827,11 @@ final class ClipStore: ObservableObject {
     @discardableResult
     func setNSFW(_ flagged: Bool, on item: ClipItem) -> Bool {
         guard !safeMode, storageComplete, items.contains(where: { $0 === item }) else { return false }
+        guard flagged != item.flags.contains(.nsfw) else { return true }
         let old = item.flags
         if flagged { item.flags.insert(.nsfw) } else { item.flags.remove(.nsfw) }
         guard db?.updateOCR(item) == true else { item.flags = old; return false }
-        SensitiveClipReveal.shared.lock()
+        sensitiveReveal.classificationDidChange(for: item)
         objectWillChange.send()
         return true
     }

@@ -30,6 +30,9 @@ struct SensitiveRevealState {
         return now.isFinite && now < expiresAt && now >= expiresAt - 60
             && grant.id == id && grant.fingerprint == fingerprint
     }
+    func affects(id: UUID) -> Bool {
+        pending?.id == id || grant?.id == id
+    }
     mutating func lock() {
         pending = nil
         grant = nil

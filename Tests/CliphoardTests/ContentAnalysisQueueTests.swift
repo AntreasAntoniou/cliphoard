@@ -36,10 +36,10 @@ private actor ScreeningSpy: ContentModelEvaluating {
         while analysis.busy && Date() < deadline { try await Task.sleep(nanoseconds: 10_000_000) }
         XCTAssertFalse(analysis.busy, "Queue must finish")
     }
-    private func store() throws -> ClipStore {
+    private func store(sensitiveReveal: SensitiveClipReveal? = nil) throws -> ClipStore {
         try skipIfKeychainUnreachable()
         let dir = FileManager.default.temporaryDirectory.resolvingSymlinksInPath().appendingPathComponent("content-queue-" + UUID().uuidString)
-        return ClipStore(directory: dir)
+        return ClipStore(directory: dir, sensitiveReveal: sensitiveReveal)
     }
     private func file(_ name: String, contents: String, store: ClipStore) throws -> ClipItem {
         let path = store.storeDirectory.appendingPathComponent(name)
@@ -92,5 +92,57 @@ private actor ScreeningSpy: ContentModelEvaluating {
         _ = try await NSFWFocusFilter().perform()
         XCTAssertEqual(FocusProtectionState.active, false)
         a.refresh(); try await finish(a); let after = await spy.calls; XCTAssertEqual(after, active)
+    }
+
+    func testBackgroundScreeningDoesNotCancelRevealOfADifferentClip() async throws {
+        var reply: (@Sendable (Result<Void, SensitiveRevealFailure>) -> Void)?
+        let reveal = SensitiveClipReveal(authenticate: { _, _, callback in reply = callback },
+            restoreFocus: { _ in true }, observeSystemEvents: false)
+        let s = try store(sensitiveReveal: reveal)
+        let checked = try file("NSFW.wav", contents: "synthetic", store: s)
+        let protected = ClipItem(kind: .text, text: "Synthetic protected fixture")
+        protected.flags = .secret
+        defer { reveal.lock() }
+        reveal.reveal(protected)
+        let analysis = ContentAnalysisController(store: s, evaluator: ScreeningSpy(), monitorFocus: false)
+        try await finish(analysis)
+        XCTAssertTrue(checked.flags.contains(.nsfw))
+        XCTAssertTrue(reveal.isAuthenticating)
+        XCTAssertTrue(reveal.isConcealed(protected))
+        try XCTUnwrap(reply)(.success(()))
+        let deadline = ContinuousClock.now + .seconds(1)
+        while reveal.isAuthenticating && ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertFalse(reveal.isAuthenticating)
+        XCTAssertFalse(reveal.isConcealed(protected))
+    }
+
+    func testUnchangedClassificationDoesNotCancelRevealButChangedClipDoes() throws {
+        let reveal = SensitiveClipReveal(authenticate: { _, _, _ in }, observeSystemEvents: false)
+        let s = try store(sensitiveReveal: reveal)
+        let item = try file("synthetic.wav", contents: "synthetic", store: s)
+        XCTAssertTrue(s.setNSFW(true, on: item))
+        defer { reveal.lock() }
+        reveal.reveal(item)
+        XCTAssertTrue(s.setNSFW(true, on: item))
+        XCTAssertTrue(reveal.isAuthenticating)
+        XCTAssertTrue(s.setNSFW(false, on: item))
+        XCTAssertFalse(reveal.isAuthenticating)
+    }
+
+    func testRefreshCancelsRevealOnlyWhenEffectiveProtectionChanges() throws {
+        let reveal = SensitiveClipReveal(authenticate: { _, _, _ in }, observeSystemEvents: false)
+        let s = try store(sensitiveReveal: reveal)
+        let analysis = ContentAnalysisController(store: s, evaluator: ScreeningSpy(), monitorFocus: false)
+        let item = ClipItem(kind: .text, text: "Synthetic protected fixture")
+        item.flags = .secret
+        defer { reveal.lock() }
+        reveal.reveal(item)
+        analysis.refresh()
+        XCTAssertTrue(reveal.isAuthenticating)
+        UserDefaults.standard.set(false, forKey: "nsfwEnabled")
+        analysis.refresh()
+        XCTAssertFalse(reveal.isAuthenticating)
     }
 }
