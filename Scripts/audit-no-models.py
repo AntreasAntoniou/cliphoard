@@ -30,8 +30,8 @@ def check_environment(environment):
 
 
 BRAND_ICON_PINS = {
-    "BrandIconDark.png": "362fe3f3b26be13019ffa392db1fea6f819944baf2ae2475daa0eaddff6ceb7d",
-    "BrandIconLight.png": "a798046f63a48402d7d6a20889e0e5731cd832c83ed0ffff2f59079cf94f2a6f",
+    "BrandIconDark.png": "401321678af120f2413c62dec3e6ef624e439366ae7408f7b9b806939a36991d",
+    "BrandIconLight.png": "fae3a72778dfcd5ff30076862af4308a8db57e2b0857cd6e3b2af9afff183b20",
 }
 
 TEXT_RESOURCES = {"LICENSE", "LICENSE-Apache-2.0.txt", "THIRD-PARTY-NOTICES.md"}

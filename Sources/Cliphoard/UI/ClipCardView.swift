@@ -378,6 +378,7 @@ struct ClipCardView: View {
     /// uses, and not the `historyIsMutable` case, which is about a control that would look
     /// live while refusing.
     var onFileVerb: ((FileVerb) -> Void)? = nil
+    var onTap: (() -> Void)? = nil
 
 
     /// Decoded thumbnails keyed by file name, so the body doesn't re-decode the
@@ -405,12 +406,13 @@ struct ClipCardView: View {
 
     @ViewBuilder var body: some View {
         if sensitiveReveal.isConcealed(item) {
-            SensitiveClipPlaceholder(item: item)
+            SensitiveClipPlaceholder(item: item, reveal: sensitiveReveal)
                 .frame(width: Theme.cardWidth, height: Theme.thumbnailHeight)
                 .background(Theme.cardBackground())
                 .clipShape(RoundedRectangle(cornerRadius: Theme.cornerRadius))
         } else {
             revealedBody
+                .onTapGesture { onTap?() }
         }
     }
 

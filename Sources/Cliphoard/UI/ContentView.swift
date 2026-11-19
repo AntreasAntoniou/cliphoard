@@ -633,7 +633,8 @@ struct ContentView: View {
                                 // when the app looks broken is to clear it.
                                 historyIsMutable: !store.safeMode,
                                 modelTags: ClipCardTags.modelLabels(for: row.item, embedder: EmbedderProvider.active),
-                                onFileVerb: { model.onFileVerb?(row.item, $0) }
+                                onFileVerb: { model.onFileVerb?(row.item, $0) },
+                                onTap: { model.click(row.index) }
                             )
                             // Identity is the clip's id (from ForEach) — NOT the index.
                             // An index-based .id reused stale views across filters
@@ -643,7 +644,6 @@ struct ContentView: View {
                                     Text(source).font(.caption2).padding(4).background(.regularMaterial).allowsHitTesting(false)
                                 }
                             }
-                            .onTapGesture { model.click(row.index) }
                         }
                     }
                 }
@@ -815,7 +815,7 @@ struct ContentView: View {
         if results.indices.contains(model.selection) {
             let item = results[model.selection]
             if sensitiveReveal.isConcealed(item) {
-                SensitiveClipPlaceholder(item: item)
+                SensitiveClipPlaceholder(item: item, reveal: sensitiveReveal)
             } else {
                 revealedPreviewPane(item)
             }

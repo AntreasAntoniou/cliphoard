@@ -66,9 +66,16 @@ final class SensitiveClipReveal: ObservableObject {
     private var state = SensitiveRevealState()
     private var context: LAContext?
     private var expiry: Timer?
+    private var completion: Task<Void, Never>?
+    private let authenticate: (LAContext, @escaping @Sendable (Bool) -> Void) -> Void
+    private let restoreFocus: (NSWindow?) -> Bool
     private var observers: [NSObjectProtocol] = []
 
-    private init() {
+    init(authenticate: ((LAContext, @escaping @Sendable (Bool) -> Void) -> Void)? = nil,
+         restoreFocus: ((NSWindow?) -> Bool)? = nil, observeSystemEvents: Bool = true) {
+        self.authenticate = authenticate ?? Self.authenticateWithMac
+        self.restoreFocus = restoreFocus ?? Self.restoreAuthenticationFocus
+        guard observeSystemEvents else { return }
         for name in [NSWorkspace.sessionDidResignActiveNotification, NSWorkspace.screensDidSleepNotification,
                      NSWorkspace.willSleepNotification] {
             observers.append(NSWorkspace.shared.notificationCenter.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
@@ -83,20 +90,42 @@ final class SensitiveClipReveal: ObservableObject {
                 Task { @MainActor in self?.lock() }
             })
         observers.append(NotificationCenter.default.addObserver(forName: NSApplication.didResignActiveNotification, object: nil, queue: .main) { [weak self] _ in
-            Task { @MainActor in
-                // LA's own system prompt may deactivate the app. Sleep/session
-                // notifications still cancel pending authentication unconditionally.
+            MainActor.assumeIsolated {
+                // This notification belongs to the focus change that just happened.
+                // Reading the state on a later task can relock a completed prompt.
                 guard let self, !self.isAuthenticating else { return }
                 self.lock()
             }
         })
     }
+
+    private static func authenticateWithMac(_ context: LAContext, reply: @escaping @Sendable (Bool) -> Void) {
+        // Uses the system's device-owner authentication, including its configured fallback.
+        context.touchIDAuthenticationAllowableReuseDuration = 0
+        guard context.canEvaluatePolicy(.deviceOwnerAuthentication, error: nil) else {
+            reply(false)
+            return
+        }
+        context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: "Reveal this sensitive clipboard item") {
+            success, _ in reply(success)
+        }
+    }
+
+    private static func restoreAuthenticationFocus(_ origin: NSWindow?) -> Bool {
+        guard let origin, origin.isVisible, NSApp.isActive || origin.isKeyWindow else { return false }
+        guard NSApp.keyWindow == nil || NSApp.keyWindow === origin else { return false }
+        if !origin.isKeyWindow { origin.makeKey() }
+        return origin.isKeyWindow
+    }
+
     func isConcealed(_ item: ClipItem) -> Bool {
         SensitiveClipPolicy.requiresAuthentication(item)
             && !state.permits(id: item.id, fingerprint: SensitiveClipPolicy.fingerprint(item), now: ProcessInfo.processInfo.systemUptime)
     }
     func lock() {
         state.lock()
+        completion?.cancel()
+        completion = nil
         context?.invalidate()
         context = nil
         expiry?.invalidate()
@@ -106,38 +135,42 @@ final class SensitiveClipReveal: ObservableObject {
         revision &+= 1
     }
     func reveal(_ item: ClipItem) {
+        guard !isAuthenticating else { return }
         lock()
         let request = state.begin(id: item.id, fingerprint: SensitiveClipPolicy.fingerprint(item))
+        let origin = NSApp?.keyWindow
         let context = LAContext()
         self.context = context
-        // Uses system device-owner authentication (Touch ID, Mac password or
-        // other OS-configured mechanisms such as Apple Watch), never a custom
-        // password field, administrator authorization, or biometry-only fallback.
-        context.touchIDAuthenticationAllowableReuseDuration = 0
-        var error: NSError?
-        guard context.canEvaluatePolicy(.deviceOwnerAuthentication, error: &error) else {
-            state.lock()
-            self.context = nil
-            authenticationFailed = true
-            revision &+= 1
-            return
-        }
         isAuthenticating = true
-        context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: "Reveal this sensitive clipboard item") { [weak self] success, _ in
+
+        authenticate(context) { [weak self, weak origin] success in
             Task { @MainActor in
                 guard let self, self.state.pending == request else { return }
-                self.state.complete(request, success: success,
-                    fingerprint: SensitiveClipPolicy.fingerprint(item), now: ProcessInfo.processInfo.systemUptime)
-                self.context = nil
-                self.isAuthenticating = false
-                self.authenticationFailed = self.isConcealed(item)
-                self.revision &+= 1
-                self.expiry = Timer.scheduledTimer(withTimeInterval: 60, repeats: false) { [weak self] _ in
-                    Task { @MainActor in self?.lock() }
+                self.completion = Task { @MainActor [weak self, weak origin] in
+                    // LocalAuthentication can reply before the system window returns key
+                    // focus. Keep the panel's dismiss guard active through that transition.
+                    try? await Task.sleep(for: .milliseconds(250))
+                    guard !Task.isCancelled, let self, self.state.pending == request else { return }
+                    let focusRestored = self.restoreFocus(origin)
+                    // An explicit close or a lock during focus restoration invalidates the request.
+                    guard self.state.pending == request else { return }
+                    self.state.complete(request, success: success && focusRestored,
+                        fingerprint: SensitiveClipPolicy.fingerprint(item), now: ProcessInfo.processInfo.systemUptime)
+                    self.context = nil
+                    self.completion = nil
+                    self.authenticationFailed = self.isConcealed(item)
+                    self.isAuthenticating = false
+                    self.revision &+= 1
+                    if !self.authenticationFailed {
+                        self.expiry = Timer.scheduledTimer(withTimeInterval: 60, repeats: false) { [weak self] _ in
+                            Task { @MainActor in self?.lock() }
+                        }
+                    }
                 }
             }
         }
     }
+
 }
 
 /// Replaces the content subtree; no blur, opacity or accessibility-only mask.
@@ -145,7 +178,7 @@ final class SensitiveClipReveal: ObservableObject {
 @MainActor
 struct SensitiveClipPlaceholder: View {
     let item: ClipItem
-    @ObservedObject private var reveal = SensitiveClipReveal.shared
+    @ObservedObject var reveal = SensitiveClipReveal.shared
     var body: some View {
         VStack(spacing: 12) {
             Image(systemName: "lock.shield.fill").font(.title)

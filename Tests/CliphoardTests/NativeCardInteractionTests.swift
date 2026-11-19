@@ -66,8 +66,7 @@ final class NativeCardInteractionTests: XCTestCase {
         let card = ClipCardView(item: item, index: 10, selected: selected,
             storeDir: dir,
             onActivate: {}, onInspect: { inspected += 1 }, onInspectTags: {},
-            onPin: {}, onDelete: {}, historyIsMutable: true)
-            .onTapGesture { selectedByClick += 1 }
+            onPin: {}, onDelete: {}, historyIsMutable: true, onTap: { selectedByClick += 1 })
         let host = TestHostingView(rootView: card)
         let window = NSWindow(contentRect: NSRect(x: 80, y: 80, width: 220,
                                                  height: max(250, Theme.thumbnailStripHeight)),
