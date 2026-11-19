@@ -1,0 +1,23 @@
+{
+  "ports/windows/Cliphoard.Windows/App.xaml": "1ca481730b46fdf1daa2675eb1a3cedfc04b066e01b74d046ecd1c5250890be1",
+  "ports/windows/Cliphoard.Windows/App.xaml.cs": "17e41e9419c579c7fdc0893a2924f7fdbb72fc7a4466df862ab3e3f5da9a1ef1",
+  "ports/windows/Cliphoard.Windows/Cliphoard.Windows.csproj": "4712ab6d6eba2bd80495396546cbb810e32cd2a875756d85fff1cf28551cd394",
+  "ports/windows/Cliphoard.Windows/FixtureClipboard.cs": "28daffcda3cb17c00ed25198bebaa5125e638da088c65fa6a17c40a29d490e64",
+  "ports/windows/Cliphoard.Windows/FixtureEngine.cs": "c7fc05a027186fc0b7d51f977b6830a54b71f315deeae5c4debd88f14fd71194",
+  "ports/windows/Cliphoard.Windows/MainWindow.xaml": "10a0ddb68f4677f04cc7084f492388644b49352ea05cf59ebaa04e98db46cde3",
+  "ports/windows/Cliphoard.Windows/MainWindow.xaml.cs": "c898a7e26db59abaa39fe8b7aed9882653bfa25cc5ce1a4721dcb65367ab15a9",
+  "ports/windows/Cliphoard.Windows/NativeMethods.cs": "34b43859b9b8af064f301e04f3149414448337e2b1eb8ffcbe3649146ac05ea6",
+  "ports/windows/Cliphoard.Windows/NativeWindowAdapter.cs": "9c5a7a38f468ea51435976a21c7c3ac2d6ef2217563ae5d230f33b0d947785bd",
+  "ports/windows/Cliphoard.Windows/PasteInput.cs": "64eef07fb2e53a087c1eb1f461e9ff06b797c6c123537123d5cb51f43ff671e2",
+  "ports/windows/Cliphoard.Windows/PasteInputPolicy.cs": "a9db6674932be2c50177487e92b2efe4f2e726dea33a25596e60cd27ec31c12b",
+  "ports/windows/Cliphoard.Windows/PasteTarget.cs": "c8c08078affde393d948712b494c7b89cb47722fab59e4fd68f0cabc7e17879b",
+  "ports/windows/Cliphoard.Windows/SelectionPolicy.cs": "aac1b6899c464ff82d8aea3ce6d5ae795f0ffdb63e99adef0c9f30898969f806",
+  "ports/windows/Cliphoard.Windows/WindowStamp.cs": "ee362582a37f3a5319db2125ac9f0c1b1dd35f33552b07b71cf15e28a6281ae0",
+  "ports/windows/NativeTests/NativeTests.csproj": "c5056ac4ba3a1fb5c797cc8b1a1ed2f86098c5f1f84bbb268aec717810f779cd",
+  "ports/windows/NativeTests/Program.cs": "3d944534b90cf66148f9631a15f2d2c56b48f41fb8be04d75e1d16685ab6bfbc",
+  "ports/windows/PolicyTests/PolicyTests.csproj": "de88d0e5c6c6a004541dba23baf457606c0627ec17f90b1ab4ae69d0580a19ed",
+  "ports/windows/PolicyTests/Program.cs": "4f814e3c1253d20b338a4a57b010e466a9be9679f5ef4fd9c589ce37a29a993f",
+  "ports/windows/PolicyTests/obj/Debug/net10.0/.NETCoreApp,Version=v10.0.AssemblyAttributes.cs": "f79c1ad9a9fc76110b3655f5bfb5ff4e3168e9addceff05b937c0796f0ec34eb",
+  "ports/windows/PolicyTests/obj/Debug/net10.0/PolicyTests.AssemblyInfo.cs": "af5f5298f3d9806902928c4a4ac1d7b468ed989e25d89e322dc0bb22a2ede207",
+  "ports/windows/PolicyTests/obj/Debug/net10.0/PolicyTests.GlobalUsings.g.cs": "8f86a2cbf00ff3eee0bda2bc0eb5e1fc19c8544d5dc650c53d0132325956b592"
+}

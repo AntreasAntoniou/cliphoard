@@ -97,7 +97,8 @@ final class FloatingPanel: NSPanel {
     /// Pure, and static, so the geometry can be asserted without a window — the
     /// interesting claims (never off the bottom, never taller than the screen,
     /// never below the floor) are all arithmetic.
-    static func barFrame(visible: NSRect, contentHeight: CGFloat, ceiling: CGFloat) -> NSRect {
+    static func barFrame(visible: NSRect, contentHeight: CGFloat, ceiling: CGFloat,
+                         minimumHeight: CGFloat = minBarHeight) -> NSRect {
         // A DEGENERATE screen rect means the display went away — unplugged, or a stale
         // `NSScreen` we are still holding. `min(max(h, 380), 0)` is 0, because the clamp is
         // applied AFTER the floor with nothing beneath it, so the bar would become a 0x0
@@ -112,7 +113,7 @@ final class FloatingPanel: NSPanel {
         // `NSApp.effectiveAppearance`, which is nil in a test process, so touching it from this
         // function made a pure arithmetic helper crash depending on which test ran first. The
         // geometry stays pure; the app supplies the number.
-        let height = min(max(contentHeight, minBarHeight), min(ceiling, visible.height))
+        let height = min(max(contentHeight, minimumHeight), min(ceiling, visible.height))
         return NSRect(x: visible.minX, y: visible.minY, width: visible.width, height: height)
     }
 
@@ -120,8 +121,10 @@ final class FloatingPanel: NSPanel {
     /// the same frame pushed exactly its own height below the screen edge, so a
     /// taller bar still clears the screen completely.
     static func offScreenFrame(visible: NSRect, contentHeight: CGFloat,
-                               ceiling: CGFloat = .greatestFiniteMagnitude) -> NSRect {
-        let onScreen = barFrame(visible: visible, contentHeight: contentHeight, ceiling: ceiling)
+                               ceiling: CGFloat = .greatestFiniteMagnitude,
+                               minimumHeight: CGFloat = minBarHeight) -> NSRect {
+        let onScreen = barFrame(visible: visible, contentHeight: contentHeight, ceiling: ceiling,
+                               minimumHeight: minimumHeight)
         return NSRect(x: onScreen.minX, y: visible.minY - onScreen.height,
                       width: onScreen.width, height: onScreen.height)
     }
@@ -146,9 +149,11 @@ final class FloatingPanel: NSPanel {
 
     /// Also used by offscreen native-window regression tests.
     func fit(to visible: NSRect) {
+        BarHeightSettings.shared.setAvailableHeight(visible.height)
         let target = Self.barFrame(visible: visible,
                                    contentHeight: contentHeight(width: visible.width),
-                                   ceiling: Self.layoutCeiling)
+                                   ceiling: Self.layoutCeiling,
+                                   minimumHeight: BarHeightSettings.shared.panelFloor)
         // `.zero` means the screen is gone (see `barFrame`). Leave the bar exactly where it
         // is rather than resizing it to nothing.
         guard target != .zero else { return }
@@ -217,11 +222,14 @@ final class FloatingPanel: NSPanel {
         isSettled = false
         presentedScreen = screen
         let visible = screen.visibleFrame
+        BarHeightSettings.shared.setAvailableHeight(visible.height)
         let height = contentHeight(width: visible.width)
         let onScreen = Self.barFrame(visible: visible, contentHeight: height,
-                                     ceiling: Self.layoutCeiling)
+                                     ceiling: Self.layoutCeiling,
+                                     minimumHeight: BarHeightSettings.shared.panelFloor)
         let offScreen = Self.offScreenFrame(visible: visible, contentHeight: height,
-                                            ceiling: Self.layoutCeiling)
+                                            ceiling: Self.layoutCeiling,
+                                            minimumHeight: BarHeightSettings.shared.panelFloor)
 
         setFrame(offScreen, display: false)
         alphaValue = 1
@@ -248,7 +256,8 @@ final class FloatingPanel: NSPanel {
         guard let screen = presentedScreen ?? targetScreen() else {
             orderOut(nil); presentedScreen = nil; completion?(); return
         }
-        let offScreen = Self.offScreenFrame(visible: screen.visibleFrame, contentHeight: frame.height)
+        let offScreen = Self.offScreenFrame(visible: screen.visibleFrame, contentHeight: frame.height,
+                                           minimumHeight: BarHeightSettings.shared.panelFloor)
         NSAnimationContext.runAnimationGroup({ ctx in
             ctx.duration = 0.2
             ctx.timingFunction = CAMediaTimingFunction(name: .easeIn)

@@ -1,0 +1,393 @@
+{
+  "version": 1,
+  "started_utc": "2026-11-18T22:10:12.1607802Z",
+  "finished_utc": "2026-11-18T22:11:33.5924647Z",
+  "executable_sha256": "2CE43FF08CF33180F88397A2AAFA480B2C4754B14E23E105F5F5B77C6A57973A",
+  "architecture": "ARM64",
+  "policy_executable_sha256": "286E9164DDE0833E3E575CC27291F5355C68F528A725BE1275DEB9BFCCEBF145",
+  "cases": 42,
+  "failed": 0,
+  "checks": 1370,
+  "includes_models": false,
+  "includes_search_evaluation": false,
+  "results": [
+    {
+      "suite": "hashing",
+      "iteration": 1,
+      "status": "passed",
+      "checks": 9,
+      "exit_code": 0,
+      "milliseconds": 843.96,
+      "failure": null
+    },
+    {
+      "suite": "detector-parity",
+      "iteration": 1,
+      "status": "passed",
+      "checks": 70,
+      "exit_code": 0,
+      "milliseconds": 121.81,
+      "failure": null
+    },
+    {
+      "suite": "parity-policy",
+      "iteration": 1,
+      "status": "passed",
+      "checks": 49,
+      "exit_code": 0,
+      "milliseconds": 139.67,
+      "failure": null
+    },
+    {
+      "suite": "theme",
+      "iteration": 1,
+      "status": "passed",
+      "checks": 44,
+      "exit_code": 0,
+      "milliseconds": 175.71,
+      "failure": null
+    },
+    {
+      "suite": "storage-parity",
+      "iteration": 1,
+      "status": "passed",
+      "checks": 14,
+      "exit_code": 0,
+      "milliseconds": 2290.66,
+      "failure": null
+    },
+    {
+      "suite": "embedding-cache",
+      "iteration": 1,
+      "status": "passed",
+      "checks": 17,
+      "exit_code": 0,
+      "milliseconds": 160.84,
+      "failure": null
+    },
+    {
+      "suite": "tag-parity",
+      "iteration": 1,
+      "status": "passed",
+      "checks": 18,
+      "exit_code": 0,
+      "milliseconds": 128.85,
+      "failure": null
+    },
+    {
+      "suite": "archive",
+      "iteration": 1,
+      "status": "passed",
+      "checks": 25,
+      "exit_code": 0,
+      "milliseconds": 757.81,
+      "failure": null
+    },
+    {
+      "suite": "streaming-archive",
+      "iteration": 1,
+      "status": "passed",
+      "checks": 13,
+      "exit_code": 0,
+      "milliseconds": 30284.49,
+      "failure": null
+    },
+    {
+      "suite": "manager-import",
+      "iteration": 1,
+      "status": "passed",
+      "checks": 17,
+      "exit_code": 0,
+      "milliseconds": 2252,
+      "failure": null
+    },
+    {
+      "suite": "document",
+      "iteration": 1,
+      "status": "passed",
+      "checks": 25,
+      "exit_code": 0,
+      "milliseconds": 2248.19,
+      "failure": null
+    },
+    {
+      "suite": "perceptual",
+      "iteration": 1,
+      "status": "passed",
+      "checks": 10,
+      "exit_code": 0,
+      "milliseconds": 164.5,
+      "failure": null
+    },
+    {
+      "suite": "agent-protocol",
+      "iteration": 1,
+      "status": "passed",
+      "checks": 43,
+      "exit_code": 0,
+      "milliseconds": 124.08,
+      "failure": null
+    },
+    {
+      "suite": "agent-directory",
+      "iteration": 1,
+      "status": "passed",
+      "checks": 20,
+      "exit_code": 0,
+      "milliseconds": 102.94,
+      "failure": null
+    },
+    {
+      "suite": "agent-controller",
+      "iteration": 1,
+      "status": "passed",
+      "checks": 29,
+      "exit_code": 0,
+      "milliseconds": 332.7,
+      "failure": null
+    },
+    {
+      "suite": "agent-writer",
+      "iteration": 1,
+      "status": "passed",
+      "checks": 20,
+      "exit_code": 0,
+      "milliseconds": 333.41,
+      "failure": null
+    },
+    {
+      "suite": "companion",
+      "iteration": 1,
+      "status": "passed",
+      "checks": 17,
+      "exit_code": 0,
+      "milliseconds": 191.99,
+      "failure": null
+    },
+    {
+      "suite": "speech-boundary",
+      "iteration": 1,
+      "status": "passed",
+      "checks": 10,
+      "exit_code": 0,
+      "milliseconds": 86.97,
+      "failure": null
+    },
+    {
+      "suite": "capture-suspension",
+      "iteration": 1,
+      "status": "passed",
+      "checks": 9,
+      "exit_code": 0,
+      "milliseconds": 78.04,
+      "failure": null
+    },
+    {
+      "suite": "workflow",
+      "iteration": 1,
+      "status": "passed",
+      "checks": 54,
+      "exit_code": 0,
+      "milliseconds": 793.93,
+      "failure": null
+    },
+    {
+      "suite": "input-policy",
+      "iteration": 1,
+      "status": "passed",
+      "checks": 172,
+      "exit_code": 0,
+      "milliseconds": 60.57,
+      "failure": null
+    },
+    {
+      "suite": "hashing",
+      "iteration": 2,
+      "status": "passed",
+      "checks": 9,
+      "exit_code": 0,
+      "milliseconds": 81.72,
+      "failure": null
+    },
+    {
+      "suite": "detector-parity",
+      "iteration": 2,
+      "status": "passed",
+      "checks": 70,
+      "exit_code": 0,
+      "milliseconds": 94.48,
+      "failure": null
+    },
+    {
+      "suite": "parity-policy",
+      "iteration": 2,
+      "status": "passed",
+      "checks": 49,
+      "exit_code": 0,
+      "milliseconds": 119.67,
+      "failure": null
+    },
+    {
+      "suite": "theme",
+      "iteration": 2,
+      "status": "passed",
+      "checks": 44,
+      "exit_code": 0,
+      "milliseconds": 152.15,
+      "failure": null
+    },
+    {
+      "suite": "storage-parity",
+      "iteration": 2,
+      "status": "passed",
+      "checks": 14,
+      "exit_code": 0,
+      "milliseconds": 1901.46,
+      "failure": null
+    },
+    {
+      "suite": "embedding-cache",
+      "iteration": 2,
+      "status": "passed",
+      "checks": 17,
+      "exit_code": 0,
+      "milliseconds": 130.24,
+      "failure": null
+    },
+    {
+      "suite": "tag-parity",
+      "iteration": 2,
+      "status": "passed",
+      "checks": 18,
+      "exit_code": 0,
+      "milliseconds": 112.48,
+      "failure": null
+    },
+    {
+      "suite": "archive",
+      "iteration": 2,
+      "status": "passed",
+      "checks": 25,
+      "exit_code": 0,
+      "milliseconds": 773.69,
+      "failure": null
+    },
+    {
+      "suite": "streaming-archive",
+      "iteration": 2,
+      "status": "passed",
+      "checks": 13,
+      "exit_code": 0,
+      "milliseconds": 29849.05,
+      "failure": null
+    },
+    {
+      "suite": "manager-import",
+      "iteration": 2,
+      "status": "passed",
+      "checks": 17,
+      "exit_code": 0,
+      "milliseconds": 2249.78,
+      "failure": null
+    },
+    {
+      "suite": "document",
+      "iteration": 2,
+      "status": "passed",
+      "checks": 25,
+      "exit_code": 0,
+      "milliseconds": 1845.17,
+      "failure": null
+    },
+    {
+      "suite": "perceptual",
+      "iteration": 2,
+      "status": "passed",
+      "checks": 10,
+      "exit_code": 0,
+      "milliseconds": 154.57,
+      "failure": null
+    },
+    {
+      "suite": "agent-protocol",
+      "iteration": 2,
+      "status": "passed",
+      "checks": 43,
+      "exit_code": 0,
+      "milliseconds": 127.22,
+      "failure": null
+    },
+    {
+      "suite": "agent-directory",
+      "iteration": 2,
+      "status": "passed",
+      "checks": 20,
+      "exit_code": 0,
+      "milliseconds": 103.56,
+      "failure": null
+    },
+    {
+      "suite": "agent-controller",
+      "iteration": 2,
+      "status": "passed",
+      "checks": 29,
+      "exit_code": 0,
+      "milliseconds": 340.35,
+      "failure": null
+    },
+    {
+      "suite": "agent-writer",
+      "iteration": 2,
+      "status": "passed",
+      "checks": 20,
+      "exit_code": 0,
+      "milliseconds": 386.84,
+      "failure": null
+    },
+    {
+      "suite": "companion",
+      "iteration": 2,
+      "status": "passed",
+      "checks": 17,
+      "exit_code": 0,
+      "milliseconds": 166.22,
+      "failure": null
+    },
+    {
+      "suite": "speech-boundary",
+      "iteration": 2,
+      "status": "passed",
+      "checks": 10,
+      "exit_code": 0,
+      "milliseconds": 83.32,
+      "failure": null
+    },
+    {
+      "suite": "capture-suspension",
+      "iteration": 2,
+      "status": "passed",
+      "checks": 9,
+      "exit_code": 0,
+      "milliseconds": 75.35,
+      "failure": null
+    },
+    {
+      "suite": "workflow",
+      "iteration": 2,
+      "status": "passed",
+      "checks": 54,
+      "exit_code": 0,
+      "milliseconds": 795.98,
+      "failure": null
+    },
+    {
+      "suite": "input-policy",
+      "iteration": 2,
+      "status": "passed",
+      "checks": 172,
+      "exit_code": 0,
+      "milliseconds": 60.97,
+      "failure": null
+    }
+  ]
+}

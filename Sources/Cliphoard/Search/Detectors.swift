@@ -67,6 +67,10 @@ struct ClipFlags: OptionSet, Codable, Hashable, Sendable {
     /// exact-match denylist. Origin-based, never probabilistic.
     static let quarantined = ClipFlags(rawValue: 1 << 6)
 
+    /// Possible adult content, classified locally or explicitly labelled by the owner.
+    /// Separate from credentials so its concealment can follow the NSFW/Focus options.
+    static let nsfw = ClipFlags(rawValue: 1 << 7)
+
     /// Every flag this build knows about, with its stable wire name.
     ///
     /// Exposed (rather than hidden) so tests can enumerate the vocabulary and
@@ -80,6 +84,7 @@ struct ClipFlags: OptionSet, Codable, Hashable, Sendable {
         ("pii-sensitive", .piiSensitive),
         ("otp", .otp),
         ("quarantined", .quarantined),
+        ("nsfw", .nsfw),
     ]
 
     /// The wire names of the flags actually set, in bit order. Empty set → `[]`,

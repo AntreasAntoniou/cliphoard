@@ -40,6 +40,7 @@ final class SignalFilterModel: ObservableObject {
 
 @MainActor
 struct ContentView: View {
+    @ObservedObject private var barHeight = BarHeightSettings.shared
     @ObservedObject var sensitiveReveal = SensitiveClipReveal.shared
     @ObservedObject var model: PanelViewModel
     @ObservedObject var agentWrites: AgentWriteController
@@ -137,6 +138,9 @@ struct ContentView: View {
                         }
                     }.font(.caption).padding(.horizontal, 14).padding(.vertical, 8)
                 }
+#if !APP_STORE || LOCAL_PERFORMANCE_PRO
+                DirectUpdateNotice()
+#endif
                 SearchModelPreparationView(settings: settings, store: store, media: store.mediaSearch)
                 if let message = pasteStatus.blockedMessage {
                     banner(message, action: ("Open Settings",
@@ -185,6 +189,7 @@ struct ContentView: View {
         // makes semantic .primary/.secondary text adapt; fontDesign gives Paper its serif.
         .tint(Theme.accent)
         .preferredColorScheme(Theme.t.scheme)
+        .environment(\.colorScheme, Theme.t.scheme ?? .light)
         .fontDesign(Theme.t.fontDesign)
         // Focus the search field whenever the bar is summoned (and not in settings),
         // so summon-then-type always lands. Deferred a tick so it runs after the
@@ -302,12 +307,15 @@ struct ContentView: View {
         openSettings: { model.showSearchOptions = false; model.requestedSettingsSection = nil; model.showSettings = true },
         searchByImage: beginImageSearch, isPending: model.searchInput.isPending, timing: model.searchInput.timing,
         submitSearch: { _ = model.searchInput.submitPending() },
-        badges: configuredSearchModels, brandImage: brandIconImage) {
+        badges: configuredSearchModels, brandImage: brandIconImage,
+        activeFilterCount: (model.activeKind == nil ? 0 : 1) + (model.pinnedOnly ? 1 : 0)
+            + (model.timeFilter.isActive ? 1 : 0) + model.activeFacets.count
+            + model.activeUserTags.count + signals.active.count + (model.referenceImage == nil ? 0 : 1)) {
             Group {
                 clipTypeMenu
-                chip(title: "Pinned", systemImage: "pin.fill", active: model.pinnedOnly) {
-                    model.pinnedOnly.toggle(); model.resetSelection()
-                }
+                Toggle(isOn: Binding(get: { model.pinnedOnly }, set: {
+                    model.pinnedOnly = $0; model.resetSelection()
+                })) { Label("Pinned", systemImage: "pin.fill") }
                 timeMenu
                 filtersMenu
                 referenceImagePicker
@@ -344,6 +352,7 @@ struct ContentView: View {
                 model.showSettings = true
             }
         }
+        .popover(isPresented: $showCustomDate, arrowEdge: .bottom) { customDatePopover }
         .onChange(of: model.query) { _ in model.resetSelection() }
     }
 
@@ -366,46 +375,17 @@ struct ContentView: View {
         .menuStyle(.borderlessButton).fixedSize()
     }
 
-    private func chip(title: String, systemImage: String, active: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack(spacing: 4) {
-                Image(systemName: systemImage).font(.system(size: 10))
-                Text(title).font(.system(size: 11, weight: .medium))
-            }
-            .padding(.horizontal, 9)
-            .padding(.vertical, 5)
-            .background(active ? Theme.accent : Color.primary.opacity(0.07),
-                        in: Capsule())
-            .foregroundStyle(active ? Color.white : Color.primary)
-        }
-        .buttonStyle(.plain)
-    }
-
-    /// A selected reference stays visible until cleared or a different search is chosen.
+    /// Filters keeps the selected reference available to inspect and clear.
     @ViewBuilder
     private var referenceImagePicker: some View {
         if settings.imageSearchModel == .clip && settings.searchModality == .images {
             if let reference = model.referenceImage {
-                HStack(spacing: 4) {
-                    Image(systemName: "photo.fill")
-                        .font(.system(size: 10))
-                    Text(reference.name)
-                        .font(.system(size: 11))
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                        .frame(maxWidth: 130)
-                    Button {
-                        model.referenceImage = nil
-                    } label: {
-                        Image(systemName: "xmark.circle.fill").font(.system(size: 10))
-                    }
-                    .buttonStyle(.plain)
-                    .help("Stop searching by this picture")
-                }
-                .padding(.horizontal, 7).padding(.vertical, 3)
-                .background(Capsule().fill(Theme.accent.opacity(0.18)))
+                Menu {
+                    Button("Clear reference image") { model.referenceImage = nil }
+                        .help("Stop searching by this picture")
+                } label: { Label(reference.name, systemImage: "photo.fill") }
                 .accessibilityLabel("Searching by image \(reference.name). Activate the "
-                                    + "clear button to stop.")
+                                    + "menu to clear it.")
             }
         }
     }
@@ -507,7 +487,6 @@ struct ContentView: View {
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
         .fixedSize()
-        .popover(isPresented: $showCustomDate, arrowEdge: .bottom) { customDatePopover }
     }
 
     private var customDatePopover: some View {
@@ -540,10 +519,12 @@ struct ContentView: View {
     private var filtersMenu: some View {
         let filterCount = model.activeFacets.count + model.activeUserTags.count + signals.count
         return Button {
-            facetMenu.present(model: model, signals: signals)
+            // Let the enclosing Filters menu dismiss before opening the lazy
+            // native facet menu, so two menu tracking loops never compete.
+            DispatchQueue.main.async { facetMenu.present(model: model, signals: signals) }
         } label: {
             filterChipLabel(icon: "line.3.horizontal.decrease.circle",
-                            text: filterCount == 0 ? "Filters" : "Filters (\(filterCount))",
+                            text: filterCount == 0 ? "Tags, source & more…" : "Tags, source & more (\(filterCount))…",
                             active: filterCount > 0)
         }
         .buttonStyle(.plain)
@@ -969,11 +950,17 @@ struct ContentView: View {
                 hint("←→", "Navigate")
                 hint("↩", model.searchInput.isPending ? "Search" : DistributionChannel.primaryActionTitle)
                 hint("⌘C", "Copy")
-                hint("⌘1–9", DistributionChannel.quickActionTitle)
-                hint("⌘P", "Pin")
-                hint("⌘⌫", "Delete")
                 hint("esc", "Close")
-                hint("⌘Q", "Quit")
+                Menu {
+                    Text("⌘1–9  \(DistributionChannel.quickActionTitle)")
+                    Text("⌘P  Pin")
+                    Text("⌘⌫  Delete")
+                    Text("⌘,  Settings")
+                    Text("⌘Q  Quit")
+                } label: {
+                    Label("Shortcuts", systemImage: "questionmark.circle")
+                        .font(.system(size: 10))
+                }.menuStyle(.borderlessButton).fixedSize()
                 Spacer()
                 // Count what is on screen, not what the model holds — with a
                 // signal filter on, those differ.

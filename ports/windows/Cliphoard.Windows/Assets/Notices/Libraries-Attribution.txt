@@ -1,0 +1,24 @@
+Cliphoard Windows additional runtime libraries
+
+Microsoft.Data.Sqlite 10.0.11
+Copyright Microsoft Corporation. MIT licence.
+https://www.nuget.org/packages/Microsoft.Data.Sqlite/10.0.11
+Licence included in Microsoft-Data-Sqlite-LICENSE.txt.
+
+SQLitePCLRaw 2.1.12
+Copyright Eric Sink and contributors. Apache License 2.0.
+https://www.nuget.org/packages/SQLitePCLRaw.bundle_e_sqlite3/2.1.12
+Licence included in SQLitePCLRaw-LICENSE.txt.
+The bundled SQLite database engine is in the public domain.
+https://www.sqlite.org/copyright.html
+
+PdfPig 0.1.13
+Apache License 2.0, with additional component notices included in PdfPig-LICENSE.txt.
+https://www.nuget.org/packages/PdfPig/0.1.13
+Used in the private document-extraction process.
+
+BouncyCastle.Cryptography 2.7.0
+Copyright The Legion of the Bouncy Castle Inc. MIT-style licence.
+https://www.nuget.org/packages/BouncyCastle.Cryptography/2.7.0
+Licence included in BouncyCastle-LICENSE.txt.
+Used for offline Ed25519 licence verification and X25519 agent transport.

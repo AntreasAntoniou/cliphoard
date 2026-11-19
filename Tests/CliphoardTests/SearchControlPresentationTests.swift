@@ -5,6 +5,9 @@ import AppKit
 
 @MainActor
 final class SearchControlPresentationTests: XCTestCase {
+    private final class ClickHostingView<V: View>: NSHostingView<V> {
+        override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    }
     func testExactTextBadgeDoesNotPromiseAnUnusedConfiguredModel() {
         let capabilities = SearchCapabilities(text: true, images: true, audio: false, video: false, imageModel: .clip)
         XCTAssertEqual(SearchScopeBadge.selected(mode: .all, capabilities: capabilities, level: .normal,
@@ -13,7 +16,7 @@ final class SearchControlPresentationTests: XCTestCase {
             pro: true, matching: .smart).map(\.label), ["Text · Ogma Small"])
     }
     func testAllTypesKeepsSavedScopeAndBadgesDescribeConfiguredSelection() {
-        XCTAssertEqual(SearchControlLabels.scope(.all), "All types")
+        XCTAssertEqual(SearchControlLabels.scope(.all), "All content")
         XCTAssertEqual(SearchModality.all.rawValue, "all")
         let selected = SearchCapabilities(text: true, images: true, audio: true, video: true, imageModel: .clip)
         XCTAssertEqual(SearchScopeBadge.selected(mode: .all, capabilities: selected, level: .normal, pro: true).map(\.label),
@@ -45,11 +48,15 @@ final class SearchControlPresentationTests: XCTestCase {
     /// real model, application delegate, Keychain or network is involved.
     func testToolbarFitsNarrowAndWideWindows() throws {
         _ = NSApplication.shared
-        for width in [640.0, 900.0, 1440.0] {
+        let oldTheme = Theme.preset
+        defer { Theme.preset = oldTheme }
+        for width in [640.0, 900.0, 1440.0, 1920.0] {
             for dark in [false, true] {
+              Theme.preset = dark ? .oneDark : .floatingPalette
               for pending in [false, true] {
                 let host = NSHostingView(rootView: SearchBarFixture(pending: pending)
-                    .frame(width: width).preferredColorScheme(dark ? .dark : .light))
+                    .frame(width: width).preferredColorScheme(dark ? .dark : .light)
+                    .environment(\.colorScheme, dark ? .dark : .light))
                 let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: width, height: 150),
                     styleMask: [.borderless], backing: .buffered, defer: false)
                 window.isReleasedWhenClosed = false
@@ -74,19 +81,58 @@ final class SearchControlPresentationTests: XCTestCase {
         }
     }
 
-    func testToolbarSharesTheControlsRowOnlyWhenTheirNaturalWidthsFit() {
+    func testToolbarKeepsOneCompactRowAtEveryWidth() {
         _ = NSApplication.shared
         let host = NSHostingController(rootView: SearchBarFixture(pending: false))
         let narrow = host.sizeThatFits(in: CGSize(width: 640, height: CGFloat.infinity))
         let wide = host.sizeThatFits(in: CGSize(width: 1440, height: CGFloat.infinity))
         XCTAssertLessThanOrEqual(narrow.width, 641)
-        XCTAssertGreaterThan(narrow.height - wide.height, 18)
-        XCTAssertLessThanOrEqual(wide.height, 52, "Wide toolbar must fit one 34pt controls row plus 18pt padding")
+        XCTAssertEqual(wide.height, 56, accuracy: 1)
+        XCTAssertEqual(narrow.height, 56, accuracy: 1)
+    }
+
+    func testSettingsAndModelsButtonsHaveStableDistinctTargets() async throws {
+        _ = NSApplication.shared
+        XCTAssertNotNil(NSImage(systemSymbolName: "cpu", accessibilityDescription: nil))
+        for width in [640.0, 1440.0, 1920.0] {
+            var openedSettings = 0
+            var openedModels = 0
+            let host = ClickHostingView(rootView: SearchBarFixture(pending: false,
+                settingsAction: { openedSettings += 1 }, optionsAction: { openedModels += 1 }))
+            let measure = NSHostingController(rootView: SearchBarFixture(pending: false))
+            let height = measure.sizeThatFits(in: CGSize(width: width, height: .infinity)).height
+            let window = NSWindow(contentRect: NSRect(x: 80, y: 80, width: width, height: height),
+                styleMask: [.borderless], backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false
+            window.contentView = host
+            defer { window.close() }
+            host.layoutSubtreeIfNeeded()
+            window.orderBack(nil)
+            try await Task.sleep(nanoseconds: 100_000_000)
+            print("TOOLBAR click width=\(width) host=\(host.bounds) frame=\(window.frame)")
+            let modelsWidth = width < 760 ? 36.0 : 96.0
+            let queryWidth = width - 32 - 32 - modelsWidth - 36 - 30
+            let modelsCenter = 16 + 32 + 10 + queryWidth + 10 + modelsWidth / 2
+            for (x, top) in [(width - 34, 28.0), (modelsCenter, 28.0)] {
+                let point = host.convert(NSPoint(x: x, y: host.isFlipped ? top : host.bounds.height - top), to: nil)
+                for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+                    let event = try XCTUnwrap(NSEvent.mouseEvent(with: type, location: point,
+                        modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                        windowNumber: window.windowNumber, context: nil, eventNumber: 1, clickCount: 1, pressure: 1))
+                    window.sendEvent(event)
+                }
+                try await Task.sleep(nanoseconds: 50_000_000)
+            }
+            XCTAssertEqual(openedSettings, 1, "Settings must be reachable at the top-right at width \(width)")
+            XCTAssertEqual(openedModels, 1, "Models must stay reachable beside the full-width query and Settings")
+        }
     }
 
     func testToolbarMenuItemsExplainEachChoice() throws {
         _ = NSApplication.shared
-        let host = NSHostingView(rootView: SearchBarFixture(pending: false))
+        var selected = SearchMode.smart
+        let host = NSHostingView(rootView: SearchBarFixture(pending: false,
+            matching: Binding(get: { selected }, set: { selected = $0 })))
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1440, height: 150),
             styleMask: [.borderless], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
@@ -96,8 +142,13 @@ final class SearchControlPresentationTests: XCTestCase {
         func menus(_ view: NSView) -> [NSPopUpButton] {
             (view as? NSPopUpButton).map { [$0] } ?? view.subviews.flatMap(menus)
         }
-        let controls = menus(host)
-        XCTAssertEqual(controls.count, 2)
+        let controls = menus(host).filter { $0.itemTitles.contains("Exact") }
+        XCTAssertEqual(controls.count, 1, "Matching stays inside the query; content scope lives under Filters")
+        let matching = try XCTUnwrap(controls.first)
+        XCTAssertFalse(matching.isBordered)
+        XCTAssertEqual((matching.cell as? NSPopUpButtonCell)?.arrowPosition, .noArrow)
+        try XCTUnwrap(matching.menu).performActionForItem(at: matching.indexOfItem(withTitle: "Exact"))
+        XCTAssertEqual(selected, .exact, "The embedded native choice must still update search routing")
         for control in controls {
             let items = control.itemArray.filter { !$0.title.isEmpty && !$0.isSeparatorItem }
             XCTAssertGreaterThanOrEqual(items.count, 4)
@@ -121,6 +172,54 @@ final class SearchControlPresentationTests: XCTestCase {
             host.cacheDisplay(in: host.bounds, to: bitmap)
             let png = try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
             try png.write(to: URL(fileURLWithPath: output).appendingPathComponent("search-options.png"), options: .withoutOverwriting)
+        }
+    }
+
+    func testDarkHeaderRendersWithExistingLogoAndRealCards() throws {
+        _ = NSApplication.shared
+        let old = Theme.preset
+        Theme.preset = .oneDark
+        defer { Theme.preset = old }
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent()
+        let logo = try XCTUnwrap(NSImage(contentsOf: root.appendingPathComponent("Resources/AppIcon.png")))
+        let items = [ClipItem(kind: .text, text: "Project notes\nChoose the next design direction."),
+                     ClipItem(kind: .link, text: "https://example.com"),
+                     ClipItem(kind: .color, text: "#138B83"),
+                     ClipItem(kind: .file, text: "Project brief.pdf")]
+        let view = VStack(spacing: 0) {
+            SearchBarFixture(pending: false, brandImage: logo)
+            Divider()
+            HStack(spacing: 14) {
+                ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                    ClipCardView(item: item, index: index, selected: index == 0,
+                        storeDir: FileManager.default.temporaryDirectory,
+                        onActivate: {}, onInspect: {}, onInspectTags: {}, onPin: {}, onDelete: {},
+                        historyIsMutable: true)
+                }
+                Spacer()
+            }.padding(14)
+            Text("← → Navigate     ↵ Copy & Close     ⌘C Copy     Esc Close     ? Shortcuts")
+                .font(.system(size: 11)).frame(maxWidth: .infinity, alignment: .leading).padding(12)
+        }.frame(width: 1440).background(Theme.barBackground()).preferredColorScheme(.dark)
+            .environment(\.colorScheme, .dark)
+        let panel = FloatingPanel()
+        panel.isReleasedWhenClosed = false
+        defer { panel.close() }
+        panel.setContent { view }
+        panel.fit(to: NSRect(x: 0, y: 0, width: 1440, height: 900))
+        let host = try XCTUnwrap(panel.contentView)
+        host.layoutSubtreeIfNeeded()
+        RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+        XCTAssertLessThan(panel.frame.height, 450)
+        XCTAssertEqual(Theme.preset, .oneDark)
+        if let output = ProcessInfo.processInfo.environment["CLIPHOARD_SEARCH_UI_SNAPSHOTS"] {
+            try FileManager.default.createDirectory(atPath: output, withIntermediateDirectories: true)
+            let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+            host.cacheDisplay(in: host.bounds, to: bitmap)
+            try XCTUnwrap(bitmap.representation(using: .png, properties: [:])).write(
+                to: URL(fileURLWithPath: output).appendingPathComponent("compact-search-dark-native.png"),
+                options: .withoutOverwriting)
         }
     }
 
@@ -169,16 +268,20 @@ final class SearchControlPresentationTests: XCTestCase {
 
 @MainActor private struct SearchBarFixture: View {
     let pending: Bool
+    var settingsAction: () -> Void = {}
+    var optionsAction: () -> Void = {}
+    var brandImage: NSImage? = nil
+    var matching: Binding<SearchMode> = .constant(.smart)
     @State private var query = "cat"
     @State private var scope = SearchModality.all
     @FocusState private var focused: Bool
     var body: some View {
-        SearchBarView(query: $query, scope: $scope, matching: .constant(.smart), searchFocused: $focused,
-                      isPro: true, openOptions: {}, openSettings: {}, isPending: pending,
+        SearchBarView(query: $query, scope: $scope, matching: matching, searchFocused: $focused,
+                      isPro: true, openOptions: optionsAction, openSettings: settingsAction, isPending: pending,
                       timing: pending ? .enter : .pause, submitSearch: {},
                       badges: SearchScopeBadge.selected(mode: .all,
                         capabilities: SearchCapabilities(text: true, images: true, audio: true, video: true, imageModel: .clip),
-                        level: .normal, pro: true)) {
+                        level: .normal, pro: true), brandImage: brandImage) {
             Group {
                 Label("Clip type", systemImage: "line.3.horizontal.decrease")
                 Label("Pinned", systemImage: "pin.fill")
@@ -187,7 +290,7 @@ final class SearchControlPresentationTests: XCTestCase {
                 Label("reference-picture.png", systemImage: "photo.fill").frame(width: 170)
                 Button("Clear filters") {}
             }
-        }.background(Color(nsColor: .windowBackgroundColor))
+        }.background(Theme.barBackground())
     }
 }
 

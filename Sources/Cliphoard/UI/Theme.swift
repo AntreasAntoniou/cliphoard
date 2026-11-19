@@ -27,7 +27,7 @@ struct ThemeTokens {
 /// Selectable theme presets (the visual-QA bake-off shortlist). `system` is the
 /// default and preserves the original look so nothing changes unless chosen.
 enum ThemePreset: String, CaseIterable, Identifiable {
-    case system, swiss, glass, highContrast, paper
+    case system, swiss, glass, highContrast, paper, floatingPalette
     // Popular code-editor palettes (One Dark, Dracula, …).
     case oneDark, dracula, tokyoNight, catppuccin, gruvbox, monokai, nightOwl
     // Popular light palettes.
@@ -37,6 +37,7 @@ enum ThemePreset: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .system:       return "Automatic (One Dark / Swiss)"
+        case .floatingPalette: return "Light Floating Palette"
         case .swiss:        return "Swiss Grayscale"
         case .glass:        return "Midnight Glass"
         case .highContrast: return "High Contrast"
@@ -88,6 +89,14 @@ enum ThemePreset: String, CaseIterable, Identifiable {
 
     var tokens: ThemeTokens {
         switch self {
+        case .floatingPalette:
+            return ThemeTokens(
+                accent: Theme.color(fromHex: "#087F7C"), pin: Theme.color(fromHex: "#956914"),
+                cornerRadius: 14, usesMaterials: false,
+                barFill: Theme.color(fromHex: "#F8F6F2"), cardFill: Theme.color(fromHex: "#FFFEFB"),
+                border: Theme.color(fromHex: "#D8D5CE"), borderHover: Theme.color(fromHex: "#999E98"),
+                selectedBorderWidth: 2, tagFill: Theme.color(fromHex: "#EEECE6"),
+                tagText: Theme.color(fromHex: "#555D59"), scheme: .light)
         case .system:
             // Follow the macOS appearance: One Dark in Dark Mode, Swiss in Light.
             let dark = NSApp.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
@@ -201,19 +210,19 @@ enum Theme {
     static var accent: Color { t.accent }
     static var pin: Color { t.pin }
     static var cardWidth: CGFloat { t.cardWidth }
-    static var cardHeight: CGFloat { t.cardHeight }
+    @MainActor static var cardHeight: CGFloat { BarHeightSettings.shared.effectiveHeight }
 
     /// Keep history thumbnails compact while list, Spotlight and media detail retain
     /// their taller viewport. The inspector continues to show the full item.
-    static var thumbnailHeight: CGFloat { cardHeight - 48 }
-    static var thumbnailStripHeight: CGFloat { thumbnailHeight + stripInset * 2 }
+    @MainActor static var thumbnailHeight: CGFloat { cardHeight - 48 }
+    @MainActor static var thumbnailStripHeight: CGFloat { thumbnailHeight + stripInset * 2 }
     static let stripInset: CGFloat = 14
 
     /// The full results viewport: one whole card plus the strip's vertical
     /// inset. The strip is this tall or a card is clipped — `ClipCardView` is a
     /// fixed size and never squeezes — so this is the height the panel must
     /// reserve for the card area before any chrome gets a say.
-    static var stripHeight: CGFloat { cardHeight + stripInset * 2 }
+    @MainActor static var stripHeight: CGFloat { cardHeight + stripInset * 2 }
 
     /// Ceiling on each optional-chrome group above the card strip. Past this the
     /// chrome scrolls; the card strip never gives up a point.

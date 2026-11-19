@@ -70,7 +70,22 @@ extension StorePurchaseClient {
 
 @MainActor
 final class StorePurchase: ObservableObject {
+#if LOCAL_PERFORMANCE_PRO
+    static let shared: StorePurchase = {
+        let purchase = StorePurchase(client: StoreKitClient())
+        purchase.localOwnerUnlock = true
+        return purchase
+    }()
+    var localOwnerUnlock = false
+    private func applyLocalOwnerUnlock() -> Bool {
+        guard localOwnerUnlock else { return false }
+        apply(.localTestingPro, enableImages: false)
+        statusMessage = "Pro enabled for local performance testing. No purchase required."
+        return true
+    }
+#else
     static let shared = StorePurchase(client: StoreKitClient())
+#endif
 
     @Published private(set) var entitlement: Entitlement = .free(reason: nil)
     @Published private(set) var product: StoreProProduct?
@@ -116,6 +131,9 @@ final class StorePurchase: ObservableObject {
     /// Kept independent of the clipboard database so the StoreKit adapter lifecycle
     /// can be exercised without opening history or accessing its encryption keys.
     func startObserving() {
+#if LOCAL_PERFORMANCE_PRO
+        if applyLocalOwnerUnlock() { return }
+#endif
         guard updatesTask == nil else { return }
         let updates = client.updates()
         updatesTask = Task { [weak self] in
@@ -139,6 +157,9 @@ final class StorePurchase: ObservableObject {
     }
 
     func loadProduct() async {
+#if LOCAL_PERFORMANCE_PRO
+        if applyLocalOwnerUnlock() { return }
+#endif
         // Coalesce requests, but never let a storefront change get dropped behind
         // a slower request for the old price. The old result is not published.
         productRevision &+= 1
@@ -180,6 +201,9 @@ final class StorePurchase: ObservableObject {
     }
 
     func refreshEntitlements() async {
+#if LOCAL_PERFORMANCE_PRO
+        if applyLocalOwnerUnlock() { return }
+#endif
         entitlementRevision &+= 1
         let revision = entitlementRevision
         let transactions = await client.currentEntitlements()
@@ -222,6 +246,9 @@ final class StorePurchase: ObservableObject {
 
     /// AppStore.sync can ask for authentication, so only the Restore button calls this.
     func restore() async {
+#if LOCAL_PERFORMANCE_PRO
+        if applyLocalOwnerUnlock() { return }
+#endif
         guard !isPresentingSystemSheet else { return }
         isPresentingSystemSheet = true
         // AppStore.sync has no window parameter. Make our regular Settings window

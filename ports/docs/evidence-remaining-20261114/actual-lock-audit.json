@@ -1,0 +1,66 @@
+[
+  {
+    "operation": "ready",
+    "utc": "2026-11-14T19:09:22.8641958Z",
+    "metadata": {
+      "pid": 6288,
+      "locked": false,
+      "epoch": 0
+    }
+  },
+  {
+    "operation": "selection-start",
+    "utc": "2026-11-14T19:09:42.1010996Z",
+    "metadata": {
+      "epoch": 4,
+      "sequence": 226
+    }
+  },
+  {
+    "operation": "selection-start",
+    "utc": "2026-11-14T19:09:42.1071992Z",
+    "metadata": {
+      "epoch": 5,
+      "sequence": 226
+    }
+  },
+  {
+    "operation": "selection-start",
+    "utc": "2026-11-14T19:18:31.0584097Z",
+    "metadata": {
+      "epoch": 9,
+      "sequence": 236
+    }
+  },
+  {
+    "operation": "session-event",
+    "utc": "2026-11-14T19:18:31.9424366Z",
+    "metadata": {
+      "reason": 7,
+      "session": 2,
+      "locked": false,
+      "epoch": 10,
+      "sequence": 236
+    }
+  },
+  {
+    "operation": "purged",
+    "utc": "2026-11-14T19:18:32.1190633Z",
+    "metadata": {
+      "locked": true,
+      "epoch": 11,
+      "count": 0,
+      "sequence": 236
+    }
+  },
+  {
+    "operation": "stale-selection-refused",
+    "utc": "2026-11-14T19:18:36.0601674Z",
+    "metadata": {
+      "requestedEpoch": 9,
+      "epoch": 11,
+      "locked": true,
+      "sequence": 236
+    }
+  }
+]

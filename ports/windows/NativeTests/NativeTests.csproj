@@ -1,0 +1,103 @@
+<Project Sdk="Microsoft.NET.Sdk">
+ <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net10.0-windows10.0.19041.0</TargetFramework><UseWindowsForms>true</UseWindowsForms><RuntimeIdentifiers>win-arm64;win-x64</RuntimeIdentifiers><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable></PropertyGroup>
+ <ItemGroup>
+ <Compile Include="../Cliphoard.Windows/CaptureSuspensions.cs" Link="CaptureSuspensions.cs"/>
+ <Compile Include="../Cliphoard.Windows/MacArchiveStreams.cs" Link="MacArchiveStreams.cs"/>
+ <Compile Include="../Cliphoard.Windows/MacArchiveStage.cs" Link="MacArchiveStage.cs"/>
+ <Compile Include="../Cliphoard.Windows/MacArchiveStreamingRead.cs" Link="MacArchiveStreamingRead.cs"/>
+ <Compile Include="../Cliphoard.Windows/MacArchiveStreamingWrite.cs" Link="MacArchiveStreamingWrite.cs"/>
+ <Compile Include="../Cliphoard.Windows/PrivateDirectory.cs" Link="PrivateDirectory.cs"/>
+ <Compile Include="../Cliphoard.Windows/MediaSpeechTranscript.cs" Link="MediaSpeechTranscript.cs"/>
+ <Compile Include="../Cliphoard.Windows/RankFusion.cs" Link="RankFusion.cs"/>
+ <Compile Include="../Cliphoard.Windows/MediaIndex.cs" Link="MediaIndex.cs"/>
+ <Compile Include="../Cliphoard.Windows/MediaIndexer.cs" Link="MediaIndexer.cs"/>
+ <Compile Include="../Cliphoard.Windows/MediaSamplingPlan.cs" Link="MediaSamplingPlan.cs"/>
+ <Compile Include="../Cliphoard.Windows/MediaDecodeProtocol.cs" Link="MediaDecodeProtocol.cs"/>
+ <Compile Include="../Cliphoard.Windows/MediaDecoderSession.cs" Link="MediaDecoderSession.cs"/>
+ <Compile Include="../Cliphoard.Windows/PrivateWorkerCall.cs" Link="PrivateWorkerCall.cs"/>
+ <Compile Include="../Cliphoard.Windows/ContentClassifier.cs" Link="ContentClassifier.cs"/>
+ <Compile Include="../Cliphoard.Windows/ManagerImportClient.cs" Link="ManagerImportClient.cs"/>
+ <Compile Include="../Cliphoard.Windows/ManagerImportProtocol.cs" Link="ManagerImportProtocol.cs"/>
+ <Compile Include="../Cliphoard.Windows/LocalFileLease.cs" Link="LocalFileLease.cs"/>
+ <Compile Include="../Cliphoard.Windows/PropertyList.cs" Link="PropertyList.cs"/>
+ <PackageReference Include="BouncyCastle.Cryptography" Version="2.7.0" />
+ <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.11" />
+ <PackageReference Include="Whisper.net" Version="1.9.1" />
+    <PackageReference Include="Whisper.net.Runtime" Version="1.9.1" />
+    <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.23.2"/>
+ <Compile Include="../Cliphoard.Windows/SharedAgentClips.cs" Link="SharedAgentClips.cs"/>
+ <Compile Include="../Cliphoard.Windows/AgentWriterConnection.cs" Link="AgentWriterConnection.cs"/>
+ <Compile Include="../Cliphoard.Windows/BoundedCommandLines.cs" Link="BoundedCommandLines.cs"/>
+ <Compile Include="../Cliphoard.Windows/AgentWriteController.cs" Link="AgentWriteController.cs"/>
+ <Compile Include="../Cliphoard.Windows/AgentHostIdentity.cs" Link="AgentHostIdentity.cs"/>
+ <Compile Include="../Cliphoard.Windows/AgentDirectoryNative.cs" Link="AgentDirectoryNative.cs"/>
+ <Compile Include="../Cliphoard.Windows/AgentWriteDirectory.cs" Link="AgentWriteDirectory.cs"/>
+ <Compile Include="../Cliphoard.Windows/AgentWriteProtocol.cs" Link="AgentWriteProtocol.cs"/>
+ <Compile Include="../Cliphoard.Windows/WindowsReleases.cs" Link="WindowsReleases.cs"/>
+ <Compile Include="../Cliphoard.Windows/OfflineLicence.cs" Link="OfflineLicence.cs"/>
+ <Compile Include="../Cliphoard.Windows/PerceptualImage.cs" Link="PerceptualImage.cs"/>
+ <Compile Include="../Cliphoard.Windows/SuspendedHistory.cs" Link="SuspendedHistory.cs"/>
+ <Compile Include="../Cliphoard.Windows/HistoryDatabase.cs" Link="HistoryDatabase.cs"/>
+ <Compile Include="../Cliphoard.Windows/EmbeddingCache.cs" Link="EmbeddingCache.cs"/>
+ <Compile Include="../Cliphoard.Windows/ArchivePassphrase.cs" Link="ArchivePassphrase.cs"/>
+ <Compile Include="../Cliphoard.Windows/FocusProtection.cs" Link="FocusProtection.cs"/>
+ <Compile Include="../Cliphoard.Windows/NsfwPolicy.cs" Link="NsfwPolicy.cs"/>
+ <Compile Include="../Cliphoard.Windows/DocumentProtocol.cs" Link="DocumentProtocol.cs"/>
+ <Compile Include="../Cliphoard.Windows/DocumentWorkerClient.cs" Link="DocumentWorkerClient.cs"/>
+ <Compile Include="../Cliphoard.Windows/RtfText.cs" Link="RtfText.cs"/>
+ <Compile Include="../Cliphoard.Windows/SearchInputState.cs" Link="SearchInputState.cs"/>
+ <Compile Include="../Cliphoard.Windows/TimeQuery.cs" Link="TimeQuery.cs"/>
+ <Compile Include="../Cliphoard.Windows/SensitiveRevealState.cs" Link="SensitiveRevealState.cs"/>
+ <Compile Include="../Cliphoard.Windows/GemmaPictureRelevance.cs" Link="GemmaPictureRelevance.cs"/>
+ <EmbeddedResource Include="../Cliphoard.Windows/TagBaskets.json" LogicalName="Cliphoard.Windows.TagBaskets.json"/>
+ <Compile Include="../Cliphoard.Windows/TagCatalog.cs" Link="TagCatalog.cs"/>
+ <Compile Include="../Cliphoard.Windows/ContentShape.cs" Link="ContentShape.cs"/>
+ <Compile Include="../Cliphoard.Windows/ContentDetectors.cs" Link="ContentDetectors.cs"/>
+ <Compile Include="../Cliphoard.Windows/Keccak256.cs" Link="Keccak256.cs"/>
+ <Compile Include="../Cliphoard.Windows/ClipFlagsConverter.cs" Link="ClipFlagsConverter.cs"/>
+ <Compile Include="../Cliphoard.Windows/ContentSafety.cs" Link="ContentSafety.cs"/>
+ <Compile Include="../Cliphoard.Windows/ImageAnalysis.cs" Link="ImageAnalysis.cs"/>
+ <Compile Include="../Cliphoard.Windows/MacHistoryArchive.cs" Link="MacHistoryArchive.cs"/>
+ <Compile Include="../Cliphoard.Windows/SemanticEngine.cs" Link="SemanticEngine.cs"/>
+ <Compile Include="../Cliphoard.Windows/PortableHistory.cs" Link="PortableHistory.cs"/>
+ <Compile Include="../Cliphoard.Windows/ClipboardContent.cs" Link="ClipboardContent.cs"/>
+ <Compile Include="../Cliphoard.Windows/NativeMethods.cs" Link="NativeMethods.cs"/>
+ <Compile Include="../Cliphoard.Windows/WindowStamp.cs" Link="WindowStamp.cs"/>
+ <Compile Include="../Cliphoard.Windows/PasteInputPolicy.cs" Link="PasteInputPolicy.cs"/>
+ <Compile Include="../Cliphoard.Windows/PasteInput.cs" Link="PasteInput.cs"/>
+ <Compile Include="../Cliphoard.Windows/HistoryStore.cs" Link="HistoryStore.cs"/>
+ <Compile Include="../Cliphoard.Windows/HistoryClipboard.cs" Link="HistoryClipboard.cs"/>
+ <Compile Include="../Cliphoard.Windows/DesktopTheme.cs" Link="DesktopTheme.cs"/>
+ <Compile Include="../Cliphoard.Windows/VerifiedModelAssets.cs" Link="VerifiedModelAssets.cs"/>
+ <Compile Include="../Cliphoard.Windows/VerifiedGraph.cs" Link="VerifiedGraph.cs"/>
+ <Compile Include="../Cliphoard.Windows/HashingModel.cs" Link="HashingModel.cs"/>
+ <Compile Include="../Cliphoard.Windows/ModelCatalog.cs" Link="ModelCatalog.cs"/>
+ <Compile Include="../Cliphoard.Windows/OwnedProcessJob.cs" Link="OwnedProcessJob.cs"/>
+ <Compile Include="../Cliphoard.Windows/GemmaAssets.cs" Link="GemmaAssets.cs"/>
+ <Compile Include="../Cliphoard.Windows/GemmaWorkerClient.cs" Link="GemmaWorkerClient.cs"/>
+ <Compile Include="../Cliphoard.Windows/ModelWorkerProtocol.cs" Link="ModelWorkerProtocol.cs"/>
+ <Compile Include="../Cliphoard.Windows/OpenVisionModel.cs" Link="OpenVisionModel.cs"/>
+ <Compile Include="../Cliphoard.Windows/OgmaModel.cs" Link="OgmaModel.cs"/>
+ <EmbeddedResource Include="../Cliphoard.Windows/ModelGraphs/*.json" LogicalName="Cliphoard.Windows.ModelGraphs.%(Filename)%(Extension)"/>
+ <Compile Include="../Cliphoard.Windows/WavePcm.cs" Link="WavePcm.cs"/>
+ <Compile Include="../Cliphoard.Windows/SpeechModel.cs" Link="SpeechModel.cs"/>
+ <EmbeddedResource Include="Fixtures/*.png"/>
+ <Content Include="../Cliphoard.Windows/Assets/Brand.*.png;../Cliphoard.Windows/Assets/Cliphoard.*.ico" Link="Assets/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest"/>
+ <Content Include="../Cliphoard.Windows/Assets/Sounds/*.wav" Link="Assets/Sounds/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest"/>
+ <EmbeddedResource Include="Fixtures/*.wav"/>
+ <EmbeddedResource Include="Fixtures/*.json"/>
+ <EmbeddedResource Include="../Cliphoard.Windows/ThemePresets.json" LogicalName="Cliphoard.Windows.ThemePresets.json"/>
+ </ItemGroup>
+ <Target Name="BuildFixtureModelWorker" AfterTargets="Build" Condition="'$(DesignTimeBuild)' != 'true'">
+  <MSBuild Projects="$(MSBuildProjectDirectory)\..\ModelWorker\ModelWorker.csproj"
+           Targets="Restore;Publish" RemoveProperties="TargetFramework;RuntimeIdentifiers"
+           Properties="Configuration=$(Configuration);Platform=AnyCPU;RuntimeIdentifier=win-x64;SelfContained=true;RestoreLockedMode=true;PublishDir=$(TargetDir)ModelWorker\"
+           BuildInParallel="false" />
+ </Target>
+ <Target Name="BuildFixtureCompanion" AfterTargets="Build" Condition="'$(DesignTimeBuild)' != 'true'">
+  <MSBuild Projects="$(MSBuildProjectDirectory)\..\Companion\Companion.csproj"
+           Targets="Restore;Publish" RemoveProperties="TargetFramework;RuntimeIdentifiers"
+           Properties="Configuration=$(Configuration);Platform=AnyCPU;RuntimeIdentifier=$(RuntimeIdentifier);SelfContained=true;RestoreLockedMode=true;PublishDir=$(TargetDir)Companion\"
+           BuildInParallel="false" />
+ </Target>
+</Project>

@@ -4,6 +4,18 @@ import SQLite3
 
 /// Downloads use reviewed immutable Hugging Face artifacts in both distribution channels.
 final class AssetSourceTests: XCTestCase {
+    @MainActor func testBackgroundAssetPreparationCannotStealSearchProgressOwnership() async throws {
+        let state = EmbedderState.shared
+        let previous = state.state
+        defer { state.set(previous) }
+        state.set(.ready(signature: "already-loaded-search"))
+        let search = try state.beginTransfer("selected-search-model")
+        do { _ = try await ModelAssets.ensure("unknown", allowDownload: false) }
+        catch { XCTAssertTrue(error is ModelAssets.Failure) }
+        state.transferProgress(search, name: "selected-search-model", progress: 0.5)
+        XCTAssertEqual(state.state, .downloading("selected-search-model", progress: 0.5),
+                       "An auxiliary NSFW/model asset request must not replace the search model's transfer owner")
+    }
     func testPublishedSourcesArePinnedHuggingFaceOnly() {
         for name in ["open-ogma-micro", "open-ogma-small"] {
             let item = ModelAssets.catalog[name]!
@@ -175,12 +187,13 @@ final class OgmaLicenceSourceTests: XCTestCase {
         let reachable = DeepSearchLevel.allCases.compactMap(\.modelName)
         XCTAssertFalse(reachable.isEmpty, "no tier names — the enum changed shape")
         for name in reachable {
-            XCTAssertNotNil(ModelAssets.expectedSHA256[name],
+            let digest = name == DeepSearchLevel.gemma2.modelName ? GemmaMediaAssets.sha256 : ModelAssets.expectedSHA256[name]
+            XCTAssertNotNil(digest,
                             "'\(name)' can be requested by DeepSearch but has no pinned "
                             + "SHA-256. `ensure` now refuses to install an unpinned model, so "
                             + "this tier would fail at runtime rather than silently accept "
                             + "whatever the network returned — but it must not ship at all.")
-            XCTAssertEqual(ModelAssets.expectedSHA256[name]?.count, 64,
+            XCTAssertEqual(digest?.count, 64,
                            "'\(name)' has a digest that is not a 64-char SHA-256 hex string")
         }
     }

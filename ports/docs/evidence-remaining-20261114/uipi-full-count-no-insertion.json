@@ -1,0 +1,21 @@
+{
+  "sender_integrity": 8192,
+  "target_integrity": 12288,
+  "target_pid": 11180,
+  "foreground_matched": true,
+  "requested": 4,
+  "returned": 4,
+  "win32_error": 0,
+  "result": "Submitted",
+  "disabled": false,
+  "native_batches": 1,
+  "second_result": "Submitted",
+  "no_second_native_call": false,
+  "before_characters": 0,
+  "after_characters": 0,
+  "after_pastes": 0,
+  "clipboard_sequence_before_input": 236,
+  "clipboard_sequence_after_input": 236,
+  "control_released": true,
+  "v_released": true
+}

@@ -1,0 +1,29 @@
+{
+  "method": "native SendInput with deliberately truncated first submission; not an OS-generated short return",
+  "probes": [
+    {
+      "prefix": 0,
+      "result": "PartialCleaned",
+      "released": true,
+      "characters": 0
+    },
+    {
+      "prefix": 1,
+      "result": "PartialCleaned",
+      "released": true,
+      "characters": 0
+    },
+    {
+      "prefix": 2,
+      "result": "PartialCleaned",
+      "released": true,
+      "characters": 44
+    },
+    {
+      "prefix": 3,
+      "result": "PartialCleaned",
+      "released": true,
+      "characters": 44
+    }
+  ]
+}

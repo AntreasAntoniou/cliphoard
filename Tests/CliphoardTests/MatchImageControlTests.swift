@@ -69,7 +69,7 @@ final class MatchImageControlTests: XCTestCase {
         let body = String(rest[..<(end?.lowerBound ?? rest.endIndex)])
         XCTAssertTrue(body.contains("model.referenceImage = "),
                       "the picker no longer stores the chosen image")
-        XCTAssertTrue(body.contains("settings.searchMode = .image"),
+        XCTAssertTrue(body.contains("settings.searchModality = .images") && body.contains("model.applySearchModality(.images)") && body.contains("settings.imageSearchModel = .clip"),
                       "choosing a reference image must switch the search mode to .image. The "
                       + "reference only ranks image clips, so in any other mode the user "
                       + "would pick a file and watch nothing happen — with no text on the "
@@ -84,7 +84,7 @@ final class MatchImageControlTests: XCTestCase {
         let source = try String(
             contentsOf: root.appendingPathComponent("Sources/Cliphoard/UI/ContentView.swift"),
             encoding: .utf8)
-        guard let start = source.range(of: "private var referenceImagePicker") else {
+        guard let start = source.range(of: "private func beginImageSearch()") else {
             return XCTFail("referenceImagePicker was renamed — move this test with it")
         }
         let body = String(source[start.upperBound...].prefix(900))
@@ -107,7 +107,7 @@ final class MatchImageControlTests: XCTestCase {
         guard let start = source.range(of: "private var referenceImagePicker") else {
             return XCTFail("referenceImagePicker was renamed")
         }
-        let body = String(source[start.upperBound...].prefix(2600))
+        let body = try String(contentsOf: root.appendingPathComponent("Sources/Cliphoard/UI/SearchBarView.swift"), encoding: .utf8)
         XCTAssertTrue(body.contains(#"accessibilityLabel("Search by image")"#),
                       "an icon-only button with no accessibility label is unidentifiable to "
                       + "VoiceOver — the visible text used to serve as its name")

@@ -30,6 +30,9 @@ def check_environment(environment):
 
 
 TEXT_RESOURCES = {"LICENSE", "LICENSE-Apache-2.0.txt", "THIRD-PARTY-NOTICES.md"}
+# Compiler-produced Focus metadata: pin the complete JSON so permitted names
+# cannot carry renamed model data. Update deliberately when the intent/compiler changes.
+FOCUS_METADATA_PINS = {'extract.actionsdata': '112f1497e64edba7083e1a26f3ea6959eb5f7a5d436e2dbcad6a70b7d39552d9', 'version.json': '2843a9fcb60316043a4cc567168ba2313a663118d21f0393059af7261d36eb2b'}
 HUB_NAMES = {"swift-transformers_Hub.bundle", "swift_transformers_Hub.bundle"}
 HUB_CONFIGS = {
     "gpt2_tokenizer_config.json": "551e26ec611d8d0c8edc3ef72e518a38418cb71f40de1347dd486a595e1557d7",
@@ -105,6 +108,13 @@ def allowed_file(relative, path):
         if not isinstance(plistlib.loads(bounded_data(path)), dict):
             raise PolicyError("invalid privacy manifest")
         return
+    if len(resource) == 2 and resource[0] == "Metadata.appintents":
+        pin = FOCUS_METADATA_PINS.get(resource[1])
+        data = json.loads(bounded_data(path, 16_384))
+        canonical = json.dumps(data, sort_keys=True, separators=(",", ":")).encode()
+        if pin is None or hashlib.sha256(canonical).hexdigest() != pin:
+            raise PolicyError("unapproved or altered Focus metadata")
+        return
     if resource[0] == "ThirdPartyNotices":
         pin = NOTICE_PINS.get("/".join(resource[1:]))
         if pin is None or hashlib.sha256(bounded_data(path)).hexdigest() != pin:
@@ -134,6 +144,8 @@ def allowed_file(relative, path):
 def allowed_directory(relative):
     parts = relative.parts
     if relative.as_posix() in ("Contents", "Contents/MacOS", "Contents/Frameworks", "Contents/Resources", "Contents/_CodeSignature"):
+        return True
+    if parts == ("Contents", "Resources", "Metadata.appintents"):
         return True
     if parts[:3] == ("Contents", "Resources", "ThirdPartyNotices"):
         return parts[3:] in ((), ("LiteRTLM",))

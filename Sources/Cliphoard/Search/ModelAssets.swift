@@ -107,20 +107,19 @@ enum ModelAssets {
         }
         guard !result.isEmpty else { throw Failure.corrupt }; return result
     }
-    static func ensure(_ name: String, allowDownload: Bool = true, root: URL = storeDir) async throws -> Located {
+    static func ensure(_ name: String, allowDownload: Bool = true, root: URL = storeDir,
+        progress: @escaping @Sendable (Double) -> Void = { _ in }) async throws -> Located {
         try Task.checkCancellation()
-        let ticket = try await EmbedderState.shared.beginTransfer(name)
-        defer { Task { @MainActor in EmbedderState.shared.endTransfer(ticket) } }
-        try await prepare(name, allowDownload: allowDownload, root: root, progress: { value in
-            Task { @MainActor in EmbedderState.shared.transferProgress(ticket, name: name, progress: value) }
-        })
+        // Asset preparation also serves NSFW analysis. Only the caller owns its
+        // UI status; background users must never replace the search model state.
+        try await prepare(name, allowDownload: allowDownload, root: root, progress: progress)
         try Task.checkCancellation()
         guard let found = locate(name) else { throw Failure.corrupt }; return found
     }
     /// Both towers become visible together after all compilation and integrity checks.
-    static func ensureImageModels(allowDownload: Bool = true,
+    static func ensureImageModels(allowDownload: Bool = true, root: URL = storeDir,
         progress: @escaping @Sendable (Double) -> Void = { _ in }) async throws {
-        try await prepare("openvision-tiny-p8", allowDownload: allowDownload, root: storeDir, progress: progress)
+        try await prepare("openvision-tiny-p8", allowDownload: allowDownload, root: root, progress: progress)
     }
     private static let coordinator = PreparationCoordinator()
     private actor PreparationCoordinator {

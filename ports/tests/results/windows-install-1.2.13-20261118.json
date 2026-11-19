@@ -1,0 +1,25 @@
+{
+  "version": "1.2.13.0",
+  "msi_sha256": "197436DDA003472529E3DF61152B2B112E3D4843897AEB21D74EC7C479531D83",
+  "verified_files": 948,
+  "guards": [
+    {
+      "flag": "--synthetic-fixture",
+      "exit_code": 78
+    },
+    {
+      "flag": "--synthetic-history-profile",
+      "exit_code": 78
+    },
+    {
+      "flag": "--synthetic-brand-preview-light",
+      "exit_code": 78
+    },
+    {
+      "flag": "--synthetic-brand-preview-dark",
+      "exit_code": 78
+    }
+  ],
+  "history_files": 2,
+  "history_unchanged": true
+}

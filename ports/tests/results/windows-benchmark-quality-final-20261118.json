@@ -1,0 +1,36 @@
+{
+    "version":  1,
+    "started_utc":  "2026-11-18T22:55:21.2711707Z",
+    "finished_utc":  "2026-11-18T22:57:24.0877932Z",
+    "executable_sha256":  "2CE43FF08CF33180F88397A2AAFA480B2C4754B14E23E105F5F5B77C6A57973A",
+    "architecture":  "ARM64",
+    "assembly_sha256":  "F5C2558230B5E7B166A15BE8D9CC3D5F92C2A169DAE50953543880F7B13FD72A",
+    "executable_machine":  "0xAA64",
+    "policy_executable_sha256":  "286E9164DDE0833E3E575CC27291F5355C68F528A725BE1275DEB9BFCCEBF145",
+    "policy_assembly_sha256":  "598CB3EFEE591DBDD463593C7C9F7F28F4825550BE7B77C20572E165FDC98A37",
+    "cases":  2,
+    "failed":  2,
+    "checks":  432,
+    "includes_models":  false,
+    "includes_search_evaluation":  true,
+    "results":  [
+                    {
+                        "suite":  "search-evaluation-text",
+                        "iteration":  1,
+                        "status":  "failed",
+                        "checks":  336,
+                        "exit_code":  0,
+                        "milliseconds":  64124.84,
+                        "failure":  "37 retrieval cases missed the top-three or empty-result expectation."
+                    },
+                    {
+                        "suite":  "search-evaluation-images",
+                        "iteration":  1,
+                        "status":  "failed",
+                        "checks":  96,
+                        "exit_code":  0,
+                        "milliseconds":  58573.39,
+                        "failure":  "4 retrieval cases missed the top-three or empty-result expectation."
+                    }
+                ]
+}

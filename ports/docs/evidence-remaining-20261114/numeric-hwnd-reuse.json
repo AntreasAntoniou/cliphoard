@@ -1,0 +1,9 @@
+{
+  "numeric_reuse": true,
+  "original_hwnd": 2818644,
+  "iterations": 32766,
+  "elapsed_ms": 6820,
+  "same_process": true,
+  "stale_refused": true,
+  "fresh_stamp_survived_stale_disposal": true
+}

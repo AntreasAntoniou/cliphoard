@@ -144,7 +144,7 @@ final class AppSettings: ObservableObject {
     /// After a licence change, bring the gated settings back in line with what the build
     /// will actually do. Only ever turns things OFF (or leaves them), never deletes. The
     /// history limit is not an entitlement setting and is never touched here.
-    private func syncGatedSettingsToEntitlement() {
+    func syncGatedSettingsToEntitlement() {
         // A verified key turns the image features ON. 1.0.0's default was on for everyone,
         // and a buyer whose paid feature is silently off has bought a support ticket — so a
         // deliberate Verify press is allowed to override a previous off. Only a press does
@@ -153,6 +153,7 @@ final class AppSettings: ObservableObject {
         let allowed = ClipStore.imageUnderstandingAllowed(entitlement)
         if imageUnderstanding != allowed { imageUnderstanding = allowed }
         if !SearchMode.available(entitlement).contains(searchMode) { searchMode = .smart }
+        if !entitlement.isPro && searchModality != .text && searchModality != .all { searchModality = .text }
     }
     @Published var launchAtLogin: Bool { didSet { LoginItem.set(launchAtLogin) } }
     @Published var activateOnSummon: Bool { didSet { UserDefaults.standard.set(activateOnSummon, forKey: "activateOnSummon") } }
@@ -310,13 +311,15 @@ final class AppSettings: ObservableObject {
         layoutMode = Theme.layout
         searchTiming = SearchTiming.current()
         let capabilities = SearchPreferences.capabilities()
-        searchModality = SearchPreferences.modality()
+        let savedModality = SearchPreferences.modality()
+        let initialModality: SearchModality = !store.entitlement.isPro && savedModality != .text && savedModality != .all ? .text : savedModality
+        searchModality = initialModality
         imageSearchModel = capabilities.imageModel
         searchTextEnabled = capabilities.text; searchImagesEnabled = capabilities.images
         searchAudioEnabled = capabilities.audio; searchVideoEnabled = capabilities.video
         // Persist the legacy migration once, before the text matching style changes.
         let defaults = UserDefaults.standard
-        defaults.set(SearchPreferences.modality().rawValue, forKey: "searchModality")
+        defaults.set(initialModality.rawValue, forKey: "searchModality")
         defaults.set(capabilities.imageModel.rawValue, forKey: "imageSearchModel")
         defaults.set(capabilities.text, forKey: "searchTextEnabled")
         defaults.set(capabilities.images, forKey: "searchImagesEnabled")
@@ -365,6 +368,7 @@ final class AppSettings: ObservableObject {
                 if !SearchMode.available(self.entitlement).contains(self.searchMode) {
                     self.searchMode = .exact
                 }
+                if !self.entitlement.isPro && self.searchModality != .text && self.searchModality != .all { self.searchModality = .text }
                 if self.entitlement.isPro { self.proPitch = nil }
                 self.objectWillChange.send()
             }
@@ -417,12 +421,14 @@ struct SettingsWindowContent: View {
         .background(Theme.barBackground())
         .tint(Theme.accent)
         .preferredColorScheme(Theme.t.scheme)
+        .environment(\.colorScheme, Theme.t.scheme ?? .light)
         .fontDesign(Theme.t.fontDesign)
     }
 }
 
 /// The scrollable contents of the dedicated Settings window.
 struct SettingsView: View {
+    @ObservedObject private var barHeight = BarHeightSettings.shared
     @ObservedObject var settings: AppSettings
     @ObservedObject var store: ClipStore
     /// Shared modal ownership keeps the global shortcut from dismissing a file picker
@@ -472,6 +478,11 @@ struct SettingsView: View {
                     }
                 }
 
+#if !APP_STORE || LOCAL_PERFORMANCE_PRO
+                section("Updates") { DirectUpdateSettingsView() }
+                    .id("cliphoard-updates")
+#endif
+
                 // GATE 6. Between General and Appearance, where someone looking for "how do
                 // I pay / where did my key go" will find it without scrolling past the tags.
                 section("Cliphoard Pro") {
@@ -499,6 +510,10 @@ struct SettingsView: View {
                         .padding(.vertical, 10)
                     }
 #if APP_STORE
+#if LOCAL_PERFORMANCE_PRO
+                    Text("Pro enabled for local performance testing. No purchase required.")
+                        .font(.system(size: 11)).foregroundStyle(.secondary)
+#else
                     Text("Pro unlocks image search and text recognition with a one-time App Store purchase. Free history, text search, imports and encrypted export remain available.")
                         .font(.system(size: 11)).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -510,6 +525,7 @@ struct SettingsView: View {
                         if purchase.isPresentingSystemSheet { ProgressView().controlSize(.small) }
                     }
                     .controlSize(.small)
+#endif
                     if let message = purchase.statusMessage {
                         Text(message).font(.system(size: 11)).foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
@@ -597,6 +613,23 @@ struct SettingsView: View {
                     }
                     Text(settings.layoutMode.subtitle)
                         .font(.system(size: 11)).foregroundStyle(.secondary)
+                    HStack {
+                        Text("Bar height")
+                        Slider(value: Binding(get: { barHeight.previewHeight },
+                                              set: { barHeight.setHeight($0) }),
+                               in: BarHeightSettings.range, step: 10)
+                            .accessibilityLabel("Bar height")
+                        Text("\(Int(barHeight.previewHeight / BarHeightSettings.defaultHeight * 100))%")
+                            .monospacedDigit().frame(width: 40)
+                        Button("Reset") { barHeight.setHeight(BarHeightSettings.defaultHeight) }
+                            .disabled(barHeight.previewHeight == BarHeightSettings.defaultHeight)
+                    }
+                    Text("Resize clip previews and the results area. Changes apply immediately and are saved. Extra height is limited on smaller displays; controls keep their normal size.")
+                        .font(.system(size: 11)).foregroundStyle(.secondary)
+                }
+
+                section("Content analysis") {
+                    ContentAnalysisOptions(analysis: store.contentAnalysis, isPro: settings.entitlement.isPro)
                 }
 
                 section("Images") {

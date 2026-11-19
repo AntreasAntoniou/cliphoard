@@ -1,0 +1,20 @@
+{
+  "frontend_visible_result": "Selection refused: target/input unavailable or modifiers held",
+  "actual_sequence_after": 226,
+  "elevated_editor": {
+    "pid": 11180,
+    "session": 2,
+    "hwnd": 5046978,
+    "integrity": 12288,
+    "synthetic": true,
+    "text": "",
+    "characters": 0,
+    "paste_messages": 0,
+    "changes": 0,
+    "focused": true,
+    "foreground": true,
+    "sequence": 226,
+    "clipboard_changed_with_focus": false,
+    "changed_sequence": 0
+  }
+}

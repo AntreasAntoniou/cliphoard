@@ -1,0 +1,225 @@
+{
+  "version": 1,
+  "started_utc": "2026-11-19T04:51:00.7451843Z",
+  "finished_utc": "2026-11-19T04:52:00.6726298Z",
+  "executable_sha256": "5E623B5F5F6BBF35ADF958CFFCB4F1E07DC492545F7CF7B69A62A3221F0BEB83",
+  "architecture": "ARM64",
+  "assembly_sha256": "92CA326CA0892E753C7171A8F6BC44A860B0A899A626FE6ABD2C17F6A32085DD",
+  "executable_machine": "0x8664",
+  "policy_executable_sha256": "02B884D4665C70302C65D33889B67FD1C1272D7C98EF0117C89316314901E293",
+  "policy_assembly_sha256": "AB3DC714819C01CF080FB483D9D94ADEEC878A4E9F0D678F915A90C74AFE1E88",
+  "cases": 23,
+  "failed": 0,
+  "checks": 860,
+  "includes_models": false,
+  "includes_search_evaluation": false,
+  "results": [
+    {
+      "suite": "hashing",
+      "iteration": 1,
+      "status": "passed",
+      "checks": 9,
+      "exit_code": 0,
+      "milliseconds": 1469.51,
+      "failure": null
+    },
+    {
+      "suite": "detector-parity",
+      "iteration": 1,
+      "status": "passed",
+      "checks": 70,
+      "exit_code": 0,
+      "milliseconds": 403.87,
+      "failure": null
+    },
+    {
+      "suite": "parity-policy",
+      "iteration": 1,
+      "status": "passed",
+      "checks": 49,
+      "exit_code": 0,
+      "milliseconds": 508.1,
+      "failure": null
+    },
+    {
+      "suite": "theme",
+      "iteration": 1,
+      "status": "passed",
+      "checks": 44,
+      "exit_code": 0,
+      "milliseconds": 710.6,
+      "failure": null
+    },
+    {
+      "suite": "storage-parity",
+      "iteration": 1,
+      "status": "passed",
+      "checks": 14,
+      "exit_code": 0,
+      "milliseconds": 4596.06,
+      "failure": null
+    },
+    {
+      "suite": "embedding-cache",
+      "iteration": 1,
+      "status": "passed",
+      "checks": 17,
+      "exit_code": 0,
+      "milliseconds": 440.63,
+      "failure": null
+    },
+    {
+      "suite": "tag-parity",
+      "iteration": 1,
+      "status": "passed",
+      "checks": 18,
+      "exit_code": 0,
+      "milliseconds": 379.53,
+      "failure": null
+    },
+    {
+      "suite": "archive",
+      "iteration": 1,
+      "status": "passed",
+      "checks": 25,
+      "exit_code": 0,
+      "milliseconds": 1364.05,
+      "failure": null
+    },
+    {
+      "suite": "streaming-archive",
+      "iteration": 1,
+      "status": "passed",
+      "checks": 13,
+      "exit_code": 0,
+      "milliseconds": 36519.56,
+      "failure": null
+    },
+    {
+      "suite": "manager-import",
+      "iteration": 1,
+      "status": "passed",
+      "checks": 17,
+      "exit_code": 0,
+      "milliseconds": 3432.76,
+      "failure": null
+    },
+    {
+      "suite": "document",
+      "iteration": 1,
+      "status": "passed",
+      "checks": 25,
+      "exit_code": 0,
+      "milliseconds": 2478.17,
+      "failure": null
+    },
+    {
+      "suite": "perceptual",
+      "iteration": 1,
+      "status": "passed",
+      "checks": 10,
+      "exit_code": 0,
+      "milliseconds": 462.99,
+      "failure": null
+    },
+    {
+      "suite": "agent-protocol",
+      "iteration": 1,
+      "status": "passed",
+      "checks": 43,
+      "exit_code": 0,
+      "milliseconds": 503.78,
+      "failure": null
+    },
+    {
+      "suite": "agent-directory",
+      "iteration": 1,
+      "status": "passed",
+      "checks": 20,
+      "exit_code": 0,
+      "milliseconds": 242.01,
+      "failure": null
+    },
+    {
+      "suite": "agent-controller",
+      "iteration": 1,
+      "status": "passed",
+      "checks": 29,
+      "exit_code": 0,
+      "milliseconds": 650.99,
+      "failure": null
+    },
+    {
+      "suite": "agent-writer",
+      "iteration": 1,
+      "status": "passed",
+      "checks": 20,
+      "exit_code": 0,
+      "milliseconds": 642.18,
+      "failure": null
+    },
+    {
+      "suite": "companion",
+      "iteration": 1,
+      "status": "passed",
+      "checks": 17,
+      "exit_code": 0,
+      "milliseconds": 1953.77,
+      "failure": null
+    },
+    {
+      "suite": "speech-boundary",
+      "iteration": 1,
+      "status": "passed",
+      "checks": 10,
+      "exit_code": 0,
+      "milliseconds": 192.98,
+      "failure": null
+    },
+    {
+      "suite": "capture-suspension",
+      "iteration": 1,
+      "status": "passed",
+      "checks": 9,
+      "exit_code": 0,
+      "milliseconds": 160.08,
+      "failure": null
+    },
+    {
+      "suite": "workflow",
+      "iteration": 1,
+      "status": "passed",
+      "checks": 54,
+      "exit_code": 0,
+      "milliseconds": 1406.92,
+      "failure": null
+    },
+    {
+      "suite": "input-policy",
+      "iteration": 1,
+      "status": "passed",
+      "checks": 172,
+      "exit_code": 0,
+      "milliseconds": 130.63,
+      "failure": null
+    },
+    {
+      "suite": "brand",
+      "iteration": 1,
+      "status": "passed",
+      "checks": 49,
+      "exit_code": 0,
+      "milliseconds": 317.26,
+      "failure": null
+    },
+    {
+      "suite": "copy-sound",
+      "iteration": 1,
+      "status": "passed",
+      "checks": 126,
+      "exit_code": 0,
+      "milliseconds": 546.56,
+      "failure": null
+    }
+  ]
+}

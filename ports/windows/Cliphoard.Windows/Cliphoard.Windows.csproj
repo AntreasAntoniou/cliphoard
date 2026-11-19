@@ -1,0 +1,72 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <TargetPlatformMinVersion>10.0.19041.0</TargetPlatformMinVersion>
+    <RootNamespace>Cliphoard.Windows</RootNamespace>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets/Cliphoard.ico</ApplicationIcon>
+    <UseWinUI>true</UseWinUI>
+    <WindowsPackageType>None</WindowsPackageType>
+    <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
+    <RuntimeIdentifiers>win-x64;win-arm64</RuntimeIdentifiers>
+    <Platforms>x64;ARM64</Platforms>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>false</AllowUnsafeBlocks>
+  </PropertyGroup>
+  <ItemGroup>
+ <PackageReference Include="BouncyCastle.Cryptography" Version="2.7.0" />
+ <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.11" />
+    <Compile Remove="GemmaNativeModel.cs;DocumentExtraction.cs" />
+    <EmbeddedResource Include="ModelGraphs/*.json" LogicalName="Cliphoard.Windows.ModelGraphs.%(Filename)%(Extension)" />
+    <EmbeddedResource Include="TagBaskets.json" LogicalName="Cliphoard.Windows.TagBaskets.json" />
+    <EmbeddedResource Include="ThemePresets.json" LogicalName="Cliphoard.Windows.ThemePresets.json" />
+    <Content Include="Assets/Notices/*.txt" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Assets/Sounds/*.wav" CopyToOutputDirectory="PreserveNewest" />
+    <Content Update="Assets/Cliphoard.ico" CopyToOutputDirectory="PreserveNewest" />
+    <Content Update="Assets/Brand.png" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Assets/Brand.*.png;Assets/Cliphoard.*.ico" CopyToOutputDirectory="PreserveNewest" />
+    <PackageReference Include="Whisper.net" Version="1.9.1" />
+    <PackageReference Include="Whisper.net.Runtime" Version="1.9.1" />
+    <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.23.2" />
+    <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.8.260921001" />
+  </ItemGroup>
+  <Target Name="BuildPrivateModelWorker" AfterTargets="Build" Condition="'$(DesignTimeBuild)' != 'true'">
+    <MSBuild Projects="$(MSBuildProjectDirectory)\..\ModelWorker\ModelWorker.csproj"
+             Targets="Restore;Publish"
+             RemoveProperties="TargetFramework;RuntimeIdentifiers"
+             Properties="Configuration=$(Configuration);Platform=AnyCPU;RuntimeIdentifier=win-x64;SelfContained=true;RestoreLockedMode=true;PublishDir=$(TargetDir)ModelWorker\"
+             BuildInParallel="false" />
+  </Target>
+  <Target Name="IncludeWinUIResourcesInPublish" AfterTargets="ComputeFilesToPublish">
+    <Error Condition="!Exists('$(TargetDir)$(AssemblyName).pri')" Text="The compiled WinUI resource index is missing." />
+    <ItemGroup>
+      <ResolvedFileToPublish Include="$(TargetDir)$(AssemblyName).pri" RelativePath="$(AssemblyName).pri" CopyToPublishDirectory="PreserveNewest" />
+      <_CliphoardXamlBinary Include="$(TargetDir)**\*.xbf" />
+      <ResolvedFileToPublish Include="@(_CliphoardXamlBinary)">
+        <RelativePath>%(_CliphoardXamlBinary.RecursiveDir)%(_CliphoardXamlBinary.Filename)%(_CliphoardXamlBinary.Extension)</RelativePath>
+        <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      </ResolvedFileToPublish>
+      <_CliphoardWorkerFiles Include="$(TargetDir)ModelWorker\**\*" />
+      <_CliphoardCompanionFiles Include="$(TargetDir)Companion\**\*" />
+      <ResolvedFileToPublish Include="@(_CliphoardCompanionFiles)">
+        <RelativePath>Companion\%(_CliphoardCompanionFiles.RecursiveDir)%(_CliphoardCompanionFiles.Filename)%(_CliphoardCompanionFiles.Extension)</RelativePath>
+        <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      </ResolvedFileToPublish>
+      <ResolvedFileToPublish Include="@(_CliphoardWorkerFiles)">
+        <RelativePath>ModelWorker\%(_CliphoardWorkerFiles.RecursiveDir)%(_CliphoardWorkerFiles.Filename)%(_CliphoardWorkerFiles.Extension)</RelativePath>
+        <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      </ResolvedFileToPublish>
+    </ItemGroup>
+    <Error Condition="!Exists('$(TargetDir)ModelWorker\Cliphoard.ModelWorker.exe')" Text="The private model worker was not built." />
+    <Error Condition="!Exists('$(TargetDir)Companion\Cliphoard.Companion.exe')" Text="The agent companion was not built." />
+  </Target>
+  <Target Name="BuildAgentCompanion" AfterTargets="Build" Condition="'$(DesignTimeBuild)' != 'true'">
+    <MSBuild Projects="$(MSBuildProjectDirectory)\..\Companion\Companion.csproj"
+             Targets="Restore;Publish"
+             RemoveProperties="TargetFramework;RuntimeIdentifiers"
+             Properties="Configuration=$(Configuration);Platform=AnyCPU;RuntimeIdentifier=$(RuntimeIdentifier);SelfContained=true;RestoreLockedMode=true;PublishDir=$(TargetDir)Companion\"
+             BuildInParallel="false" />
+  </Target>
+</Project>

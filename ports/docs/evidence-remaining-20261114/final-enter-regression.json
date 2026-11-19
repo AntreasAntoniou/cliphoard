@@ -1,0 +1,75 @@
+{
+  "audit": [
+    {
+      "operation": "ready",
+      "utc": "2026-11-14T21:39:12.9417372Z",
+      "metadata": {
+        "pid": 12948,
+        "locked": false,
+        "epoch": 0
+      }
+    },
+    {
+      "operation": "selection-start",
+      "utc": "2026-11-14T21:39:38.5101367Z",
+      "metadata": {
+        "epoch": 4,
+        "sequence": 256
+      }
+    },
+    {
+      "operation": "selection-start",
+      "utc": "2026-11-14T21:40:04.5510977Z",
+      "metadata": {
+        "epoch": 7,
+        "sequence": 262
+      }
+    },
+    {
+      "operation": "stale-selection-refused",
+      "utc": "2026-11-14T21:40:09.5692431Z",
+      "metadata": {
+        "requestedEpoch": 7,
+        "epoch": 9,
+        "locked": false,
+        "sequence": 262
+      }
+    }
+  ],
+  "editor": {
+    "pid": 3344,
+    "session": 2,
+    "hwnd": 328248,
+    "integrity": 8192,
+    "synthetic": true,
+    "text": "[CLIPHOARD_SYNTHETIC_V1] A synthetic rust compiler note",
+    "characters": 55,
+    "paste_messages": 1,
+    "changes": 1,
+    "focused": true,
+    "foreground": true,
+    "sequence": 262,
+    "clipboard_changed_with_focus": true,
+    "changed_sequence": 262
+  },
+  "actual_sequence_after_delayed_escape": 262,
+  "os_version": "10.0.26300.0",
+  "owned_processes_before_cleanup": [
+    {
+      "Id": 12948,
+      "ProcessName": "Cliphoard.Windows"
+    },
+    {
+      "Id": 4676,
+      "ProcessName": "cliphoard-engine"
+    },
+    {
+      "Id": 3344,
+      "ProcessName": "NativeTests"
+    },
+    {
+      "Id": 5064,
+      "ProcessName": "NativeTests"
+    }
+  ]
+}

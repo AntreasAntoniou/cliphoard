@@ -234,7 +234,10 @@ final class MediaAssetDecoder: @unchecked Sendable {
         for range in ranges {
             let start = range.start.seconds, end = range.end.seconds
             guard start.isFinite, end.isFinite, start >= 0, end > start,
-                  end <= metadata.duration, start == trackEnd else { throw Failure.unsupported }
+                  end <= limits.maximumDuration, start == trackEnd else { throw Failure.unsupported }
+            // AAC encoder padding can extend the track beyond the movie duration.
+            // Requested windows are already bounded by that duration; intersect below
+            // instead of rejecting an otherwise valid multiplexed file.
             trackEnd = end
         }
         for requested in plan.segments {

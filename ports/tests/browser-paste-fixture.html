@@ -1,0 +1,39 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Cliphoard synthetic browser paste fixture</title>
+<style>
+  body { font: 20px system-ui; max-width: 900px; margin: 50px auto; }
+  #target { min-height: 180px; border: 2px solid #555; padding: 20px; }
+  pre { white-space: pre-wrap; }
+</style>
+<h1>Synthetic browser paste</h1>
+<p>Focus the box, summon Cliphoard, and paste a synthetic clip.</p>
+<div id="target" contenteditable="true" autofocus aria-label="Synthetic paste target"></div>
+<pre id="receipt">Waiting for a paste.</pre>
+<script>
+  const target = document.querySelector('#target');
+  const receipt = document.querySelector('#receipt');
+  let pastes = 0;
+  target.addEventListener('paste', async event => {
+    event.preventDefault();
+    const data = event.clipboardData;
+    const result = { paste: ++pastes, types: Array.from(data.types), images: [], text: data.getData('text/plain').slice(0, 128) };
+    receipt.textContent = JSON.stringify(result, null, 2);
+    try {
+    for (const file of data.files) {
+      if (!file.type.startsWith('image/')) continue;
+      const bitmap = await createImageBitmap(file);
+      const canvas = document.createElement('canvas');
+      canvas.width = bitmap.width;
+      canvas.height = bitmap.height;
+      const context = canvas.getContext('2d');
+      context.drawImage(bitmap, 0, 0);
+      const rgba = Array.from(context.getImageData(Math.floor(bitmap.width / 2), Math.floor(bitmap.height / 2), 1, 1).data);
+      result.images.push({ type: file.type, width: bitmap.width, height: bitmap.height, center: rgba });
+      bitmap.close();
+    }
+    } catch (error) { result.error = error.name; }
+    receipt.textContent = JSON.stringify(result, null, 2);
+    target.textContent = 'Synthetic paste received.';
+  });
+</script>

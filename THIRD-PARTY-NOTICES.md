@@ -126,6 +126,12 @@ SOFTWARE.
   build. Recorded explicitly so its absence from the list above is a decision
   rather than an omission.
 
+### embeddinggemma-2-740m — Apache-2.0
+
+- **EmbeddingGemma 2 (740M), LiteRT community conversion** — Apache-2.0 model-card license. Exact model revision `94408f31843f8bd0adb11c262292627287f5fda4`, file `embeddinggemma-2-740m.litertlm`, SHA256 `e7a8a2204b91e0f96e92960e84a09a89212e1633dcb7575a9bf3378b4df77f4c`. NOT bundled in either distribution channel. These data weights are downloaded from the pinned Hugging Face revision only when the user chooses preparation. This is a distinct model from the separately documented retired embeddinggemma-300m tier. Source: https://huggingface.co/litert-community/embeddinggemma-2-740m-litert-lm/tree/94408f31843f8bd0adb11c262292627287f5fda4
+- **How it reaches you:** NOT bundled. Downloaded from the pinned revision only after explicit user preparation; no model weights are included in either app.
+- **Primary model:** https://huggingface.co/google/embeddinggemma-2/tree/f9972ac22e696a105c482202646979e33e4b5a1e (Apache-2.0 model card).
+
 ## Removed: EmbeddingGemma
 
 A `max` tier backed by [google/embeddinggemma-300m](https://huggingface.co/google/embeddinggemma-300m)
@@ -151,7 +157,6 @@ repository (MIT), validated bit-for-bit against the reference Python tokenizer.
 ## Multimodal media search and optional speech
 
 - **Embedded Hugging Face Hub and tokenizer sources in ArgmaxCore** — Apache-2.0, Copyright 2022 Hugging Face SAS, with original 2019/2024 notices retained in source. These are based on swift-transformers 1.1.6, revision `573e5c9036c2f136b3a8a071da8e8907322403d0`, and include Argmax's upstream-marked modifications. The original headers and modification annotations are preserved. The complete Apache-2.0 license is included at `ThirdPartyNotices/LiteRTLM-LICENSE.txt`; the outer Argmax MIT license does not replace these embedded-source terms.
-- **EmbeddingGemma 2 (740M), LiteRT community conversion** — Apache-2.0 model-card license. Exact model revision `94408f31843f8bd0adb11c262292627287f5fda4`, file `embeddinggemma-2-740m.litertlm`, SHA256 `e7a8a2204b91e0f96e92960e84a09a89212e1633dcb7575a9bf3378b4df77f4c`. NOT bundled in either distribution channel. These data weights are downloaded from the pinned Hugging Face revision only when the user chooses preparation. This is a distinct model from the retired embeddinggemma-300m tier above. Source: https://huggingface.co/litert-community/embeddinggemma-2-740m-litert-lm/tree/94408f31843f8bd0adb11c262292627287f5fda4
 - **LiteRT-LM 0.18.1** — Google, Apache-2.0. The application links the pinned official universal macOS runtime and includes thirteen upstream Swift wrappers. Its complete top-level license is included at `ThirdPartyNotices/LiteRTLM-LICENSE.txt`. Source: https://github.com/google-ai-edge/LiteRT-LM/tree/v0.18.1
 - **WhisperKit / ArgmaxCore 1.1.1** — MIT. Linked for optional local speech transcription. Speech model weights and tokenizer data are prepared only on request from pinned public repositories; recordings are never uploaded for transcription. The required upstream software notice follows.
 

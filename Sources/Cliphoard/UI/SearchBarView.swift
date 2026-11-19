@@ -16,59 +16,51 @@ struct SearchBarView<Filters: View>: View {
     var submitSearch: () -> Void = {}
     var badges: [SearchScopeBadge] = []
     var brandImage: NSImage? = nil
+    var activeFilterCount = 0
     @ViewBuilder var filters: () -> Filters
 
+    /// Query construction fills the row; app utilities retain a stable trailing home.
+    static var modelsButtonWidth: CGFloat { 96 }
+
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            Group {
-                if let brandImage {
-                    Image(nsImage: brandImage).resizable().frame(width: 30, height: 30)
-                } else {
-                    Image(systemName: "doc.on.clipboard.fill")
-                        .font(.system(size: 22)).foregroundStyle(Theme.accent)
-                }
-            }.frame(width: 30, height: 34).accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 6) {
-                FlowLayout(spacing: 8) {
-                    searchField
-                    Button(action: openOptions) {
-                        Image(systemName: "slider.horizontal.3").frame(width: 26, height: 34)
-                    }.buttonStyle(.plain).help((["Search options: models, timing and content types"] + badges.map(\.label)).joined(separator: "\n"))
-                        .accessibilityLabel("Search options")
-                    Picker("Matching", selection: $matching) {
-                        ForEach(SearchControlLabels.matchingModes) { mode in
-                            Text(mode.title).tag(mode).help(mode.blurb)
-                        }
+        GeometryReader { geometry in
+            let compact = geometry.size.width < 760
+            HStack(spacing: 10) {
+                Group {
+                    if let brandImage {
+                        Image(nsImage: brandImage).resizable().scaledToFit()
+                    } else {
+                        Image(systemName: "doc.on.clipboard.fill").foregroundStyle(Theme.accent)
                     }
-                    .labelsHidden().pickerStyle(.menu).frame(width: 85, height: 34)
-                    .accessibilityLabel("Matching")
-                    Picker("Search in", selection: $scope) {
-                        ForEach([SearchModality.all, .text, .images, .audio, .video]) { mode in
-                            Text(SearchControlLabels.scope(mode) +
-                                 (!isPro && mode != .text && mode != .all ? " · Pro" : ""))
-                                .tag(mode).help(SearchControlLabels.scopeDetail(mode))
-                        }
-                    }
-                    .labelsHidden().pickerStyle(.menu).frame(width: 105, height: 34)
-                    .accessibilityLabel("Search in")
-                    Button(action: searchByImage) {
-                        Image(systemName: ContentView.matchImageSymbol)
-                            .font(.system(size: 15)).frame(width: 26, height: 34)
-                    }.buttonStyle(.plain)
-                        .help("Search by image — choose a picture, or set up image search")
-                        .accessibilityLabel("Search by image")
-                    Button(action: openSettings) {
-                        Image(systemName: "gearshape").frame(width: 26, height: 34)
-                    }.buttonStyle(.plain).help("Settings").accessibilityLabel("Settings")
-                    filters().font(.system(size: 11)).frame(height: 34)
-                }
+                }.frame(width: 32, height: 36).accessibilityHidden(true)
+                searchField(compact: compact)
+                    .frame(maxWidth: .infinity)
+                    .layoutPriority(1)
+                Button(action: openOptions) {
+                    HStack(spacing: 5) {
+                        Image(systemName: "cpu")
+                        if !compact { Text("Models") }
+                    }.font(.system(size: 12, weight: .medium))
+                        .frame(width: compact ? 36 : Self.modelsButtonWidth, height: 36)
+                        .contentShape(Rectangle())
+                }.buttonStyle(.plain)
+                    .help((["Models and search options: local models, timing and included content"] + badges.map(\.label)).joined(separator: "\n"))
+                    .accessibilityLabel("Models and search options")
+                Button(action: openSettings) {
+                    Image(systemName: "gearshape").font(.system(size: 17))
+                        .frame(width: 36, height: 36).contentShape(Rectangle())
+                }.buttonStyle(.plain).help("Settings · ⌘,")
+                    .accessibilityLabel("Settings").keyboardShortcut(",", modifiers: .command)
             }
-        }
-        .padding(.horizontal, 16).padding(.vertical, 9)
+            .padding(.horizontal, 16).padding(.vertical, 8)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        }.frame(height: 56)
     }
 
-    private var searchField: some View {
-        HStack(spacing: 6) {
+    private var filterCount: Int { activeFilterCount + (scope == .all ? 0 : 1) }
+
+    private func searchField(compact: Bool) -> some View {
+        HStack(spacing: compact ? 5 : 8) {
             Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
             TextField("Search clips…", text: $query)
                 .textFieldStyle(.plain).font(.system(size: 13))
@@ -85,22 +77,60 @@ struct SearchBarView<Filters: View>: View {
                     Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
                 }.buttonStyle(.plain).help("Clear search").accessibilityLabel("Clear search")
             }
+            Button(action: searchByImage) {
+                Image(systemName: ContentView.matchImageSymbol)
+                    .font(.system(size: 15)).frame(width: 28, height: 32)
+                    .contentShape(Rectangle())
+            }.buttonStyle(.plain).help("Search by image — choose a picture, or set up image search")
+                .accessibilityLabel("Search by image")
+            Divider().frame(height: 18)
+            SearchChoicePicker(label: "Matching", selection: $matching,
+                choices: SearchControlLabels.matchingModes.map {
+                    .init(value: $0, title: $0.title, detail: $0.blurb)
+                }, borderless: true)
+                .frame(width: compact ? 70 : 88, height: 30)
+                .overlay(alignment: .trailing) {
+                    Image(systemName: "chevron.down").font(.system(size: 8, weight: .semibold))
+                        .padding(.trailing, 2).allowsHitTesting(false).accessibilityHidden(true)
+                }
+            Divider().frame(height: 18)
+            Menu {
+                Menu("Search in") {
+                    ForEach([SearchModality.all, .text, .images, .audio, .video]) { mode in
+                        Button { scope = mode } label: {
+                            Label(SearchControlLabels.scope(mode) +
+                                  (!isPro && mode != .text && mode != .all ? " · Pro" : ""),
+                                  systemImage: scope == mode ? "checkmark" : "circle")
+                        }.help(SearchControlLabels.scopeDetail(mode))
+                    }
+                }
+                Divider()
+                filters()
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "line.3.horizontal.decrease")
+                    if !compact { Text("Filters") }
+                    if filterCount > 0 { Text("\(filterCount)").monospacedDigit() }
+                }
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(filterCount > 0 ? Theme.accent : Color.secondary)
+                .frame(minWidth: compact ? 26 : 62, minHeight: 32)
+                .contentShape(Rectangle())
+            }.menuStyle(.borderlessButton).fixedSize()
+                .accessibilityLabel(filterCount > 0 ? "Filters, \(filterCount) active" : "Filters")
+                .help("Filter clips by content, type, pinned state, time, tags and source")
         }
-        .padding(.horizontal, 10).frame(width: 220, height: 34)
-        .background(Color.primary.opacity(searchFocused.wrappedValue ? 0.09 : 0.05),
-                    in: RoundedRectangle(cornerRadius: 10))
-        .overlay(RoundedRectangle(cornerRadius: 10)
-            .strokeBorder(Theme.accent.opacity(searchFocused.wrappedValue ? 0.6 : 0.15), lineWidth: 1))
+        .padding(.horizontal, compact ? 9 : 12).frame(height: 38)
+        .background(Color.primary.opacity(searchFocused.wrappedValue ? 0.025 : 0.015), in: Capsule())
+        .overlay(Capsule().strokeBorder(Theme.accent.opacity(searchFocused.wrappedValue ? 0.8 : 0.3), lineWidth: 1))
     }
-
-
 }
 
 enum SearchControlLabels {
     static let matchingModes: [SearchMode] = [.exact, .tag, .neural, .smart]
 
     static func scope(_ mode: SearchModality) -> String {
-        mode == .all ? "All types" : mode.title
+        mode == .all ? "All content" : mode.title
     }
 
     static func clipKindDetail(_ kind: ClipKind) -> String {
@@ -205,26 +235,28 @@ struct SearchOptionsView: View {
     let manageModels: () -> Void
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Label("Search options", systemImage: "slider.horizontal.3").font(.headline)
+            Label("Models & search", systemImage: "cpu").font(.headline)
             Picker("Search timing", selection: $timing) {
                 ForEach(SearchTiming.allCases) { Text($0.title).tag($0).help($0.detail) }
             }
             Text(timing.detail).font(.caption).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             Divider()
-            Text("Included in All types").font(.subheadline.bold())
-            Toggle("Text", isOn: $text).help("Include text when searching All types.")
-            Toggle("Images · Pro", isOn: $images).disabled(!isPro).help("Include images when searching All types. Requires Pro.")
-            Toggle("Audio · Pro", isOn: $audio).disabled(!isPro).help("Include audio when searching All types. Requires Pro.")
-            Toggle("Video · Pro", isOn: $video).disabled(!isPro).help("Include video when searching All types. Requires Pro.")
-            Text("These switches apply when All types is selected.")
+            Text("Included in All content").font(.subheadline.bold())
+            Toggle("Text", isOn: $text).help("Include text when searching All content.")
+            Toggle("Images · Pro", isOn: $images).disabled(!isPro).help("Include images when searching All content. Requires Pro.")
+            Toggle("Audio · Pro", isOn: $audio).disabled(!isPro).help("Include audio when searching All content. Requires Pro.")
+            Toggle("Video · Pro", isOn: $video).disabled(!isPro).help("Include video when searching All content. Requires Pro.")
+            Text("These switches apply when All content is selected.")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             Divider()
             Text("Models").font(.subheadline.bold())
-            Picker("Text & tags", selection: $textModel) {
-                ForEach(DeepSearchLevel.allCases) {
-                    Text(SearchControlLabels.textModel($0)).tag($0).help(SearchControlLabels.textDetail($0))
-                }
+            HStack {
+                Text("Text & tags").font(.system(size: 12))
+                SearchChoicePicker(label: "Text model", selection: $textModel,
+                    choices: DeepSearchLevel.allCases.map {
+                        .init(value: $0, title: SearchControlLabels.textModel($0), detail: SearchControlLabels.textDetail($0))
+                    }).frame(height: 28)
             }.disabled(matching == .exact)
                 .accessibilityIdentifier("search-options-text-model")
             if matching == .exact {
@@ -232,8 +264,12 @@ struct SearchOptionsView: View {
                     .font(.caption).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            Picker("Images · Pro", selection: $imageModel) {
-                ForEach(ImageSearchModel.allCases) { Text($0.title).tag($0).help(SearchControlLabels.imageDetail($0)) }
+            HStack {
+                Text("Images · Pro").font(.system(size: 12))
+                SearchChoicePicker(label: "Image model", selection: $imageModel,
+                    choices: ImageSearchModel.allCases.map {
+                        .init(value: $0, title: $0.title, detail: SearchControlLabels.imageDetail($0))
+                    }).frame(height: 28)
             }.disabled(!isPro)
                 .accessibilityIdentifier("search-options-image-model")
             Text("Audio & video · EmbeddingGemma 2 · Pro")

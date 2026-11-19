@@ -1,0 +1,45 @@
+{
+    "version":  1,
+    "started_utc":  "2026-11-18T23:03:35.4252567Z",
+    "finished_utc":  "2026-11-18T23:03:42.9824809Z",
+    "executable_sha256":  "2CE43FF08CF33180F88397A2AAFA480B2C4754B14E23E105F5F5B77C6A57973A",
+    "architecture":  "ARM64",
+    "assembly_sha256":  "3E5EF4D036D1485503B106F5E0EB0E516D2515319BA9E192DF631EE19836577F",
+    "executable_machine":  "0xAA64",
+    "policy_executable_sha256":  "286E9164DDE0833E3E575CC27291F5355C68F528A725BE1275DEB9BFCCEBF145",
+    "policy_assembly_sha256":  "598CB3EFEE591DBDD463593C7C9F7F28F4825550BE7B77C20572E165FDC98A37",
+    "cases":  3,
+    "failed":  0,
+    "checks":  59,
+    "includes_models":  false,
+    "includes_search_evaluation":  false,
+    "results":  [
+                    {
+                        "suite":  "manager-import",
+                        "iteration":  1,
+                        "status":  "passed",
+                        "checks":  17,
+                        "exit_code":  0,
+                        "milliseconds":  3875.03,
+                        "failure":  null
+                    },
+                    {
+                        "suite":  "document",
+                        "iteration":  1,
+                        "status":  "passed",
+                        "checks":  25,
+                        "exit_code":  0,
+                        "milliseconds":  2131.13,
+                        "failure":  null
+                    },
+                    {
+                        "suite":  "companion",
+                        "iteration":  1,
+                        "status":  "passed",
+                        "checks":  17,
+                        "exit_code":  0,
+                        "milliseconds":  1421.61,
+                        "failure":  null
+                    }
+                ]
+}

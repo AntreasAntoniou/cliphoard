@@ -1,0 +1,61 @@
+[
+  {
+    "operation": "ready",
+    "utc": "2026-11-14T19:25:48.9467865Z",
+    "metadata": {
+      "pid": 7616,
+      "locked": false,
+      "epoch": 0
+    }
+  },
+  {
+    "operation": "selection-start",
+    "utc": "2026-11-14T19:28:11.5521629Z",
+    "metadata": {
+      "epoch": 4,
+      "sequence": 246
+    }
+  },
+  {
+    "operation": "session-event",
+    "utc": "2026-11-14T19:28:12.5323551Z",
+    "metadata": {
+      "reason": 2,
+      "session": 2,
+      "locked": false,
+      "epoch": 5,
+      "sequence": 246
+    }
+  },
+  {
+    "operation": "purged",
+    "utc": "2026-11-14T19:28:12.7253889Z",
+    "metadata": {
+      "locked": true,
+      "epoch": 6,
+      "count": 0,
+      "sequence": 246
+    }
+  },
+  {
+    "operation": "session-event",
+    "utc": "2026-11-14T19:28:13.1139593Z",
+    "metadata": {
+      "reason": 7,
+      "session": 2,
+      "locked": true,
+      "epoch": 6,
+      "sequence": 246
+    }
+  },
+  {
+    "operation": "stale-selection-refused",
+    "utc": "2026-11-14T19:28:16.5592128Z",
+    "metadata": {
+      "requestedEpoch": 4,
+      "epoch": 6,
+      "locked": true,
+      "sequence": 246
+    }
+  }
+]

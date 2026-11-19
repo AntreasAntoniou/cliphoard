@@ -66,6 +66,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var isAskingAboutQuit = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        applyRequestedAppearance()
 #if CLIPHOARD_DEVICE_LICENSING_PROTOTYPE && !APP_STORE
         if let deviceLicenceRuntime { store.startDeviceLicensing(deviceLicenceRuntime) }
 #endif
@@ -79,6 +80,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         setupRemoteToggle()
         let notifications = AgentRequestNotifications()
         agentRequestNotifications = notifications
+#if !APP_STORE || LOCAL_PERFORMANCE_PRO
+        DirectUpdateChecker.shared.notify = { [weak notifications] release in
+            await notifications?.notifyUpdate(release) ?? false
+        }
+        notifications.onOpenUpdate = { [weak self] in self?.openUpdateSettings() }
+        DirectUpdateChecker.shared.start()
+#endif
         notifications.onOpen = { [weak self] in
             guard let self, !self.store.agentWrites.pendingNotes.isEmpty else { return }
             self.model.reviewingAgentRequests = true
@@ -105,11 +113,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     func applicationDidBecomeActive(_ notification: Notification) {
+#if !APP_STORE || LOCAL_PERFORMANCE_PRO
+        Task { await DirectUpdateChecker.shared.check() }
+#endif
         #if APP_STORE
         // Re-read StoreKit's verified on-device entitlement cache when the user returns.
         // Unlike AppStore.sync(), this does not ask them to authenticate.
         Task { await StorePurchase.shared.refreshEntitlements() }
         #endif
+    }
+
+    /// Apply an explicitly requested install appearance inside the app's own
+    /// preferences domain, including its sandbox. Ordinary launches keep it.
+    private func applyRequestedAppearance() {
+        let arguments = CommandLine.arguments
+        if let index = arguments.firstIndex(of: "--appearance"), arguments.indices.contains(index + 1),
+           let preset = ThemePreset(rawValue: arguments[index + 1]) {
+            Theme.preset = preset
+        }
     }
 
     /// A Darwin notification that toggles the bar — lets scripts/tests drive it
@@ -231,6 +252,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.removeAllItems()
         menu.addItem(withTitle: "Open Cliphoard  (⌃⌥⌘V)", action: #selector(toggle), keyEquivalent: "")
         menu.addItem(withTitle: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
+#if !APP_STORE || LOCAL_PERFORMANCE_PRO
+        menu.addItem(withTitle: DirectUpdateChecker.shared.available.map { "\($0.label) available…" }
+                     ?? "Check for Updates…", action: #selector(checkForUpdates), keyEquivalent: "")
+#endif
         menu.addItem(.separator())
 
         let limitItem = NSMenuItem(title: "History Limit", action: nil, keyEquivalent: "")
@@ -416,6 +441,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         isVisible ? hide(paste: false) : show()
     }
+
+#if !APP_STORE || LOCAL_PERFORMANCE_PRO
+    private func openUpdateSettings() {
+        model.requestedSettingsSection = "cliphoard-updates"
+        model.settingsFocusRequest = UUID()
+        openSettings()
+    }
+    @objc private func checkForUpdates() {
+        openUpdateSettings()
+        Task { await DirectUpdateChecker.shared.check(manual: true) }
+    }
+#endif
 
     @objc private func openSettings() {
         if model.showSettings { presentSettings() }

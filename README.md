@@ -230,3 +230,9 @@ MIT © Antreas Antoniou. Optional on-device models have their own licenses — s
 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 
 Agents can search explicitly shared exports and save new notes under your chosen permission using the optional [local MCP companion](tools/agent-search/README.md).
+
+### Direct update notifications
+
+From Direct build37, Free and Pro automatically check the public Cliphoard GitHub releases once a day while the app is running. A newer published Direct release appears in the bar and Settings, with a macOS notification if permission is granted. Settings → Updates lets you turn automatic checks off or check manually; the menu-bar menu also has Check for Updates. Checks send no clipboard content, licence or device identifier. GitHub receives the normal network request (including your IP address). Release pages open in your browser; Cliphoard never downloads or installs an app update automatically. App Store builds exclude this feature and continue using App Store updates.
+
+Older Direct builds, including36, need one manual download or Homebrew upgrade to get the notifier; they cannot be notified retroactively. Homebrew installations can continue updating with `brew upgrade --cask cliphoard`.

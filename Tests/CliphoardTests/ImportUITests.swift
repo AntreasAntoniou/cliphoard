@@ -82,10 +82,18 @@ final class ImportUITests: XCTestCase {
     func testScanOnlyOffersSourcesPresentOnThisMachine() {
         let model = ImportModel()
         model.scan()
-        for candidate in model.candidates {
-            XCTAssertTrue(FileManager.default.fileExists(atPath: candidate.path),
-                          "\(candidate.source.id) was offered but its store is not at "
-                          + "\(candidate.path) — the row cannot do anything")
+        if DistributionChannel.canDiscoverExternalStores {
+            for candidate in model.candidates {
+                XCTAssertTrue(FileManager.default.fileExists(atPath: candidate.path),
+                              "\(candidate.source.id) was offered but its store is not at "
+                              + "\(candidate.path) — the row cannot do anything")
+            }
+        } else {
+            // Store builds offer implemented adapters without probing external containers.
+            // A path is supplied only after the user chooses a directory in NSOpenPanel.
+            XCTAssertEqual(Set(model.candidates.map(\.id)),
+                           Set(ClipImporters.all.filter { $0.read != nil }.map(\.id)))
+            XCTAssertTrue(model.candidates.allSatisfy { $0.path.isEmpty })
         }
     }
 

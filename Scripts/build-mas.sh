@@ -48,6 +48,7 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/Cliphoard"
 cp "$ROOT/Resources/Info.plist" "$APP/Contents/Info.plist"
 bash "$ROOT/Scripts/embed-media-runtime.sh" "$APP" "$BIN_DIR"
+"$PYTHON" "$ROOT/Scripts/build-app-intents.py" --scratch "$SCRATCH" --configuration "$CONFIG" --app "$APP"
 /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $BUNDLE_ID" "$APP/Contents/Info.plist"
 if /usr/libexec/PlistBuddy -c 'Print :LSApplicationCategoryType' "$APP/Contents/Info.plist" >/dev/null 2>&1; then
     /usr/libexec/PlistBuddy -c 'Set :LSApplicationCategoryType public.app-category.productivity' "$APP/Contents/Info.plist"

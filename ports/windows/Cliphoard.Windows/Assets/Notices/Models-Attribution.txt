@@ -1,0 +1,42 @@
+Windows local model attribution
+
+open-ogma-micro and open-ogma-small, Axiotic, MIT.
+https://huggingface.co/axiotic/open-ogma-micro/tree/acb318a6f4411a42085838e674ebc2aed1219310
+https://huggingface.co/axiotic/open-ogma-small/tree/3f4cd68f43719ca494772fcc80005c115d8d91ff
+Both 384- and 1024-dimensional projection heads are supported. The weight-free runtime graphs are derived from the upstream architecture. Weights are downloaded explicitly.
+
+OpenVision Tiny patch8-224, UCSC-VLAA, Apache-2.0.
+https://huggingface.co/UCSC-VLAA/openvision-vit-tiny-patch8-224/tree/a25ea3a2427415c197fedd2b52af390bbb3ead81
+Both image and text towers are supported. The accompanying MiniLM-LICENSE.txt contains the full Apache-2.0 license.
+
+EmbeddingGemma 2 740M, LiteRT community conversion, Apache-2.0 model-card license.
+https://huggingface.co/litert-community/embeddinggemma-2-740m-litert-lm/tree/94408f31843f8bd0adb11c262292627287f5fda4
+This model is distinct from the retired embeddinggemma-300m tier. The complete Apache-2.0 text accompanies the application.
+
+LiteRT-LM 0.19.1 C API 1.0.0, Google, Apache-2.0.
+https://github.com/google-ai-edge/LiteRT-LM/releases/tag/v0.19.1
+The official runtime archive is downloaded explicitly with checksum verification and retained in the model cache. It includes its full LICENSE and third-party license directory. The private x64 .NET worker uses its CPU backend, including on Windows ARM64 through system emulation.
+
+Whisper Small, Large v3 and Large v3 Turbo, OpenAI, MIT.
+https://huggingface.co/ggerganov/whisper.cpp/tree/5359861c739e955e79d9a303bcbc70fb988958b1
+Windows uses the full ggml checkpoints with the CPU whisper.cpp backend. Weights are downloaded explicitly. Whisper.net 1.9.1 and the native runtime are MIT-licensed. Their license notices accompany the application.
+
+MIT license text for the Axiotic open-ogma model family
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

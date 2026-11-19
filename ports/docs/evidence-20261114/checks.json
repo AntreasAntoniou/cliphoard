@@ -1,0 +1,15 @@
+{
+  "host": "astrape",
+  "python": "3.14.3",
+  "dotnet": "10.0.404",
+  "architecture": "Windows ARM64",
+  "policy_assertions_cumulative": 150,
+  "native_assertions": 12,
+  "native_same_numeric_hwnd": false,
+  "frontend_build_warnings": 0,
+  "frontend_build_errors": 0,
+  "native_tests_build_warnings": 0,
+  "native_tests_build_errors": 0,
+  "fixture_processes_remaining": 0,
+  "production_qualified": false
+}

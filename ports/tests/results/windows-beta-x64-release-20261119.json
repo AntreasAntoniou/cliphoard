@@ -1,0 +1,24 @@
+{
+  "application_signature": "NotSigned",
+  "installer_signature": "NotSigned",
+  "release_guards": [
+    {
+      "exit_code": 78,
+      "option": "--synthetic-fixture"
+    },
+    {
+      "exit_code": 78,
+      "option": "--synthetic-history-profile"
+    },
+    {
+      "exit_code": 78,
+      "option": "--synthetic-brand-preview-light"
+    },
+    {
+      "exit_code": 78,
+      "option": "--synthetic-brand-preview-dark"
+    }
+  ],
+  "architecture": "x64",
+  "execution": "ARM64 emulation"
+}

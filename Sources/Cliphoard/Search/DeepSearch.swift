@@ -440,7 +440,14 @@ enum EmbedderProvider {
         EmbedderState.shared.set(.loading(name))
         loadTask = Task { @MainActor in
             do {
-                let found = try await ModelAssets.ensure(name, allowDownload: allowDownloads)
+                let transfer = try EmbedderState.shared.beginTransfer(name)
+                defer { EmbedderState.shared.endTransfer(transfer) }
+                let found = try await ModelAssets.ensure(name, allowDownload: allowDownloads, progress: { value in
+                    Task { @MainActor in
+                        guard token == loadToken else { return }
+                        EmbedderState.shared.transferProgress(transfer, name: name, progress: value)
+                    }
+                })
                 guard token == loadToken, !Task.isCancelled else { return }         // superseded
                 EmbedderState.shared.set(.loading(name))
                 let model = try await MLModel.load(contentsOf: found.compiledModel,
@@ -722,7 +729,10 @@ enum ClipIndexer {
 enum SemanticRanker {
     static func searchText(_ item: ClipItem) -> String {
         switch item.kind {
-        case .file:  return (item.filePath as NSString?)?.lastPathComponent ?? item.text
+        case .file:
+            let name = (item.filePath as NSString?)?.lastPathComponent ?? item.text
+            guard ContentAnalysisPreferences.fileTextAllowed(item), let text = item.ocrText, !text.isEmpty else { return name }
+            return name + "\n" + text
         case .color: return item.colorHex ?? item.text
         // Recognised image text, when there is any. This ONE case is the entire search
         // integration for images: the embedder, `Detectors.scan`, `lengthConfidence`

@@ -201,6 +201,7 @@ final class ClipStore: ObservableObject {
     private let dir: URL
     private let db: Database?
     lazy var mediaSearch = MediaSearchController(store: self)
+    lazy var contentAnalysis = ContentAnalysisController(store: self)
 
     /// The in-flight background indexing pass, if any. A new pass cancels the
     /// previous one so overlapping model/basket changes don't run two passes
@@ -364,6 +365,7 @@ final class ClipStore: ObservableObject {
         // After the safe-mode early return above, so safe mode is honoured by
         // construction here rather than by remembering a second check.
         scheduleImageUnderstanding()
+        if directory == nil { contentAnalysis.schedule() }
     }
 
     /// One-time re-key: when the encryption key gains Secure-Enclave backing, rows
@@ -798,6 +800,35 @@ final class ClipStore: ObservableObject {
         addToTagIndex(item)
         imageUnderstandingRevision &+= 1
         objectWillChange.send()
+    }
+
+    /// File text shares the existing sealed derived-text column. It is never pasted
+    /// instead of the original file, and the same credential-withholding rules apply.
+    func applyDocumentText(_ text: String, to item: ClipItem) {
+        guard !safeMode, storageComplete, ContentAnalysisPreferences.documentText,
+              item.kind == .file, items.contains(where: { $0 === item }) else { return }
+        applyImageUnderstanding(.init(text: text, featurePrint: [], featurePrintRevision: 0), to: item)
+    }
+
+    func invalidateDocumentTextIndex() {
+        guard !safeMode, storageComplete else { return }
+        for item in items where item.kind == .file && item.ocrText != nil {
+            item.embeddings = [:]
+            db?.deleteEmbeddings(clipID: item.id)
+        }
+        rebuildTagIndex()
+        reindexStale()
+    }
+
+    @discardableResult
+    func setNSFW(_ flagged: Bool, on item: ClipItem) -> Bool {
+        guard !safeMode, storageComplete, items.contains(where: { $0 === item }) else { return false }
+        let old = item.flags
+        if flagged { item.flags.insert(.nsfw) } else { item.flags.remove(.nsfw) }
+        guard db?.updateOCR(item) == true else { item.flags = old; return false }
+        SensitiveClipReveal.shared.lock()
+        objectWillChange.send()
+        return true
     }
 
     /// Recognise text + prints for every never-analysed image, serialized, off the main
@@ -2027,6 +2058,7 @@ final class ClipStore: ObservableObject {
     /// to whichever purge happened to run first: a secret must not reach the tag index
     /// even if some future path leaves a vector behind.
     func tags(of item: ClipItem) -> [Int] {
+        if item.kind == .file && item.ocrText != nil && (!ContentAnalysisPreferences.fileTextAllowed(item) || !ContentAnalysisPreferences.documentTags) { return [] }
         guard !item.isIndexVetoed,
               let emb = item.embeddings[EmbedderProvider.active.signature] else { return [] }
         return ClipIndexer.tags(for: emb.vector, embedder: EmbedderProvider.active)
@@ -2306,7 +2338,8 @@ final class ClipStore: ObservableObject {
                 // the two ranking paths, which get the same protection via searchText's
                 // empty-to-caption fallback. Same outcome, two different mechanisms; worth
                 // knowing, because changing either one alone would not be obviously wrong.
-                || ($0.ocrText?.lowercased().contains(q) ?? false)
+                || (($0.kind != .file || ContentAnalysisPreferences.fileTextAllowed($0))
+                    && ($0.ocrText?.lowercased().contains(q) ?? false))
                 || $0.userTags.contains { $0.contains(q) }
             }
         }

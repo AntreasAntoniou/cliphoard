@@ -1,0 +1,19 @@
+{
+  "models": [
+    "all-MiniLM-L6-v2",
+    "embeddinggemma-2-740m",
+    "hashing-256",
+    "open-ogma-micro",
+    "open-ogma-small",
+    "openai_whisper-large-v3",
+    "openai_whisper-large-v3-v20240930_turbo",
+    "openai_whisper-small",
+    "openvision-tiny-p8"
+  ],
+  "sources": {
+    "Sources/Cliphoard/Search/ModelAssets.swift": "9203d2c4c37965d433368bc8b2523f24d945a0ec6a65fdaa51f8daf229034c41",
+    "Sources/Cliphoard/Search/GemmaMediaAssets.swift": "11cec41eeb82d1ae802b03c602f07e1180d1269c7c0ca7cafd65557741d36321",
+    "Sources/Cliphoard/Search/MediaSpeechTranscriber.swift": "9adf8f6effdc4af4a08e2706cc4964bb544fc627751ad70ac333b9f1bb14f3a1",
+    "Sources/Cliphoard/Search/DeepSearch.swift": "c9f7af0fc03c1a3a9a1b64dde163c79d525a3e3afe2ebc02eba3dc6207da7943"
+  }
+}

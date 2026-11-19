@@ -92,6 +92,18 @@ struct ClipDetailView: View {
                     recognisedText
                     similarImages
                     metadata
+                    GroupBox("NSFW category") {
+                        HStack {
+                            Button("Mark as NSFW") {
+                                _ = store.updateUserTags(item, to: item.userTags.filter { $0 != "nsfw-exempt" } + ["nsfw"])
+                                _ = store.setNSFW(true, on: item)
+                            }
+                            Button("Exclude this item from NSFW detection") {
+                                _ = store.updateUserTags(item, to: item.userTags.filter { $0 != "nsfw" } + ["nsfw-exempt"])
+                                _ = store.setNSFW(false, on: item)
+                            }
+                        }.disabled(!historyIsMutable)
+                    }
                     tagsSection.id("tags")
                     actions
                 }
@@ -156,19 +168,23 @@ struct ClipDetailView: View {
     /// derived field that silently governs what search finds is the thing this whole
     /// feature had to avoid — and someone who can read it can also tell us it is wrong.
     @ViewBuilder private var recognisedText: some View {
-        if item.kind == .image, let ocr = item.ocrText {
-            GroupBox("Recognised text") {
+        if item.kind == .image || item.kind == .file, let ocr = item.ocrText {
+            GroupBox(item.kind == .file ? "Extracted file text" : "Recognised text") {
                 if ocr.isEmpty {
                     // Says which of the two empty cases this is, because "nothing found"
                     // and "we refused to store it" mean very different things to a user
                     // who just screenshotted something sensitive.
                     Text(item.isIndexVetoed || !item.flags.isDisjoint(with: ClipItem.ocrWithholdFlags)
-                         ? "Not stored — this image looked like it contained a secret, "
+                         ? "Not stored — this content looked like it contained a secret, "
                            + "one-time code, payment detail or address."
-                         : "No text found in this image.")
+                         : "No readable text found.")
                         .font(.caption).foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 } else {
+                    if item.kind == .file {
+                        Text("Extracted snapshot · up to 100 PDF pages / 200,000 characters. Refresh file text in Options after editing the file.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
                     Text(ocr)
                         .font(.system(size: 12, design: .monospaced))
                         .textSelection(.enabled)

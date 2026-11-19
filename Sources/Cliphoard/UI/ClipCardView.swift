@@ -220,6 +220,9 @@ extension ClipSignal {
         case .quarantined:
             return ("password app", "From a password app", "lock.shield.fill", .protective,
                     "Sensitive: copied from a password manager")
+        case .nsfw:
+            return ("NSFW", "NSFW", "eye.slash.fill", .caution,
+                    "Possible NSFW content: local heuristic or manual label")
         default:
             // A bit written by a NEWER build (the raw value is deliberately never
             // masked down — see `ClipItem.flags`). We cannot name it, so we say
@@ -341,7 +344,7 @@ enum ClipChips {
     /// Drawn from `ClipFlags.allKnown` bits only — there is deliberately no way
     /// to spell a positive "safe" label here.
     private static let protectiveOrder: [ClipFlags] = [
-        .secret, .financial, .piiSensitive, .quarantined, .otp, .secretEntropy, .pii
+        .secret, .financial, .piiSensitive, .quarantined, .otp, .secretEntropy, .nsfw, .pii
     ]
 }
 
@@ -350,6 +353,7 @@ enum ClipChips {
 /// A single clipboard entry rendered as a Paste-style card.
 @MainActor
 struct ClipCardView: View {
+    @ObservedObject private var barHeight = BarHeightSettings.shared
     @ObservedObject var sensitiveReveal = SensitiveClipReveal.shared
     let item: ClipItem
     let index: Int
@@ -428,6 +432,10 @@ struct ClipCardView: View {
             Color.clear
                 .overlay(alignment: .topLeading) { content }
                 .clipped()
+                    // Clipping limits drawing, not SwiftUI hit testing. A tall
+                    // aspect-fill image can otherwise cover the header's Inspect
+                    // button with an invisible hit region.
+                    .contentShape(Rectangle())
             tagRow
             footer
         }

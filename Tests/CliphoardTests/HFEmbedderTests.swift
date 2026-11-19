@@ -69,7 +69,7 @@ final class HFTierTests: XCTestCase {
     /// DISTRIBUTED ARTIFACT, not about search quality: re-adding a tier whose model
     /// carries use restrictions should fail the build, not pass review silently.
     func testEveryShippedTierIsPermissivelyLicensed() {
-        let permitted: Set<String> = ["open-ogma-micro", "open-ogma-small", "all-MiniLM-L6-v2"]
+        let permitted: Set<String> = ["open-ogma-micro", "open-ogma-small", "all-MiniLM-L6-v2", "embeddinggemma-2-740m"]
         for level in DeepSearchLevel.allCases {
             guard let name = level.modelName else { continue }
             XCTAssertTrue(permitted.contains(name),

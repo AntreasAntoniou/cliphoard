@@ -8,15 +8,23 @@ enum SensitiveClipPolicy {
     static func requiresAuthentication(flags: ClipFlags) -> Bool {
         // Ordinary contact details retain their informational classification.
         // Unknown persisted bits remain protective. Entropy now conceals by owner policy.
-        !flags.subtracting(.pii).isEmpty
+        !flags.subtracting([.pii, .nsfw]).isEmpty
+            || (flags.contains(.nsfw) && ContentAnalysisPreferences.nsfwActive)
     }
     static func requiresAuthentication(_ item: ClipItem) -> Bool {
+        // NSFW policy is dynamic: do not memoize a Focus or settings decision on a clip.
+        if ContentAnalysisPreferences.nsfwActive, !NSFWDetection.exempt(item),
+           item.flags.contains(.nsfw) || NSFWDetection.labelled(item) { return true }
+        return requiresCoreAuthentication(item)
+    }
+    /// Credential and other pre-existing protection, independent of NSFW policy.
+    static func requiresCoreAuthentication(_ item: ClipItem) -> Bool {
         item.memoizedSensitivity {
             // Alternate rich content may contain different text, attachments or link
             // destinations. Conceal it conservatively without parsing untrusted rich
             // content before authentication. Preserve the original representation.
             if let rtf = item.rtf, !rtf.isEmpty { return true }
-            if requiresAuthentication(flags: item.flags) { return true }
+            if requiresAuthentication(flags: item.flags.subtracting(.nsfw)) { return true }
             // Old rows predate new vendor signatures; presentation must protect them
             // immediately without changing or migrating the user's stored history.
             let fields = [item.text, item.ocrText ?? "", item.filePath ?? "", item.colorHex ?? "", item.sourceApp ?? ""] + item.userTags

@@ -1,0 +1,23 @@
+{
+  "integrity": 12288,
+  "block_granted": true,
+  "block_released": true,
+  "bounded_wait_ms": 500,
+  "elapsed_block_scope_ms": 6,
+  "completed": true,
+  "worker_joined": true,
+  "requested": 4,
+  "returned": 4,
+  "win32_error": 0,
+  "result": "Submitted",
+  "automatic_input_disabled": false,
+  "native_batches": 1,
+  "second_result": null,
+  "no_second_native_call": true,
+  "characters": 0,
+  "paste_messages": 0,
+  "clipboard_sequence_before_input": 246,
+  "clipboard_sequence_after_input": 246,
+  "control_released": true,
+  "v_released": true
+}

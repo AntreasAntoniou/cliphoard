@@ -1,0 +1,17 @@
+{
+  "integrity": 8192,
+  "created": true,
+  "worker_switched": true,
+  "visible_desktop_switched": false,
+  "restored": true,
+  "closed": true,
+  "requested": 4,
+  "returned": 0,
+  "win32_error": 5,
+  "result": "PartialCleaned",
+  "automatic_input_disabled": true,
+  "native_batches": 1,
+  "second_result": "Refused",
+  "no_second_native_call": true,
+  "failure": null
+}

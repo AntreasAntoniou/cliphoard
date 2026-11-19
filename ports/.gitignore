@@ -1,0 +1,4 @@
+/engine/target/
+**/bin/
+**/obj/
+/artifacts/

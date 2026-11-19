@@ -1,0 +1,18 @@
+{
+  "baseline_clipboard_sequence": 226,
+  "after_target_exit_and_fixture_purge": 226,
+  "editor_after_recreation_and_fixture_purge": {
+    "synthetic": true,
+    "text": "",
+    "characters": 0,
+    "paste_messages": 0,
+    "changes": 0,
+    "focused": true,
+    "foreground": true,
+    "sequence": 226,
+    "clipboard_changed_with_focus": false,
+    "changed_sequence": 0
+  },
+  "target_exit_confirmed_process_count": 0,
+  "note": "Native GUI closed the captured editor during a delayed selection. A recreated editor remained empty during fixture Lock and purge. This was not an OS session lock test."
+}

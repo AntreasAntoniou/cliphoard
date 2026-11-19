@@ -1,0 +1,30 @@
+{
+  "base_commit": "816599bbdb9037ab10a1b1659b6870b6934ab9a8",
+  "host": "astrape",
+  "architecture": "Windows ARM64",
+  "os_version": "10.0.26300.0",
+  "dotnet": "10.0.404",
+  "policy_assertions_cumulative": 150,
+  "general_native_assertions": 12,
+  "numeric_hwnd_reuse": true,
+  "real_session_reasons": [
+    7,
+    2
+  ],
+  "elevated_target_refused": true,
+  "native_sendinput_requested": 4,
+  "native_sendinput_returned": 0,
+  "win32_error": 5,
+  "automatic_input_disabled": true,
+  "no_second_native_call": true,
+  "private_desktop_restored_and_closed": true,
+  "visible_desktop_switched": false,
+  "frontend_build_warnings": 0,
+  "frontend_build_errors": 0,
+  "native_tests_build_warnings": 0,
+  "native_tests_build_errors": 0,
+  "handled_enter_regression": "passed",
+  "fixture_processes_remaining": 0,
+  "production_qualified": false,
+  "positive_partial_lengths_naturally_generated": false
+}
