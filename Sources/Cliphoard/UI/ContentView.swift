@@ -734,12 +734,17 @@ struct ContentView: View {
     /// A single dense row used by both list and spotlight layouts.
     @ViewBuilder private func clipRow(_ idx: Int, _ item: ClipItem) -> some View {
         if sensitiveReveal.isConcealed(item) {
-            HStack {
-                Image(systemName: "lock.shield.fill")
-                Text("Sensitive content hidden")
-                Spacer()
-                Button("Reveal") { sensitiveReveal.reveal(item) }
-                    .disabled(sensitiveReveal.isAuthenticating)
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Image(systemName: "lock.shield.fill")
+                    Text("Sensitive content hidden")
+                    Spacer()
+                    Button("Reveal") { sensitiveReveal.reveal(item) }
+                        .disabled(sensitiveReveal.isAuthenticating)
+                }
+                if let failure = sensitiveReveal.authenticationFailure(for: item) {
+                    Text(failure.message).font(.caption)
+                }
             }
             .padding(12)
         } else {
