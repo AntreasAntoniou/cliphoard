@@ -60,20 +60,25 @@ final class PanelModalDismissalTests: XCTestCase {
         }
         let body = String(source[start.upperBound..<end.lowerBound])
 
-        XCTAssertTrue(body.contains("self.model.inspectedItem != nil"),
-                      "the inspector-sheet exemption disappeared; opening a clip's detail "
-                      + "view would dismiss the panel underneath it")
         XCTAssertTrue(body.contains("self.model.isPresentingSystemPanel"),
                       "the file-picker exemption is missing — choosing a reference image "
                       + "will dismiss the interface before its results can be seen")
 
-        // Order matters: both guards must precede the hide, not follow it.
-        guard let hide = body.range(of: "self.hide(paste: false)"),
+        guard let hide = body.range(of: "self.hide(paste: false, restoreFocus: false, dueToFocusLoss: true)"),
               let guardFlag = body.range(of: "self.model.isPresentingSystemPanel") else {
-            return XCTFail("could not locate both the guard and the hide")
+            return XCTFail("could not locate the file-picker guard and passive hide")
         }
         XCTAssertLessThan(guardFlag.lowerBound, hide.lowerBound,
                           "the exemption is checked AFTER hiding, which does nothing")
+
+        // Reveal and the inspector also guard passive dismissal from a closing popover.
+        guard let sharedHide = source.range(of: "private func hide(paste:"),
+              let slideOut = source.range(of: "panel.slideOut", range: sharedHide.upperBound..<source.endIndex)
+        else { return XCTFail("could not locate the shared close path") }
+        let beforeSlideOut = source[sharedHide.upperBound..<slideOut.lowerBound]
+        XCTAssertTrue(beforeSlideOut.contains("if dueToFocusLoss {"))
+        XCTAssertTrue(beforeSlideOut.contains("guard !reveal.isAuthenticating, model.inspectedItem == nil else { return }"),
+                      "authentication and the inspector must keep the panel visible")
     }
 
     /// The flag must be cleared on every exit path, including cancel. A leaked `true` leaves
