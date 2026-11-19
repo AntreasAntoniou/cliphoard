@@ -49,16 +49,18 @@ final class DirectUpdateTests: XCTestCase {
     }
 
     @MainActor func testNewerReleaseIsSharedAndNotificationIsDeduplicatedAcrossRestart() async throws {
-        let defaults = UserDefaults(suiteName: UUID().uuidString)!
+        let suite = UUID().uuidString
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
         var notifications = 0
-        let payload = try data([release()])
+        let payload = try data([release("direct-v1.0.4-build38"), release("direct-v1.0.4-build46")])
         let response = HTTPURLResponse(url: DirectUpdateChecker.endpoint, statusCode: 200,
                                        httpVersion: nil, headerFields: nil)!
-        let checker = DirectUpdateChecker(defaults: defaults, installed: .init(marketing: "1.0.4", build: "35"),
+        let checker = DirectUpdateChecker(defaults: defaults, installed: .init(marketing: "1.0.4", build: "38"),
             load: { _ in (payload, response) })
         checker.notify = { _ in notifications += 1; return true }
         await checker.check()
-        XCTAssertEqual(checker.available?.version.build, 36)
+        XCTAssertEqual(checker.available?.version.build, 46)
         XCTAssertTrue(checker.showsNotice)
         XCTAssertEqual(notifications, 1)
         checker.dismissNotice()
@@ -72,9 +74,12 @@ final class DirectUpdateTests: XCTestCase {
         XCTAssertNotNil(restarted.available)
         await restarted.check(manual: true)
         XCTAssertEqual(notifications, 1)
-        let upgraded = DirectUpdateChecker(defaults: defaults, installed: .init(marketing: "1.0.4", build: "36"),
+        let upgraded = DirectUpdateChecker(defaults: defaults, installed: .init(marketing: "1.0.4", build: "46"),
                                             load: { _ in (payload, response) })
-        XCTAssertNil(upgraded.available)
+        upgraded.notify = { _ in XCTFail("An upgraded app must not send another notice"); return false }
+        await upgraded.check(manual: true)
+        XCTAssertEqual(upgraded.message, "You’re up to date.")
+        XCTAssertFalse(upgraded.showsNotice)
     }
 
     @MainActor func testThrottleOptOutManualCheckAndOfflineFailure() async throws {
@@ -213,13 +218,16 @@ final class DirectUpdateTests: XCTestCase {
     }
 
     @MainActor func testLivePublicReleaseFeedWhenExplicitlyRequested() async throws {
-        guard ProcessInfo.processInfo.environment["CLIPHOARD_UPDATE_LIVE"] == "1" else {
-            throw XCTSkip("Opt-in public network check")
+        let environment = ProcessInfo.processInfo.environment
+        guard let tag = environment["CLIPHOARD_UPDATE_EXPECTED_TAG"] else {
+            throw XCTSkip("Set CLIPHOARD_UPDATE_EXPECTED_TAG to check the public release feed")
         }
+        let expected = try XCTUnwrap(DirectRelease(tag: tag))
+        XCTAssertGreaterThan(expected.version.build, 1)
         let checker = DirectUpdateChecker(defaults: UserDefaults(suiteName: UUID().uuidString)!,
-            installed: .init(marketing: "1.0.4", build: "35"))
+            installed: .init(marketing: expected.version.marketing, build: String(expected.version.build - 1)))
         await checker.check(manual: true)
-        XCTAssertEqual(checker.available?.tag, "direct-v1.0.4-build36")
+        XCTAssertEqual(checker.available?.tag, expected.tag)
         XCTAssertTrue(checker.showsNotice)
         print("LIVE DIRECT FEED: \(checker.message)")
     }

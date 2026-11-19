@@ -510,10 +510,7 @@ struct SettingsView: View {
                         .padding(.vertical, 10)
                     }
 #if APP_STORE
-#if LOCAL_PERFORMANCE_PRO
-                    Text("Pro enabled for local performance testing. No purchase required.")
-                        .font(.system(size: 11)).foregroundStyle(.secondary)
-#else
+#if !LOCAL_PERFORMANCE_PRO
                     Text("Pro unlocks image search and text recognition with a one-time App Store purchase. Free history, text search, imports and encrypted export remain available.")
                         .font(.system(size: 11)).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
