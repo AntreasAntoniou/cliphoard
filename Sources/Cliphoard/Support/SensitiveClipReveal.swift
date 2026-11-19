@@ -59,7 +59,7 @@ enum SensitiveClipPolicy {
 }
 
 enum SensitiveRevealFailure: Error, Equatable {
-    case cancelled, interrupted, unavailable, notVerified, focusDidNotReturn, clipChanged
+    case cancelled, interrupted, unavailable, notVerified, clipChanged
 
     init(macError: Error?, fallback: Self) {
         switch (macError as? LAError)?.code {
@@ -77,7 +77,6 @@ enum SensitiveRevealFailure: Error, Equatable {
         case .interrupted: return "macOS interrupted authentication. Try again with Cliphoard open."
         case .unavailable: return "macOS couldn’t start authentication. Try again with Cliphoard open."
         case .notVerified: return "macOS couldn’t verify your identity. Try Touch ID or your Mac password."
-        case .focusDidNotReturn: return "Cliphoard couldn’t return to this window. Click Reveal again."
         case .clipChanged: return "This clip changed during authentication. Click Reveal again."
         }
     }
@@ -93,18 +92,12 @@ final class SensitiveClipReveal: ObservableObject {
     private var state = SensitiveRevealState()
     private var context: LAContext?
     private var expiry: Timer?
-    private var completion: Task<Void, Never>?
     typealias Authentication = (LAContext, NSWindow?, @escaping @Sendable (Result<Void, SensitiveRevealFailure>) -> Void) -> Void
     private let authenticate: Authentication
-    private let focusTimeout: Duration
-    private let restoreFocus: (NSWindow?) -> Bool
     private var observers: [NSObjectProtocol] = []
 
-    init(authenticate: Authentication? = nil, restoreFocus: ((NSWindow?) -> Bool)? = nil,
-         focusTimeout: Duration = .seconds(3), observeSystemEvents: Bool = true) {
+    init(authenticate: Authentication? = nil, observeSystemEvents: Bool = true) {
         self.authenticate = authenticate ?? Self.authenticateWithMac
-        self.restoreFocus = restoreFocus ?? Self.restoreAuthenticationFocus
-        self.focusTimeout = focusTimeout
         guard observeSystemEvents else { return }
         for name in [NSWorkspace.sessionDidResignActiveNotification, NSWorkspace.screensDidSleepNotification,
                      NSWorkspace.willSleepNotification] {
@@ -119,21 +112,13 @@ final class SensitiveClipReveal: ObservableObject {
             forName: Notification.Name("com.apple.screenIsLocked"), object: nil, queue: .main) { [weak self] _ in
                 Task { @MainActor in self?.lock(reason: "screen locked") }
             })
-        observers.append(NotificationCenter.default.addObserver(forName: NSApplication.didResignActiveNotification, object: nil, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated {
-                // This notification belongs to the focus change that just happened.
-                // Reading the state on a later task can relock a completed prompt.
-                guard let self, !self.isAuthenticating else { return }
-                self.lock()
-            }
-        })
     }
 
     private static func authenticateWithMac(
         _ context: LAContext, origin: NSWindow?,
         reply: @escaping @Sendable (Result<Void, SensitiveRevealFailure>) -> Void
     ) {
-        guard let origin, origin.isVisible else { reply(.failure(.focusDidNotReturn)); return }
+        guard let origin, origin.isVisible else { reply(.failure(.unavailable)); return }
 
         // The history bar normally leaves the previous app active. A user who
         // clicks Reveal explicitly asks Cliphoard to present macOS authentication.
@@ -147,8 +132,8 @@ final class SensitiveClipReveal: ObservableObject {
             while !NSApp.isActive, origin?.isVisible == true, clock.now < deadline {
                 try? await Task.sleep(for: .milliseconds(25))
             }
-            guard restoreAuthenticationFocus(origin) else {
-                reply(.failure(.focusDidNotReturn))
+            guard origin?.isVisible == true, NSApp.isActive else {
+                reply(.failure(.unavailable))
                 return
             }
             var error: NSError?
@@ -161,14 +146,6 @@ final class SensitiveClipReveal: ObservableObject {
                 reply(success ? .success(()) : .failure(SensitiveRevealFailure(macError: error, fallback: .notVerified)))
             }
         }
-    }
-
-    private static func restoreAuthenticationFocus(_ origin: NSWindow?) -> Bool {
-        // After the system prompt, never activate the app over another app.
-        guard let origin, origin.isVisible, NSApp.isActive else { return false }
-        guard NSApp.keyWindow == nil || NSApp.keyWindow === origin else { return false }
-        if !origin.isKeyWindow { origin.makeKey() }
-        return origin.isKeyWindow
     }
 
     func authenticationFailure(for item: ClipItem) -> SensitiveRevealFailure? {
@@ -191,8 +168,6 @@ final class SensitiveClipReveal: ObservableObject {
             Self.logger.notice("Cancelled pending reveal: \(reason.description, privacy: .public)")
         }
         state.lock()
-        completion?.cancel()
-        completion = nil
         context?.invalidate()
         context = nil
         expiry?.invalidate()
@@ -212,43 +187,28 @@ final class SensitiveClipReveal: ObservableObject {
         self.context = context
         isAuthenticating = true
 
-        authenticate(context, origin) { [weak self, weak origin] result in
+        authenticate(context, origin) { [weak self] result in
             Task { @MainActor in
                 guard let self, self.state.pending == request else { return }
-                self.completion = Task { @MainActor [weak self, weak origin] in
-                    guard let self else { return }
-                    let clock = ContinuousClock()
-                    let deadline = clock.now + self.focusTimeout
-                    var focusRestored = false
-                    // The callback can arrive while macOS is still dismissing its window.
-                    // Continue waiting for the actual key window, within a bounded period.
-                    try? await Task.sleep(for: .milliseconds(100))
-                    while !Task.isCancelled && self.state.pending == request {
-                        focusRestored = self.restoreFocus(origin)
-                        if focusRestored || clock.now >= deadline { break }
-                        try? await Task.sleep(for: .milliseconds(50))
-                    }
-                    guard !Task.isCancelled, self.state.pending == request else { return }
-                    self.finish(request, for: item, result: result, focusRestored: focusRestored)
-                }
+                // The OS has authenticated this request even if its prompt still
+                // owns focus. Start the clip's timed grant without moving focus.
+                self.finish(request, for: item, result: result)
             }
         }
     }
 
     private func finish(_ request: SensitiveRevealState.Request, for item: ClipItem,
-                        result: Result<Void, SensitiveRevealFailure>, focusRestored: Bool) {
+                        result: Result<Void, SensitiveRevealFailure>) {
         let fingerprint = SensitiveClipPolicy.fingerprint(item)
         let failure: SensitiveRevealFailure?
         switch result {
         case .failure(let error): failure = error
-        case .success where !focusRestored: failure = .focusDidNotReturn
         case .success where request.fingerprint != fingerprint: failure = .clipChanged
         case .success: failure = nil
         }
         state.complete(request, success: failure == nil,
             fingerprint: fingerprint, now: ProcessInfo.processInfo.systemUptime)
         context = nil
-        completion = nil
         lastFailure = failure.map { (item.id, $0) }
         isAuthenticating = false
         revision &+= 1

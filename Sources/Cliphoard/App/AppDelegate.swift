@@ -360,19 +360,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // key-window transition that must leave the underlying panel visible.
         panel.onResignKey = { [weak self] in
             guard let self, self.isVisible, !self.isClosing else { return }
-            // The supercard is presented as a .sheet — a separate key window — so
-            // opening it makes this panel resign key. That is NOT "clicked away":
-            // keep the panel up while the inspector is open (dismissing the sheet
-            // returns key focus here, and normal hide-on-resign resumes).
-            if self.model.inspectedItem != nil { return }
-            if SensitiveClipReveal.shared.isAuthenticating { return }
             // An NSOpenPanel takes key; keep the requested picker visible underneath it.
             if self.model.isPresentingSystemPanel { return }
             if self.model.showSearchOptions { return }
             #if APP_STORE
             if StorePurchase.shared.isPresentingSystemSheet { return }
             #endif
-            self.hide(paste: false)
+            self.hide(paste: false, restoreFocus: false, dueToFocusLoss: true)
         }
         model.onRequestFocus = { [weak self] in
             guard let self else { return }
@@ -396,7 +390,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 if NSApp.isActive {
                     self.panel.makeKeyAndOrderFront(nil)
                 } else {
-                    self.hide(paste: false, restoreFocus: false)
+                    self.hide(paste: false, restoreFocus: false, dueToFocusLoss: true)
                 }
             }
         }
@@ -561,11 +555,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         panel.slideIn()
     }
 
-    /// `restoreFocus` is a defaulted Bool rather than an enum-taking rename, because
-    /// `PasterSafetyTests` matches the literal call form `hide(paste:` — a rename would make
-    /// two live safety tests pass vacuously. Every existing call site is unchanged.
-    private func hide(paste: Bool, restoreFocus: Bool = true) {
-        SensitiveClipReveal.shared.lock()
+    private func hide(paste: Bool, restoreFocus: Bool = true, dueToFocusLoss: Bool = false) {
+        let reveal = SensitiveClipReveal.shared
+        if dueToFocusLoss {
+            // A system prompt or inspector can take key status while the bar is in
+            // use. Ordinary focus loss may hide the bar while the timed grant runs.
+            guard !reveal.isAuthenticating, model.inspectedItem == nil else { return }
+        } else {
+            reveal.lock()
+        }
         guard isVisible, !isClosing else { return }
         isClosing = true
         model.showSearchOptions = false

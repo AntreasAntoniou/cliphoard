@@ -6,70 +6,87 @@ import XCTest
 
 @MainActor
 final class SensitiveRevealInteractionTests: XCTestCase {
-    func testAuthenticationKeepsDismissGuardUntilFocusReturns() async throws {
-        var reply: (@Sendable (Result<Void, SensitiveRevealFailure>) -> Void)?
-        var focusRestorations = 0
-        let reveal = SensitiveClipReveal(authenticate: { _, _, callback in reply = callback },
-            restoreFocus: { _ in focusRestorations += 1; return true }, observeSystemEvents: false)
+    func testSuccessfulAuthenticationRevealsWithoutAKeyWindow() async throws {
+        _ = NSApplication.shared
+        let window = NSWindow(contentRect: NSRect(x: 80, y: 80, width: 100, height: 100),
+                              styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.orderBack(nil)
+        XCTAssertFalse(window.isKeyWindow)
+        let reveal = SensitiveClipReveal(authenticate: { _, _, reply in reply(.success(())) },
+            observeSystemEvents: false)
         let item = sensitiveClip()
+        defer { reveal.lock(); window.close() }
         reveal.reveal(item)
-        XCTAssertTrue(reveal.isAuthenticating)
-        try XCTUnwrap(reply)(.success(()))
-        await Task.yield()
-        XCTAssertTrue(reveal.isAuthenticating, "macOS can report success before returning key focus")
-        XCTAssertTrue(reveal.isConcealed(item))
         try await waitForCompletion(reveal)
-        XCTAssertEqual(focusRestorations, 1)
         XCTAssertFalse(reveal.isConcealed(item))
-        reveal.lock()
+        XCTAssertNil(reveal.authenticationFailure(for: item))
+        XCTAssertTrue(reveal.isConcealed(sensitiveClip()))
+        XCTAssertFalse(window.isKeyWindow)
     }
 
-    func testSuccessfulAuthenticationWaitsForTheOriginalWindow() async throws {
-        var focusChecks = 0
-        let reveal = SensitiveClipReveal(authenticate: { _, _, reply in reply(.success(())) },
-            restoreFocus: { _ in
-                focusChecks += 1
-                return focusChecks == 8
-            }, observeSystemEvents: false)
+    func testCompletedRevealSurvivesApplicationDeactivation() async throws {
+        let reveal = SensitiveClipReveal(authenticate: { _, _, reply in reply(.success(())) })
         let item = sensitiveClip()
         defer { reveal.lock() }
         reveal.reveal(item)
-        try await Task.sleep(for: .milliseconds(275))
-        XCTAssertTrue(reveal.isAuthenticating)
-        XCTAssertTrue(reveal.isConcealed(item))
         try await waitForCompletion(reveal)
-        XCTAssertEqual(focusChecks, 8)
+        XCTAssertFalse(reveal.isConcealed(item))
+        NotificationCenter.default.post(name: NSApplication.didResignActiveNotification, object: NSApp)
         XCTAssertFalse(reveal.isConcealed(item))
     }
 
-    func testSwitchingAwayOrLockingDuringAuthenticationStaysConcealed() async throws {
+    func testExplicitRelockDiscardsLateAuthentication() async throws {
         var reply: (@Sendable (Result<Void, SensitiveRevealFailure>) -> Void)?
         let reveal = SensitiveClipReveal(authenticate: { _, _, callback in reply = callback },
-            restoreFocus: { _ in false }, focusTimeout: .milliseconds(300), observeSystemEvents: false)
+            observeSystemEvents: false)
         let item = sensitiveClip()
         reveal.reveal(item)
-        try XCTUnwrap(reply)(.success(()))
-        try await waitForCompletion(reveal)
-        XCTAssertTrue(reveal.isConcealed(item))
-        XCTAssertEqual(reveal.authenticationFailure(for: item), .focusDidNotReturn)
-        reveal.reveal(item)
+        XCTAssertTrue(reveal.isAuthenticating)
         let lateReply = try XCTUnwrap(reply)
         reveal.lock()
         lateReply(.success(()))
-        await Task.yield()
+        try await Task.sleep(for: .milliseconds(25))
         XCTAssertTrue(reveal.isConcealed(item))
         XCTAssertFalse(reveal.isAuthenticating)
         XCTAssertNil(reveal.authenticationFailure(for: item))
     }
 
-    func testCancellingAuthenticationReturnsFocusButStaysConcealed() async throws {
-        var restored = false
+    func testChangingTheRequestedClipDuringAuthenticationStaysConcealed() async throws {
+        var reply: (@Sendable (Result<Void, SensitiveRevealFailure>) -> Void)?
+        let reveal = SensitiveClipReveal(authenticate: { _, _, callback in reply = callback },
+            observeSystemEvents: false)
+        let item = sensitiveClip()
+        defer { reveal.lock() }
+        reveal.reveal(item)
+        item.ocrText = "New synthetic content"
+        try XCTUnwrap(reply)(.success(()))
+        try await waitForCompletion(reveal)
+        XCTAssertTrue(reveal.isConcealed(item))
+        XCTAssertEqual(reveal.authenticationFailure(for: item), .clipChanged)
+    }
+
+    func testDisplaySleepRevokesPendingAuthentication() async throws {
+        var reply: (@Sendable (Result<Void, SensitiveRevealFailure>) -> Void)?
+        let reveal = SensitiveClipReveal(authenticate: { _, _, callback in reply = callback })
+        let item = sensitiveClip()
+        reveal.reveal(item)
+        let lateReply = try XCTUnwrap(reply)
+        NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.screensDidSleepNotification, object: nil)
+        try await waitForCompletion(reveal)
+        lateReply(.success(()))
+        try await Task.sleep(for: .milliseconds(25))
+        XCTAssertTrue(reveal.isConcealed(item))
+        XCTAssertFalse(reveal.isAuthenticating)
+        XCTAssertNil(reveal.authenticationFailure(for: item))
+    }
+
+    func testCancellingAuthenticationStaysConcealed() async throws {
         let reveal = SensitiveClipReveal(authenticate: { _, _, reply in reply(.failure(.cancelled)) },
-            restoreFocus: { _ in restored = true; return true }, observeSystemEvents: false)
+            observeSystemEvents: false)
         let item = sensitiveClip()
         reveal.reveal(item)
         try await waitForCompletion(reveal)
-        XCTAssertTrue(restored)
         XCTAssertTrue(reveal.isConcealed(item))
         XCTAssertEqual(reveal.authenticationFailure(for: item), .cancelled)
         XCTAssertNil(reveal.authenticationFailure(for: sensitiveClip()))
@@ -86,9 +103,14 @@ final class SensitiveRevealInteractionTests: XCTestCase {
         _ = NSApplication.shared
         var prompts = 0
         var cardTaps = 0
-        let reveal = SensitiveClipReveal(authenticate: { _, _, _ in prompts += 1 },
+        var reply: (@Sendable (Result<Void, SensitiveRevealFailure>) -> Void)?
+        let reveal = SensitiveClipReveal(authenticate: { _, _, callback in
+            prompts += 1
+            reply = callback
+        },
             observeSystemEvents: false)
-        let card = ClipCardView(sensitiveReveal: reveal, item: sensitiveClip(), index: 0,
+        let item = sensitiveClip()
+        let card = ClipCardView(sensitiveReveal: reveal, item: item, index: 0,
             selected: true, storeDir: FileManager.default.temporaryDirectory, onActivate: { cardTaps += 1 },
             onInspect: {}, onInspectTags: {}, onPin: {}, onDelete: {}, historyIsMutable: true,
             onTap: { cardTaps += 1 })
@@ -118,6 +140,11 @@ final class SensitiveRevealInteractionTests: XCTestCase {
         XCTAssertEqual(prompts, 1)
         XCTAssertEqual(cardTaps, 0)
         XCTAssertTrue(reveal.isAuthenticating)
+        XCTAssertFalse(window.isKeyWindow)
+        try XCTUnwrap(reply)(.success(()))
+        try await waitForCompletion(reveal)
+        XCTAssertFalse(reveal.isConcealed(item))
+        XCTAssertFalse(window.isKeyWindow)
     }
 
     private func sensitiveClip() -> ClipItem {

@@ -1,7 +1,7 @@
 import Foundation
 
 /// Ephemeral, single-clip authority. A late successful OS prompt cannot revive a
-/// closed presentation, authorize replacement content, or unlock another clip.
+/// explicitly closed presentation, authorize replacement content, or unlock another clip.
 struct SensitiveRevealState {
     struct Request: Equatable {
         let nonce: UUID

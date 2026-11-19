@@ -97,7 +97,7 @@ private actor ScreeningSpy: ContentModelEvaluating {
     func testBackgroundScreeningDoesNotCancelRevealOfADifferentClip() async throws {
         var reply: (@Sendable (Result<Void, SensitiveRevealFailure>) -> Void)?
         let reveal = SensitiveClipReveal(authenticate: { _, _, callback in reply = callback },
-            restoreFocus: { _ in true }, observeSystemEvents: false)
+            observeSystemEvents: false)
         let s = try store(sensitiveReveal: reveal)
         let checked = try file("NSFW.wav", contents: "synthetic", store: s)
         let protected = ClipItem(kind: .text, text: "Synthetic protected fixture")
