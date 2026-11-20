@@ -49,6 +49,7 @@ struct OnboardingView: View {
     @State private var explorePro = false
     @State private var downloadSelectedModel = false
     @State private var draft: GuidedSetupDraft
+    @State private var clipMoment = 0
 
     init(store: ClipStore, onDone: @escaping () -> Void, onUpgrade: @escaping () -> Void) {
         self.store = store
@@ -67,29 +68,9 @@ struct OnboardingView: View {
     private let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
     #endif
 
-    /// The app's own hoard-bag icon (the white filled bag), matching the panel
-    /// toolbar; falls back to the ⌘ glyph if the bundle icon can't load.
-    @ViewBuilder private var brandIcon: some View {
-        if let icon = Bundle.main.image(forResource: "Cliphoard") ?? NSApp.applicationIconImage {
-            Image(nsImage: icon)
-                .resizable().interpolation(.high)
-                .frame(width: 84, height: 84)
-                .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-                .accessibilityHidden(true)
-        } else {
-            Image(systemName: "command")
-                .font(.system(size: 44)).foregroundStyle(Theme.accent)
-        }
-    }
-
     var body: some View {
         VStack(spacing: 0) {
-            VStack(spacing: 8) {
-                Text("Step \(draft.step.rawValue + 1) of \(GuidedSetupDraft.Step.allCases.count)")
-                    .font(.caption).foregroundStyle(.secondary)
-                Text(draft.step.title).font(.system(size: 24, weight: .bold))
-            }
-            .padding(.top, 28).padding(.bottom, 18)
+            OnboardingStepHeader(step: draft.step, clipMoment: clipMoment)
             Divider()
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
@@ -112,7 +93,10 @@ struct OnboardingView: View {
                         .disabled(!canFinish)
                         .keyboardShortcut(.defaultAction)
                 } else {
-                    Button("Next") { draft.next() }
+                    Button("Next") {
+                        draft.next()
+                        clipMoment += 1
+                    }
                         .buttonStyle(.borderedProminent)
                         .keyboardShortcut(.defaultAction)
                 }
@@ -172,7 +156,6 @@ struct OnboardingView: View {
     @ViewBuilder private var stepContent: some View {
         switch draft.step {
         case .welcome:
-            HStack { Spacer(); brandIcon; Spacer() }
             hotkeyRow
             feature("lock.shield", "Private by design", "Clipboard processing stays on your Mac. Sensitive previews require macOS authentication to reveal.")
             pasteSection
@@ -443,4 +426,73 @@ struct OnboardingView: View {
         }
     }
     #endif
+}
+
+struct OnboardingStepHeader: View {
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    let step: GuidedSetupDraft.Step
+    let clipMoment: Int
+    var brandImage: NSImage? = nil
+
+    var body: some View {
+        Group {
+            if step == .welcome {
+                VStack(spacing: 5) {
+                    mascot(side: 206)
+                        .background {
+                            Circle().fill(Theme.accent.opacity(0.08))
+                                .frame(width: 152, height: 152)
+                        }
+                    Text(step.title).font(.system(size: 30, weight: .bold)).accessibilityAddTraits(.isHeader)
+                    Text("Set up search, tags, and clipboard history.")
+                        .font(.subheadline).foregroundStyle(.secondary)
+                    progress.padding(.top, 7)
+                }
+                .frame(maxWidth: .infinity)
+            } else {
+                HStack(spacing: 18) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        progress
+                        Text(step.title).font(.system(size: 24, weight: .bold)).accessibilityAddTraits(.isHeader)
+                    }
+                    Spacer(minLength: 0)
+                    HStack(spacing: 2) {
+                        mascot(side: 68)
+                        ZStack {
+                            Text("Clip!")
+                                .font(.system(size: 13, weight: .bold, design: .rounded))
+                                .padding(.horizontal, 10).padding(.vertical, 6)
+                                .background(Theme.accent.opacity(0.14), in: Capsule())
+                                .id(clipMoment)
+                                .transition(.scale(scale: 0.7).combined(with: .opacity))
+                        }
+                        .animation(reduceMotion ? nil : .easeOut(duration: 0.23), value: clipMoment)
+                    }
+                    .accessibilityHidden(true)
+                }
+            }
+        }
+        .padding(.horizontal, 28)
+        .padding(.top, 22).padding(.bottom, 18)
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.23), value: step == .welcome)
+    }
+
+    private var progress: some View {
+        Text("Step \(step.rawValue + 1) of \(GuidedSetupDraft.Step.allCases.count)")
+            .font(.caption).foregroundStyle(.secondary)
+    }
+
+    @ViewBuilder private func mascot(side: CGFloat) -> some View {
+        Group {
+            if let image = brandImage ?? BrandIcon.image(for: colorScheme) {
+                Image(nsImage: image).resizable().interpolation(.high).scaledToFit()
+            } else {
+                Image(systemName: "doc.on.clipboard.fill")
+                    .resizable().scaledToFit().padding(side / 4).foregroundStyle(Theme.accent)
+            }
+        }
+        .frame(width: side, height: side)
+        .accessibilityHidden(true)
+    }
 }
