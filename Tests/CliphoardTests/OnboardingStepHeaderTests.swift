@@ -13,7 +13,7 @@ final class OnboardingStepHeaderTests: XCTestCase {
         for scheme: ColorScheme in [.light, .dark] {
             let art = try XCTUnwrap(BrandIcon.load(for: scheme, resourceDirectory: resources))
             for step in GuidedSetupDraft.Step.allCases {
-                let view = OnboardingStepHeader(step: step, clipMoment: step.rawValue, brandImage: art)
+                let view = OnboardingStepHeader(step: step, forwardStepCount: step.rawValue, brandImage: art)
                     .frame(width: 600)
                     .background(Color(nsColor: .windowBackgroundColor))
                     .environment(\.colorScheme, scheme)

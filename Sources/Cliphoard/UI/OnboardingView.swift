@@ -49,7 +49,7 @@ struct OnboardingView: View {
     @State private var explorePro = false
     @State private var downloadSelectedModel = false
     @State private var draft: GuidedSetupDraft
-    @State private var clipMoment = 0
+    @State private var forwardStepCount = 0
 
     init(store: ClipStore, onDone: @escaping () -> Void, onUpgrade: @escaping () -> Void) {
         self.store = store
@@ -70,7 +70,7 @@ struct OnboardingView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            OnboardingStepHeader(step: draft.step, clipMoment: clipMoment)
+            OnboardingStepHeader(step: draft.step, forwardStepCount: forwardStepCount)
             Divider()
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
@@ -95,7 +95,7 @@ struct OnboardingView: View {
                 } else {
                     Button("Next") {
                         draft.next()
-                        clipMoment += 1
+                        forwardStepCount += 1
                     }
                         .buttonStyle(.borderedProminent)
                         .keyboardShortcut(.defaultAction)
@@ -432,7 +432,7 @@ struct OnboardingStepHeader: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let step: GuidedSetupDraft.Step
-    let clipMoment: Int
+    let forwardStepCount: Int
     var brandImage: NSImage? = nil
 
     var body: some View {
@@ -457,19 +457,12 @@ struct OnboardingStepHeader: View {
                         Text(step.title).font(.system(size: 24, weight: .bold)).accessibilityAddTraits(.isHeader)
                     }
                     Spacer(minLength: 0)
-                    HStack(spacing: 2) {
+                    ZStack {
                         mascot(side: 68)
-                        ZStack {
-                            Text("Clip!")
-                                .font(.system(size: 13, weight: .bold, design: .rounded))
-                                .padding(.horizontal, 10).padding(.vertical, 6)
-                                .background(Theme.accent.opacity(0.14), in: Capsule())
-                                .id(clipMoment)
-                                .transition(.scale(scale: 0.7).combined(with: .opacity))
-                        }
-                        .animation(reduceMotion ? nil : .easeOut(duration: 0.23), value: clipMoment)
+                            .id(forwardStepCount)
+                            .transition(.scale(scale: 0.85).combined(with: .opacity))
                     }
-                    .accessibilityHidden(true)
+                    .animation(reduceMotion ? nil : .easeOut(duration: 0.23), value: forwardStepCount)
                 }
             }
         }
