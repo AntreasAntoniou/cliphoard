@@ -34,7 +34,7 @@ struct SearchBarView<Filters: View>: View {
                     } else {
                         Image(systemName: "doc.on.clipboard.fill").foregroundStyle(Theme.accent)
                     }
-                }.frame(width: 40, height: 40).accessibilityHidden(true)
+                }.frame(width: 50, height: 50).accessibilityHidden(true)
                 searchField(compact: compact)
                     .frame(maxWidth: .infinity)
                     .layoutPriority(1)
@@ -64,7 +64,7 @@ struct SearchBarView<Filters: View>: View {
                 }.buttonStyle(.plain).help("Settings · ⌘,")
                     .accessibilityLabel("Settings").keyboardShortcut(",", modifiers: .command)
             }
-            .padding(.horizontal, 16).padding(.vertical, 8)
+            .padding(.horizontal, 16)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
         }.frame(height: 56)
     }
