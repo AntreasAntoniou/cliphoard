@@ -34,7 +34,7 @@ struct SearchBarView<Filters: View>: View {
                     } else {
                         Image(systemName: "doc.on.clipboard.fill").foregroundStyle(Theme.accent)
                     }
-                }.frame(width: 50, height: 50).accessibilityHidden(true)
+                }.frame(width: 54, height: 54).accessibilityHidden(true)
                 searchField(compact: compact)
                     .frame(maxWidth: .infinity)
                     .layoutPriority(1)
