@@ -1,8 +1,10 @@
 import AppKit
 
-/// Audible feedback when a clip is captured — a subtle tick, like Paste.
+/// Audible feedback for clipboard actions.
 @MainActor
 enum Feedback {
+    private static let defaultPasteSound = "Pop"
+
     static var soundEnabled: Bool {
         get { UserDefaults.standard.object(forKey: "soundEnabled") as? Bool ?? true }
         set { UserDefaults.standard.set(newValue, forKey: "soundEnabled") }
@@ -14,13 +16,23 @@ enum Feedback {
         set { UserDefaults.standard.set(newValue, forKey: "soundName") }
     }
 
+    static var pasteSoundEnabled: Bool {
+        get { UserDefaults.standard.bool(forKey: "pasteSoundEnabled") }
+        set { UserDefaults.standard.set(newValue, forKey: "pasteSoundEnabled") }
+    }
+
+    static var pasteSoundName: String {
+        get { UserDefaults.standard.string(forKey: "pasteSoundName") ?? defaultPasteSound }
+        set { UserDefaults.standard.set(newValue, forKey: "pasteSoundName") }
+    }
+
     /// The built-in system sounds available to pick from.
     static let availableSounds = [
         "Tink", "Pop", "Glass", "Morse", "Ping", "Bottle", "Frog",
         "Funk", "Hero", "Purr", "Submarine", "Sosumi", "Blow", "Basso"
     ]
 
-    /// Play a specific sound once (used for previews and capture).
+    /// Play a specific sound once, including for previews.
     static func play(named name: String) {
         if let sound = NSSound(named: NSSound.Name(name)) {
             sound.volume = 0.4
@@ -35,6 +47,16 @@ enum Feedback {
     static func playCapture() {
         guard soundEnabled else { return }
         play(named: soundName)
+    }
+
+    static func playPaste() {
+        guard let name = pasteSoundToPlay(in: .standard) else { return }
+        play(named: name)
+    }
+
+    static func pasteSoundToPlay(in defaults: UserDefaults) -> String? {
+        guard defaults.bool(forKey: "pasteSoundEnabled") else { return nil }
+        return defaults.string(forKey: "pasteSoundName") ?? defaultPasteSound
     }
 
     /// A failed pick. The system beep deliberately, NOT `soundName` — the capture tick is

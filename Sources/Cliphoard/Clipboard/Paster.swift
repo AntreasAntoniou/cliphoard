@@ -1,6 +1,6 @@
 import AppKit
 #if !APP_STORE
-import Carbon.HIToolbox
+import ApplicationServices
 #endif
 
 /// Writes a clip back to the system pasteboard and (optionally) issues a paste
@@ -128,14 +128,15 @@ enum Paster {
 
     #if !APP_STORE
     private static func sendCommandV() {
-        guard let src = CGEventSource(stateID: .combinedSessionState) else { return }
+        guard AXIsProcessTrusted(), let src = CGEventSource(stateID: .combinedSessionState) else { return }
         let vKey: CGKeyCode = 0x09 // 'v'
-        let down = CGEvent(keyboardEventSource: src, virtualKey: vKey, keyDown: true)
-        let up = CGEvent(keyboardEventSource: src, virtualKey: vKey, keyDown: false)
-        down?.flags = .maskCommand
-        up?.flags = .maskCommand
-        down?.post(tap: .cghidEventTap)
-        up?.post(tap: .cghidEventTap)
+        guard let down = CGEvent(keyboardEventSource: src, virtualKey: vKey, keyDown: true),
+              let up = CGEvent(keyboardEventSource: src, virtualKey: vKey, keyDown: false) else { return }
+        down.flags = .maskCommand
+        up.flags = .maskCommand
+        down.post(tap: .cghidEventTap)
+        up.post(tap: .cghidEventTap)
+        Feedback.playPaste()
     }
     #endif
 }

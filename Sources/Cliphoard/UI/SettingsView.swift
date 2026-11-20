@@ -61,6 +61,10 @@ final class AppSettings: ObservableObject {
 
     @Published var soundEnabled: Bool { didSet { Feedback.soundEnabled = soundEnabled } }
     @Published var soundName: String { didSet { Feedback.soundName = soundName } }
+#if !APP_STORE
+    @Published var pasteSoundEnabled: Bool { didSet { Feedback.pasteSoundEnabled = pasteSoundEnabled } }
+    @Published var pasteSoundName: String { didSet { Feedback.pasteSoundName = pasteSoundName } }
+#endif
     @Published var debugLogging: Bool { didSet { UserDefaults.standard.set(debugLogging, forKey: "debugLog") } }
     @Published var historyLimit: Int { didSet { store.historyLimit = historyLimit } }
 
@@ -298,6 +302,10 @@ final class AppSettings: ObservableObject {
         self.store = store
         soundEnabled = Feedback.soundEnabled
         soundName = Feedback.soundName
+#if !APP_STORE
+        pasteSoundEnabled = Feedback.pasteSoundEnabled
+        pasteSoundName = Feedback.pasteSoundName
+#endif
         debugLogging = DebugLog.enabled
         historyLimit = store.historyLimit
         launchAtLogin = LoginItem.enabled
@@ -375,8 +383,6 @@ final class AppSettings: ObservableObject {
         }
 #endif
     }
-
-    func previewSound() { Feedback.play(named: soundName) }
 
     /// Live Accessibility-trust state. Polled while Settings is open so the
     /// "Grant…" row disappears as soon as the grant takes effect.
@@ -683,21 +689,11 @@ struct SettingsView: View {
 
                 section("Sound") {
                     Toggle("Play sound on copy", isOn: $settings.soundEnabled)
-                    HStack {
-                        Text("Copy sound").foregroundStyle(settings.soundEnabled ? .primary : .secondary)
-                        Spacer()
-                        Picker("", selection: $settings.soundName) {
-                            ForEach(Feedback.availableSounds, id: \.self) { Text($0).tag($0) }
-                        }
-                        .labelsHidden()
-                        .frame(width: 130)
-                        .disabled(!settings.soundEnabled)
-                        Button {
-                            settings.previewSound()
-                        } label: { Image(systemName: "play.circle") }
-                        .buttonStyle(.plain)
-                        .disabled(!settings.soundEnabled)
-                    }
+                    soundPicker("Copy sound", name: $settings.soundName, enabled: settings.soundEnabled)
+#if !APP_STORE
+                    Toggle("Play sound when Cliphoard pastes", isOn: $settings.pasteSoundEnabled)
+                    soundPicker("Paste sound", name: $settings.pasteSoundName, enabled: settings.pasteSoundEnabled)
+#endif
                 }
 
                 section("Search options") {
@@ -1095,6 +1091,24 @@ struct SettingsView: View {
     private var averageAutomaticTags: Double {
         SettingsTagSummary.average(items: store.items, tagIndex: store.tagIndex,
                                    signature: EmbedderProvider.active.signature)
+    }
+
+    private func soundPicker(_ title: String, name: Binding<String>, enabled: Bool) -> some View {
+        HStack {
+            Text(title).foregroundStyle(enabled ? .primary : .secondary)
+            Spacer()
+            Picker(title, selection: name) {
+                ForEach(Feedback.availableSounds, id: \.self) { Text($0).tag($0) }
+            }
+            .labelsHidden()
+            .frame(width: 130)
+            Button {
+                Feedback.play(named: name.wrappedValue)
+            } label: { Image(systemName: "play.circle") }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Preview \(title.lowercased())")
+        }
+        .disabled(!enabled)
     }
 
     private func section<Content: View>(_ title: String,
